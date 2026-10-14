@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { FileClock, FileUp, ShieldCheck, UsersRound } from "lucide-react";
+import { Columns3, FileClock, FileUp, ShieldCheck, UsersRound } from "lucide-react";
 
 const ITEMS = [
+  { key: "fields", path: "/fields", label: "Fields", icon: Columns3 },
   { key: "import", path: "", label: "Import", icon: FileUp },
   { key: "identity", path: "/identity", label: "Identity", icon: UsersRound },
   { key: "permissions", path: "/permissions", label: "Permissions", icon: ShieldCheck },

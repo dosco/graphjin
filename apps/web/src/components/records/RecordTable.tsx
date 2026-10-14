@@ -9,6 +9,8 @@ import {
 import { RecordCell } from "./RecordCell";
 import { PendingChangeMarker } from "./PendingChangeMarker";
 import { buttonClassName } from "@/components/ui/button";
+import { hrefWithQuery as hrefWith, PAGING_RESET } from "@/lib/records-filter";
+import { RecordPageSize } from "./RecordPageSize";
 import {
   Table,
   TableBody,
@@ -17,23 +19,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-
-function hrefWith(
-  base: string,
-  current: Record<string, string | undefined>,
-  changes: Record<string, string | null>,
-): string {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(current)) {
-    if (value !== undefined) params.set(key, value);
-  }
-  for (const [key, value] of Object.entries(changes)) {
-    if (value === null) params.delete(key);
-    else params.set(key, value);
-  }
-  const query = params.toString();
-  return query ? `${base}?${query}` : base;
-}
 
 export function RecordTable({
   appId,
@@ -45,6 +30,7 @@ export function RecordTable({
   total,
   cursor,
   page,
+  pageSize = 50,
   query,
 }: {
   appId: string;
@@ -56,11 +42,31 @@ export function RecordTable({
   total: number;
   cursor: string | null;
   page: number;
+  pageSize?: number;
   query: Record<string, string | undefined>;
 }) {
   const base = `/a/${appId}/${view.object.apiName}`;
-  const shownThrough = (page - 1) * 50 + rows.length;
+  const shownFrom = (page - 1) * pageSize + 1;
+  const shownThrough = (page - 1) * pageSize + rows.length;
   const hasMore = cursor !== null && shownThrough < total;
+  const trail = query.back ? query.back.split(",") : [];
+  const previous =
+    page <= 1
+      ? null
+      : page === 2
+        ? hrefWith(base, query, PAGING_RESET)
+        : hrefWith(base, query, {
+            after: trail.at(-1) ?? null,
+            page: String(page - 1),
+            back: trail.length > 1 ? trail.slice(0, -1).join(",") : null,
+          });
+  const next = hasMore
+    ? hrefWith(base, query, {
+        after: cursor,
+        page: String(page + 1),
+        back: page >= 2 && query.after ? [...trail, query.after].join(",") : null,
+      })
+    : null;
   return (
     <section
       className="records-list-card"
@@ -90,10 +96,9 @@ export function RecordTable({
                     {sortable ? (
                       <Link
                         href={hrefWith(base, query, {
+                          ...PAGING_RESET,
                           sort: column.apiName,
                           direction,
-                          after: null,
-                          page: null,
                         })}
                       >
                         {column.label}
@@ -193,25 +198,33 @@ export function RecordTable({
         </div>
       )}
       <footer className="records-list-foot">
-        <span>
+        <span className="records-list-range">
           {total === 0
             ? "No records"
-            : `Showing ${(page - 1) * 50 + 1}–${shownThrough} of ${total}`}
+            : `Showing ${shownFrom.toLocaleString("en")}–${shownThrough.toLocaleString("en")} of ${total.toLocaleString("en")}`}
         </span>
-        {hasMore && (
-          <Link
-            className={buttonClassName({
-              size: "sm",
-              className: "records-page-button",
-            })}
-            href={hrefWith(base, query, {
-              after: cursor,
-              page: String(page + 1),
-            })}
-          >
-            Next page <span aria-hidden="true">→</span>
-          </Link>
-        )}
+        <RecordPageSize base={base} query={query} size={pageSize} />
+        <nav className="records-pager" aria-label="Pages">
+          {previous ? (
+            <Link className={buttonClassName({ size: "sm" })} href={previous} rel="prev">
+              <span aria-hidden="true">←</span> Previous
+            </Link>
+          ) : (
+            <span className={buttonClassName({ size: "sm" })} aria-disabled="true">
+              <span aria-hidden="true">←</span> Previous
+            </span>
+          )}
+          <span className="records-page-number">Page {page}</span>
+          {next ? (
+            <Link className={buttonClassName({ size: "sm" })} href={next} rel="next">
+              Next <span aria-hidden="true">→</span>
+            </Link>
+          ) : (
+            <span className={buttonClassName({ size: "sm" })} aria-disabled="true">
+              Next <span aria-hidden="true">→</span>
+            </span>
+          )}
+        </nav>
       </footer>
     </section>
   );

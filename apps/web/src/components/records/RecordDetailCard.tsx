@@ -5,6 +5,17 @@ import {
   type RecordReferenceIdentity,
 } from "@/lib/records-reference";
 import { RecordCell } from "./RecordCell";
+import { RecordDetailField } from "./RecordDetailField";
+
+function editable(column: RecordViewColumn): boolean {
+  return (
+    !column.readOnly &&
+    column.kind !== "readonly_formula" &&
+    column.kind !== "id" &&
+    column.kind !== "owner" &&
+    column.kind !== "system_datetime"
+  );
+}
 
 export function RecordDetailCard({
   appId,
@@ -13,6 +24,7 @@ export function RecordDetailCard({
   owners,
   references = {},
   layout,
+  canUpdate = false,
 }: {
   appId: string;
   view: RecordObjectView;
@@ -20,7 +32,9 @@ export function RecordDetailCard({
   owners: Record<string, RecordOwnerIdentity>;
   references?: Record<string, RecordReferenceIdentity>;
   layout?: JsonObject | null;
+  canUpdate?: boolean;
 }) {
+  const recordId = String(row.id ?? "");
   const ownerId =
     typeof row.owner_user_id === "string" ? row.owner_user_id : null;
   const sections = detailSections(layout, view.columns);
@@ -31,27 +45,32 @@ export function RecordDetailCard({
           <h2>{section.label}</h2>
           <dl className="records-detail-grid">
             {section.columns.map((column) => (
-              <div className="records-detail-field" key={column.apiName}>
-                <dt>{column.label}</dt>
-                <dd>
-                  <RecordCell
-                    appId={appId}
-                    column={column}
-                    value={row[column.columnName]}
-                    owner={
-                      column.kind === "owner" && ownerId
-                        ? owners[ownerId]
-                        : undefined
-                    }
-                    reference={references[
-                      recordReferenceIdentityKey(
-                        column.apiName,
-                        String(row[column.columnName] ?? ""),
-                      )
-                    ]}
-                  />
-                </dd>
-              </div>
+              <RecordDetailField
+                key={column.apiName}
+                appId={appId}
+                objectApiName={view.object.apiName}
+                recordId={recordId}
+                column={column}
+                value={row[column.columnName] ?? null}
+                editable={canUpdate && Boolean(recordId) && editable(column)}
+              >
+                <RecordCell
+                  appId={appId}
+                  column={column}
+                  value={row[column.columnName]}
+                  owner={
+                    column.kind === "owner" && ownerId
+                      ? owners[ownerId]
+                      : undefined
+                  }
+                  reference={references[
+                    recordReferenceIdentityKey(
+                      column.apiName,
+                      String(row[column.columnName] ?? ""),
+                    )
+                  ]}
+                />
+              </RecordDetailField>
             ))}
           </dl>
         </section>

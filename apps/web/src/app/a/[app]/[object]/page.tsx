@@ -15,7 +15,8 @@ import { RecordViewBar } from "@/components/records/RecordViewBar";
 import { RecordsUnavailable } from "@/components/records/RecordsNotice";
 import { SubstrateStrip } from "@/components/records/SubstrateStrip";
 import { buttonClassName } from "@/components/ui/button";
-import { SearchInput } from "@/components/ui/search-input";
+import { RecordListSearch } from "@/components/records/RecordListSearch";
+import { RECORD_PAGE_SIZES } from "@/lib/records-filter";
 import {
   normalizeRecordSavedViewDefinition,
   type RecordFilterExpression,
@@ -39,6 +40,11 @@ function positivePage(raw: string | undefined): number {
   return Number.isSafeInteger(parsed) && parsed > 0 && parsed < 10_000
     ? parsed
     : 1;
+}
+
+function pageSize(raw: string | undefined): number {
+  const parsed = Number.parseInt(raw ?? "", 10);
+  return (RECORD_PAGE_SIZES as readonly number[]).includes(parsed) ? parsed : 50;
 }
 
 function has(params: SearchParams, key: string): boolean {
@@ -110,11 +116,12 @@ async function loadPage(input: {
     ? filterExpression(value(input.queryParams, "filter"))
     : (selected?.filter ?? null);
   const page = positivePage(value(input.queryParams, "page"));
+  const size = pageSize(value(input.queryParams, "size"));
   const result = await readRecordList({
     orgId: input.orgId,
     appId: input.app,
     objectApiName: input.object,
-    first: 50,
+    first: size,
     after: value(input.queryParams, "after"),
     search,
     sort: sortField ? { field: sortField, direction } : undefined,
@@ -125,16 +132,27 @@ async function loadPage(input: {
   const object = shell.snapshot.objects.find(
     (candidate) => candidate.apiName === result.view.object.apiName,
   );
+  const columnOrder = new Map(
+    result.view.columns.map((column, index) => [column.apiName, index]),
+  );
   const filterFields = shell.snapshot.fields
     .filter(
       (field) => field.objectId === object?.id && field.archivedAt === null,
+    )
+    .sort(
+      (a, b) =>
+        (columnOrder.get(String(a.apiName)) ?? Number.MAX_SAFE_INTEGER) -
+        (columnOrder.get(String(b.apiName)) ?? Number.MAX_SAFE_INTEGER),
     )
     .map((field) => ({
       apiName: String(field.apiName),
       label: field.label,
       kind: field.kind,
       picklistValues: field.picklistValues,
+      referenceTargets: field.referenceTargets,
     }));
+  const nameLabel =
+    result.view.columns.find((column) => column.columnName === result.view.object.nameField)?.label ?? "name";
   const serializedFilter = filter ? JSON.stringify(filter) : undefined;
   return {
     kind: "active" as const,
@@ -144,6 +162,7 @@ async function loadPage(input: {
     views,
     selectedView,
     filterFields,
+    nameLabel,
     definition: {
       version: 1 as const,
       filter,
@@ -158,6 +177,7 @@ async function loadPage(input: {
         .map((column) => column.apiName),
     },
     page,
+    size,
     base: `/a/${result.app.appId}/${result.view.object.apiName}`,
     query: {
       q: explicitSearch
@@ -176,6 +196,8 @@ async function loadPage(input: {
       view: selectedView?.id,
       after: value(input.queryParams, "after"),
       page: value(input.queryParams, "page"),
+      back: value(input.queryParams, "back"),
+      size: value(input.queryParams, "size"),
     },
   };
 }
@@ -220,8 +242,10 @@ export default async function RecordObjectPage({
     views,
     selectedView,
     filterFields,
+    nameLabel,
     definition,
     page,
+    size,
     base,
     query,
   } = loaded;
@@ -236,54 +260,13 @@ export default async function RecordObjectPage({
             {result.total.toLocaleString("en")} records
           </span>
         </div>
-        <form className="records-search" action={base} method="get">
-          <SearchInput
-            name="q"
-            defaultValue={query.q}
-            placeholder={`Search ${result.view.object.pluralLabel.toLowerCase()}`}
-            label={`Search ${result.view.object.pluralLabel}`}
-          />
-          {query.sort && (
-            <input
-              data-ui-bespoke-reason="records list search and hidden query fields"
-              type="hidden"
-              name="sort"
-              value={query.sort}
-            />
-          )}
-          {query.direction && (
-            <input
-              data-ui-bespoke-reason="records list search and hidden query fields"
-              type="hidden"
-              name="direction"
-              value={query.direction}
-            />
-          )}
-          {query.mine && (
-            <input
-              data-ui-bespoke-reason="records list search and hidden query fields"
-              type="hidden"
-              name="mine"
-              value={query.mine}
-            />
-          )}
-          {query.filter && (
-            <input
-              data-ui-bespoke-reason="records list search and hidden query fields"
-              type="hidden"
-              name="filter"
-              value={query.filter}
-            />
-          )}
-          {query.view && (
-            <input
-              data-ui-bespoke-reason="records list search and hidden query fields"
-              type="hidden"
-              name="view"
-              value={query.view}
-            />
-          )}
-        </form>
+        <RecordListSearch
+          key={query.view ?? "all"}
+          base={base}
+          query={query}
+          pluralLabel={result.view.object.pluralLabel}
+          nameLabel={nameLabel}
+        />
         {result.view.permission.canCreate && (
           <Link
             className={buttonClassName({
@@ -340,6 +323,7 @@ export default async function RecordObjectPage({
             total={result.total}
             cursor={result.cursor}
             page={page}
+            pageSize={size}
             query={query}
           />
           <SubstrateStrip status={substrate} />
