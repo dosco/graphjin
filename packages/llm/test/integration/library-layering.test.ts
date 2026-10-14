@@ -39,11 +39,14 @@ import {
   listStaleUploadedLibraryDocuments,
   markLibraryDocumentStatus,
   searchLibraryByContext,
+  searchLibraryForRun,
   shareLibraryConceptToTeam,
   sweepStaleLibraryConcepts,
   upsertLibraryConcept,
 } from "../../src/work/library";
 import { runEmbeddingIndexJob } from "../../src/embedding-jobs";
+import { createWorkRun, createWorkThread } from "../../src/work/store";
+import { createWorkflowRun, saveWorkflow } from "../../src/workflows/store";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -175,6 +178,41 @@ describeIfDb("library layering and search", () => {
         query: "refund policy approvals",
       });
       expect(teamOnly).toEqual([]);
+    } finally {
+      await deleteTestOrg(orgId);
+    }
+  });
+
+  it("searches a routine run without a thread creator as the routine's owner", async () => {
+    try {
+      const { concept } = await upsertLibraryConcept({
+        orgId,
+        userId: alice(),
+        path: "policies/refund-policy.md",
+        type: "Policy",
+        title: "Refund policy",
+        body: "Refunds within 30 days need CFO approval over $500.",
+      });
+      await runEmbeddingIndexJob({ kind: "concept", orgId, id: concept.id });
+      const { workflow } = await saveWorkflow({
+        orgId,
+        name: "Refund check",
+        steps: [{ id: "s1", description: "Check the refund" }],
+        ownerUserId: alice(),
+      });
+      const thread = await createWorkThread(orgId, workflow.name);
+      const workRun = await createWorkRun(orgId, thread.id, "hermes");
+      await createWorkflowRun({
+        orgId,
+        workflowId: workflow.id,
+        threadId: thread.id,
+        workRunId: workRun.id,
+        triggerKind: "api",
+        executionMode: "single",
+      });
+
+      const results = await searchLibraryForRun({ orgId, runId: workRun.id, query: "refund policy approvals" });
+      expect(results.map((result) => result.concept.path)).toEqual(["policies/refund-policy.md"]);
     } finally {
       await deleteTestOrg(orgId);
     }

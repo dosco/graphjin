@@ -22,6 +22,8 @@ import {
   sql,
   work_run,
   work_thread,
+  workflow_definition,
+  workflow_run,
 } from "@neko/db";
 import { embedText, vectorLiteral } from "../embedding";
 import type { HeldItems } from "@neko/db";
@@ -791,7 +793,16 @@ async function resolveRunOwnerUserId(
     .innerJoin(work_thread, eq(work_run.thread_id, work_thread.id))
     .where(and(eq(work_run.org_id, orgId), eq(work_run.id, runId)))
     .limit(1);
-  return rows[0]?.owner ?? null;
+  if (rows[0]?.owner) return rows[0].owner;
+  // A routine run's thread may have no creator (API and scheduled runs); it
+  // searches as the routine's owner.
+  const [routine] = await db()
+    .select({ owner: workflow_definition.owner_user_id })
+    .from(workflow_run)
+    .innerJoin(workflow_definition, eq(workflow_run.workflow_id, workflow_definition.id))
+    .where(and(eq(workflow_run.org_id, orgId), eq(workflow_run.work_run_id, runId)))
+    .limit(1);
+  return routine?.owner || null;
 }
 
 /**
