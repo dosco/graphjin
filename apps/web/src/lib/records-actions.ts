@@ -82,7 +82,7 @@ function editableColumns(columns: RecordViewColumn[]): RecordViewColumn[] {
 function viewAllows(
   view: ReturnType<typeof resolveFormView>,
   role: "admin" | "member",
-  operation: "create" | "update",
+  operation: "create" | "update" | "delete",
 ): boolean {
   return evaluateRecordObjectPermission({
     actor: { role },
@@ -403,6 +403,97 @@ export async function submitRecordRestoreAction(input: {
     status: "executed",
     actionRequestId: request.id,
     recordId: recycled.row.recordId,
+    policy: decision.policy.name,
+  };
+}
+
+export async function submitRecordDeleteAction(input: {
+  orgId: string;
+  appId: string;
+  objectApiName: string;
+  recordId: string;
+}): Promise<RecordFormSubmitResult> {
+  const [shell, actor] = await Promise.all([
+    loadRecordAppShell(input.orgId, input.appId),
+    getCurrentActor(),
+  ]);
+  if (shell.availability !== "active") {
+    throw new RecordAppRouteError(
+      shell.degradedReason ?? "The records data plane is degraded.",
+      503,
+    );
+  }
+  const role = roleForActor(actor.role);
+  const view = resolveFormView(shell, input.objectApiName, role);
+  if (!viewAllows(view, role, "delete")) throw new RecordReadPermissionError();
+  const recordId = input.recordId.trim();
+  const detail = await readRecordDetail({
+    orgId: input.orgId,
+    appId: shell.snapshot.app.appId,
+    objectApiName: view.object.apiName,
+    recordId,
+  });
+  if (!detail.row) throw new RecordReadPermissionError();
+
+  const target = `record:${shell.snapshot.app.appId}/${view.object.apiName}`;
+  const decision = await inProcessControlPlane.evaluateActionPolicy({
+    orgId: input.orgId,
+    scope: "internal",
+    kind: "record_delete",
+    target,
+    riskLevel: "low",
+  });
+  if (decision.decision === "no_policy") {
+    throw new RecordFormPolicyError(
+      "No action policy covers deleting this record. Define one in Rules before you delete it.",
+    );
+  }
+  if (decision.decision === "deny") {
+    throw new RecordFormPolicyError(decision.reason);
+  }
+  if (!(await mayApprove(actor, decision.policy.approverGroupId))) {
+    throw new RecordFormPolicyError("This delete needs approval from the policy's approver group.");
+  }
+
+  const name = String(detail.row[view.object.nameField] ?? recordId);
+  const summary = `Delete ${view.object.label} ${name}`;
+  const request = await inProcessControlPlane.createActionRequest({
+    orgId: input.orgId,
+    scope: "internal",
+    kind: "record_delete",
+    target,
+    payload: { app: shell.snapshot.app.appId, object: view.object.apiName, id: recordId },
+    riskLevel: "low",
+    status: decision.mode === "draft_only" ? "draft" : "pending_approval",
+    policyId: decision.policy.id,
+    summary,
+    intent: `${summary}. The signed-in operator deleted it from the record page; it moves to the recycle bin.`,
+    actorUserId: actor.userId,
+    actorRole: role,
+    actorBackend: "web-form",
+  });
+  await approveActionRequest({
+    id: request.id,
+    orgId: input.orgId,
+    approverUserId: actor.userId,
+    approver: { userId: actor.userId, role },
+  });
+  await inProcessControlPlane.enqueueActionExecute({
+    orgId: input.orgId,
+    actionRequestId: request.id,
+  });
+  const execution = await inProcessControlPlane.waitForActionExecution({
+    orgId: input.orgId,
+    actionRequestId: request.id,
+    timeoutMs: 45_000,
+  });
+  if (execution.status === "failed") {
+    throw new RecordFormExecutionError(execution.error, request.id);
+  }
+  return {
+    status: execution.status === "timeout" ? "queued" : "executed",
+    actionRequestId: request.id,
+    recordId,
     policy: decision.policy.name,
   };
 }

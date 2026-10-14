@@ -200,7 +200,8 @@ function canonicalAppId(value: string): string {
   }
 }
 
-async function loadRecordAppShellRaw(
+/** The full app definition, unfiltered by the viewer's grants. Use only behind an admin check. */
+export async function loadRecordAppShellRaw(
   orgId: string,
   appId: string,
 ): Promise<RecordAppShell> {

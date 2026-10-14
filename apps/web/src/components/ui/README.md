@@ -32,6 +32,7 @@ Portalled sheets and confirmations own viewport positioning; shared overlay/menu
 - Use `Checkbox` for boolean settings so control size, accent, focus, label typography, and disabled states stay aligned.
 - Use `Field` with `Input`, `Textarea`, or `NativeSelect` for labelled form controls.
 - Use `Disclosure` for secondary detail that would otherwise make a page difficult to scan.
+- Use `Popover` for a small form that floats over the page, such as a list filter. It portals like menus and keeps the page layout still.
 - Use `LocalDateTime` for browser-local timestamps so server rendering and hydration stay consistent.
 - Use `SearchInput` for instant filtering on row-heavy indexes so search geometry and labelling stay consistent.
 - Use `SkeletonList` while a list loads. Match the variant to the final layout so content does not shift when it arrives.

@@ -33,9 +33,12 @@ type VisualListFixture = {
     label: string;
     kind: RecordFieldKind;
     picklistValues: unknown[] | null;
+    referenceTargets?: string[] | null;
   }>;
+  nameLabel: string;
   definition: RecordSavedViewDefinition;
   page: number;
+  size: number;
   base: string;
   query: Record<string, string | undefined>;
   askScenario?: RecordAskScenario;
@@ -202,8 +205,10 @@ function crmFixture(): VisualListFixture {
       { apiName: "stage", label: "Stage", kind: "picklist", picklistValues: stageValues },
       { apiName: "close_date", label: "Close date", kind: "date", picklistValues: null },
     ],
+    nameLabel: "Opportunity",
     definition,
     page: 1,
+    size: 50,
     base: "/a/crm/opportunity",
     query: {
       sort: "close_date",
@@ -332,8 +337,10 @@ function supportFixture(): VisualListFixture {
             picklistValues: item.picklistValues,
           }],
     ),
+    nameLabel: "Subject",
     definition,
     page: 1,
+    size: 50,
     base: "/a/support_lab/support_case",
     query: { sort: "subject", direction: "asc" },
   };

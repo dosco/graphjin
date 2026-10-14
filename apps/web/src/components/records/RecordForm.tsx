@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useState, type FormEvent } from "react";
 import { CheckCircle2, LockKeyhole } from "lucide-react";
 import type { RecordViewColumn } from "@neko/records";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input, NativeSelect, Textarea } from "@/components/ui/field";
+import {
+  issueSentence,
+  RecordFieldInput,
+  submittedValue,
+  writeErrorSentence,
+} from "./RecordFieldControl";
 
 type SubmitResponse = {
   status?: "executed" | "queued";
@@ -18,249 +22,6 @@ type SubmitResponse = {
   error?: string;
   issues?: Array<{ field: string; message: string }>;
 };
-
-function picklistOptions(
-  column: RecordViewColumn,
-): Array<{ value: string; label: string }> {
-  return (column.picklistValues ?? []).flatMap((option) => {
-    if (typeof option === "string") return [{ value: option, label: option }];
-    if (option && typeof option === "object" && !Array.isArray(option)) {
-      const entry = option as Record<string, unknown>;
-      if (typeof entry.value === "string") {
-        return [
-          {
-            value: entry.value,
-            label: typeof entry.label === "string" ? entry.label : entry.value,
-          },
-        ];
-      }
-    }
-    return [];
-  });
-}
-
-function stringValue(value: unknown): string {
-  return value === null || value === undefined ? "" : String(value);
-}
-
-function datetimeLocalValue(value: unknown): string {
-  const date = new Date(stringValue(value));
-  if (Number.isNaN(date.getTime())) return "";
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-}
-
-function multiValue(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(String);
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value) as unknown;
-      return Array.isArray(parsed) ? parsed.map(String) : [];
-    } catch {
-      return value ? [value] : [];
-    }
-  }
-  return [];
-}
-
-function FieldControl({
-  column,
-  value,
-}: {
-  column: RecordViewColumn;
-  value: unknown;
-}): ReactNode {
-  const common = {
-    id: `record-field-${column.apiName}`,
-    name: column.apiName,
-    required: column.required,
-  };
-  if (column.readOnly || column.kind === "readonly_formula") {
-    return (
-      <Input
-        {...common}
-        type="text"
-        value={stringValue(value)}
-        disabled
-        readOnly
-      />
-    );
-  }
-  if (column.kind === "textarea") {
-    return <Textarea {...common} defaultValue={stringValue(value)} rows={5} />;
-  }
-  if (column.kind === "boolean") {
-    return (
-      <Checkbox {...common} label="Enabled" defaultChecked={value === true} />
-    );
-  }
-  if (column.kind === "picklist") {
-    return (
-      <NativeSelect {...common} defaultValue={stringValue(value)}>
-        {!column.required && <option value="">Not set</option>}
-        {picklistOptions(column).map((option) => (
-          <option value={option.value} key={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </NativeSelect>
-    );
-  }
-  if (column.kind === "multipicklist") {
-    return (
-      <NativeSelect
-        {...common}
-        multiple
-        defaultValue={multiValue(value)}
-        size={Math.min(5, Math.max(3, picklistOptions(column).length))}
-      >
-        {picklistOptions(column).map((option) => (
-          <option value={option.value} key={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </NativeSelect>
-    );
-  }
-  const type =
-    column.kind === "email"
-      ? "email"
-      : column.kind === "phone"
-        ? "tel"
-        : column.kind === "url"
-          ? "url"
-          : column.kind === "date"
-            ? "date"
-            : column.kind === "datetime"
-              ? "datetime-local"
-              : ["integer", "decimal", "currency", "percent"].includes(
-                    column.kind,
-                  )
-                ? "number"
-                : "text";
-  return (
-    <Input
-      {...common}
-      type={type}
-      defaultValue={
-        column.kind === "datetime"
-          ? datetimeLocalValue(value)
-          : stringValue(value)
-      }
-      {...(column.kind === "integer" ? { step: 1 } : {})}
-      {...(["decimal", "currency", "percent"].includes(column.kind)
-        ? { step: column.scale === null ? "any" : 10 ** -column.scale }
-        : {})}
-      {...(column.kind === "reference" ? { spellCheck: false } : {})}
-    />
-  );
-}
-
-type ReferenceOption = { id: string; label: string };
-
-function ReferenceControl({
-  appId,
-  column,
-  value,
-}: {
-  appId: string;
-  column: RecordViewColumn;
-  value: unknown;
-}) {
-  const targets = column.referenceTargets ?? [];
-  const [target, setTarget] = useState(targets[0] ?? "");
-  const [query, setQuery] = useState(stringValue(value));
-  const [options, setOptions] = useState<ReferenceOption[]>([]);
-  const listId = `record-reference-${column.apiName}`;
-
-  useEffect(() => {
-    const search = query.trim();
-    if (!target || !search) {
-      return;
-    }
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => {
-      fetch(
-        `/api/a/${encodeURIComponent(appId)}/references/${encodeURIComponent(target)}?q=${encodeURIComponent(search)}`,
-        { signal: controller.signal },
-      )
-        .then(async (response) =>
-          response.ok
-            ? ((await response.json()) as { options?: ReferenceOption[] })
-            : { options: [] },
-        )
-        .then((payload) => setOptions(payload.options ?? []))
-        .catch((error: unknown) => {
-          if (!(error instanceof DOMException && error.name === "AbortError"))
-            setOptions([]);
-        });
-    }, 180);
-    return () => {
-      window.clearTimeout(timeout);
-      controller.abort();
-    };
-  }, [appId, query, target]);
-
-  return (
-    <div className="records-reference-control">
-      {targets.length > 1 && (
-        <NativeSelect
-          aria-label={`${column.label} target object`}
-          value={target}
-          onChange={(event) => {
-            setTarget(event.target.value);
-            setQuery("");
-            setOptions([]);
-          }}
-        >
-          {targets.map((candidate) => (
-            <option value={candidate} key={candidate}>
-              {candidate}
-            </option>
-          ))}
-        </NativeSelect>
-      )}
-      <Input
-        id={`record-field-${column.apiName}`}
-        name={column.apiName}
-        required={column.required}
-        value={query}
-        onChange={(event) => {
-          setQuery(event.target.value);
-          if (!event.target.value.trim()) setOptions([]);
-        }}
-        list={listId}
-        autoComplete="off"
-        role="combobox"
-        aria-autocomplete="list"
-        aria-controls={listId}
-        aria-expanded={options.length > 0}
-        placeholder="Search by record name or enter an ID"
-        spellCheck={false}
-      />
-      <datalist id={listId}>
-        {options.map((option) => (
-          <option value={option.id} key={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </datalist>
-    </div>
-  );
-}
-
-function submittedValue(formData: FormData, column: RecordViewColumn): unknown {
-  if (column.kind === "boolean") return formData.has(column.apiName);
-  if (column.kind === "multipicklist") {
-    return formData.getAll(column.apiName).map(String);
-  }
-  const raw = formData.get(column.apiName);
-  const value = typeof raw === "string" ? raw : "";
-  if (value === "") return undefined;
-  if (column.kind === "integer") return Number(value);
-  if (column.kind === "datetime") return new Date(value).toISOString();
-  return value;
-}
 
 export function RecordForm({
   appId,
@@ -283,6 +44,7 @@ export function RecordForm({
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [actionRequestId, setActionRequestId] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const base = `/a/${appId}/${objectApiName}`;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -290,6 +52,7 @@ export function RecordForm({
     setSubmitting(true);
     setMessage(null);
     setActionRequestId(null);
+    setFieldErrors({});
     const formData = new FormData(event.currentTarget);
     const values: Record<string, unknown> = {};
     const expected: Record<string, unknown> = {};
@@ -316,12 +79,24 @@ export function RecordForm({
       });
       const payload = (await response.json()) as SubmitResponse;
       if (!response.ok) {
-        const issueText = payload.issues
-          ?.map((issue) => `${issue.field}: ${issue.message}`)
-          .join(" · ");
+        const known = new Set(fields.map((column) => column.apiName));
+        const byField: Record<string, string> = {};
+        const general: string[] = [];
+        for (const issue of payload.issues ?? []) {
+          if (known.has(issue.field)) byField[issue.field] ??= issueSentence(issue.message);
+          else general.push(issueSentence(issue.message));
+        }
+        setFieldErrors(byField);
+        const fieldCount = Object.keys(byField).length;
         setMessage(
-          issueText || payload.error || "The record could not be submitted.",
+          general.join(" ") ||
+            (fieldCount > 0
+              ? `Fix the ${fieldCount === 1 ? "highlighted field" : `${fieldCount} highlighted fields`}, then submit again.`
+              : writeErrorSentence(payload.error, "The record could not be submitted.")),
         );
+        if (fieldCount > 0) {
+          document.getElementById(`record-field-${Object.keys(byField)[0]}`)?.focus();
+        }
         setActionRequestId(payload.actionRequestId ?? null);
         return;
       }
@@ -356,24 +131,26 @@ export function RecordForm({
       <div className="records-form-grid">
         {fields.map((column) => (
           <div
-            className={`records-form-field${column.kind === "textarea" ? " is-wide" : ""}`}
+            className={`records-form-field${column.kind === "textarea" ? " is-wide" : ""}${fieldErrors[column.apiName] ? " is-invalid" : ""}`}
             key={column.apiName}
           >
             <label htmlFor={`record-field-${column.apiName}`}>
               {column.label}
               {column.required && <span aria-label="required"> *</span>}
             </label>
-            {column.kind === "reference" && !column.readOnly ? (
-              <ReferenceControl
-                appId={appId}
-                column={column}
-                value={initialRow?.[column.columnName]}
-              />
-            ) : (
-              <FieldControl
-                column={column}
-                value={initialRow?.[column.columnName]}
-              />
+            <RecordFieldInput
+              appId={appId}
+              column={column}
+              value={initialRow?.[column.columnName]}
+              invalid={Boolean(fieldErrors[column.apiName])}
+            />
+            {fieldErrors[column.apiName] && (
+              <span
+                className="records-field-error"
+                id={`record-field-${column.apiName}-error`}
+              >
+                {fieldErrors[column.apiName]}
+              </span>
             )}
             {column.kind === "reference" && (
               <small>

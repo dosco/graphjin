@@ -55,8 +55,10 @@ describe("RecordViewBar", () => {
     }));
 
     expect(html).toContain("Stage <b>is open</b>");
-    expect(html).toContain("Close date <b>this quarter</b>");
+    expect(html).toContain("Close date <b>is this quarter</b>");
     expect(html).not.toContain("2 active filters");
-    expect(html).toContain('aria-label="Clear all filters"');
+    expect(html).toContain('aria-label="Remove filter: Stage is open"');
+    expect(html).toContain("Clear filters");
+    expect(html).toContain("Match all");
   });
 });

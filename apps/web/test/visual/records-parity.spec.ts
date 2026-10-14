@@ -16,7 +16,7 @@ test("CRM generated records and toolbar match the pinned baseline", async ({
   await expect(page.getByText("SF: j.keller")).toBeVisible();
   await expect(page.getByText("Unlinked", { exact: true })).toBeVisible();
   // Contextual chat now lives in AppChatSidebar, outside this list fixture.
-  await expect(page.getByRole("searchbox", { name: "Search Opportunities" })).toBeVisible();
+  await expect(page.getByRole("searchbox", { name: /^Search Opportunities/ })).toBeVisible();
   await expect(page.getByRole("complementary", { name: "Records substrate status" })).toContainText("Healthy");
   const controls = await page.locator(".records-object-header").evaluate((header) => {
     const search = header.querySelector("[data-slot=input-group]")!;

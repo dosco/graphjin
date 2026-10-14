@@ -1,30 +1,29 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { BookmarkPlus, ListFilter, X } from "lucide-react";
 import type {
-  RecordFilterExpression,
   RecordListFilter,
-  RecordFilterOperator,
   RecordSavedView,
   RecordSavedViewDefinition,
 } from "@neko/records";
-import {
-  RecordFilterBuilder,
-  type RecordFilterField,
-} from "./RecordFilterBuilder";
-import { Button } from "@/components/ui/button";
+import { RecordFilterPopover } from "./RecordFilterBuilder";
+import { Button, IconButton } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Disclosure } from "@/components/ui/disclosure";
-import { Input, NativeSelect } from "@/components/ui/field";
-
-function hrefWith(base: string, current: Record<string, string | undefined>, mine: boolean) {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(current)) {
-    if (value !== undefined && key !== "after" && key !== "page") params.set(key, value);
-  }
-  if (mine) params.set("mine", "true");
-  else params.set("mine", "false");
-  const query = params.toString();
-  return query ? `${base}?${query}` : base;
-}
+import { Field, Input, NativeSelect } from "@/components/ui/field";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Segment, SegmentedControl } from "@/components/ui/tabs";
+import {
+  buildFilter,
+  describeLeaf,
+  filterClauses,
+  hrefWithQuery,
+  PAGING_RESET,
+  type FilterMatch,
+  type RecordFilterField,
+} from "@/lib/records-filter";
 
 export function RecordViewBar({
   base,
@@ -51,86 +50,137 @@ export function RecordViewBar({
   fields: RecordFilterField[];
   canShare: boolean;
 }) {
+  const router = useRouter();
+  const [saveOpen, setSaveOpen] = useState(false);
   const mine = query.mine === "true";
   const endpoint = `/api/a/${encodeURIComponent(appId)}/${encodeURIComponent(objectApiName)}/views`;
-  const activeFilter = definition.filter;
+  const { match, clauses } = filterClauses(definition.filter);
+  const byName = new Map(fields.map((field) => [field.apiName, field]));
+
+  function applyFilter(nextMatch: FilterMatch, next: RecordListFilter[]) {
+    const filter = buildFilter(nextMatch, next);
+    router.push(
+      hrefWithQuery(base, query, {
+        ...PAGING_RESET,
+        filter: filter ? JSON.stringify(filter) : "null",
+      }),
+    );
+  }
+
   return (
     <div className="records-viewbar">
-      <form className="records-view-picker" action={base} method="get">
-        <label className="sr-only" htmlFor="records-saved-view">Saved view</label>
-        <NativeSelect id="records-saved-view" name="view" defaultValue={selectedView?.id ?? ""}>
-          <option value="">All {objectLabel.toLowerCase()}</option>
-          {views.map((view) => (
-            <option value={view.id} key={view.id}>
-              {view.label}{view.shared ? " · shared" : ""}
-            </option>
-          ))}
-        </NativeSelect>
-        <Button size="sm" type="submit">Open</Button>
-      </form>
-      {query.q && (
-        <span className="records-filter-chip">
-          Name contains <b>{query.q}</b>
-          <Link href={hrefWith(base, { ...query, q: "" }, mine)} aria-label="Clear search">
-            ×
-          </Link>
-        </span>
+      <NativeSelect
+        aria-label="Saved view"
+        className="records-view-select"
+        value={selectedView?.id ?? ""}
+        onChange={(event) =>
+          router.push(event.target.value ? `${base}?view=${encodeURIComponent(event.target.value)}` : base)
+        }
+      >
+        <option value="">All {objectLabel.toLowerCase()}</option>
+        {views.map((view) => (
+          <option value={view.id} key={view.id}>
+            {view.label}
+            {view.shared ? " · shared" : ""}
+          </option>
+        ))}
+      </NativeSelect>
+      {clauses.length > 1 && (
+        <SegmentedControl aria-label="How filters combine">
+          <Segment selected={match === "and"} onClick={() => match !== "and" && applyFilter("and", clauses)}>
+            Match all
+          </Segment>
+          <Segment selected={match === "or"} onClick={() => match !== "or" && applyFilter("or", clauses)}>
+            Match any
+          </Segment>
+        </SegmentedControl>
       )}
-      {activeFilter && (
-        <>
-          {filterSummaries(activeFilter, fields).map((summary) => (
-            <span className="records-filter-chip" key={summary.key}>
-              {summary.field} <b>{summary.value}</b>
-            </span>
-          ))}
-          <Link
-            className="records-filter-clear"
-            href={hrefWith(base, { ...query, filter: "null" }, mine)}
-            aria-label="Clear all filters"
-          >
-            ×
-          </Link>
-        </>
-      )}
-      <RecordFilterBuilder base={base} query={query} fields={fields} />
-      <Disclosure title="Save view" className="records-view-save">
-        <form action={endpoint} method="post" className="grid gap-3">
-          <label className="grid gap-1.5 font-body text-ui-caption font-bold text-text2">
-            Name
-            <Input name="label" required maxLength={80} defaultValue={selectedView?.label} />
-          </label>
-          <input
-            type="hidden"
-            name="definition"
-            value={JSON.stringify(definition)}
-            data-ui-bespoke-reason="hidden view definition payload"
-          />
-          {canShare && (
-            <Checkbox
-              name="shared"
-              value="true"
-              defaultChecked={selectedView?.shared}
-              label="Share with this organization"
+      {clauses.map((clause, index) => {
+        const field = byName.get(clause.field);
+        const fieldLabel = field?.label ?? clause.field.replaceAll("_", " ");
+        const summary = describeLeaf(clause, field);
+        return (
+          <span className="records-filter-chip" key={`${clause.field}-${index}-${summary}`}>
+            <RecordFilterPopover
+              appId={appId}
+              fields={fields}
+              initial={clause}
+              onApply={(leaf) =>
+                applyFilter(match, clauses.map((current, position) => (position === index ? leaf : current)))
+              }
+              trigger={
+                <Button variant="ghost" size="sm" className="records-filter-chip-edit" aria-label={`Edit filter: ${fieldLabel} ${summary}`}>
+                  {fieldLabel} <b>{summary}</b>
+                </Button>
+              }
             />
-          )}
-          <Button variant="primary" size="sm" type="submit">Save</Button>
-        </form>
-      </Disclosure>
+            <IconButton
+              size="icon-sm"
+              variant="ghost"
+              label={`Remove filter: ${fieldLabel} ${summary}`}
+              onClick={() => applyFilter(match, clauses.filter((_, position) => position !== index))}
+            >
+              <X aria-hidden="true" />
+            </IconButton>
+          </span>
+        );
+      })}
+      <RecordFilterPopover
+        appId={appId}
+        fields={fields}
+        onApply={(leaf) => applyFilter(match, [...clauses, leaf])}
+        trigger={
+          <Button size="sm" variant="secondary">
+            <ListFilter aria-hidden="true" /> {clauses.length > 0 ? "Add filter" : "Filter"}
+          </Button>
+        }
+      />
+      {clauses.length > 0 && (
+        <Button size="sm" variant="ghost" onClick={() => applyFilter(match, [])}>
+          Clear filters
+        </Button>
+      )}
+      <Popover open={saveOpen} onOpenChange={setSaveOpen}>
+        <PopoverTrigger asChild>
+          <Button size="sm" variant="ghost">
+            <BookmarkPlus aria-hidden="true" /> Save view
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent aria-label="Save view">
+          <form action={endpoint} method="post" className="grid gap-3">
+            <Field label="Name" htmlFor="records-save-view-name">
+              <Input id="records-save-view-name" name="label" required maxLength={80} defaultValue={selectedView?.label} />
+            </Field>
+            <input
+              type="hidden"
+              name="definition"
+              value={JSON.stringify(definition)}
+              data-ui-bespoke-reason="hidden view definition payload"
+            />
+            {canShare && (
+              <Checkbox
+                name="shared"
+                value="true"
+                defaultChecked={selectedView?.shared}
+                label="Share with this organization"
+              />
+            )}
+            <Button variant="primary" type="submit">
+              Save view
+            </Button>
+          </form>
+        </PopoverContent>
+      </Popover>
       {selectedView && (!selectedView.shared || canShare) && (
         <form action={`${endpoint}/${selectedView.id}`} method="post">
-          <Button
-            variant="danger"
-            size="sm"
-            type="submit"
-            aria-label={`Delete ${selectedView.label}`}
-          >
+          <Button variant="danger" size="sm" type="submit" aria-label={`Delete ${selectedView.label}`}>
             Delete view
           </Button>
         </form>
       )}
       {ownerScoped && (
         <Link
-          href={hrefWith(base, query, !mine)}
+          href={hrefWithQuery(base, query, { ...PAGING_RESET, mine: mine ? "false" : "true" })}
           className="records-scope-toggle"
           role="switch"
           aria-checked={mine}
@@ -143,81 +193,4 @@ export function RecordViewBar({
       )}
     </div>
   );
-}
-
-function filterLeaves(expression: RecordFilterExpression): RecordFilterExpression[] {
-  return "op" in expression
-    ? expression.clauses.flatMap(filterLeaves)
-    : [expression];
-}
-
-function optionLabel(field: RecordFilterField | undefined, value: unknown): string {
-  for (const option of field?.picklistValues ?? []) {
-    if (typeof option === "string" && option === value) return option;
-    if (option && typeof option === "object" && !Array.isArray(option)) {
-      const candidate = option as Record<string, unknown>;
-      if (candidate.value === value && typeof candidate.label === "string") {
-        return candidate.label;
-      }
-    }
-  }
-  if (Array.isArray(value)) return value.map((item) => optionLabel(field, item)).join(", ");
-  return String(value ?? "");
-}
-
-function filterValue(
-  filter: RecordListFilter,
-  field: RecordFilterField | undefined,
-): string {
-  if (filter.operator === "is_open") return "is open";
-  if (filter.operator === "is_closed") return "is closed";
-  if (filter.operator === "is_null") return filter.value ? "is empty" : "is set";
-  if (filter.operator === "relative") {
-    const value = filter.value && typeof filter.value === "object" && !Array.isArray(filter.value)
-      ? filter.value as Record<string, unknown>
-      : {};
-    if (value.macro === "this_quarter") return "this quarter";
-    if (value.macro === "last_n_days") return `in the last ${String(value.days)} days`;
-  }
-  const operatorLabels: Partial<Record<RecordFilterOperator, string>> = {
-    eq: "is",
-    neq: "is not",
-    in: "is one of",
-    not_in: "is not one of",
-    contains: "contains",
-    starts_with: "starts with",
-    gt: "is greater than",
-    gte: "is at least",
-    lt: "is less than",
-    lte: "is at most",
-  };
-  const operator = operatorLabels[filter.operator] ??
-    filter.operator.replaceAll("_", " ");
-  const value = optionLabel(field, filter.value);
-  return value ? `${operator} ${value}` : operator;
-}
-
-function filterSummaries(
-  expression: RecordFilterExpression,
-  fields: RecordFilterField[],
-): Array<{ key: string; field: string; value: string }> {
-  const byName = new Map(fields.map((field) => [field.apiName, field]));
-  const leaves = filterLeaves(expression);
-  const summaries = leaves.slice(0, 3).flatMap((leaf, index) => {
-    if ("op" in leaf) return [];
-    const field = byName.get(leaf.field);
-    return [{
-      key: `${leaf.field}-${leaf.operator}-${index}`,
-      field: field?.label ?? leaf.field.replaceAll("_", " "),
-      value: filterValue(leaf, field),
-    }];
-  });
-  if (leaves.length > 3) {
-    summaries.push({
-      key: "remaining-filters",
-      field: `+${leaves.length - 3}`,
-      value: "more",
-    });
-  }
-  return summaries;
 }
