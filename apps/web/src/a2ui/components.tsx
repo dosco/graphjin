@@ -456,20 +456,24 @@ function TableBlock({ props, ctx }: { props: TableProps & { id: string }; ctx: R
                       key={col.key}
                       style={col.align ? { textAlign: col.align } : undefined}
                     >
-                      {c === 0 && openable ? (
+                      {c === 0 && (openable || drill) ? (
                         <span className="work-table-name">
-                          <Button
-                            variant="ghost"
-                            className="work-table-toggle"
-                            aria-expanded={expanded}
-                            aria-controls={detailId}
-                            onClick={() => toggle(name)}
-                          >
-                            <span className="work-table-chevron" aria-hidden="true">
-                              <ChevronRight strokeWidth={2} />
-                            </span>
-                            {name}
-                          </Button>
+                          {openable ? (
+                            <Button
+                              variant="ghost"
+                              className="work-table-toggle"
+                              aria-expanded={expanded}
+                              aria-controls={detailId}
+                              onClick={() => toggle(name)}
+                            >
+                              <span className="work-table-chevron" aria-hidden="true">
+                                <ChevronRight strokeWidth={2} />
+                              </span>
+                              {name}
+                            </Button>
+                          ) : (
+                            <span className="work-table-label">{name}</span>
+                          )}
                           {drill ? (
                             <Button
                               variant="ghost"

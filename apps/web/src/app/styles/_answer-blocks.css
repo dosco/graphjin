@@ -260,6 +260,11 @@
   white-space: normal;
 }
 
+.work-table-label {
+  color: var(--text);
+  font-weight: 650;
+}
+
 .work-table-toggle:hover {
   color: var(--accent);
 }
@@ -299,7 +304,7 @@
 
 @media (hover: none) {
   .work-table-ask {
-    display: none;
+    opacity: 1;
   }
 }
 
