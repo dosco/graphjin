@@ -191,7 +191,7 @@ describe("generated record read queries", () => {
       rows_cursor: "opaque-cursor",
       search: "%50\\%\\_ready%",
       viewer_id: "admin-1",
-      filter_0: ["new"],
+      filter_0_0: "new",
     });
   });
 
@@ -247,9 +247,9 @@ describe("generated record read queries", () => {
       filter: { field: "status", operator: "not_in", value: ["closed"] },
     });
     expect(count.query).toContain(
-      "metric: operations__work_order(where: { data: { status: { not_in: $filter_0 } } }) { count_id }",
+      "metric: operations__work_order(where: { and: [{ data: { status: { neq: $filter_0_0 } } }] }) { count_id }",
     );
-    expect(count.variables).toEqual({ filter_0: ["closed"] });
+    expect(count.variables).toEqual({ filter_0_0: "closed" });
 
     const current = snapshot();
     current.fields.push({
@@ -305,12 +305,12 @@ describe("generated record read queries", () => {
     });
 
     expect(built.query).toContain("and: [{ data: { due_at: { gte: $filter_0_0_start } } }")
-    expect(built.query).toContain("or: [{ data: { status: { in: $filter_0_1_0 } } }")
+    expect(built.query).toContain("or: [{ or: [{ data: { status: { eq: $filter_0_1_0_0 } } }] }")
     expect(built.query).not.toContain("blocked");
     expect(built.variables).toMatchObject({
       filter_0_0_start: "2026-07-01T00:00:00.000Z",
       filter_0_0_end: "2026-10-01T00:00:00.000Z",
-      filter_0_1_0: ["new"],
+      filter_0_1_0_0: "new",
       filter_0_1_1: "blocked",
     });
   });
@@ -540,6 +540,21 @@ describe("record document reads", () => {
     expect(built.query).toContain("{ data: { hours: { in: [1, 2.5] } } }");
     expect(built.query).toContain("{ data: { urgent: { eq: true } } }");
     expect(built.variables).not.toHaveProperty("filter_0_0");
+  });
+
+  it("binds every text list value instead of writing it into the query", () => {
+    const built = buildRecordListQuery({
+      snapshot: snapshot(),
+      objectApiName: "work_order",
+      role: "admin",
+      userId: "user-1",
+      filter: { field: "status", operator: "in", value: ["it's", 'x" } }) { id } }'] },
+    });
+    expect(built.query).toContain(
+      "or: [{ data: { status: { eq: $filter_0_0 } } }, { data: { status: { eq: $filter_0_1 } } }]",
+    );
+    expect(built.query).not.toContain("it's");
+    expect(built.variables).toMatchObject({ filter_0_0: "it's", filter_0_1: 'x" } }) { id } }' });
   });
 
   it("rejects a number filter with a non-numeric value", () => {

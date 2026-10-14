@@ -416,6 +416,26 @@ function semanticPicklistValues(
 
 const NUMERIC_FIELD_KINDS = new Set<RecordFieldKind>(["integer", "decimal", "currency", "percent"]);
 
+/**
+ * GraphJin 3.21.13 types a list variable compared with a JSON key as jsonb,
+ * and does not escape inline string literals. A text list therefore becomes
+ * one bound comparison per value: eq joined by or, or neq joined by and.
+ */
+function textListClause(
+  field: RecordField,
+  operator: "in" | "not_in",
+  values: unknown[],
+  variable: string,
+): { clause: string; variables: Array<[string, unknown]> } {
+  const comparison = operator === "in" ? "eq" : "neq";
+  const variables = values.map((value, index): [string, unknown] => [`${variable}_${index}`, String(value)]);
+  const clauses = variables.map(([name]) => `{ ${documentClause(field, `{ ${comparison}: $${name} }`)} }`);
+  return {
+    clause: `${operator === "in" ? "or" : "and"}: [${clauses.join(", ")}]`,
+    variables,
+  };
+}
+
 /** A filter on a key inside the record document. */
 function documentClause(field: RecordField, body: string): string {
   return `${RECORD_DATA_COLUMN}: { ${field.columnName}: ${body} }`;
@@ -455,8 +475,10 @@ function filterClause(
     if (typeof filter.value !== "boolean") {
       throw new RecordReadTargetError("is_null record filters require a boolean value");
     }
+    // GraphJin 3.21.13 casts a JSON key to boolean for a boolean is_null
+    // flag; a string flag reads the key as stored.
     return {
-      clause: documentClause(field, `{ is_null: ${filter.value ? "true" : "false"} }`),
+      clause: documentClause(field, `{ is_null: ${filter.value ? '"true"' : '"false"'} }`),
       variables: [],
     };
   }
@@ -471,10 +493,7 @@ function filterClause(
         variables: [],
       };
     }
-    return {
-      clause: documentClause(field, `{ ${filter.operator}: $${variable} }`),
-      variables: [[variable, filter.value.map(String)]],
-    };
+    return textListClause(field, filter.operator, filter.value, variable);
   }
   if (filter.operator === "contains" || filter.operator === "starts_with") {
     if (typeof filter.value !== "string" || !filter.value.trim()) {
@@ -510,10 +529,7 @@ function filterClause(
   }
   if (filter.operator === "is_open" || filter.operator === "is_closed") {
     const semantic = filter.operator === "is_open" ? "open" : "closed";
-    return {
-      clause: documentClause(field, `{ in: $${variable} }`),
-      variables: [[variable, semanticPicklistValues(field, semantic)]],
-    };
+    return textListClause(field, "in", semanticPicklistValues(field, semantic), variable);
   }
   if (
     filter.operator !== "eq" &&
