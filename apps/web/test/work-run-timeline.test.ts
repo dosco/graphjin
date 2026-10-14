@@ -1,11 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import {
-  buildRunTimeline,
-  splitProgressSections,
-  type WorkEvent,
-} from "../src/app/(work)/work/work-screen";
+import { splitProgressSections } from "../src/app/(work)/work/work-progress";
+import { buildRunTimeline } from "../src/app/(work)/work/work-timeline-model";
+import type { WorkEvent } from "../src/app/(work)/work/work-types";
 
 function toolItems(events: WorkEvent[]) {
   return buildRunTimeline(events, "run-1").items.filter(
@@ -82,7 +80,7 @@ describe("work run action timeline", () => {
 
   it("keeps provider progress detail behind its heading", async () => {
     const source = await readFile(
-      fileURLToPath(new URL("../src/app/(work)/work/work-screen.tsx", import.meta.url)),
+      fileURLToPath(new URL("../src/app/(work)/work/work-progress.tsx", import.meta.url)),
       "utf8",
     );
     expect(source).toContain('import { Disclosure } from "@/components/ui/disclosure";');
