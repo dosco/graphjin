@@ -1,5 +1,25 @@
 # Changelog
 
+## [4.1.0](https://github.com/open-neko/openneko/compare/v4.0.1...v4.1.0) (2026-10-14)
+
+
+### Features
+
+* **web:** drill-down questions fill the composer and workflow API results carry the answer table ([8764371](https://github.com/open-neko/openneko/commit/8764371e5f73dc3bbe7089bc968885ad2974468c))
+* **web:** drill-down questions fill the composer instead of sending ([a89c7aa](https://github.com/open-neko/openneko/commit/a89c7aadefc5ef5319b3c76ccc570f82e968a0c0))
+* **web:** list an answer's files under a collapsed Files section with type icons ([e5f2d59](https://github.com/open-neko/openneko/commit/e5f2d59c27946dc48507361fa8ff2ca5381158c3))
+* **workflows:** keep the answer card in every routine run by default ([34094e4](https://github.com/open-neko/openneko/commit/34094e4bdfa8c05985de7cfe22ad88d760a8108e))
+* **workflows:** return the answer table in API run results and make telemetry opt-in ([3eb265e](https://github.com/open-neko/openneko/commit/3eb265ed48ee238ea32450b456fe1be33f83401a))
+
+
+### Bug Fixes
+
+* **db:** add the API telemetry migration to the canonical migrations ([9b866d1](https://github.com/open-neko/openneko/commit/9b866d1ead4c67005a5eefc9057df40282e78934))
+* **web:** give the drill-down question only to table rows with a sub-table ([844048a](https://github.com/open-neko/openneko/commit/844048aa17dbc59ec0b32183eb00866b79171aca))
+* **web:** keep the chat icon on table rows without a sub-table ([82be7da](https://github.com/open-neko/openneko/commit/82be7da1ede20ce316b35882d1048ff850826cb0))
+* **web:** open a cached bot chat without the route skeleton ([f440a91](https://github.com/open-neko/openneko/commit/f440a91426a46056d5399985c11c6ef1663b2141))
+* **workflows:** count actual API spend in rolling budgets and show the last request body ([c7fb9fa](https://github.com/open-neko/openneko/commit/c7fb9faf7101116b3828595b1b5959c274d7815b))
+
 ## [4.0.1](https://github.com/open-neko/openneko/compare/v4.0.0...v4.0.1) (2026-10-14)
 
 
