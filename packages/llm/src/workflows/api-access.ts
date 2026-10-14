@@ -10,7 +10,7 @@ import {
   workflow_definition,
 } from "@neko/db";
 import {
-  DEFAULT_WORKFLOW_API_LIMITS,
+  defaultWorkflowApiLimits,
   WorkflowApiError,
   issueWorkflowApiToken,
   parseCompiledWorkflowBatchContract,
@@ -50,7 +50,7 @@ export type VerifiedWorkflowApiAccess = WorkflowApiAccessView & {
 type AccessRow = typeof workflow_api_access.$inferSelect;
 
 function rowLimits(row: AccessRow | null): WorkflowApiLimits {
-  if (!row) return { ...DEFAULT_WORKFLOW_API_LIMITS };
+  if (!row) return defaultWorkflowApiLimits();
   return {
     requestLimitPerMinute: row.request_limit_per_minute,
     pollLimitPerMinute: row.poll_limit_per_minute,
@@ -253,6 +253,7 @@ async function issueAndStoreToken(input: {
         token_created_at: now,
         token_rotated_at: input.action === "rotate" ? now : null,
         updated_at: now,
+        ...limitColumns(defaultWorkflowApiLimits()),
       })
       .onConflictDoUpdate({
         target: workflow_api_access.workflow_id,
@@ -363,6 +364,12 @@ const LIMIT_COLUMNS = {
   retentionHours: "retention_hours",
 } as const satisfies Record<keyof WorkflowApiLimits, keyof AccessRow>;
 
+function limitColumns(limits: WorkflowApiLimits): Partial<typeof workflow_api_access.$inferInsert> {
+  return Object.fromEntries(
+    (Object.keys(LIMIT_COLUMNS) as Array<keyof WorkflowApiLimits>).map((key) => [LIMIT_COLUMNS[key], limits[key]]),
+  );
+}
+
 export async function updateWorkflowApiLimits(input: {
   orgId: string;
   workflowId: string;
@@ -433,7 +440,10 @@ export async function updateWorkflowApiLimits(input: {
   } else {
     await db()
       .insert(workflow_api_access)
-      .values(values as typeof workflow_api_access.$inferInsert);
+      .values({
+        ...limitColumns(defaultWorkflowApiLimits()),
+        ...values,
+      } as typeof workflow_api_access.$inferInsert);
   }
   await recordAuditEvent({
     orgId: input.orgId,

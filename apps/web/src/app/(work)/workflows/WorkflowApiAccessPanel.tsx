@@ -509,6 +509,9 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
               onCopy={() => void copyText("single", singleExample)}
               meta={lastRequest ? "Body from the last call" : "Replace {} with the JSON this workflow reads"}
             />
+            <p className="text-ui-caption leading-[1.5] text-text3">
+              Send one Idempotency-Key per request and reuse it on retries, so a retry returns the first run. Retry on 429 and 5xx with the same key until the call returns 202.
+            </p>
             {access.batch.available ? (
               <ApiExample
                 title="Batch"

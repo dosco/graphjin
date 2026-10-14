@@ -4,6 +4,7 @@ import {
   WorkflowApiError,
   boundedWorkflowApiResult,
   compileWorkflowApiBatchContract,
+  defaultWorkflowApiLimits,
   hashWorkflowApiIdempotencyKey,
   issueWorkflowApiToken,
   parseCompiledWorkflowBatchContract,
@@ -242,6 +243,20 @@ describe("workflow API contract", () => {
     expect(workflowApiAnswer([])).toBeNull();
     expect(boundedWorkflowApiResult("Done.", 4_096, answer)).toEqual({ text: "Done.", answer, truncated: false });
     expect(boundedWorkflowApiResult("Done.", 64, answer)).toEqual({ text: "Done.", truncated: false });
+  });
+
+  it("takes new API access limits from the workflow agent limits", () => {
+    const saved = { tools: process.env.OPENNEKO_WORKFLOW_MAX_TOOL_CALLS, timeout: process.env.OPENNEKO_WORKFLOW_TURN_TIMEOUT_MS };
+    process.env.OPENNEKO_WORKFLOW_MAX_TOOL_CALLS = "40";
+    process.env.OPENNEKO_WORKFLOW_TURN_TIMEOUT_MS = "300000";
+    try {
+      expect(defaultWorkflowApiLimits()).toMatchObject({ maxToolCalls: 40, maxModelCalls: 81, maxRuntimeSeconds: 300 });
+    } finally {
+      if (saved.tools === undefined) delete process.env.OPENNEKO_WORKFLOW_MAX_TOOL_CALLS;
+      else process.env.OPENNEKO_WORKFLOW_MAX_TOOL_CALLS = saved.tools;
+      if (saved.timeout === undefined) delete process.env.OPENNEKO_WORKFLOW_TURN_TIMEOUT_MS;
+      else process.env.OPENNEKO_WORKFLOW_TURN_TIMEOUT_MS = saved.timeout;
+    }
   });
 
   it("rejects payload depth and request bytes before admission", () => {
