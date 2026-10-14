@@ -2094,6 +2094,9 @@ type Column struct {
 	Array      bool
 	FullText   bool   `mapstructure:"full_text" json:"full_text" yaml:"full_text" jsonschema:"title=Full Text Search"`
 	ForeignKey string `mapstructure:"related_to" json:"related_to" yaml:"related_to" jsonschema:"title=Related To,example=other_table.id_column,example=users.id"`
+	// MergeOnUpdate makes updates to this JSON column merge the new keys into
+	// the stored document instead of replacing it. Postgres jsonb only.
+	MergeOnUpdate bool `mapstructure:"merge_on_update" json:"merge_on_update" yaml:"merge_on_update" jsonschema:"title=Merge On Update"`
 
 	// relatedAs is the field name a relationship `as` gives this foreign key.
 	relatedAs string

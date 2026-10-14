@@ -242,7 +242,9 @@ type Exp struct {
 		Path     []string
 		RelPath  []sdata.DBRel // set when Right.Col lives on a related table
 	}
-	Geo       *GeoExp // GIS-specific expression data
+	Geo *GeoExp // GIS-specific expression data
+	// LeftJSONB compares the JSON value at Left.Path rather than its text.
+	LeftJSONB bool
 	Children  []*Exp
 	childrenA [5]*Exp
 
@@ -320,6 +322,21 @@ type OrderBy struct {
 	// compileChildColumns runs; the renderer emits a bare quoted alias
 	// (ORDER BY "revenue" DESC), which all 7 SQL dialects accept.
 	Alias string
+	// Path is set when ordering by a key inside a JSON column, for example
+	// order_by: { metadata: { rank: desc } }. Col is the JSON column.
+	Path []string
+}
+
+// CursorName is the column name this order uses in the cursor CTE.
+func (ob OrderBy) CursorName() string {
+	switch {
+	case len(ob.Path) != 0:
+		return ob.Col.Name + "__" + strings.Join(ob.Path, "__")
+	case ob.Key != "":
+		return ob.Col.Name + "_" + ob.Key
+	default:
+		return ob.Col.Name
+	}
 }
 
 type PagingType int8
@@ -1323,8 +1340,8 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 		isnull.Left.Table = "__cur"
 		isnull.Left.Col = ob.Col
 
-		if ob.Key != "" {
-			isnull.Left.ColName = ob.Col.Name + "_" + ob.Key
+		if ob.Key != "" || len(ob.Path) != 0 {
+			isnull.Left.ColName = ob.CursorName()
 		}
 
 		or.Children = []*Exp{isnull}
@@ -1342,11 +1359,13 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 
 			f := newExp()
 			f.Left.Col = ob.Col
+			f.Left.Path = ob.Path
+			f.LeftJSONB = len(ob.Path) != 0
 			f.Right.Table = "__cur"
 			f.Right.Col = ob.Col
 
-			if ob.Key != "" {
-				f.Right.ColName = ob.Col.Name + "_" + ob.Key
+			if ob.Key != "" || len(ob.Path) != 0 {
+				f.Right.ColName = ob.CursorName()
 			}
 
 			switch {
@@ -1362,17 +1381,20 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 				f.Op = OpGreaterThan
 			}
 
-			// could be null needs to be handled
-			if !ob.Col.NotNull {
+			// could be null needs to be handled; a JSON key can be missing
+			// even when its column is NOT NULL
+			if !ob.Col.NotNull || len(ob.Path) != 0 {
 				isnull1 := newExpOp(OpIsNull)
 				isnull1.Left.Table = "__cur"
 				isnull1.Left.Col = ob.Col
 
 				isnull2 := newExpOp(OpIsNull)
 				isnull2.Left.Col = ob.Col
+				isnull2.Left.Path = ob.Path
+				isnull2.LeftJSONB = len(ob.Path) != 0
 
-				if ob.Key != "" {
-					isnull1.Left.ColName = ob.Col.Name + "_" + ob.Key
+				if ob.Key != "" || len(ob.Path) != 0 {
+					isnull1.Left.ColName = ob.CursorName()
 				}
 
 				or1 := newExpOp(OpOr)
