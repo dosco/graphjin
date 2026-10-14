@@ -317,7 +317,7 @@ func (d *OracleDialect) RenderList(ctx Context, ex *qcode.Exp) {
 			ctx.WriteString(ex.Right.ListVal[i])
 		case qcode.ValStr:
 			ctx.WriteString(`'`)
-			ctx.WriteString(ex.Right.ListVal[i])
+			ctx.WriteString(quoteSQLString(ex.Right.ListVal[i], false))
 			ctx.WriteString(`'`)
 		case qcode.ValDBVar:
 			d.RenderVar(ctx, ex.Right.ListVal[i])
@@ -554,7 +554,7 @@ func (d *OracleDialect) RenderLiteral(ctx Context, val string, valType qcode.Val
 		ctx.WriteString(val)
 	case qcode.ValStr:
 		ctx.WriteString(`'`)
-		ctx.WriteString(val)
+		ctx.WriteString(quoteSQLString(val, false))
 		ctx.WriteString(`'`)
 	default:
 		ctx.Quote(val)
