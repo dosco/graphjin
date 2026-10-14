@@ -434,17 +434,11 @@ async function checkQueueAndBudgets(
   const reservedCostMicros =
     input.mode === "batch" ? 0 : input.limits.maxCostMicrosPerRun;
   const usage = await client.query<{
-    workflow_tokens: string;
     workflow_cost: string;
     org_tokens: string;
     org_cost: string;
   }>(
     `select
-       coalesce(sum(coalesce(actual_tokens, 0)) filter (
-         where workflow_id = $1
-           and created_at >=
-             $3::timestamptz - ($4::bigint * interval '1 second')
-       ), 0) as workflow_tokens,
        coalesce(sum(coalesce(actual_cost_micros, 0)) filter (
          where workflow_id = $1
            and created_at >=
@@ -469,10 +463,9 @@ async function checkQueueAndBudgets(
       input.limits.rollingWindowSeconds,
     ],
   );
-  // Budgets count what runs actually used. Each run is still stopped at its own per-run ceiling.
+  // A routine's budget is its cost; the organization also caps tokens. Each run still stops at its own ceilings.
   const totals = usage.rows[0];
   if (
-    Number(totals?.workflow_tokens ?? 0) >= input.limits.rollingTokenBudget ||
     Number(totals?.workflow_cost ?? 0) >= input.limits.rollingCostMicrosBudget ||
     Number(totals?.org_tokens ?? 0) >= orgTokenBudget ||
     Number(totals?.org_cost ?? 0) >= orgCostBudget

@@ -83,7 +83,6 @@ const LIMIT_DEFINITIONS: Array<{
   { key: "maxArtifactBytes", label: "CSV artifact", group: "Batch and retention", min: 1_024, max: 52_428_800, unit: "bytes" },
   { key: "retentionHours", label: "Result retention", group: "Batch and retention", min: 1, max: 720, unit: "hours" },
   { key: "rollingWindowSeconds", label: "Budget window", group: "Rolling budget", min: 3_600, max: 604_800, unit: "seconds" },
-  { key: "rollingTokenBudget", label: "Token budget", group: "Rolling budget", min: 1_000, max: 10_000_000, unit: "tokens" },
   { key: "rollingCostMicrosBudget", label: "Spend budget", group: "Rolling budget", min: 1_000, max: 1_000_000_000, unit: "USD micros" },
 ];
 
