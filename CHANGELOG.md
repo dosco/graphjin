@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.2.0](https://github.com/open-neko/openneko/compare/v4.1.0...v4.2.0) (2026-10-14)
+
+
+### Features
+
+* **workflows:** start workflow API limits from the workflow agent limits ([a41fd70](https://github.com/open-neko/openneko/commit/a41fd701b7a10367506c8dafef3266a7365bdada))
+* **workflows:** start workflow API limits from the workflow agent limits ([f633eb1](https://github.com/open-neko/openneko/commit/f633eb138896df7bc136480354bc6b24c58f542c))
+
 ## [4.1.0](https://github.com/open-neko/openneko/compare/v4.0.1...v4.1.0) (2026-10-14)
 
 
