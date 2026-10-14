@@ -7,7 +7,8 @@ import { registerComponent } from "./renderer";
 import type { RenderContext } from "./renderer";
 import type { A2UIComponent } from "./types";
 import type { AnswerMapProps, MapPoint } from "./catalog";
-import { drillInto, drillPrompt } from "./drill";
+import { AskCard } from "./ask";
+import { drillPrompt } from "./drill";
 
 type Rect = { x: number; y: number; w: number; h: number };
 
@@ -264,7 +265,6 @@ function TileMap({ props, ctx, points, active, setActive, onFail }: Shared & { o
           const label = event.features?.[0]?.properties?.label;
           if (typeof label !== "string") return;
           setActive(label);
-          drillInto(ctx, props.id, props.drill, label);
         });
         map.on("move", refreshPins);
         map.on("resize", refreshPins);
@@ -329,6 +329,8 @@ function TileMap({ props, ctx, points, active, setActive, onFail }: Shared & { o
 
 function AnswerMap({ props, ctx }: { props: AnswerMapProps & { id: string }; ctx: RenderContext }) {
   const [active, setActive] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  if (active && active !== picked) setPicked(active);
   const [mode, setMode] = useState<"tiles" | "failed" | "off" | null>(null);
   const points = validMapPoints(props.points);
   const peak = Math.max(...points.map((item) => item.v), 1);
@@ -360,7 +362,7 @@ function AnswerMap({ props, ctx }: { props: AnswerMapProps & { id: string }; ctx
                   title={prompt}
                   onFocus={() => setActive(point.label)}
                   onBlur={() => setActive((current) => (current === point.label ? null : current))}
-                  onClick={() => drillInto(ctx, props.id, props.drill, point.label)}
+                  onClick={() => setActive(point.label)}
                 >
                   {point.label}
                 </Button>
@@ -377,8 +379,22 @@ function AnswerMap({ props, ctx }: { props: AnswerMapProps & { id: string }; ctx
           );
         })}
       </ol>
+      {picked ? (
+        <AskCard
+          ctx={ctx}
+          componentId={props.id}
+          template={props.drill}
+          label={picked}
+          value={mapValue(points, picked, props.valueLabel)}
+        />
+      ) : null}
     </figure>
   );
+}
+
+function mapValue(points: MapPoint[], label: string, valueLabel: string): string | undefined {
+  const point = points.find((item) => item.label === label);
+  return point ? formatMapValue(point.v, valueLabel, false) : undefined;
 }
 
 registerComponent("AnswerMap", (comp: A2UIComponent, ctx: RenderContext) => {

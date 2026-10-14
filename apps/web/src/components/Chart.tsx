@@ -74,18 +74,16 @@ export default function Chart({
   valueLabel?: string;
   baselineLabel?: string;
   maxBarSize?: number;
-  /** Called with a point's label when the reader clicks it. */
+  /** Called with a point's label when the reader points at it or taps it. */
   onSelect?: (label: string) => void;
 }) {
   const chartId = useId();
   if (!data || data.length === 0) return null;
+  const pick = (state: { activeLabel?: string | number } | null) => {
+    if (state?.activeLabel !== undefined) onSelect?.(String(state.activeLabel));
+  };
   const selectable = onSelect
-    ? {
-        onClick: (state: { activeLabel?: string | number } | null) => {
-          if (state?.activeLabel !== undefined) onSelect(String(state.activeLabel));
-        },
-        style: { cursor: "pointer" },
-      }
+    ? { onClick: pick, onMouseMove: pick, style: { cursor: "pointer" } }
     : {};
 
   // Defensive: agents sometimes mis-classify chartType. Coerce to a sensible
@@ -137,7 +135,13 @@ export default function Chart({
             outerRadius={h * 0.4}
             paddingAngle={2}
             strokeWidth={0}
-            {...(onSelect ? { onClick: (entry: { d?: string }) => entry?.d && onSelect(entry.d), style: { cursor: "pointer" } } : {})}
+            {...(onSelect
+              ? {
+                  onClick: (entry: { d?: string }) => entry?.d && onSelect(entry.d),
+                  onMouseEnter: (entry: { d?: string }) => entry?.d && onSelect(entry.d),
+                  style: { cursor: "pointer" },
+                }
+              : {})}
           >
             {data.map((_, i) => (
               <Cell key={i} fill={colors[i % colors.length]} />

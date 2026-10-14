@@ -9,7 +9,7 @@
  */
 
 import React from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, MessageSquare } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
@@ -63,6 +63,8 @@ import type {
 import BriefingCard from "@/components/BriefingCard";
 import Chart from "@/components/Chart";
 import { displayFigure } from "./answer-format";
+import { formatCompact } from "@/lib/format-number";
+import { AskCard, AskChip } from "./ask";
 import { drillInto, drillPrompt } from "./drill";
 import "./answer-blocks";
 import "./answer-diagram";
@@ -298,8 +300,12 @@ registerComponent("BriefingCard", renderMetricCard);
 
 // An answer chart uses the Briefing visualization without the saved-metric
 // lifecycle, mood, or card actions. Exact values remain available to readers.
-registerComponent("Chart", (comp: A2UIComponent, ctx: RenderContext) => {
-  const props = comp as unknown as ChartProps & { id: string };
+registerComponent("Chart", (comp: A2UIComponent, ctx: RenderContext) => (
+  <AnswerChart key={comp.id} props={comp as unknown as ChartProps & { id: string }} ctx={ctx} />
+));
+
+function AnswerChart({ props, ctx }: { props: ChartProps & { id: string }; ctx: RenderContext }) {
+  const [picked, setPicked] = React.useState<string | null>(null);
   const drill = typeof props.drill === "string" && props.drill.includes("{label}") ? props.drill : undefined;
   const data = Array.isArray(props.data) ? props.data : [];
   const validPoints = data.every((point) =>
@@ -318,7 +324,7 @@ registerComponent("Chart", (comp: A2UIComponent, ctx: RenderContext) => {
   }
   const hasBaseline = data.some((point) => point.t !== undefined);
   return (
-    <figure key={props.id} className="work-chart" aria-label={props.title}>
+    <figure className="work-chart" aria-label={props.title}>
       <figcaption className="work-chart-title">{props.title}</figcaption>
       <Chart
         type={props.type}
@@ -327,8 +333,17 @@ registerComponent("Chart", (comp: A2UIComponent, ctx: RenderContext) => {
         valueLabel={props.valueLabel}
         baselineLabel={props.baselineLabel}
         maxBarSize={44}
-        onSelect={drill ? (label) => drillInto(ctx, props.id, drill, label) : undefined}
+        onSelect={drill ? setPicked : undefined}
       />
+      {picked ? (
+        <AskCard
+          ctx={ctx}
+          componentId={props.id}
+          template={drill}
+          label={picked}
+          value={chartValue(data.find((point) => point.d === picked)?.v, props.valueLabel)}
+        />
+      ) : null}
       <table className="sr-only">
         <caption>{props.title} values</caption>
         <thead>
@@ -358,7 +373,11 @@ registerComponent("Chart", (comp: A2UIComponent, ctx: RenderContext) => {
       ) : null}
     </figure>
   );
-});
+}
+
+function chartValue(value: number | undefined, label: string): string | undefined {
+  return value === undefined ? undefined : `${label}: ${formatCompact(value)}`;
+}
 
 // ─── Table ───
 // Structured tabular data. Tables used to only exist as Markdown GFM, which
@@ -393,6 +412,10 @@ function TableBlock({ props, ctx }: { props: TableProps & { id: string }; ctx: R
   const details = props.details && typeof props.details === "object" ? props.details : {};
   const firstKey = columns[0]?.key;
   const [open, setOpen] = React.useState<Set<string>>(() => new Set());
+  const hasOpenable = rows.some((row) => {
+    const name = firstKey ? String(row[firstKey] ?? "") : "";
+    return Boolean(name && (details[name] || drillPrompt(props.drill, name)));
+  });
   const toggle = (name: string) => setOpen((current) => {
     const next = new Set(current);
     if (next.has(name)) next.delete(name);
@@ -422,54 +445,55 @@ function TableBlock({ props, ctx }: { props: TableProps & { id: string }; ctx: R
             const name = firstKey ? String(row[firstKey] ?? "") : "";
             const drill = name ? drillPrompt(props.drill, name) : null;
             const detail = name ? details[name] : undefined;
-            const expanded = detail ? open.has(name) : false;
+            const openable = Boolean(detail || drill);
+            const expanded = openable && open.has(name);
             const detailId = `${props.id}-detail-${r}`;
             return (
               <React.Fragment key={r}>
-                <TableRow data-drill={drill ? "" : undefined} data-expanded={detail ? String(expanded) : undefined} data-indent={!detail && Object.keys(details).length ? "" : undefined}>
+                <TableRow data-expanded={openable ? String(expanded) : undefined} data-indent={!openable && hasOpenable ? "" : undefined}>
                   {columns.map((col, c) => (
                     <TableCell
                       key={col.key}
                       style={col.align ? { textAlign: col.align } : undefined}
                     >
-                      {c === 0 && detail ? (
+                      {c === 0 && openable ? (
                         <span className="work-table-name">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="work-table-expand"
-                          aria-expanded={expanded}
-                          aria-controls={detailId}
-                          aria-label={`${expanded ? "Hide" : "Show"} details for ${name}`}
-                          onClick={() => toggle(name)}
-                        >
-                          <ChevronRight aria-hidden="true" strokeWidth={2} />
-                        </Button>
-                        {drill ? (
-                          <Button variant="ghost" className="work-table-drill" title={drill} onClick={() => drillInto(ctx, props.id, props.drill, name)}>
+                          <Button
+                            variant="ghost"
+                            className="work-table-toggle"
+                            aria-expanded={expanded}
+                            aria-controls={detailId}
+                            onClick={() => toggle(name)}
+                          >
+                            <span className="work-table-chevron" aria-hidden="true">
+                              <ChevronRight strokeWidth={2} />
+                            </span>
                             {name}
                           </Button>
-                        ) : name}
+                          {drill ? (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="work-table-ask"
+                              aria-label={drill}
+                              title={drill}
+                              onClick={() => drillInto(ctx, props.id, props.drill, name)}
+                            >
+                              <MessageSquare aria-hidden="true" strokeWidth={2.2} />
+                            </Button>
+                          ) : null}
                         </span>
-                      ) : c === 0 && drill ? (
-                        <Button
-                          variant="ghost"
-                          className="work-table-drill"
-                          title={drill}
-                          onClick={() => drillInto(ctx, props.id, props.drill, name)}
-                        >
-                          {name}
-                        </Button>
                       ) : (
                         String(row[col.key] ?? "")
                       )}
                     </TableCell>
                   ))}
                 </TableRow>
-                {detail && expanded ? (
+                {expanded ? (
                   <TableRow className="work-table-detail-row" id={detailId}>
                     <TableCell colSpan={columns.length}>
-                      <DataTable columns={detail.columns ?? []} rows={detail.rows ?? []} className="work-table work-subtable" />
+                      {detail ? <DataTable columns={detail.columns ?? []} rows={detail.rows ?? []} className="work-table work-subtable" /> : null}
+                      <AskChip ctx={ctx} componentId={props.id} template={props.drill} label={name} className="work-table-detail-ask" />
                     </TableCell>
                   </TableRow>
                 ) : null}

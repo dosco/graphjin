@@ -68,11 +68,6 @@
   line-height: 1.2;
 }
 
-.answer-compare-drill {
-  flex: 0 0 auto;
-  color: var(--accent);
-}
-
 .answer-compare dl {
   margin: 0;
 }
@@ -247,48 +242,110 @@
   white-space: normal;
 }
 
-.work-table-drill {
+.work-table-name {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.work-table-toggle {
   min-height: 0;
   height: auto;
   margin: -4px -6px;
   padding: 4px 6px;
+  align-items: flex-start;
   color: var(--text);
   font-weight: 650;
   text-align: left;
   white-space: normal;
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  text-underline-offset: 3px;
 }
 
-.work-table-drill:hover {
+.work-table-toggle:hover {
   color: var(--accent);
 }
 
-.work-table-name {
+.work-table-chevron {
   display: inline-flex;
-  align-items: flex-start;
-}
-
-.work-table-expand {
-  width: 24px;
-  min-width: 24px;
-  height: 24px;
-  min-height: 0;
-  margin: -2px 6px -2px -4px;
-  padding: 0;
-  vertical-align: middle;
+  flex: 0 0 auto;
+  margin: 1px 6px 0 -4px;
   color: var(--text2);
 }
 
-.work-table-expand svg {
+.work-table-chevron svg {
   width: 16px;
   height: 16px;
   transition: transform 150ms ease;
 }
 
-.work-table-expand[aria-expanded="true"] svg {
+.work-table-toggle[aria-expanded="true"] .work-table-chevron svg {
   transform: rotate(90deg);
+}
+
+.work-table-ask {
+  margin: -6px 0;
+  color: var(--accent);
+  opacity: 0;
+}
+
+.work-table-ask:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: hover) {
+  .work-table tr:hover .work-table-ask {
+    opacity: 1;
+  }
+}
+
+@media (hover: none) {
+  .work-table-ask {
+    display: none;
+  }
+}
+
+.work-table-detail-ask {
+  margin-top: 10px;
+}
+
+.answer-ask {
+  max-width: 100%;
+  height: auto;
+  border-radius: 999px;
+  color: var(--text);
+  text-align: left;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.answer-ask svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.answer-ask-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.answer-ask-card-label {
+  font-weight: 700;
+}
+
+.answer-ask-card-value {
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.answer-compare-ask {
+  margin-top: 12px;
 }
 
 .work-table tr[data-indent] > td:first-child {
