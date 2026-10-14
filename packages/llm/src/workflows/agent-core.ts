@@ -52,6 +52,8 @@ export interface RunWorkflowAgentBackendInput {
   input?: Record<string, unknown>;
   reasoningEffort?: AgentReasoningEffort;
   maxToolIterations?: number;
+  /** Keep the answer card. Defaults to true; the API returns its table. */
+  wantsCards?: boolean;
   /** New turns allowed in the same run directory after a turn budget expires. */
   maxContinuations?: number;
 }
@@ -174,6 +176,7 @@ export async function runWorkflowAgentBackend(
             OPENNEKO_MCP_RUN_ID: runId,
             OPENNEKO_MCP_SKILLS_ROOT: workspace.skillsRoot,
             OPENNEKO_MCP_WORKFLOW_RUN_ID: workflowRunId,
+            ...(input.wantsCards !== false ? { OPENNEKO_MCP_CARD_SCHEMA: "rich" } : {}),
             ...(triggeredByObservationId
               ? { OPENNEKO_MCP_TRIGGERED_BY_OBSERVATION_ID: triggeredByObservationId }
               : {}),
@@ -184,6 +187,7 @@ export async function runWorkflowAgentBackend(
       timeoutMs,
       ...(reasoningEffort ? { reasoningEffort } : {}),
       ...(maxToolIterations ? { maxToolIterations } : {}),
+      wantsCards: input.wantsCards ?? true,
       networkHosts,
     });
     if (!result.timedOut || continuation >= maxContinuations || signal?.aborted) {

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import Select from "@/components/Select";
 import { Slider } from "@/components/ui/slider";
 import { formatUnitValue } from "./answer-format";
-import { drillInto, drillPrompt } from "./drill";
+import { AskChip } from "./ask";
 import { registerComponent, type RenderContext } from "./renderer";
 import type { A2UIComponent } from "./types";
 import type { CompareProps, WhatIfControl, WhatIfProps } from "./catalog";
@@ -32,17 +32,10 @@ function CompareBlock({ props, ctx }: { props: CompareProps & { id: string }; ct
     <section className="answer-compare" aria-label="Comparison" style={{ "--answer-compare-count": rows.length } as React.CSSProperties}>
       {rows.map((row, index) => {
         const name = String(row[nameColumn.key] ?? "");
-        const drill = drillPrompt(props.drill, name);
         return (
           <article className="answer-compare-panel" key={`${name}-${index}`}>
             <header className="answer-compare-head">
               <h3>{name}</h3>
-              {drill ? (
-                <Button variant="ghost" size="sm" className="answer-compare-drill" onClick={() => drillInto(ctx, props.id, props.drill, name)}>
-                  Open
-                  <span className="sr-only">: {drill}</span>
-                </Button>
-              ) : null}
             </header>
             <dl>
               {measures.map((column) => {
@@ -62,6 +55,7 @@ function CompareBlock({ props, ctx }: { props: CompareProps & { id: string }; ct
                 );
               })}
             </dl>
+            <AskChip ctx={ctx} componentId={props.id} template={props.drill} label={name} className="answer-compare-ask" />
           </article>
         );
       })}

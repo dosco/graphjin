@@ -211,12 +211,6 @@
   white-space: normal;
 }
 
-.answer-map-rank li:has(button.answer-map-rank-name) .answer-map-rank-name {
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  text-underline-offset: 3px;
-}
-
 .answer-map-rank-value {
   color: var(--text);
   font-family: var(--font-display), "Archivo", sans-serif;

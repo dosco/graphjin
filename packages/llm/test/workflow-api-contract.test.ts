@@ -10,6 +10,7 @@ import {
   parseWorkflowApiBearer,
   validateWorkflowApiInput,
   verifyWorkflowApiTokenDigest,
+  workflowApiAnswer,
   workflowApiLimitPatch,
 } from "../src/workflows/api-contract";
 
@@ -212,6 +213,35 @@ describe("workflow API contract", () => {
       96,
     );
     expect(bounded).toMatchObject({ truncated: true });
+  });
+
+  it("returns an API run's answer card as a table with numbers and row details", () => {
+    const answer = workflowApiAnswer([{
+      version: "v1.0",
+      createSurface: {
+        surfaceId: "answer-1",
+        components: [
+          { id: "root", component: "Answer", title: "Orders by region", children: ["table", "callout"] },
+          {
+            id: "table",
+            component: "Table",
+            columns: [{ key: "c0", label: "Region" }, { key: "c1", label: "Orders" }, { key: "c2", label: "Status" }],
+            rows: [{ c0: "North", c1: "12", c2: "Behind" }],
+            details: { North: { columns: [{ key: "c0", label: "Store" }, { key: "c1", label: "Orders" }], rows: [{ c0: "Store 1", c1: "7" }] } },
+          },
+          { id: "callout", component: "Callout", text: "North is behind plan." },
+        ],
+      },
+    }]);
+    expect(answer).toEqual({
+      title: "Orders by region",
+      table: { columns: ["Region", "Orders", "Status"], rows: [{ Region: "North", Orders: 12, Status: "Behind" }] },
+      details: { North: { columns: ["Store", "Orders"], rows: [{ Store: "Store 1", Orders: 7 }] } },
+      callout: "North is behind plan.",
+    });
+    expect(workflowApiAnswer([])).toBeNull();
+    expect(boundedWorkflowApiResult("Done.", 4_096, answer)).toEqual({ text: "Done.", answer, truncated: false });
+    expect(boundedWorkflowApiResult("Done.", 64, answer)).toEqual({ text: "Done.", truncated: false });
   });
 
   it("rejects payload depth and request bytes before admission", () => {

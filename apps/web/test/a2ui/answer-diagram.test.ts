@@ -64,9 +64,9 @@ describe("answer diagram", () => {
     expect(diagramGraph([], edges).nodes).toHaveLength(30);
   });
 
-  it("renders drill-down steps as buttons", () => {
+  it("renders drill-down steps as buttons that pick the step", () => {
     const html = render({ id: "d", component: "Diagram", title: "Order flow", nodes: [], edges: EDGES, drill: "Show records in {label}" });
-    expect(html).toContain('aria-label="Inventory. Show records in Inventory"');
+    expect(html).toContain('aria-label="Inventory" aria-pressed="false"');
     expect(html).toContain("marker");
   });
 });

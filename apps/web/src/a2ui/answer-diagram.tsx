@@ -5,7 +5,8 @@ import { registerComponent } from "./renderer";
 import type { RenderContext } from "./renderer";
 import type { A2UIComponent } from "./types";
 import type { DiagramEdge, DiagramNode, DiagramProps } from "./catalog";
-import { drillInto, drillPrompt } from "./drill";
+import { AskCard } from "./ask";
+import { drillPrompt } from "./drill";
 
 const MAX_NODES = 30;
 const NODE_GAP = 18;
@@ -271,6 +272,7 @@ function useWidth(): [React.RefObject<HTMLDivElement | null>, number] {
 
 function Diagram({ props, ctx }: { props: DiagramProps & { id: string }; ctx: RenderContext }) {
   const [ref, available] = useWidth();
+  const [picked, setPicked] = useState<string | null>(null);
   const graph = diagramGraph(props.nodes, props.edges);
   let direction: Direction = available < NARROW ? "tb" : "lr";
   let layout = layoutDiagram(graph.nodes, graph.edges, direction, available);
@@ -278,6 +280,7 @@ function Diagram({ props, ctx }: { props: DiagramProps & { id: string }; ctx: Re
     direction = "tb";
     layout = layoutDiagram(graph.nodes, graph.edges, direction, available);
   }
+  const pickedNode = graph.nodes.find((node) => node.id === picked);
   const scale = Math.max(0.78, Math.min(1, available / layout.width));
   const marker = `answer-diagram-arrow-${props.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
   return (
@@ -313,20 +316,22 @@ function Diagram({ props, ctx }: { props: DiagramProps & { id: string }; ctx: Re
             return (
               <g
                 key={node.id}
-                className={`answer-diagram-node${prompt ? " is-interactive" : ""}`}
+                className={`answer-diagram-node${prompt ? " is-interactive" : ""}${picked === node.id ? " is-picked" : ""}`}
                 transform={`translate(${node.x} ${node.y})`}
                 style={{ animationDelay: `${Math.min(index, 12) * 18}ms` }}
                 {...(prompt
                   ? {
                       role: "button",
                       tabIndex: 0,
-                      "aria-label": `${node.label}. ${prompt}`,
-                      "data-ui-bespoke-reason": "diagram step is an SVG mark that sends its drill-down question",
-                      onClick: () => drillInto(ctx, props.id, props.drill, node.label),
+                      "aria-label": node.label,
+                      "aria-pressed": picked === node.id,
+                      "data-ui-bespoke-reason": "diagram step is an SVG mark that picks the step and shows its question",
+                      onClick: () => setPicked(node.id),
+                      onMouseEnter: () => setPicked(node.id),
                       onKeyDown: (event: React.KeyboardEvent) => {
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
-                          drillInto(ctx, props.id, props.drill, node.label);
+                          setPicked(node.id);
                         }
                       },
                     }
@@ -343,8 +348,19 @@ function Diagram({ props, ctx }: { props: DiagramProps & { id: string }; ctx: Re
           })}
         </svg>
       </div>
+      {pickedNode ? (
+        <AskCard ctx={ctx} componentId={props.id} template={props.drill} label={pickedNode.label} value={stepLinks(graph, pickedNode.id)} />
+      ) : null}
     </figure>
   );
+}
+
+function stepLinks(graph: { nodes: DiagramNode[]; edges: DiagramEdge[] }, id: string): string | undefined {
+  const label = (nodeId: string) => graph.nodes.find((node) => node.id === nodeId)?.label ?? nodeId;
+  const from = graph.edges.filter((edge) => edge.to === id).map((edge) => label(edge.from));
+  const to = graph.edges.filter((edge) => edge.from === id).map((edge) => label(edge.to));
+  const parts = [from.length ? `From ${from.join(", ")}` : "", to.length ? `to ${to.join(", ")}` : ""].filter(Boolean);
+  return parts.length ? parts.join(" · ") : undefined;
 }
 
 registerComponent("Diagram", (comp: A2UIComponent, ctx: RenderContext) => {

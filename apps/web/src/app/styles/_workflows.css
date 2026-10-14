@@ -1148,16 +1148,23 @@
   white-space: nowrap;
 }
 
-.workflow-api-example > div > .ui-button {
-  flex: 0 0 auto;
-  margin-left: auto;
+.workflow-api-code {
+  position: relative;
+  min-width: 0;
+}
+
+.workflow-api-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
 }
 
 .workflow-api-example pre {
   max-width: 100%;
   margin: 0;
-  padding: 11px 12px;
-  overflow-x: auto;
+  padding: 11px 48px 11px 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: var(--neutral-soft);

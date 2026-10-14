@@ -78,6 +78,12 @@
   stroke: var(--accent);
 }
 
+.answer-diagram-node.is-picked .answer-diagram-box {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
 .answer-diagram-node.is-interactive:focus-visible .answer-diagram-box {
   stroke: var(--accent);
   stroke-width: 2.5;

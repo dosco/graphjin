@@ -3,6 +3,7 @@ import {
   WorkflowApiError,
   disableWorkflowApiAccess,
   enableWorkflowApiAccess,
+  getLastWorkflowApiRequest,
   getWorkflowApiAccess,
   rotateWorkflowApiToken,
   updateWorkflowApiLimits,
@@ -52,14 +53,17 @@ async function adminContext(context: RouteContext) {
 export async function GET(_request: Request, context: RouteContext) {
   const scope = await adminContext(context);
   if ("denied" in scope) return scope.denied;
-  const access = await getWorkflowApiAccess(scope.orgId, scope.workflowId);
+  const [access, lastRequest] = await Promise.all([
+    getWorkflowApiAccess(scope.orgId, scope.workflowId),
+    getLastWorkflowApiRequest(scope.orgId, scope.workflowId),
+  ]);
   if (!access) {
     return response(
       { error: { code: "workflow_not_found", message: "Workflow not found." } },
       404,
     );
   }
-  return response({ access });
+  return response({ access, lastRequest });
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -103,12 +107,14 @@ export async function PATCH(request: Request, context: RouteContext) {
   try {
     const body = (await request.json().catch(() => ({}))) as {
       limits?: unknown;
+      includeTelemetry?: unknown;
     };
     const access = await updateWorkflowApiLimits({
       orgId: scope.orgId,
       workflowId: scope.workflowId,
       actor: scope.actor,
       limits: body.limits,
+      includeTelemetry: body.includeTelemetry,
     });
     return response({ access });
   } catch (error) {

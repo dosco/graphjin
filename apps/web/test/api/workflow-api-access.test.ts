@@ -31,6 +31,7 @@ vi.mock("@/lib/db", () => ({ getOrgId: mocks.getOrgId }));
 vi.mock("@neko/llm/workflows", () => ({
   WorkflowApiError: mocks.TestWorkflowApiError,
   getWorkflowApiAccess: mocks.getAccess,
+  getLastWorkflowApiRequest: async () => null,
   enableWorkflowApiAccess: mocks.enable,
   rotateWorkflowApiToken: mocks.rotate,
   disableWorkflowApiAccess: mocks.disable,

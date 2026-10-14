@@ -12,9 +12,11 @@ import { confirmDialog } from "@/components/ConfirmModal";
 import { ActionGroup } from "@/components/ui/action-group";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Field, Input } from "@/components/ui/field";
 import { Badge } from "@/components/ui/badge";
+import { copyText as writeClipboard } from "@/lib/copy-text";
 
 type WorkflowApiLimits = {
   requestLimitPerMinute: number;
@@ -45,6 +47,7 @@ type WorkflowApiAccess = {
   tokenRotatedAt: string | null;
   lastUsedAt: string | null;
   limits: WorkflowApiLimits;
+  includeTelemetry: boolean;
   batch: {
     available: boolean;
     recordsField: string | null;
@@ -120,6 +123,7 @@ function subscribeToOrigin(): () => void {
 
 export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
   const [access, setAccess] = useState<WorkflowApiAccess | null>(null);
+  const [lastRequest, setLastRequest] = useState<Record<string, unknown> | null>(null);
   const [draft, setDraft] = useState<Record<LimitKey, string> | null>(null);
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
@@ -138,23 +142,27 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
   const singleExample = useMemo(
     () =>
       [
-        `curl -X POST '${origin}${apiPath}?mode=single' \\`,
-        "  -H 'Authorization: Bearer $WORKFLOW_API_TOKEN' \\",
-        "  -H 'Idempotency-Key: order-1042-v1' \\",
-        "  -H 'Content-Type: application/json' \\",
-        "  --data '{\"orderId\":\"1042\",\"priority\":\"high\"}'",
+        `curl -X POST "${origin}${apiPath}?mode=single" \\`,
+        '  -H "Authorization: Bearer $WORKFLOW_API_TOKEN" \\',
+        '  -H "Idempotency-Key: $(uuidgen)" \\',
+        '  -H "Content-Type: application/json" \\',
+        "  --data @- <<'JSON'",
+        JSON.stringify(lastRequest ?? {}, null, 2),
+        "JSON",
       ].join("\n"),
-    [apiPath, origin],
+    [apiPath, lastRequest, origin],
   );
   const batchExample = useMemo(
     () => {
       const recordsField = access?.batch.recordsField ?? "records";
       return [
-        `curl -X POST '${origin}${apiPath}?mode=batch' \\`,
-        "  -H 'Authorization: Bearer $WORKFLOW_API_TOKEN' \\",
-        "  -H 'Idempotency-Key: export-2026-09-01-v1' \\",
-        "  -H 'Content-Type: application/json' \\",
-        `  --data '${JSON.stringify({ [recordsField]: [{ id: "1" }, { id: "2" }] })}'`,
+        `curl -X POST "${origin}${apiPath}?mode=batch" \\`,
+        '  -H "Authorization: Bearer $WORKFLOW_API_TOKEN" \\',
+        '  -H "Idempotency-Key: $(uuidgen)" \\',
+        '  -H "Content-Type: application/json" \\',
+        "  --data @- <<'JSON'",
+        JSON.stringify({ [recordsField]: [{ id: "1" }, { id: "2" }] }, null, 2),
+        "JSON",
       ].join("\n");
     },
     [access?.batch.recordsField, apiPath, origin],
@@ -182,12 +190,14 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
       }
       const body = (await response.json().catch(() => ({}))) as {
         access?: WorkflowApiAccess;
+        lastRequest?: Record<string, unknown> | null;
         error?: unknown;
       };
       if (!response.ok || !body.access) {
         throw new Error(errorMessage(body, "API access could not be loaded."));
       }
       setForbidden(false);
+      setLastRequest(body.lastRequest ?? null);
       applyAccess(body.access);
     } catch (cause) {
       setError(
@@ -322,9 +332,36 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
     }
   }, [applyAccess, draft, workflowId]);
 
+  const saveTelemetry = useCallback(async (includeTelemetry: boolean) => {
+    setBusy("telemetry");
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/workflows/${workflowId}/api-access`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ includeTelemetry }),
+      });
+      const body = (await response.json().catch(() => ({}))) as {
+        access?: WorkflowApiAccess;
+        error?: unknown;
+      };
+      if (!response.ok || !body.access) {
+        throw new Error(errorMessage(body, "Could not save the telemetry setting."));
+      }
+      applyAccess(body.access);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not save the telemetry setting.",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }, [applyAccess, workflowId]);
+
   const copyText = useCallback(async (key: string, value: string) => {
     try {
-      await navigator.clipboard.writeText(value);
+      await writeClipboard(value);
       setCopied(key);
       window.setTimeout(() => setCopied((current) => (current === key ? null : current)), 1_600);
     } catch {
@@ -457,13 +494,20 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
         {error ? <p className="workflow-api-message is-error" role="alert">{error}</p> : null}
         {notice ? <p className="workflow-api-message" role="status">{notice}</p> : null}
 
-        <Disclosure title="Request examples" meta="curl">
-          <div className="workflow-api-examples">
+        <Checkbox
+          label="Include run telemetry (timings, tokens, cost) in poll results"
+          checked={access.includeTelemetry}
+          disabled={busy !== null}
+          onCheckedChange={(checked) => void saveTelemetry(checked === true)}
+        />
+
+        <div className="workflow-api-examples">
             <ApiExample
-              title="Single run"
+              title="Call this workflow"
               value={singleExample}
               copied={copied === "single"}
               onCopy={() => void copyText("single", singleExample)}
+              meta={lastRequest ? "Body from the last call" : "Replace {} with the JSON this workflow reads"}
             />
             {access.batch.available ? (
               <ApiExample
@@ -478,8 +522,7 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
                 Batch mode stays unavailable until this workflow defines a validated record and CSV-column contract. Skills are optional and do not control batch readiness.
               </p>
             )}
-          </div>
-        </Disclosure>
+        </div>
 
         <Disclosure title="Admission limits" meta="Fail closed">
           <form
@@ -569,12 +612,20 @@ function ApiExample({
       <div>
         <strong>{title}</strong>
         {meta ? <span>{meta}</span> : null}
-        <Button size="sm" variant="ghost" onClick={onCopy}>
+      </div>
+      <div className="workflow-api-code">
+        <pre><code>{value}</code></pre>
+        <Button
+          size="icon-sm"
+          variant="secondary"
+          className="workflow-api-copy"
+          aria-label={copied ? "Copied" : `Copy ${title.toLowerCase()}`}
+          title={copied ? "Copied" : "Copy"}
+          onClick={onCopy}
+        >
           {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-          {copied ? "Copied" : "Copy"}
         </Button>
       </div>
-      <pre><code>{value}</code></pre>
     </div>
   );
 }

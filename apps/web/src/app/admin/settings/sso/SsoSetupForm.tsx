@@ -14,6 +14,7 @@ import type {
   SsoSetupStatus,
   SsoSetupStatusResult,
 } from "@/lib/sso-setup";
+import { copyText } from "@/lib/copy-text";
 
 const copyClass = "text-ui-body-sm text-text3 leading-[1.45]";
 
@@ -305,7 +306,7 @@ export default function SsoSetupForm({
   async function copyLink() {
     if (!status?.portalLink) return;
     try {
-      await navigator.clipboard.writeText(status.portalLink);
+      await copyText(status.portalLink);
       toast.success("Link copied.");
     } catch {
       toast.error("Could not copy. Select the link and copy manually.");

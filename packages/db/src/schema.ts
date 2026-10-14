@@ -1816,6 +1816,7 @@ export const workflow_api_access = pgTable(
       .notNull()
       .default(10000000),
     retention_hours: integer("retention_hours").notNull().default(168),
+    include_telemetry: boolean("include_telemetry").notNull().default(false),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },

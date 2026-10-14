@@ -61,6 +61,7 @@ import type {
   UploadedWorkFile,
   WorkEvent,
 } from "./work-types";
+import { copyText } from "@/lib/copy-text";
 
 const REASONING_STORAGE_KEY = "openneko.work.reasoning";
 
@@ -587,7 +588,7 @@ export default function WorkScreen() {
 
   async function copyUserMessage(text: string) {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyText(text);
     } catch {
       // clipboard permission denied or insecure context — silently no-op
     }

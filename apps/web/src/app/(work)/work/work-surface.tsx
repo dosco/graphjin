@@ -51,11 +51,18 @@ export function SurfaceBlock({ messages }: { messages: A2UIMessage[] }) {
     return next;
   }, [messages]);
 
-  const { submitFollowUp } = useWorkShell();
+  const { submitFollowUp, insertComposerRef } = useWorkShell();
   const nodes: React.ReactNode[] = [];
   for (const [, surface] of surfaces) {
     if (surface.components.size === 0) continue;
-    nodes.push(<InteractiveSurface key={surface.surfaceId} surface={surface} submitFollowUp={submitFollowUp} />);
+    nodes.push(
+      <InteractiveSurface
+        key={surface.surfaceId}
+        surface={surface}
+        submitFollowUp={submitFollowUp}
+        draftFollowUp={(prompt) => insertComposerRef.current?.(prompt)}
+      />,
+    );
   }
 
   if (nodes.length === 0) return null;
@@ -65,9 +72,11 @@ export function SurfaceBlock({ messages }: { messages: A2UIMessage[] }) {
 function InteractiveSurface({
   surface,
   submitFollowUp,
+  draftFollowUp,
 }: {
   surface: SurfaceState;
   submitFollowUp: (prompt: string) => void;
+  draftFollowUp: (prompt: string) => void;
 }) {
   const [dataModel, setDataModel] = useState(surface.dataModel);
   useEffect(() => {
@@ -86,11 +95,13 @@ function InteractiveSurface({
     },
     onAction: (
       _componentId: string,
-      _eventName: string,
+      eventName: string,
       context?: Record<string, unknown>,
     ) => {
       const followUp = buildActionFollowUp(context);
-      if (followUp) submitFollowUp(followUp);
+      if (!followUp) return;
+      if (eventName === "drill") draftFollowUp(followUp);
+      else submitFollowUp(followUp);
     },
   };
   const root = getRootComponent(liveSurface);

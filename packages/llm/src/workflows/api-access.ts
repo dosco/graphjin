@@ -1,9 +1,12 @@
 import {
   and,
   db,
+  desc,
   eq,
+  isNotNull,
   sql,
   workflow_api_access,
+  workflow_api_admission,
   workflow_definition,
 } from "@neko/db";
 import {
@@ -26,6 +29,8 @@ export type WorkflowApiAccessView = {
   tokenRotatedAt: Date | null;
   lastUsedAt: Date | null;
   limits: WorkflowApiLimits;
+  /** Poll responses carry run telemetry only when this is on. */
+  includeTelemetry: boolean;
   batch: {
     available: boolean;
     recordsField: string | null;
@@ -82,6 +87,7 @@ function toAccessView(input: {
     tokenRotatedAt: input.row?.token_rotated_at ?? null,
     lastUsedAt: input.row?.last_used_at ?? null,
     limits: rowLimits(input.row),
+    includeTelemetry: input.row?.include_telemetry ?? false,
     batch: {
       available: batchContract !== null,
       recordsField: batchContract?.recordsField ?? null,
@@ -126,6 +132,30 @@ export async function getWorkflowApiAccess(
     outputContract:
       (workflow.outputContract as Record<string, unknown> | null) ?? null,
   });
+}
+
+/** The body of the workflow's latest single-mode API call, shown as its request example. */
+export async function getLastWorkflowApiRequest(
+  orgId: string,
+  workflowId: string,
+): Promise<Record<string, unknown> | null> {
+  const [row] = await db()
+    .select({ payload: workflow_api_admission.request_payload })
+    .from(workflow_api_admission)
+    .where(
+      and(
+        eq(workflow_api_admission.org_id, orgId),
+        eq(workflow_api_admission.workflow_id, workflowId),
+        eq(workflow_api_admission.execution_mode, "single"),
+        isNotNull(workflow_api_admission.request_payload),
+      ),
+    )
+    .orderBy(desc(workflow_api_admission.created_at))
+    .limit(1);
+  const payload = row?.payload;
+  return payload && typeof payload === "object" && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>)
+    : null;
 }
 
 /** Public verifier intentionally looks up by opaque workflow UUID only. */
@@ -337,10 +367,14 @@ export async function updateWorkflowApiLimits(input: {
   orgId: string;
   workflowId: string;
   actor: LifecycleActor;
-  limits: unknown;
+  limits?: unknown;
+  includeTelemetry?: unknown;
 }): Promise<WorkflowApiAccessView> {
-  const patch = workflowApiLimitPatch(input.limits);
-  if (Object.keys(patch).length === 0) {
+  const patch = input.limits === undefined ? {} : workflowApiLimitPatch(input.limits);
+  if (input.includeTelemetry !== undefined && typeof input.includeTelemetry !== "boolean") {
+    throw new WorkflowApiError("invalid_telemetry", "includeTelemetry must be true or false.", 400);
+  }
+  if (Object.keys(patch).length === 0 && input.includeTelemetry === undefined) {
     throw new WorkflowApiError(
       "empty_limits",
       "At least one limit is required.",
@@ -369,6 +403,9 @@ export async function updateWorkflowApiLimits(input: {
     [keyof WorkflowApiLimits, number]
   >) {
     values[LIMIT_COLUMNS[key]] = value;
+  }
+  if (typeof input.includeTelemetry === "boolean") {
+    values.include_telemetry = input.includeTelemetry;
   }
   // Postgres evaluates workflow_api_access_token_state on the proposed row
   // before it resolves the conflict, so an upsert without the token columns
@@ -406,7 +443,7 @@ export async function updateWorkflowApiLimits(input: {
     payload: {
       actorUserId: input.actor.userId,
       actorRole: input.actor.role,
-      fields: Object.keys(patch).sort(),
+      fields: [...Object.keys(patch), ...(input.includeTelemetry === undefined ? [] : ["includeTelemetry"])].sort(),
     },
   });
   const access = await getWorkflowApiAccess(input.orgId, input.workflowId);
