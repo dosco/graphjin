@@ -196,23 +196,7 @@ describeIfLive("records write executor live integration", () => {
         id text primary key,
         org_id text not null,
         owner_user_id text not null,
-        name text not null,
-        status text not null,
-        legacy_code text,
-        owner_id text not null,
-        notes text,
-        enabled boolean,
-        quantity bigint,
-        score numeric(12,3),
-        cost numeric(12,2),
-        utilization numeric(6,2),
-        due_on date,
-        due_at timestamptz,
-        contact_email text,
-        contact_phone text,
-        website text,
-        tags jsonb,
-        related_loan_id text,
+        data jsonb not null,
         nk_created_at timestamptz not null,
         nk_created_by text not null,
         nk_updated_at timestamptz not null,
@@ -416,7 +400,7 @@ describeIfLive("records write executor live integration", () => {
           legacy_code: string;
           nk_deleted_at: Date | null;
         }>(
-          `select status, legacy_code, nk_deleted_at
+          `select data->>'status' as status, data->>'legacy_code' as legacy_code, nk_deleted_at
            from public.equipment__loan where id = 'loan-sync'`,
         );
         expect(synced.rows).toEqual([
@@ -529,42 +513,24 @@ describeIfLive("records write executor live integration", () => {
           id: "loan-1",
           fields: { related_loan: "loan-2" },
         });
-        const fieldMatrix = await testPool.query<{
-          notes: string;
-          enabled: boolean;
-          quantity: string;
-          score: string;
-          cost: string;
-          utilization: string;
-          due_on: string;
-          due_at: Date;
-          contact_email: string;
-          contact_phone: string;
-          website: string;
-          tags: string[];
-          related_loan_id: string;
-        }>(`
-          select notes, enabled, quantity, score, cost, utilization,
-                 due_on::text as due_on,
-                 due_at, contact_email, contact_phone, website, tags,
-                 related_loan_id
-          from public.equipment__loan where id = 'loan-1'
-        `);
-        expect(fieldMatrix.rows).toEqual([{
+        const fieldMatrix = await testPool.query<{ data: Record<string, unknown> }>(
+          "select data from public.equipment__loan where id = 'loan-1'",
+        );
+        expect(fieldMatrix.rows[0]?.data).toMatchObject({
           notes: "Issued for field inspections.\nReturn with charger.",
           enabled: true,
-          quantity: "7",
-          score: "98.125",
-          cost: "1234.50",
-          utilization: "63.50",
+          quantity: 7,
+          score: 98.125,
+          cost: 1234.5,
+          utilization: 63.5,
           due_on: "2026-08-15",
-          due_at: new Date("2026-08-15T11:00:00.000Z"),
+          due_at: "2026-08-15T11:00:00.000Z",
           contact_email: "ops@example.com",
           contact_phone: "+91 98765 43210",
           website: "https://example.com/loans/loan-1",
           tags: ["portable", "priority"],
           related_loan_id: "loan-2",
-        }]);
+        });
         await expect(
           executor.execute({
             actionRequestId: "request-update-other",
@@ -579,13 +545,17 @@ describeIfLive("records write executor live integration", () => {
         ).rejects.toBeInstanceOf(RecordNotFoundOrDeniedError);
 
         const readLoan = () =>
-          graphjin.execute<{ rows: Array<{ id: string; status: string }> }>({
-            operationName: "RecordsWriteReadAfterMutation",
-            query:
-              "query RecordsWriteReadAfterMutation { rows: equipment__loan(where: { id: { eq: $id } }, limit: 1) { id status } }",
-            variables: { id: "loan-1" },
-            token: serviceToken(),
-          });
+          graphjin
+            .execute<{ rows: Array<{ id: string; data: { status: string } }> }>({
+              operationName: "RecordsWriteReadAfterMutation",
+              query:
+                "query RecordsWriteReadAfterMutation { rows: equipment__loan(where: { id: { eq: $id } }, limit: 1) { id data } }",
+              variables: { id: "loan-1" },
+              token: serviceToken(),
+            })
+            .then((result) => ({
+              rows: result.rows.map((row) => ({ ...row.data, id: row.id })),
+            }));
         await expect(readLoan()).resolves.toMatchObject({
           rows: [{ id: "loan-1", status: "new" }],
         });
@@ -660,7 +630,7 @@ describeIfLive("records write executor live integration", () => {
           status: string;
           nk_deleted_at: Date | null;
         }>(`
-          select id, org_id, owner_user_id, status, nk_deleted_at
+          select id, org_id, owner_user_id, data->>'status' as status, nk_deleted_at
           from public.equipment__loan where nk_deleted_at is null order by id
         `);
         expect(rows.rows).toEqual([

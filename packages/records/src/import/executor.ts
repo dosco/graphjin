@@ -11,7 +11,7 @@ import {
   RecordsGraphjinRequestError,
   type RecordsGraphjinTransport,
 } from "../graphjin/client";
-import { RECORD_SYSTEM_COLUMNS } from "../policy/graphjin";
+import { RECORD_DATA_COLUMN, RECORD_SYSTEM_COLUMNS } from "../policy/graphjin";
 import { normalizeSalesforceId } from "../connect/salesforce/id";
 import { RecordRegistry } from "../registry";
 import type { RecordField, RecordObject } from "../types";
@@ -391,13 +391,26 @@ export class RecordImportExecutor {
     if (input.rows.length === 0) return new Set();
     const operationName = "RecordsImportDuplicateCheck";
     const field = input.plan.duplicateKey;
+    const inDocument = field !== "id";
+    // Keys inside the document compare as text, so the candidates do too.
     const data = await this.dependencies.graphjin.execute<Record<string, unknown>>({
       operationName,
-      query: `query ${operationName} { rows: ${input.object.tableName}(where: { ${field}: { in: $keys } }, limit: ${input.rows.length}) { ${field} } }`,
-      variables: { keys: input.rows.map((row) => row.duplicateValue) },
+      query: inDocument
+        ? `query ${operationName} { rows: ${input.object.tableName}(where: { ${RECORD_DATA_COLUMN}: { ${field}: { in: $keys } } }, limit: ${input.rows.length}) { id ${RECORD_DATA_COLUMN} } }`
+        : `query ${operationName} { rows: ${input.object.tableName}(where: { id: { in: $keys } }, limit: ${input.rows.length}) { id } }`,
+      variables: { keys: input.rows.map((row) => (inDocument ? String(row.duplicateValue) : row.duplicateValue)) },
       token: input.token,
     });
-    return new Set(resultRows(data, "rows").map((row) => comparable(row[field])));
+    return new Set(
+      resultRows(data, "rows").map((row) => {
+        const document = row[RECORD_DATA_COLUMN];
+        return comparable(
+          inDocument && document && typeof document === "object"
+            ? (document as Record<string, unknown>)[field]
+            : row[field],
+        );
+      }),
+    );
   }
 
   private async processChunk(input: {
@@ -520,7 +533,7 @@ export class RecordImportExecutor {
     });
     const rows = insertable.map((row) => ({
       id: row.id,
-      ...row.fields,
+      [RECORD_DATA_COLUMN]: row.fields,
       ...(input.object.visibility === "owner"
         ? {
             [RECORD_SYSTEM_COLUMNS.ownerUserId]:

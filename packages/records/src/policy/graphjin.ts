@@ -29,6 +29,9 @@ export const RECORD_SYSTEM_COLUMNS = {
   deletedAt: "nk_deleted_at",
 } as const;
 
+/** The jsonb document that holds every custom field of a record. */
+export const RECORD_DATA_COLUMN = "data";
+
 const HUMAN_SYSTEM_READ_COLUMNS = new Set([
   "id",
   RECORD_SYSTEM_COLUMNS.ownerUserId,
@@ -268,14 +271,11 @@ function readableColumns(input: {
   object: RecordPolicyRegistryObject;
   fields: RecordPolicyField[];
 }): string[] {
-  const liveCatalogColumns = new Set<string>(input.table.columns);
+  // Field-level access applies inside the document in the records read path.
   return uniqueSorted([
-    ...input.fields
-      .filter((field) => !field.archived && field.objectId === input.object.id)
-      .map((field) => field.columnName),
-    input.object.nameField,
+    RECORD_DATA_COLUMN,
     ...input.table.columns.filter((column) => HUMAN_SYSTEM_READ_COLUMNS.has(column)),
-  ]).filter((column) => liveCatalogColumns.has(column));
+  ]).filter((column) => (input.table.columns as string[]).includes(column));
 }
 
 function serviceInsertColumns(table: RecordCatalogTable): string[] {

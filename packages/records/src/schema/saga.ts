@@ -235,6 +235,12 @@ export function createRecordsSchemaWorkspace(configFile: string): RecordsSchemaW
   };
 }
 
+const TABLE_ACTIONS = new Set<RecordSchemaAction>([
+  "app_create",
+  "app_object_create",
+  "app_object_archive",
+]);
+
 export class RecordsSchemaSaga {
   constructor(
     private readonly dependencies: {
@@ -455,10 +461,6 @@ export class RecordsSchemaSaga {
   }
 
   async execute(actionRequestId: string): Promise<RecordSchemaChange> {
-    await this.dependencies.setDataPlaneReady(
-      false,
-      `records schema projection ${actionRequestId}`,
-    );
     const client = await this.dependencies.pool.connect();
     let change: RecordSchemaChange | null = null;
     try {
@@ -467,6 +469,19 @@ export class RecordsSchemaSaga {
       ]);
       change = await loadChange(client, actionRequestId);
       if (!change) throw new Error(`unknown records schema action request: ${actionRequestId}`);
+      // Fields live in each record's document, so only creating or archiving
+      // a table changes the physical schema. Everything else is a registry
+      // and policy update that the data plane serves without stopping.
+      const physical =
+        TABLE_ACTIONS.has(change.artifact.action) ||
+        !(await verifyRecordsGraphjinDdlApplied(this.dependencies.pool, change.artifact.objects))
+          .applied;
+      if (physical) {
+        await this.dependencies.setDataPlaneReady(
+          false,
+          `records schema projection ${actionRequestId}`,
+        );
+      }
       if (change.phase === "projected") {
         await this.restoreReadiness("records schema already projected");
         return change;

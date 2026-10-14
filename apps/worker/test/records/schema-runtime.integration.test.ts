@@ -71,7 +71,7 @@ describeIfLive("records schema worker runtime", () => {
     const cli = new RecordsGraphjinSchemaCli({
       command: async (_binary, args) => {
         if (args[0] === "version") {
-          return { stdout: "GraphJin 3.21.7\n", stderr: "" };
+          return { stdout: "GraphJin 3.21.13\n", stderr: "" };
         }
         if (args.includes("diff")) {
           return {
@@ -87,8 +87,7 @@ describeIfLive("records schema worker runtime", () => {
               id text primary key,
               org_id text not null,
               owner_user_id text not null,
-              status text,
-              subject text not null,
+              data jsonb not null,
               nk_created_at timestamptz not null,
               nk_created_by text not null,
               nk_updated_at timestamptz not null,
@@ -97,7 +96,6 @@ describeIfLive("records schema worker runtime", () => {
               nk_mutation_id text not null,
               nk_deleted_at timestamptz
             );
-            create index support_ticket_subject_idx on support__ticket (subject);
           `);
           physicallyApplied = true;
           return { stdout: "applied\n", stderr: "" };

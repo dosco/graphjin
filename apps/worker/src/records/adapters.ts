@@ -18,6 +18,7 @@ import {
   type ActionAdapter,
   type ActionRequestRecord,
 } from "@neko/llm/workflows";
+import { applyRecordNewFields, type RecordNewFieldsSchema } from "./new-fields.js";
 import {
   RECORD_SCHEMA_ACTION_DESCRIPTORS,
   RECORD_SCHEMA_ACTION_KINDS,
@@ -61,7 +62,7 @@ export const RECORD_ACTION_DESCRIPTORS = [
     kind: "record_create",
     scope: "internal",
     description:
-      "Create one record in an OpenNeko app through registry validation, app RBAC, and durable audit history.",
+      "Create one record in an OpenNeko app through registry validation, app RBAC, and durable audit history. A field name the object does not have yet becomes a proposed new field, typed from its value; an administrator approves the fields with the write.",
     default_mode: "ask",
     example: {
       app: "crm",
@@ -76,7 +77,7 @@ export const RECORD_ACTION_DESCRIPTORS = [
     kind: "record_update",
     scope: "internal",
     description:
-      "Update one OpenNeko app record; include expected field values when the change depends on what was read.",
+      "Update one OpenNeko app record; include expected field values when the change depends on what was read. Only the sent fields change. A field name the object does not have yet becomes a proposed new field that an administrator approves with the write.",
     default_mode: "ask",
     example: {
       app: "crm",
@@ -359,9 +360,9 @@ async function writeRequest(
   const payload = request.payload;
   const operation = operationForKind(kind);
   if (kind === "record_create") {
-    assertOnlyKeys(payload, ["app", "object", "fields"]);
+    assertOnlyKeys(payload, ["app", "object", "fields", "new_fields"]);
   } else if (kind === "record_update") {
-    assertOnlyKeys(payload, ["app", "object", "id", "fields", "expected"]);
+    assertOnlyKeys(payload, ["app", "object", "id", "fields", "expected", "new_fields"]);
   } else {
     assertOnlyKeys(payload, ["app", "object", "id"]);
   }
@@ -388,10 +389,16 @@ async function writeRequest(
   return { ...common, id: requiredString(payload, "id") };
 }
 
+export type RecordNewFieldsSupport = {
+  schema: RecordNewFieldsSchema;
+  approverIsAdmin: (request: ActionRequestRecord) => Promise<boolean>;
+};
+
 export function createRecordActionAdapter(
   kind: RecordActionKind,
   executor: RecordActionExecutor,
   resolveActor: RecordActionActorResolver = actorForRequest,
+  newFields?: RecordNewFieldsSupport,
 ): ActionAdapter {
   return async ({ request }) => {
     if (request.kind !== kind) {
@@ -401,6 +408,12 @@ export function createRecordActionAdapter(
     }
     let result: RecordWriteResult;
     try {
+      if (request.payload.new_fields !== undefined) {
+        if (!newFields) {
+          throw new RecordActionPayloadError("this worker cannot add new record fields");
+        }
+        await applyRecordNewFields({ request, ...newFields });
+      }
       result = await executor.execute(
         await writeRequest(kind, request, resolveActor),
       );
@@ -425,8 +438,9 @@ export function registerRecordActionAdapters(
   executor: RecordActionExecutor,
   register: (kind: string, adapter: ActionAdapter) => void = registerActionAdapter,
   resolveActor: RecordActionActorResolver = actorForRequest,
+  newFields?: RecordNewFieldsSupport,
 ): void {
   for (const kind of RECORD_ACTION_KINDS) {
-    register(kind, createRecordActionAdapter(kind, executor, resolveActor));
+    register(kind, createRecordActionAdapter(kind, executor, resolveActor, newFields));
   }
 }

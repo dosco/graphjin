@@ -90,6 +90,17 @@ function records(value: unknown): JsonRecord[] {
     : [];
 }
 
+/** Fields live in each row's data document; read them as top-level keys. */
+function flattenDocument(row: JsonRecord): JsonRecord {
+  const document = row.data;
+  return {
+    ...(document && typeof document === "object" && !Array.isArray(document)
+      ? (document as JsonRecord)
+      : {}),
+    id: row.id,
+  };
+}
+
 function integer(value: unknown, label: string): number {
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
@@ -217,11 +228,11 @@ async function validateSample(input: {
   if (expectedRows.length > 0) {
     const result: JsonRecord = await input.graphjin.execute<JsonRecord>({
       operationName: "RecordsImportValidationSample",
-      query: `query RecordsImportValidationSample { rows: ${input.object.tableName}(where: { id: { in: $ids } }, limit: ${expectedRows.length}) { id ${columns.join(" ")} } }`,
+      query: `query RecordsImportValidationSample { rows: ${input.object.tableName}(where: { id: { in: $ids } }, limit: ${expectedRows.length}) { id data } }`,
       variables: { ids: expectedRows.map((row) => row.id) },
       token: input.token,
     });
-    actualRows = records(result.rows);
+    actualRows = records(result.rows).map(flattenDocument);
   }
   const fieldsByColumn = new Map(input.fields.map((field) => [field.columnName, field]));
   const actualById = new Map(
@@ -318,11 +329,11 @@ async function validateObjectReferences(input: {
   while (scanned < input.expectedRows) {
     const result = await input.graphjin.execute<JsonRecord>({
       operationName: "RecordsImportReferenceScan",
-      query: `query RecordsImportReferenceScan($first: Int!${after ? ", $after: String!" : ""}) { rows: ${input.object.tableName}(first: $first${after ? ", after: $after" : ""}, order_by: { id: asc }) { id ${referenceFields.map((field) => field.columnName).join(" ")} } ${input.object.tableName}_cursor }`,
+      query: `query RecordsImportReferenceScan($first: Int!${after ? ", $after: String!" : ""}) { rows: ${input.object.tableName}(first: $first${after ? ", after: $after" : ""}, order_by: { id: asc }) { id data } ${input.object.tableName}_cursor }`,
       variables: { first: PAGE_SIZE, ...(after ? { after } : {}) },
       token: input.token,
     });
-    const page = records(result.rows);
+    const page = records(result.rows).map(flattenDocument);
     if (page.length === 0) break;
     scanned += page.length;
     for (const field of referenceFields) {

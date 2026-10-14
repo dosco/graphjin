@@ -91,15 +91,12 @@ describeIfRecordsDb("records schema saga integration", () => {
 
   async function createPhysical(object: RecordDdlObjectDefinition): Promise<void> {
     const table = quoteRecordIdentifier(object.tableName);
-    const index = quoteRecordIdentifier(
-      validateRecordIdentifier(`idx_${object.tableName}_name`),
-    );
     await testPool.query(`
       create table ${table} (
         id text primary key,
         org_id text not null,
         owner_user_id text not null,
-        name text not null,
+        data jsonb not null,
         nk_created_at timestamptz not null,
         nk_created_by text not null,
         nk_updated_at timestamptz not null,
@@ -108,7 +105,6 @@ describeIfRecordsDb("records schema saga integration", () => {
         nk_mutation_id text not null,
         nk_deleted_at timestamptz
       );
-      create index ${index} on ${table} (name);
     `);
   }
 
@@ -156,7 +152,7 @@ describeIfRecordsDb("records schema saga integration", () => {
     let physicallyApplied = false;
     const cli = new RecordsGraphjinSchemaCli({
       command: async (_binary, args) => {
-        if (args[0] === "version") return { stdout: "GraphJin 3.21.7\n", stderr: "" };
+        if (args[0] === "version") return { stdout: "GraphJin 3.21.13\n", stderr: "" };
         if (args.includes("diff")) {
           return {
             stdout: physicallyApplied

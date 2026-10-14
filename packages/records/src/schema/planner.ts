@@ -787,6 +787,7 @@ export class RecordsSchemaPlanner {
         detail: {
           definition: canonicalDefinition,
           preview,
+          payload: request.payload,
         },
         objects: await ddlMatchingPhysicalNullability(
           this.dependencies.pool,

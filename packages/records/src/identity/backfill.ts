@@ -7,7 +7,7 @@ import {
 } from "../actions/execution";
 import type { RecordsGraphjinTransport } from "../graphjin/client";
 import { validateRecordIdentifier } from "../naming";
-import { RECORD_SYSTEM_COLUMNS } from "../policy/graphjin";
+import { RECORD_DATA_COLUMN, RECORD_SYSTEM_COLUMNS } from "../policy/graphjin";
 import { RecordRegistry } from "../registry";
 import type { AppRegistrySnapshot, RecordField, RecordObject } from "../types";
 import { listIdentityMappings, type IdentityMapping } from "./map";
@@ -176,12 +176,12 @@ export class RecordOwnerBackfillExecutor {
     for (const [index, candidate] of input.candidates.entries()) {
       const where: string[] = [
         `id: { eq: $id_${index} }`,
-        `${input.target.ownerField.columnName}: { eq: $source_user_${index} }`,
+        `${RECORD_DATA_COLUMN}: { ${input.target.ownerField.columnName}: { eq: $source_user_${index} } }`,
         `${RECORD_SYSTEM_COLUMNS.deletedAt}: { is_null: true }`,
       ];
       if (input.target.sourceInstanceField) {
         where.push(
-          `${input.target.sourceInstanceField.columnName}: { eq: $source_instance_${index} }`,
+          `${RECORD_DATA_COLUMN}: { ${input.target.sourceInstanceField.columnName}: { eq: $source_instance_${index} } }`,
         );
         variables[`source_instance_${index}`] = input.request.sourceInstanceId;
       }
@@ -227,11 +227,11 @@ export class RecordOwnerBackfillExecutor {
     let unchanged = 0;
     do {
       const where = [
-        `${input.target.ownerField.columnName}: { eq: $source_user_id }`,
+        `${RECORD_DATA_COLUMN}: { ${input.target.ownerField.columnName}: { eq: $source_user_id } }`,
         ...(after ? ["id: { gt: $after }"] : []),
         ...(input.target.sourceInstanceField
           ? [
-              `${input.target.sourceInstanceField.columnName}: { eq: $source_instance_id }`,
+              `${RECORD_DATA_COLUMN}: { ${input.target.sourceInstanceField.columnName}: { eq: $source_instance_id } }`,
             ]
           : []),
       ];

@@ -320,6 +320,47 @@ export class RecordsAccessAdmin {
     });
   }
 
+  /**
+   * A field is hidden until a subject holds a grant for it. Give every user
+   * and group that can read the object the same access to a new field:
+   * read, plus write when it can create or update records.
+   */
+  async grantFieldLikeObject(input: {
+    orgId: string;
+    appId: string;
+    objectApiName: string;
+    fieldApiName: string;
+    actor: RecordAccessAuditActor;
+  }): Promise<{ granted: number }> {
+    const grants = await this.pool.query<{
+      subject_type: "user" | "group";
+      subject_id: string;
+      can_write: boolean;
+    }>(
+      `select g.subject_type, g.subject_id, (g.can_create or g.can_update) and not f.read_only as can_write
+       from engine.object_access_grant g
+       join engine.record_object o
+         on o.org_id = g.org_id and o.app_id = g.app_id and o.api_name = g.object_api_name
+       join engine.record_field f on f.object_id = o.id and f.org_id = o.org_id
+       where g.org_id = $1 and g.app_id = $2 and g.object_api_name = $3 and g.can_read
+         and g.subject_type in ('user', 'group')
+         and f.api_name = $4 and f.archived_at is null`,
+      [input.orgId, input.appId, input.objectApiName, input.fieldApiName],
+    );
+    for (const grant of grants.rows) {
+      await this.setField({
+        orgId: input.orgId,
+        appId: input.appId,
+        objectApiName: input.objectApiName,
+        fieldApiName: input.fieldApiName,
+        subject: { type: grant.subject_type, id: grant.subject_id },
+        permissions: { canRead: true, canWrite: grant.can_write },
+        actor: input.actor,
+      });
+    }
+    return { granted: grants.rows.length };
+  }
+
   async setField(input: {
     orgId: string;
     appId: string;

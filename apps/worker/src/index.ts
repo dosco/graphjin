@@ -104,6 +104,7 @@ import {
   getActionRequest,
   handleSourceChangeMatch,
   handleSubscriptionMatch,
+  registerActionRequestCreatedHook,
   registerBuiltinAdapters,
   registerFallbackActionAdapterResolver,
   seedDefaultActionPolicies,
@@ -165,6 +166,7 @@ import {
   registerRecordActionAdapters,
 } from "./records/adapters.js";
 import { registerRecordSchemaActions } from "./records/schema-adapters.js";
+import { approverIsAdmin, createRecordNewFieldsPreflightHook } from "./records/new-fields.js";
 import { registerRecordImportActions } from "./records/import-adapters.js";
 import { registerRecordIdentityActions } from "./records/identity-adapters.js";
 import { registerRecordSalesforceActions } from "./records/salesforce-adapters.js";
@@ -802,7 +804,13 @@ try {
 await seedDefaultActionPolicies(ADMIN_ORG_ID);
 registerBuiltinAdapters();
 registerFallbackActionAdapterResolver(resolveDeclarativePackActionAdapter);
-registerRecordActionAdapters(recordsWriteExecutor);
+registerRecordActionAdapters(recordsWriteExecutor, undefined, undefined, {
+  schema: recordsSchemaRuntime,
+  approverIsAdmin,
+});
+const unregisterRecordNewFieldsPreflight = registerActionRequestCreatedHook(
+  createRecordNewFieldsPreflightHook(recordsRegistry),
+);
 registerRecordAccessActions(new RecordsAccessAdmin(recordsPool));
 registerRecordBackfillAction(recordsBackfillExecutor);
 registerRecordIdentityActions(recordsOwnerBackfillExecutor);
@@ -1802,6 +1810,7 @@ const shutdown = async (signal: string) => {
   workflowApiDispatcher.stop();
   channelInbound.stop();
   unregisterRecordSchemaPreflight();
+  unregisterRecordNewFieldsPreflight();
   unregisterRecordImportPreflight();
   unregisterRecordArtifactImportPreflight();
   unregisterRecordSalesforcePreflight();

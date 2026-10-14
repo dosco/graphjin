@@ -27,6 +27,7 @@ import {
   buildRecordListQuery,
   buildRecordAggregateQuery,
   buildRecordRecycleListQuery,
+  projectRecordRows,
 } from "../src/read/query";
 import { RecordRegistry } from "../src/registry";
 import {
@@ -91,7 +92,7 @@ async function validateWithTestGraphjin(configDirectory: string): Promise<void> 
       graphjinImage,
       "version",
     ]);
-    expect(version.stdout).toContain("GraphJin 3.21.7");
+    expect(version.stdout).toContain("GraphJin 3.21.13");
     await runTestCommand("docker", [
       "run",
       "--rm",
@@ -146,8 +147,7 @@ describeIfRecordsDb("records GraphJin live-catalog policy integration", () => {
       create table public.equipment__loan (
         id text primary key,
         org_id text not null,
-        name text not null,
-        amount numeric,
+        data jsonb not null default '{}',
         owner_user_id text,
         nk_created_at timestamptz not null default now(),
         nk_updated_at timestamptz not null default now(),
@@ -156,7 +156,7 @@ describeIfRecordsDb("records GraphJin live-catalog policy integration", () => {
       create table public.equipment__asset (
         id text primary key,
         org_id text not null,
-        name text not null,
+        data jsonb not null default '{}',
         nk_created_at timestamptz not null default now(),
         nk_updated_at timestamptz not null default now(),
         nk_deleted_at timestamptz
@@ -165,18 +165,14 @@ describeIfRecordsDb("records GraphJin live-catalog policy integration", () => {
       create table public.crm__opportunity (
         id text primary key,
         org_id text not null,
-        name text not null,
         owner_user_id text,
-        stage text not null,
-        amount numeric,
-        close_date date,
+        data jsonb not null default '{}',
         nk_updated_at timestamptz not null default now()
       );
       create table public.crm__activity (
         id text primary key,
         org_id text not null,
-        opportunity text,
-        occurred_at timestamptz not null,
+        data jsonb not null default '{}',
         nk_updated_at timestamptz not null default now()
       );
       insert into engine.record_app (org_id, app_id, label, status)
@@ -213,28 +209,28 @@ describeIfRecordsDb("records GraphJin live-catalog policy integration", () => {
         ('org-a', 'member-2', 'member'),
         ('org-a', 'admin-1', 'admin'),
         ('org-a', 'service-1', 'service');
-      insert into public.equipment__loan (id, org_id, name, owner_user_id, amount) values
-        ('loan-1', 'org-a', 'Member One Loan', 'member-1', 100),
-        ('loan-2', 'org-a', 'Member Two Loan', 'member-2', 250),
-        ('loan-deleted-1', 'org-a', 'Deleted Member One Loan', 'member-1', 500),
-        ('loan-deleted-2', 'org-a', 'Deleted Member Two Loan', 'member-2', 750);
+      insert into public.equipment__loan (id, org_id, data, owner_user_id) values
+        ('loan-1', 'org-a', '{"name": "Member One Loan", "amount": 100}', 'member-1'),
+        ('loan-2', 'org-a', '{"name": "Member Two Loan", "amount": 250}', 'member-2'),
+        ('loan-deleted-1', 'org-a', '{"name": "Deleted Member One Loan", "amount": 500}', 'member-1'),
+        ('loan-deleted-2', 'org-a', '{"name": "Deleted Member Two Loan", "amount": 750}', 'member-2');
       update public.equipment__loan
       set nk_deleted_at = '2026-08-01T10:00:00Z'
       where id like 'loan-deleted-%';
-      insert into public.equipment__asset (id, org_id, name, nk_deleted_at)
-      values ('asset-deleted', 'org-a', 'Deleted Shared Asset', '2026-08-01T11:00:00Z');
-      insert into public.crm__opportunity
-        (id, org_id, name, owner_user_id, stage, amount, close_date)
+      insert into public.equipment__asset (id, org_id, data, nk_deleted_at)
+      values ('asset-deleted', 'org-a', '{"name": "Deleted Shared Asset"}', '2026-08-01T11:00:00Z');
+      insert into public.crm__opportunity (id, org_id, owner_user_id, data)
       values
-        ('opportunity-stale', 'org-a', 'Stale opportunity', 'member-1',
-         'proposal', 12000, '2026-08-20'),
-        ('opportunity-active', 'org-a', 'Active opportunity', 'member-2',
-         'discovery', 5000, '2026-08-22'),
-        ('opportunity-cross-org', 'org-b', 'Other org opportunity', null,
-         'proposal', 99999, '2026-08-25');
-      insert into public.crm__activity
-        (id, org_id, opportunity, occurred_at)
-      values ('activity-current', 'org-a', 'opportunity-active', now());
+        ('opportunity-stale', 'org-a', 'member-1',
+         '{"name": "Stale opportunity", "stage": "proposal", "amount": 12000, "close_date": "2026-08-20"}'),
+        ('opportunity-active', 'org-a', 'member-2',
+         '{"name": "Active opportunity", "stage": "discovery", "amount": 5000, "close_date": "2026-08-22"}'),
+        ('opportunity-cross-org', 'org-b', null,
+         '{"name": "Other org opportunity", "stage": "proposal", "amount": 99999, "close_date": "2026-08-25"}');
+      insert into public.crm__activity (id, org_id, data)
+      values ('activity-current', 'org-a', jsonb_build_object(
+        'opportunity', 'opportunity-active',
+        'occurred_at', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')));
       insert into engine.record_change_log
         (org_id, app_id, object_api_name, record_id, action, mutation_id, changes, owner_user_id)
       values
@@ -440,10 +436,10 @@ describeIfRecordsDb("records GraphJin live-catalog policy integration", () => {
 
         const evaluation = await graphjin.execute<{
           opportunities: Array<{ id: string }>;
-          activities: Array<{ opportunity: string }>;
+          activities: Array<{ data: { opportunity: string } }>;
         }>({
           operationName: "EvaluateRecordsStaleOpportunities",
-          query: `query EvaluateRecordsStaleOpportunities($cutoff: Timestamptz!) { opportunities: crm__opportunity(limit: 500) { id name owner_user_id stage close_date } activities: crm__activity(where: { occurred_at: { gte: $cutoff } }, limit: 500) { opportunity } }`,
+          query: `query EvaluateRecordsStaleOpportunities { opportunities: crm__opportunity(limit: 500) { id owner_user_id data } activities: crm__activity(where: { data: { occurred_at: { gte: $cutoff } } }, limit: 500) { id data } }`,
           variables: { cutoff: "2026-07-03T12:00:00.000Z" },
           token,
         });
@@ -451,8 +447,8 @@ describeIfRecordsDb("records GraphJin live-catalog policy integration", () => {
           "opportunity-active",
           "opportunity-stale",
         ]);
-        expect(evaluation.activities).toEqual([
-          { opportunity: "opportunity-active" },
+        expect(evaluation.activities.map((row) => row.data.opportunity)).toEqual([
+          "opportunity-active",
         ]);
         const identities = await graphjin.execute<{
           identities: Array<{ source_user_id: string; source_is_active: boolean }>;
@@ -469,10 +465,10 @@ describeIfRecordsDb("records GraphJin live-catalog policy integration", () => {
           }),
         ]);
         const closing = await graphjin.execute<{
-          opportunities: Array<{ id: string; close_date: string }>;
+          opportunities: Array<{ id: string; data: { close_date: string } }>;
         }>({
           operationName: "EvaluateRecordsClosingDeals",
-          query: `query EvaluateRecordsClosingDeals { opportunities: crm__opportunity(limit: 500) { id name owner_user_id stage amount close_date } }`,
+          query: `query EvaluateRecordsClosingDeals { opportunities: crm__opportunity(limit: 500) { id owner_user_id data } }`,
           token,
         });
         expect(closing.opportunities).toHaveLength(2);
@@ -656,11 +652,11 @@ describeIfRecordsDb("records GraphJin live-catalog policy integration", () => {
 
         const member = await request(
           "member-1",
-          "query MemberLoans { equipment__loan(order_by: { id: asc }) { id name } }",
+          "query MemberLoans { equipment__loan(order_by: { id: asc }) { id data } }",
         );
         expect(member.errors).toBeUndefined();
         expect(member.data?.equipment__loan).toEqual([
-          { id: "loan-1", name: "Member One Loan" },
+          { id: "loan-1", data: { name: "Member One Loan", amount: 100 } },
         ]);
 
         const memberHistory = await request(
@@ -684,12 +680,12 @@ describeIfRecordsDb("records GraphJin live-catalog policy integration", () => {
 
         const admin = await request(
           "admin-1",
-          "query AdminLoans { equipment__loan(order_by: { id: asc }) { id name } }",
+          "query AdminLoans { equipment__loan(order_by: { id: asc }) { id data } }",
         );
         expect(admin.errors).toBeUndefined();
         expect(admin.data?.equipment__loan).toEqual([
-          { id: "loan-1", name: "Member One Loan" },
-          { id: "loan-2", name: "Member Two Loan" },
+          { id: "loan-1", data: { name: "Member One Loan", amount: 100 } },
+          { id: "loan-2", data: { name: "Member Two Loan", amount: 250 } },
         ]);
         const adminHistory = await request(
           "admin-1",
@@ -797,7 +793,9 @@ describeIfRecordsDb("records GraphJin live-catalog policy integration", () => {
           generated.variables,
         );
         expect(generatedPage.errors).toBeUndefined();
-        expect(generatedPage.data?.rows).toEqual([
+        expect(
+          projectRecordRows(generated.view, generatedPage.data?.rows as Array<Record<string, unknown>>),
+        ).toEqual([
           {
             id: "loan-1",
             name: "Member One Loan",
@@ -821,11 +819,11 @@ describeIfRecordsDb("records GraphJin live-catalog policy integration", () => {
           generatedMetric.variables,
         );
         expect(metric.errors).toBeUndefined();
-        expect(metric.data?.metric).toEqual([{ sum_amount: 350 }]);
+        expect(metric.data?.metric).toEqual([{ total: 350 }]);
 
         const missingActor = await request(
           "missing-actor",
-          "query MissingActorLoans { equipment__loan { id name } }",
+          "query MissingActorLoans { equipment__loan { id data } }",
         );
         expect(missingActor.data?.equipment__loan ?? []).toEqual([]);
         expect(JSON.stringify(missingActor)).not.toContain("Member One Loan");
@@ -834,7 +832,7 @@ describeIfRecordsDb("records GraphJin live-catalog policy integration", () => {
         const memberMutation = await request(
           "member-1",
           "mutation MemberCreateLoan { equipment__loan(insert: $data) { id } }",
-          { data: { id: "loan-member-blocked", name: "Blocked" } },
+          { data: { id: "loan-member-blocked", data: { name: "Blocked" } } },
         );
         expect(memberMutation.errors?.length).toBeGreaterThan(0);
         const blockedMemberWrite = await testPool.query<{ count: string }>(
@@ -844,11 +842,11 @@ describeIfRecordsDb("records GraphJin live-catalog policy integration", () => {
 
         const serviceMutation = await request(
           "service-1",
-          "mutation ServiceCreateLoan { equipment__loan(insert: $data) { id name } }",
+          "mutation ServiceCreateLoan { equipment__loan(insert: $data) { id data } }",
           {
             data: {
               id: "loan-service",
-              name: "Service Created",
+              data: { name: "Service Created" },
               owner_user_id: "member-1",
             },
           },
@@ -857,7 +855,7 @@ describeIfRecordsDb("records GraphJin live-catalog policy integration", () => {
         expect(serviceMutation.data?.equipment__loan).toEqual([
           {
             id: "loan-service",
-            name: "Service Created",
+            data: { name: "Service Created" },
           },
         ]);
         const inserted = await testPool.query<{ org_id: string }>(
@@ -871,7 +869,7 @@ describeIfRecordsDb("records GraphJin live-catalog policy integration", () => {
           {
             data: {
               id: "loan-service-forced-org",
-              name: "Attempted Cross-org Write",
+              data: { name: "Attempted Cross-org Write" },
               org_id: "org-b",
               owner_user_id: "member-1",
             },

@@ -4,10 +4,11 @@ import type { RecordIdentifier } from "../types";
 
 export const RECORDS_AUDIT_TRIGGER_NAME = "nk_record_change_audit";
 export const RECORDS_AUDIT_OWNER_TRIGGER_NAME = "nk_record_change_owner";
-export const RECORDS_AUDIT_TRIGGER_VERSION = 4;
+export const RECORDS_AUDIT_TRIGGER_VERSION = 5;
 
 const REQUIRED_AUDIT_COLUMNS = [
   "id",
+  "data",
   "org_id",
   "nk_created_at",
   "nk_created_by",

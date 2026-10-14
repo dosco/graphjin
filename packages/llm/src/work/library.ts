@@ -692,6 +692,12 @@ export async function listLibraryConcepts(input: {
   return rows.map(rowToConcept);
 }
 
+/** Query words as lowercase letters and digits only, so codes match however the text punctuates them. */
+export function libraryQueryTerms(query: string): string[] {
+  const terms = query.split(/\s+/).map((word) => word.toLowerCase().replace(/[^a-z0-9]/g, "")).filter((term) => term.length >= 2);
+  return [...new Set(terms)].slice(0, 12);
+}
+
 export type LibraryConceptSearchResult = {
   concept: LibraryConcept;
   layer: "team" | "personal";
@@ -712,28 +718,36 @@ export async function searchLibraryByContext(input: {
   access?: LibraryAccess;
 }): Promise<LibraryConceptSearchResult[]> {
   const queryVec = await tryEmbed(input.query);
-  if (!queryVec) return [];
+  const terms = libraryQueryTerms(input.query);
+  if (!queryVec && terms.length === 0) return [];
   const limit = clampLimit(input.limit ?? 5, 20);
   const team = sql`(${library_concept.user_id} IS NULL AND ${heldTeamConcepts(input.access)})`;
   const layerVisible = input.userId
     ? sql`(${team} OR ${library_concept.user_id} = ${input.userId})`
     : team;
+  // Codes and model names ("671N", "MT40") match text that spells them with
+  // other punctuation ("GIA-671(N)", "I-Tera MT40").
+  const squashed = sql`regexp_replace(lower(concat_ws(' ', ${library_concept.title}, ${library_concept.description}, ${library_concept.path}, ${library_concept.body})), '[^a-z0-9]', '', 'g')`;
+  const keywordShare = terms.length
+    ? sql`((${sql.join(terms.map((term) => sql`(case when ${squashed} like ${`%${term}%`} then 1 else 0 end)`), sql` + `)})::float / ${terms.length})`
+    : sql`0`;
+  const similarity = queryVec
+    ? sql`coalesce(1 - (${library_concept.embedding} <=> ${queryVec}::vector), 0)`
+    : sql`0`;
+  const score = sql<number>`(${similarity} + ${keywordShare})`;
   const rows = await db()
-    .select({
-      row: library_concept,
-      score: sql<number>`1 - (${library_concept.embedding} <=> ${queryVec}::vector)`,
-    })
+    .select({ row: library_concept, score })
     .from(library_concept)
     .where(
       and(
         eq(library_concept.org_id, input.orgId),
         layerVisible,
         isNull(library_concept.archived_at),
-        sql`${library_concept.embedding} IS NOT NULL`,
+        queryVec ? sql`${library_concept.embedding} IS NOT NULL` : sql`${keywordShare} > 0`,
         sql`${library_concept.status} <> 'deprecated'`,
       ),
     )
-    .orderBy(sql`${library_concept.embedding} <=> ${queryVec}::vector`)
+    .orderBy(desc(keywordShare), desc(similarity), asc(library_concept.id))
     .limit(limit);
   return rows.map((r) => ({
     concept: rowToConcept(r.row),

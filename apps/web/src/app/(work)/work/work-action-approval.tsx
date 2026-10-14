@@ -2,6 +2,7 @@
 
 import { Check, Loader2, ShieldCheck, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { RecordNewFieldsNotice } from "@/components/records/RecordActionDiff";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { ToolDetail } from "./work-tool-detail";
@@ -10,6 +11,7 @@ import type { ApprovalItem, ToolItem } from "./work-types";
 type ActionRequestSnapshot = {
   status: string;
   result: ApprovalItem["result"];
+  payload: Record<string, unknown> | null;
 };
 
 async function fetchActionRequestSnapshot(
@@ -25,6 +27,7 @@ async function fetchActionRequestSnapshot(
       status?: string;
       rejectionReason?: string | null;
       failureReason?: string | null;
+      payload?: Record<string, unknown> | null;
     };
     executions?: Array<{
       status?: string;
@@ -70,7 +73,7 @@ async function fetchActionRequestSnapshot(
         : {}),
     };
   }
-  return { status, result };
+  return { status, result, payload: body.actionRequest?.payload ?? null };
 }
 
 export function ActionApprovalRow({
@@ -94,6 +97,7 @@ export function ActionApprovalRow({
   const [localStatus, setLocalStatus] = useState<string | null>(null);
   const [localResult, setLocalResult] =
     useState<ApprovalItem["result"]>(null);
+  const [localPayload, setLocalPayload] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     if (approval.result) return;
@@ -107,6 +111,7 @@ export function ActionApprovalRow({
       if (cancelled || !snapshot) return;
       setLocalStatus(snapshot.status);
       setLocalResult(snapshot.result);
+      setLocalPayload(snapshot.payload);
       if (snapshot.status === "approved") {
         timer = setTimeout(() => void sync(), 1_000);
       }
@@ -299,6 +304,8 @@ export function ActionApprovalRow({
           </Button>
         ) : null}
       </div>
+
+      {pending ? <RecordNewFieldsNotice kind={approval.actionKind} payload={localPayload} /> : null}
 
       {pending && rejectMode ? (
         <div className="work-action-row-decision">

@@ -143,7 +143,7 @@ COPY --from=openshell-bin /usr/local/bin/openshell /usr/local/bin/openshell
 # dedicated GraphJin runtimes. The sandbox agent deliberately does not inherit
 # this lineage: all agent GraphJin reads cross the authenticated host broker.
 FROM debian:bookworm-slim AS graphjin-bin
-ARG GRAPHJIN_VERSION=3.21.7
+ARG GRAPHJIN_VERSION=3.21.13
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && case "${TARGETARCH}" in amd64|arm64) ;; *) exit 1 ;; esac \

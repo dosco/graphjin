@@ -190,7 +190,7 @@ describe("RecordsReadGateway", () => {
 
   it("queries only with a generated document and a synced actor JWT", async () => {
     const { gateway, query, execute } = harness({
-      rows: [{ id: "loan-1", subject: "Camera" }],
+      rows: [{ id: "loan-1", data: { subject: "Camera", secret_note: "hidden" } }],
       rows_cursor: "cursor-1",
       totals: [{ count_id: 1 }],
     });

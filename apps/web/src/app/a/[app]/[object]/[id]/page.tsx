@@ -10,6 +10,7 @@ import {
   RecordRelatedLists,
 } from "@/components/records/RecordDetailActivity";
 import { PendingChangeMarker } from "@/components/records/PendingChangeMarker";
+import { RecordDeleteMenu } from "@/components/records/RecordDeleteMenu";
 import { buttonClassName } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
@@ -62,8 +63,17 @@ export default async function RecordDetailPage({
             })}
             href={`${base}/${encodeURIComponent(String(result.row.id))}/edit`}
           >
-            <Pencil aria-hidden="true" /> Edit
+            <Pencil aria-hidden="true" /> Edit all
           </Link>
+        )}
+        {result.view.permission.canDelete && (
+          <RecordDeleteMenu
+            appId={result.app.appId}
+            objectApiName={result.view.object.apiName}
+            objectLabel={result.view.object.label}
+            recordId={String(result.row.id)}
+            recordName={name}
+          />
         )}
       </header>
       <RecordDetailCard
@@ -73,6 +83,7 @@ export default async function RecordDetailPage({
         owners={result.owners}
         references={result.references}
         layout={result.layout}
+        canUpdate={result.view.permission.canUpdate}
       />
       <RecordRelatedLists appId={result.app.appId} lists={result.relatedLists} />
       <RecordChangeTimeline history={result.history} view={result.view} />

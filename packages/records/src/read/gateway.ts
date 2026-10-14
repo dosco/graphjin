@@ -16,6 +16,7 @@ import {
   buildRecordListQuery,
   buildRecordRecycleDetailQuery,
   buildRecordRecycleListQuery,
+  projectRecordRows,
   type RecordListFilter,
   type RecordObjectView,
   type RecordViewerRole,
@@ -358,7 +359,7 @@ export class RecordsReadGateway {
         pluralLabel: generated.view.object.pluralLabel,
       },
       columns: generated.view.columns,
-      rows: rowsFrom(data[generated.resultField]),
+      rows: projectRecordRows(generated.view, rowsFrom(data[generated.resultField])),
       total: totalFrom(data[generated.totalField]),
       cursor:
         typeof data[generated.cursorField] === "string"
@@ -397,7 +398,7 @@ export class RecordsReadGateway {
         pluralLabel: generated.view.object.pluralLabel,
       },
       columns: generated.view.columns,
-      row: rowsFrom(data[generated.resultField])[0] ?? null,
+      row: projectRecordRows(generated.view, rowsFrom(data[generated.resultField]))[0] ?? null,
     };
   }
 

@@ -1,5 +1,99 @@
 # Changelog
 
+## [4.0.1](https://github.com/open-neko/openneko/compare/v4.0.0...v4.0.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **records:** send a one-value text list filter as a plain comparison ([50b45db](https://github.com/open-neko/openneko/commit/50b45db64c869a8a560019a516904598fdad1aec))
+* **records:** send a one-value text list filter as a plain comparison ([f7344f4](https://github.com/open-neko/openneko/commit/f7344f4f8a3819d607bbae9b1af99d6946fe5754))
+
+## [4.0.0](https://github.com/open-neko/openneko/compare/v3.32.0...v4.0.0) (2026-10-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **records:** existing records apps use the old column storage and must be recreated. Requires GraphJin with JSON key filters, orders, cursors, aggregates and merge_on_update (dosco/graphjin#659).
+
+### Features
+
+* **records:** store record fields as one jsonb document ([6cfea8a](https://github.com/open-neko/openneko/commit/6cfea8a03858fe6f1ccc3f7ac3090c6a8f9d4bb3))
+
+
+### Bug Fixes
+
+* **records:** bind null and text list filters on record documents ([4f25877](https://github.com/open-neko/openneko/commit/4f25877188d8f177ab0b3e9fcbb2324fa499d453))
+* **records:** read import validation samples from record documents ([a137458](https://github.com/open-neko/openneko/commit/a13745866ffcb459aa925df8199f5ea4e3dcd25b))
+
+## [3.32.0](https://github.com/open-neko/openneko/compare/v3.31.3...v3.32.0) (2026-10-14)
+
+
+### Features
+
+* **records:** overhaul the records list, record page and app editor ([f796e68](https://github.com/open-neko/openneko/commit/f796e68e8d46213c0c02c5977ba56c1c58ac10e6))
+* **records:** overhaul the records list, record page and app editor ([321f5b7](https://github.com/open-neko/openneko/commit/321f5b70892af3bfcc8862d010531c62a5eea16f))
+
+## [3.31.3](https://github.com/open-neko/openneko/compare/v3.31.2...v3.31.3) (2026-10-13)
+
+
+### Bug Fixes
+
+* **work:** cap large tool results in the chat transcript payload ([b055fe8](https://github.com/open-neko/openneko/commit/b055fe83ade0f9d67e1d4dc685aabaf8563919ca))
+* **work:** cap large tool results in the chat transcript payload ([bd10e25](https://github.com/open-neko/openneko/commit/bd10e25024b4fcc6b25712b92a9577c9e97fad73))
+
+## [3.31.2](https://github.com/open-neko/openneko/compare/v3.31.1...v3.31.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* **records:** name the list cursor variable rows_cursor ([5568233](https://github.com/open-neko/openneko/commit/556823332ad6f95a7bd6e31a63346482b496b625))
+* **records:** name the list cursor variable rows_cursor ([3722fe2](https://github.com/open-neko/openneko/commit/3722fe24d240aa69ba00a95c3c5b94cfc4e1b8f9))
+
+## [3.31.1](https://github.com/open-neko/openneko/compare/v3.31.0...v3.31.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **workflows:** give routine runs the records read tools ([009d868](https://github.com/open-neko/openneko/commit/009d8682247ef8c24454542b183f11914afcdb0e))
+* **workflows:** give routine runs the records read tools ([c234d58](https://github.com/open-neko/openneko/commit/c234d587baa72ea31bdcd4974ab6300fc53e7dce))
+
+## [3.31.0](https://github.com/open-neko/openneko/compare/v3.30.1...v3.31.0) (2026-10-13)
+
+
+### Features
+
+* **web:** delete a bot with its chat history and routines ([e564070](https://github.com/open-neko/openneko/commit/e564070dcf180b2333517e77d3dfcbf0bc434bb2))
+
+
+### Bug Fixes
+
+* **library:** find codes and model names in agent library search ([cc6d4a9](https://github.com/open-neko/openneko/commit/cc6d4a94c1acf3ccb24c8d3d605525e553dbc2b4))
+* **library:** find codes in library search; feat(web): delete a bot ([ce1fab1](https://github.com/open-neko/openneko/commit/ce1fab175374d0082fb81c7dea8e0965280bb0b8))
+* **web:** keep the sidebar and header in place while a menu or dialog is open ([a0bab95](https://github.com/open-neko/openneko/commit/a0bab953f225fc1a077c780269be458f8922d07e))
+
+## [3.30.1](https://github.com/open-neko/openneko/compare/v3.30.0...v3.30.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **ax:** show a tool's reply_as_written as the answer without relying on the model ([9e3eb9a](https://github.com/open-neko/openneko/commit/9e3eb9af82e439c10cbbc26b716d886c0594a78b))
+* **ax:** show a tool's reply_as_written as the answer without relying on the model ([94dc2bb](https://github.com/open-neko/openneko/commit/94dc2bbe9b496d7dc0725fa1d071c6b203708444))
+
+## [3.30.0](https://github.com/open-neko/openneko/compare/v3.29.0...v3.30.0) (2026-10-13)
+
+
+### Features
+
+* **web:** drill-down sub-tables, what-if choices, and replies passed through as written ([1cbf86d](https://github.com/open-neko/openneko/commit/1cbf86d9e38033ef0467dcfe92c214fe4aa01c77))
+* **web:** let answer cards open row sub-tables and offer choices in a what-if ([d202575](https://github.com/open-neko/openneko/commit/d2025755dd3515d2252b99ea85078f83e4749eac))
+
+
+### Bug Fixes
+
+* **ax:** pass a finished reply from a tool to the reader as written ([60830fa](https://github.com/open-neko/openneko/commit/60830faea00fe5b84eee41265845d9cfc1743bb2))
+* **web:** show answer text before its cards and send chips as plain questions ([04eb49c](https://github.com/open-neko/openneko/commit/04eb49c2889e9cb11a18ff65aa88868c6c55a20c))
+* **web:** use the shared select for what-if choices and keep the run status on one line ([36db029](https://github.com/open-neko/openneko/commit/36db029279545b0fd697179a2f8959f0e50a5270))
+
 ## [3.29.0](https://github.com/open-neko/openneko/compare/v3.28.0...v3.29.0) (2026-10-13)
 
 

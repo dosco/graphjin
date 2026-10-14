@@ -63,7 +63,7 @@ function decimalScale(value: string): number {
   return value.split(".")[1]?.length ?? 0;
 }
 
-function validateDecimal(value: unknown, field: RecordField): string | number {
+function validateDecimal(value: unknown, field: RecordField): number {
   if (typeof value !== "number" && typeof value !== "string") {
     issue(field.apiName, "type", "must be a decimal number");
   }
@@ -81,7 +81,12 @@ function validateDecimal(value: unknown, field: RecordField): string | number {
   if (field.length !== null && digits > field.length) {
     issue(field.apiName, "precision", `must use at most ${field.length} digits`);
   }
-  return value;
+  // Documents keep decimals as JSON numbers so they compare numerically.
+  const number = Number(text);
+  if (!Number.isFinite(number) || Math.abs(number) > Number.MAX_SAFE_INTEGER) {
+    issue(field.apiName, "precision", "is too large to store exactly");
+  }
+  return number;
 }
 
 function picklistCandidateMatches(candidate: unknown, value: unknown): boolean {
