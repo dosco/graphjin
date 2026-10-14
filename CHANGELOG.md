@@ -1,5 +1,19 @@
 # Changelog
 
+## [4.3.0](https://github.com/open-neko/openneko/compare/v4.2.0...v4.3.0) (2026-10-14)
+
+
+### Features
+
+* **workflows:** post how each routine run ended to its bot chat ([c73f7a9](https://github.com/open-neko/openneko/commit/c73f7a9d51d3b47cfd7144a10f48b0ab2bc9440d))
+* **workflows:** post how each routine run ended to its bot chat ([b52681c](https://github.com/open-neko/openneko/commit/b52681cca41d4a1568bbb2e23a7c39b746cda347))
+
+
+### Bug Fixes
+
+* **library:** search a routine run without a thread creator as the routine's owner ([cd08c52](https://github.com/open-neko/openneko/commit/cd08c52e7f5eca1263483d68ac2fec9f4a3c94c7))
+* **library:** search a routine run without a thread creator as the routine's owner ([4cb1cc3](https://github.com/open-neko/openneko/commit/4cb1cc38752574ab4d63d5df56d8dcc83ec784f2))
+
 ## [4.2.0](https://github.com/open-neko/openneko/compare/v4.1.0...v4.2.0) (2026-10-14)
 
 
