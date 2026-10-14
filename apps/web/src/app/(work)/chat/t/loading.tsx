@@ -1,9 +1,4 @@
-import { SkeletonList } from "@/components/ui/skeleton";
-
+// WorkScreen in the layout shows the chat or its own skeleton while the route loads.
 export default function ChatThreadLoading() {
-  return (
-    <div className="work-transcript">
-      <SkeletonList rows={3} variant="row" label="Opening the chat" />
-    </div>
-  );
+  return null;
 }
