@@ -431,7 +431,10 @@ function textListClause(
   const variables = values.map((value, index): [string, unknown] => [`${variable}_${index}`, String(value)]);
   const clauses = variables.map(([name]) => `{ ${documentClause(field, `{ ${comparison}: $${name} }`)} }`);
   return {
-    clause: `${operator === "in" ? "or" : "and"}: [${clauses.join(", ")}]`,
+    clause:
+      clauses.length === 1
+        ? documentClause(field, `{ ${comparison}: $${variables[0]![0]} }`)
+        : `${operator === "in" ? "or" : "and"}: [${clauses.join(", ")}]`,
     variables,
   };
 }

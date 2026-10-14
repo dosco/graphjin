@@ -247,7 +247,7 @@ describe("generated record read queries", () => {
       filter: { field: "status", operator: "not_in", value: ["closed"] },
     });
     expect(count.query).toContain(
-      "metric: operations__work_order(where: { and: [{ data: { status: { neq: $filter_0_0 } } }] }) { count_id }",
+      "metric: operations__work_order(where: { data: { status: { neq: $filter_0_0 } } }) { count_id }",
     );
     expect(count.variables).toEqual({ filter_0_0: "closed" });
 
@@ -305,7 +305,7 @@ describe("generated record read queries", () => {
     });
 
     expect(built.query).toContain("and: [{ data: { due_at: { gte: $filter_0_0_start } } }")
-    expect(built.query).toContain("or: [{ or: [{ data: { status: { eq: $filter_0_1_0_0 } } }] }")
+    expect(built.query).toContain("{ or: [{ data: { status: { eq: $filter_0_1_0_0 } } }, { data: { status: { eq: $filter_0_1_1 } } }] }")
     expect(built.query).not.toContain("blocked");
     expect(built.variables).toMatchObject({
       filter_0_0_start: "2026-07-01T00:00:00.000Z",
@@ -555,6 +555,19 @@ describe("record document reads", () => {
     );
     expect(built.query).not.toContain("it's");
     expect(built.variables).toMatchObject({ filter_0_0: "it's", filter_0_1: 'x" } }) { id } }' });
+  });
+
+  it("compares a one-value text list without an and or or wrapper", () => {
+    const built = buildRecordListQuery({
+      snapshot: snapshot(),
+      objectApiName: "work_order",
+      role: "admin",
+      userId: "user-1",
+      filter: { field: "status", operator: "not_in", value: ["closed"] },
+    });
+    expect(built.query).toContain("data: { status: { neq: $filter_0_0 } }");
+    expect(built.query).not.toMatch(/\band: \[/);
+    expect(built.variables).toMatchObject({ filter_0_0: "closed" });
   });
 
   it("rejects a number filter with a non-numeric value", () => {
