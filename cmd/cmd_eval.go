@@ -714,27 +714,36 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 	var scale int
 	var seed int64
 	var public bool
+	var benchmarkSlug string
 	cmd := &cobra.Command{
 		Use:   "bench",
 		Short: "Generate and run the extended stratified benchmark distribution",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if public {
-				spec := gjeval.PublicBenchmark()
-				if opts.Remote {
-					return errors.New("--public cannot be combined with --remote; the public benchmark runs against the pinned demo")
+				if benchmarkSlug == DeepContosoBenchmarkSlug {
+					opts.Demo = true
+					if !cmd.Flags().Changed("path") && !cmd.Flags().Changed("config") {
+						cpath = "examples/contoso"
+					}
+					scale, seed = 100, 23
+				} else {
+					spec := gjeval.PublicBenchmark()
+					if opts.Remote {
+						return errors.New("--public cannot be combined with --remote; the public benchmark runs against the pinned demo")
+					}
+					// The board's numbers are all measured on one world. Spreading a
+					// public run across several would make its result incomparable
+					// with every run already published.
+					if opts.Pool > 1 {
+						return errors.New("--public cannot be combined with --pool; the published benchmark runs against a single environment")
+					}
+					if cmd.Flags().Changed("scale") || cmd.Flags().Changed("seed") {
+						return fmt.Errorf("--public pins --scale=%d and --seed=%d; remove the scale and seed overrides", spec.Scale, spec.Seed)
+					}
+					scale, seed = spec.Scale, spec.Seed
+					opts.Demo = true
 				}
-				// The board's numbers are all measured on one world. Spreading a
-				// public run across several would make its result incomparable
-				// with every run already published.
-				if opts.Pool > 1 {
-					return errors.New("--public cannot be combined with --pool; the published benchmark runs against a single environment")
-				}
-				if cmd.Flags().Changed("scale") || cmd.Flags().Changed("seed") {
-					return fmt.Errorf("--public pins --scale=%d and --seed=%d; remove the scale and seed overrides", spec.Scale, spec.Seed)
-				}
-				scale, seed = spec.Scale, spec.Seed
-				opts.Demo = true
 			}
 			if scale <= 0 {
 				return errors.New("--scale must be positive")
@@ -772,7 +781,7 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 			catalogClient := &http.Client{Timeout: 120 * time.Second}
 			var suite *gjeval.Suite
 			if public {
-				suite, err = loadPublicEvalSuite()
+				suite, err = loadNamedEvalSuite(benchmarkSlug)
 			} else {
 				suite, err = (gjeval.Generator{
 					Source:   gjeval.HTTPCatalogSource{Client: catalogClient, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
@@ -831,6 +840,7 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 	cmd.Flags().IntVar(&scale, "scale", 100, "number of verified generated benchmark tasks")
 	cmd.Flags().Int64Var(&seed, "seed", 23, "deterministic generator and rollout seed")
 	cmd.Flags().BoolVar(&public, "public", false, "run the frozen, reproducible public benchmark suite")
+	cmd.Flags().StringVar(&benchmarkSlug, "benchmark", defaultBenchmarkSlug, "public benchmark slug (deeporg, deepcontoso)")
 	cmd.Flags().BoolVar(&opts.AutoResume, "auto-resume", false,
 		"resume this run automatically when the provider stops it for a transient reason (timeout, rate limit, transport fault, 5xx); requires --yes")
 	cmd.Flags().IntVar(&opts.AutoResumeAttempts, "auto-resume-attempts", defaultAutoResumeAttempts,

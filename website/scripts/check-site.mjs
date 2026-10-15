@@ -55,6 +55,9 @@ const requiredRoutes = [
   'benchmarks/deeporg/index.html',
   'benchmarks/deeporg/methodology/index.html',
   'benchmarks/deeporg/runs/index.html',
+  'benchmarks/deepcontoso/index.html',
+  'benchmarks/deepcontoso/methodology/index.html',
+  'benchmarks/deepcontoso/runs/index.html',
   'benchmarks/organizational-agent/index.html',
   'benchmark/index.html',
   'benchmark/methodology/index.html',
@@ -126,6 +129,9 @@ const requiredContent = [
   'benchmarks/deeporg/_index.md',
   'benchmarks/deeporg/methodology.md',
   'benchmarks/deeporg/runs/_index.md',
+  'benchmarks/deepcontoso/_index.md',
+  'benchmarks/deepcontoso/methodology.md',
+  'benchmarks/deepcontoso/runs/_index.md',
   'benchmark/_index.md',
   'configure/sources-mode.md',
   'configure/how-it-works.md',
@@ -227,11 +233,17 @@ const requiredRenderedContent = [
   ['agentic/watch-automation/index.html', 'graphjin://watch-events/unseen/watch%3Acoffee_roast_'],
   ['benchmarks/index.html', 'Public, governed benchmark suites'],
   ['benchmarks/index.html', 'data-benchmark-family-row=deeporg'],
+  ['benchmarks/index.html', 'data-benchmark-family-row=deepcontoso'],
   ['benchmarks/deeporg/index.html', 'The Organizational Agent Benchmark · by GraphJin'],
   ['benchmarks/deeporg/index.html', 'Model comparison'],
   ['benchmarks/deeporg/index.html', 'Run DeepORG on your organization'],
   ['benchmarks/deeporg/methodology/index.html', 'Frozen suite, live verification'],
   ['benchmarks/deeporg/runs/index.html', 'Published DeepORG Runs'],
+  ['benchmarks/deepcontoso/index.html', 'The Retail & Supply Chain Benchmark · by GraphJin'],
+  ['benchmarks/deepcontoso/index.html', 'Model comparison'],
+  ['benchmarks/deepcontoso/index.html', 'Run DeepContoso on your organization'],
+  ['benchmarks/deepcontoso/methodology/index.html', 'DeepContoso, The Retail & Supply Chain Benchmark'],
+  ['benchmarks/deepcontoso/runs/index.html', 'Published DeepContoso Runs'],
   ['benchmark/index.html', 'What DeepORG actually tests'],
   ['benchmark/index.html', 'From question to verified answer'],
   ['benchmark/index.html', 'We grade our own AI agent in public.'],
@@ -1042,6 +1054,28 @@ if (await exists(benchmarkDataPath)) {
     if (storySafety === undefined || Number(storySafety) !== Number(topBest.unsafe_effects ?? 0)) {
       failures.push('DeepORG result story safety does not match the highest trusted result');
     }
+  }
+}
+
+const deepContosoDataPath = path.join(siteRoot, 'data', 'benchmarks', 'deepcontoso.yaml');
+if (await exists(deepContosoDataPath)) {
+  const dcData = await readFile(deepContosoDataPath, 'utf8');
+  if (!dcData.includes('schema_version: graphjin.benchmark.data/v3')) {
+    failures.push('DeepContoso benchmark data is not schema v3');
+  }
+  if (!dcData.includes('slug: deepcontoso')) {
+    failures.push('DeepContoso benchmark slug is invalid');
+  }
+  const dcIndexPath = path.join(publicRoot, 'benchmarks', 'deepcontoso', 'index.html');
+  if (await exists(dcIndexPath)) {
+    const dcHTML = await readFile(dcIndexPath, 'utf8');
+    if (!dcHTML.includes('data-benchmark-model-chart')) {
+      failures.push('DeepContoso page is missing the benchmark chart');
+    }
+  }
+  const dcRunPage = path.join(publicRoot, 'benchmarks', 'deepcontoso', 'runs', '20260923t135926-3603ef14', 'index.html');
+  if (!(await exists(dcRunPage))) {
+    failures.push('DeepContoso Gemini 3.8 Flash run page is missing');
   }
 }
 

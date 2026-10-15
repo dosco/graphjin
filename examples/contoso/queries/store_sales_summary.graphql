@@ -1,0 +1,8 @@
+query store_sales_summary {
+  store(order_by: { store_key: asc }) {
+    store_key
+    name
+    status
+    square_meters
+  }
+}

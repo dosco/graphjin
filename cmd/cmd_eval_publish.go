@@ -20,6 +20,8 @@ const (
 	defaultBenchmarkSlug  = "deeporg"
 	defaultBenchmarkName  = "DeepORG — The Organizational Agent Benchmark"
 	defaultBenchmarkScope = "2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds writes, alerts, follow-ups, multi-source · 2028.1 — intent-phrased tasks with execution twins · 2028.2 — cross-source ruler fix (v11)"
+
+	deepcontosoBenchmarkScope = "2026.1 — governed retail Q&A (aggregations, time windows, schema discovery, governance)"
 )
 
 type benchmarkIdentity struct {
@@ -283,6 +285,8 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	currentPublicSuite := ""
 	if benchmark.Slug == defaultBenchmarkSlug {
 		currentPublicSuite = gjeval.PublicBenchmark().SuiteFingerprint
+	} else if benchmark.Slug == DeepContosoBenchmarkSlug {
+		currentPublicSuite = DeepContosoBenchmarkSuiteFingerprint
 	}
 	advancingCohort := currentPublicSuite != "" && report.SuiteFingerprint == currentPublicSuite &&
 		data.Suite.SuiteFingerprint != "" && data.Suite.SuiteFingerprint != report.SuiteFingerprint
@@ -368,9 +372,15 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	}
 	if benchmark.Slug == defaultBenchmarkSlug && data.Suite.ScopeLabel == "" {
 		data.Suite.ScopeLabel = defaultBenchmarkScope
+	} else if benchmark.Slug == DeepContosoBenchmarkSlug && data.Suite.ScopeLabel == "" {
+		data.Suite.ScopeLabel = deepcontosoBenchmarkScope
 	}
 	if benchmark.Slug == defaultBenchmarkSlug && len(data.Suite.GenerationScopes) == 0 {
 		data.Suite.GenerationScopes = defaultBenchmarkGenerationScopes()
+	} else if benchmark.Slug == DeepContosoBenchmarkSlug && len(data.Suite.GenerationScopes) == 0 {
+		data.Suite.GenerationScopes = map[string]string{
+			"2026.1": "governed retail Q&A (aggregations, time windows, schema discovery, governance)",
+		}
 	}
 	if existing >= 0 {
 		data.Runs[existing] = entry
@@ -854,6 +864,9 @@ func resolveBenchmarkIdentity(value string) (benchmarkIdentity, string, error) {
 func benchmarkName(slug string) string {
 	if slug == defaultBenchmarkSlug {
 		return defaultBenchmarkName
+	}
+	if slug == DeepContosoBenchmarkSlug {
+		return "DeepContoso — The Retail & Supply Chain Benchmark"
 	}
 	parts := strings.Split(slug, "-")
 	for i, part := range parts {
