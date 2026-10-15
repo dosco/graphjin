@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { copyAllowedTeamLibrary, type AllowedLibrary } from "../library/staging";
+import { copyAllowedTeamLibrary, copyTeamConceptSources, type AllowedLibrary } from "../library/staging";
 import { cp, lstat, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -74,6 +74,7 @@ async function acquireInputs(workspace: StableWorkspace, requiredSkills: readonl
         }
         if (allowedLibrary) await copyAllowedTeamLibrary(library, path.join(root, 'library', 'okf'), allowedLibrary);
         else await cp(library, path.join(root, 'library', 'okf'), { recursive: true }).catch(error => { if (error.code !== 'ENOENT') throw error; });
+        await copyTeamConceptSources(path.join(root, 'library', 'okf'), workspace.orgRoot, root);
         const skillOverrides = await copySkillOverrides(workspace.skillsRoot, path.join(root, 'skills'), requiredSkills, allowedSkills);
         // A publisher may have changed inputs during construction. Never cache a mixed generation.
         const after = await Promise.all([knowledgeRevision(workspace.knowledgeRoot), ...[workspace.skillsRoot, library, overlay].map(treeRevision)]).then(parts => parts.join(':'));

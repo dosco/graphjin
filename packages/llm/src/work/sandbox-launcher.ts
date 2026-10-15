@@ -1,5 +1,5 @@
 import { startupEvent, startupPhase } from "@neko/telemetry/startup";
-import { copyAllowedTeamLibrary, type AllowedLibrary } from "../library/staging";
+import { copyAllowedTeamLibrary, copyTeamConceptSources, type AllowedLibrary } from "../library/staging";
 import { createHash, randomUUID } from "node:crypto";
 import { RECONCILE_COMMAND, syncSandboxDirectories } from "./sandbox-sync";
 import { acquireStableSandboxInputs, clearStableSandboxInputs, type StableWorkspace } from "./sandbox-staging-cache";
@@ -446,6 +446,9 @@ export async function stageSandboxWorkspace(
           path.join(stageOrgRoot, "library", "okf"),
         ),
   ]);
+  if (!stable) {
+    await copyTeamConceptSources(path.join(stageOrgRoot, "library", "okf"), workspace.orgRoot, stageOrgRoot);
+  }
 
   // Preserve the expected workspace shape even when a selected source is
   // empty, while deliberately leaving memory and sibling upload/run roots out.
