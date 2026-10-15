@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.4.0](https://github.com/open-neko/openneko/compare/v4.3.1...v4.4.0) (2026-10-15)
+
+
+### Features
+
+* **workflows:** save API run input as a file in the run directory ([0dfdbb2](https://github.com/open-neko/openneko/commit/0dfdbb230cc95f490c8bd98605cd179a634f8575))
+* **workflows:** save API run input as a file in the run directory ([10ddfd9](https://github.com/open-neko/openneko/commit/10ddfd97ab03ef41c366332d5373d2ea4e3a0904))
+
 ## [4.3.1](https://github.com/open-neko/openneko/compare/v4.3.0...v4.3.1) (2026-10-14)
 
 
