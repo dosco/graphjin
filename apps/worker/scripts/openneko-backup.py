@@ -267,25 +267,40 @@ def initialize_stanzas() -> None:
             time.sleep(2)
 
 
+def only_changed_while_read(stderr: str) -> bool:
+    lines = [line for line in stderr.splitlines() if line.strip()]
+    return bool(lines) and all(line.endswith("file changed as we read it") for line in lines)
+
+
+def tar_snapshot(target: str, attempts: int = 5) -> None:
+    args = [
+        "tar",
+        "--numeric-owner",
+        "--sort=name",
+        "--mtime=UTC 1970-01-01",
+        "--exclude=host-config/backup-key",
+        "-C",
+        str(SNAPSHOT_SOURCES),
+        "-cf",
+        target,
+        *SNAPSHOT_NAMES,
+    ]
+    for attempt in range(1, attempts + 1):
+        result = subprocess.run(args, check=False, capture_output=True, text=True, timeout=300)
+        if result.returncode == 0:
+            return
+        if result.returncode != 1 or not only_changed_while_read(result.stderr):
+            raise RuntimeError(f"tar --numeric-owner --sort=name failed: {result.stderr.strip()[-4000:]}")
+        if attempt < attempts:
+            time.sleep(attempt)
+    print(f"config snapshot kept after live changes: {result.stderr.strip()}", flush=True)
+
+
 def snapshot_configs(directory: pathlib.Path) -> dict:
     archive = directory / "config-volumes.tar.enc"
     cipher_pass = os.environ["PGBACKREST_REPO1_CIPHER_PASS"]
     with tempfile.NamedTemporaryFile(prefix="openneko-config-", suffix=".tar") as plain:
-        command(
-            [
-                "tar",
-                "--numeric-owner",
-                "--sort=name",
-                "--mtime=UTC 1970-01-01",
-                "--exclude=host-config/backup-key",
-                "-C",
-                str(SNAPSHOT_SOURCES),
-                "-cf",
-                plain.name,
-                *SNAPSHOT_NAMES,
-            ],
-            timeout=300,
-        )
+        tar_snapshot(plain.name)
         digest = hashlib.sha256(pathlib.Path(plain.name).read_bytes()).hexdigest()
         env = os.environ.copy()
         env["OPENNEKO_BACKUP_SNAPSHOT_PASS"] = cipher_pass
