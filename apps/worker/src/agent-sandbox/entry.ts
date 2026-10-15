@@ -125,6 +125,9 @@ export async function main(job = loadJob()): Promise<void> {
     await rm(hermesSkillsRoot, { recursive: true, force: true });
     await symlink(job.workspace.skillsRoot, hermesSkillsRoot, "dir");
   }
+  // Skills and workflow prompts name these folders; the agent's shell commands inherit them.
+  process.env.RUN_DIR = job.workspace.runRoot;
+  process.env.ARTIFACT_DIR = job.workspace.artifactRoot;
   const brokerUrl = process.env.OPENNEKO_BROKER_URL;
   const brokerToken = process.env.OPENNEKO_BROKER_TOKEN;
 
