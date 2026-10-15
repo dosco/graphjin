@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.5.0](https://github.com/open-neko/openneko/compare/v4.4.2...v4.5.0) (2026-10-15)
+
+
+### Features
+
+* **library:** give runs the source files of the team concepts they read ([ac7d024](https://github.com/open-neko/openneko/commit/ac7d024022c6322442ad61664e2b62f08fc20398))
+
 ## [4.4.2](https://github.com/open-neko/openneko/compare/v4.4.1...v4.4.2) (2026-10-15)
 
 
