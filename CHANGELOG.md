@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.5.3](https://github.com/open-neko/openneko/compare/v4.5.2...v4.5.3) (2026-10-15)
+
+
+### Bug Fixes
+
+* **ax:** set SKILL_DIR for a command from the skill that holds its script ([3fb94f5](https://github.com/open-neko/openneko/commit/3fb94f5abe5bb04727839dcd5903ee5eaed0020d))
+* **ax:** set SKILL_DIR for a command from the skill that holds its script ([93d5990](https://github.com/open-neko/openneko/commit/93d59902d57c5582a144eb0b4c9b52d2604a319b))
+
 ## [4.5.2](https://github.com/open-neko/openneko/compare/v4.5.1...v4.5.2) (2026-10-15)
 
 
