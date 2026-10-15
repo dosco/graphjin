@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.6.0](https://github.com/open-neko/openneko/compare/v4.5.4...v4.6.0) (2026-10-15)
+
+
+### Features
+
+* **web:** let admins set the public URL for workflow API examples ([672a0f5](https://github.com/open-neko/openneko/commit/672a0f5e6152266c8a7722d7eef5167fbf3eca05))
+* **web:** let admins set the public URL for workflow API examples ([8b00b2f](https://github.com/open-neko/openneko/commit/8b00b2fb5f99b3b9b87b1615a1b53b2a40ade83a))
+
 ## [4.5.4](https://github.com/open-neko/openneko/compare/v4.5.3...v4.5.4) (2026-10-15)
 
 
