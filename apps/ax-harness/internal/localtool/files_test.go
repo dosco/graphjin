@@ -474,3 +474,44 @@ func TestFileWriteAcceptsAbsolutePathInsideWorkspace(t *testing.T) {
 		t.Fatalf("absolute path outside the workspace: %v", err)
 	}
 }
+
+func TestSkillTextNamesItsFolder(t *testing.T) {
+	root := t.TempDir()
+	skill := filepath.Join(root, "skills", "stock-check")
+	if err := os.MkdirAll(skill, 0700); err != nil {
+		t.Fatal(err)
+	}
+	text := "---\nname: stock-check\ndescription: Check stock\n---\nRun python3 \"$SKILL_DIR/scripts/a.py\" or ${SKILL_DIR}/b.sh; keep ${SKILL_DIR:-x} and $SKILL_DIRS.\n"
+	if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	want := "Run python3 \"" + skill + "/scripts/a.py\" or " + skill + "/b.sh; keep ${SKILL_DIR:-x} and $SKILL_DIRS.\n"
+
+	f, err := OpenFiles(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	input, _ := json.Marshal(map[string]string{"path": "skills/stock-check/SKILL.md"})
+	data, err := f.Capabilities()[0].Call(context.Background(), input)
+	var output struct{ Content, Version string }
+	if err != nil || json.Unmarshal(data, &output) != nil || !strings.HasSuffix(output.Content, want) {
+		t.Fatalf("content=%q err=%v", output.Content, err)
+	}
+	if output.Version != digest([]byte(text)) {
+		t.Fatalf("version %s must track the file on disk", output.Version)
+	}
+
+	skills, err := OpenFiles(filepath.Join(root, "skills"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer skills.Close()
+	catalog, err := skills.Skills()
+	if err != nil || len(catalog) != 1 {
+		t.Fatalf("catalog=%+v err=%v", catalog, err)
+	}
+	if body, err := catalog[0].Load(); err != nil || body != want {
+		t.Fatalf("body=%q err=%v", body, err)
+	}
+}
