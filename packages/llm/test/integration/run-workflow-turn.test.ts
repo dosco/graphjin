@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { db, eq, pool, work_run, work_thread, workflow_output, workflow_run } from "@neko/db";
 import { withTestOrg, dbReachable } from "@neko/db/test-helpers";
@@ -12,6 +14,7 @@ import {
   prepareWorkflowRun,
   runWorkflowTurn,
   saveWorkflow,
+  WORKFLOW_API_INPUT_FILE,
 } from "../../src/workflows";
 import { emitWorkflowOutput } from "../../src/workflows/store";
 import { createRunSpendGuard } from "../../src/spend/run-guard";
@@ -114,6 +117,42 @@ describeIfDb("runWorkflowTurn", () => {
       expect(eventTypes).toContain("status");
       expect(eventTypes).toContain("message");
       expect(eventTypes).toContain("done");
+    });
+  });
+
+  it("saves the API input in the run directory before the agent starts", async () => {
+    await withTestOrg(async (orgId) => {
+      const { workflow } = await saveWorkflow({
+        orgId,
+        name: "api input workflow",
+        steps: [{ id: "s1", description: "read the input" }],
+      });
+      let saved: unknown = null;
+      const backend = fakeBackend(async (opts) => {
+        saved = JSON.parse(
+          await readFile(join(opts.workspace!.runRoot, WORKFLOW_API_INPUT_FILE), "utf8"),
+        );
+        return { status: "completed", finalText: "Read it." };
+      });
+      const prepared = await prepareWorkflowRun(
+        { orgId, workflowId: workflow.id, triggerKind: "manual" },
+        { resolveAgentBackend: async () => backend },
+      );
+
+      await runWorkflowTurn(
+        {
+          prepared,
+          mode: "headless",
+          emit: async () => {},
+          triggerInput: { accounts: ["A1", "B2"] },
+        },
+        {
+          resolveAgentBackend: async () => backend,
+          formatGlobalMemoryPromptContext: async () => "",
+        },
+      );
+
+      expect(saved).toEqual({ accounts: ["A1", "B2"] });
     });
   });
 

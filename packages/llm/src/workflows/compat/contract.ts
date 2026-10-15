@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { canonicalJson } from "../../canonical-json";
+import { WORKFLOW_API_INPUT_FILE } from "../api-contract";
 
 export const RECKON_TOKEN_HEADER = "x-webhook-token";
 export const RECKON_IDEMPOTENCY_HEADER = "idempotency-key";
@@ -133,6 +134,7 @@ export function buildReckonSeedMessage(input: {
     "```json",
     JSON.stringify(input.params, null, 2),
     "```",
+    `The same parameters are saved as JSON in $RUN_DIR/${WORKFLOW_API_INPUT_FILE}. Read large inputs from that file.`,
     "",
     `[output] Write your single deliverable to $ARTIFACT_DIR/${artifact}. It is the only file the caller is served.`,
     "Keep every intermediate and row-level file under $RUN_DIR. Never print row data into the reply.",
