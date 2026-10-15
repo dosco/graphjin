@@ -110,6 +110,7 @@ func (f *Files) Skills() ([]agent.Skill, error) {
 			if !ok {
 				return "", fmt.Errorf("skill %s has no frontmatter", name)
 			}
+			body = withSkillDir(body, filepath.Join(f.dir, name))
 			if len(body) > maxSkillContent {
 				body = runePrefix(body, maxSkillContent/4-64) + "\n[guide truncated; read the rest with file_read at skills/" + name + "/SKILL.md]"
 			}
@@ -133,6 +134,13 @@ func (f *Files) skillText(name string, limit int64) (string, error) {
 		return "", fmt.Errorf("skill %s is not UTF-8", name)
 	}
 	return string(data), nil
+}
+
+// SKILL_DIR differs per skill, so a skill's text gets its folder in place of the variable.
+var skillDirVariable = regexp.MustCompile(`\$\{SKILL_DIR\}|\$SKILL_DIR\b`)
+
+func withSkillDir(text, dir string) string {
+	return skillDirVariable.ReplaceAllLiteralString(text, dir)
 }
 
 // splitFrontmatter returns the description and the body of a SKILL.md.
@@ -208,6 +216,9 @@ func (f *Files) read(ctx context.Context, raw json.RawMessage) (json.RawMessage,
 	f.mu.Lock()
 	f.reads[input.Path] = version
 	f.mu.Unlock()
+	if filepath.Base(input.Path) == "SKILL.md" {
+		data = []byte(withSkillDir(string(data), filepath.Join(f.dir, filepath.Dir(input.Path))))
+	}
 	lines := strings.SplitAfter(string(data), "\n")
 	if len(lines) > 0 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
