@@ -1,6 +1,7 @@
 import "server-only";
 
 import { pool } from "@neko/db";
+import { getOrgId } from "@/lib/db";
 
 const PUBLIC_URL_SCOPE = "public-url";
 
@@ -46,4 +47,9 @@ export async function savePublicUrl(orgId: string, url: string | null): Promise<
      on conflict (org_id, scope) do update set config = excluded.config, updated_at = now()`,
     [orgId, PUBLIC_URL_SCOPE, url],
   );
+}
+
+export async function withSavedPublicUrl(path: string): Promise<string> {
+  const { saved } = await getPublicUrlSetting(await getOrgId());
+  return saved ? `${saved}${path}` : path;
 }

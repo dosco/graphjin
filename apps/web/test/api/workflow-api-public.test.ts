@@ -17,8 +17,13 @@ const mocks = vi.hoisted(() => {
     edge: vi.fn(),
     admit: vi.fn(),
     status: vi.fn(),
+    publicUrl: { value: null as string | null },
   };
 });
+
+vi.mock("@/lib/public-url-settings", () => ({
+  withSavedPublicUrl: async (path: string) => `${mocks.publicUrl.value ?? ""}${path}`,
+}));
 
 vi.mock("@neko/llm/workflows", () => ({
   WORKFLOW_API_HARD_MAX_REQUEST_BYTES: 1024 * 1024,
@@ -64,6 +69,7 @@ function postRequest(input: {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.publicUrl.value = null;
   mocks.edge.mockResolvedValue(undefined);
   mocks.admit.mockResolvedValue({
     runId: "run-a",
@@ -114,6 +120,26 @@ describe("public workflow API routes", () => {
     expect(mocks.edge.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.admit.mock.invocationCallOrder[0]!,
     );
+  });
+
+  it("starts run and artifact URLs with the saved public URL", async () => {
+    mocks.publicUrl.value = "https://proxy.example.com/openneko";
+    const admitted = await POST(postRequest(), postContext);
+    const runUrl = "https://proxy.example.com/openneko/api/v1/workflows/workflow-a/runs/run-a";
+    expect(admitted.headers.get("location")).toBe(runUrl);
+    expect((await admitted.json()).statusUrl).toBe(runUrl);
+
+    const running = await mocks.status();
+    mocks.status.mockResolvedValueOnce({
+      ...running,
+      status: "completed",
+      artifact: { url: "/api/v1/workflows/workflow-a/runs/run-a/artifact" },
+    });
+    const polled = await GET(
+      new NextRequest(runUrl, { headers: { authorization: "Bearer workflow-token" } }),
+      getContext,
+    );
+    expect((await polled.json()).artifact.url).toBe(`${runUrl}/artifact`);
   });
 
   it("keeps execution mode in the query string and admits batch explicitly", async () => {
