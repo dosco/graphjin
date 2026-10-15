@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -28,6 +29,7 @@ const (
 // Shell runs commands in the run workspace without the host's credentials.
 type Shell struct {
 	dir       string
+	skills    string
 	strip     map[string]bool
 	timeout   int
 	maxOutput int
@@ -56,6 +58,42 @@ func (s *Shell) SetLimits(timeoutSeconds, maxOutput int) error {
 	}
 	s.timeout, s.maxOutput = timeoutSeconds, maxOutput
 	return nil
+}
+
+// SetSkillsRoot names the staged skills, so a command can find its skill's folder.
+func (s *Shell) SetSkillsRoot(dir string) {
+	s.skills = dir
+}
+
+var skillDirPath = regexp.MustCompile(`\$\{?SKILL_DIR\}?(/[^\s"'$;|&()<>]+)`)
+
+// skillDir returns the one staged skill that holds every $SKILL_DIR path in the command.
+// SKILL_DIR differs per skill, so it cannot be set once for the run.
+func (s *Shell) skillDir(command string) string {
+	if s.skills == "" || os.Getenv("SKILL_DIR") != "" {
+		return ""
+	}
+	found := ""
+	for _, match := range skillDirPath.FindAllStringSubmatch(command, -1) {
+		hits, _ := filepath.Glob(filepath.Join(s.skills, "*", filepath.Clean(match[1])))
+		dirs := map[string]bool{}
+		for _, hit := range hits {
+			rel, err := filepath.Rel(s.skills, hit)
+			if err == nil && filepath.IsLocal(rel) {
+				dirs[filepath.Join(s.skills, strings.SplitN(rel, string(filepath.Separator), 2)[0])] = true
+			}
+		}
+		if len(dirs) != 1 {
+			return ""
+		}
+		for dir := range dirs {
+			if found != "" && found != dir {
+				return ""
+			}
+			found = dir
+		}
+	}
+	return found
 }
 
 func (s *Shell) Capability() agent.Capability {
@@ -92,6 +130,9 @@ func (s *Shell) run(ctx context.Context, raw json.RawMessage) (json.RawMessage, 
 		if !s.strip[name] {
 			cmd.Env = append(cmd.Env, entry)
 		}
+	}
+	if dir := s.skillDir(input.Command); dir != "" {
+		cmd.Env = append(cmd.Env, "SKILL_DIR="+dir)
 	}
 	output := &capturedOutput{max: s.maxOutput}
 	cmd.Stdout, cmd.Stderr = output, output
