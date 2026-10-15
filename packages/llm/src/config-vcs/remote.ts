@@ -233,11 +233,34 @@ export async function openPullRequest(opts: {
       });
   const payload = (await response.json().catch(() => ({}))) as { html_url?: string; web_url?: string; message?: string };
   if (!response.ok) {
-    throw new ContextRemoteError(
-      `The branch was pushed, but ${provider === "github" ? "GitHub" : "GitLab"} did not open the request (${response.status}${payload.message ? `: ${payload.message}` : ""}).`,
+    const host = provider === "github" ? "GitHub" : "GitLab";
+    const permission = provider === "github" ? "Pull requests: Read and write" : "the api scope";
+    const refused = response.status === 401 || response.status === 403 || response.status === 404;
+    throw new PullRequestNotOpenedError(
+      `The branch was pushed, but ${host} did not open the request (${response.status}${payload.message ? `: ${payload.message}` : ""}).` +
+        (refused ? ` Give the token ${permission} on this repository, or open the request yourself.` : " Open the request yourself."),
+      newRequestUrl(opts.url, provider, path, opts.head, opts.base),
     );
   }
   return payload.html_url ?? payload.web_url ?? null;
+}
+
+/** The branch is on the remote; only the request is missing. `link` opens the host's new-request page. */
+export class PullRequestNotOpenedError extends ContextRemoteError {
+  constructor(message: string, readonly link: string) {
+    super(message);
+    this.name = "PullRequestNotOpenedError";
+  }
+}
+
+function newRequestUrl(url: URL, provider: "github" | "gitlab", path: string, head: string, base: string): string {
+  const origin = `https://${remoteTransport(url) === "ssh" ? url.hostname : url.host}`;
+  return provider === "github"
+    ? `${origin}/${path}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?expand=1`
+    : `${origin}/${path}/-/merge_requests/new?${new URLSearchParams({
+        "merge_request[source_branch]": head,
+        "merge_request[target_branch]": base,
+      })}`;
 }
 
 /**

@@ -164,7 +164,7 @@ export default function RepositoryForm({ initial }: { initial: ContextRemoteSett
                     {remote.lastPublish.at.slice(0, 16).replace("T", " ")} UTC · {remote.lastPublish.detail}{" "}
                     {remote.lastPublish.link ? (
                       <a className="underline" href={remote.lastPublish.link} target="_blank" rel="noreferrer">
-                        Open
+                        {remote.lastPublish.status === "ok" ? "Open" : "Open the request"}
                       </a>
                     ) : null}
                   </p>

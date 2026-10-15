@@ -17,6 +17,7 @@ import {
   publishItemDiff,
   parseRemoteUrl,
   publishContext,
+  PullRequestNotOpenedError,
   skillTreesAt,
   validBranchName,
 } from "../src/config-vcs/remote";
@@ -127,6 +128,25 @@ describe("remote settings validation", () => {
     });
     expect(link).toBe("https://github.com/acme/context/pull/7");
     expect(fetchImpl).toHaveBeenCalledWith("https://api.github.com/repos/acme/context/pulls", expect.objectContaining({ method: "POST" }));
+  });
+
+  it("links to the host's new-request page when the token cannot open the request", async () => {
+    const refused = async () => new Response(JSON.stringify({ message: "Resource not accessible by personal access token" }), { status: 403 });
+    const github = openPullRequest({
+      url: new URL("https://github.com/acme/context.git"), token: "t", head: "openneko/x", base: "main", title: "T", body: "B",
+      fetchImpl: refused as unknown as typeof fetch,
+    });
+    await expect(github).rejects.toBeInstanceOf(PullRequestNotOpenedError);
+    await expect(github).rejects.toMatchObject({
+      message: expect.stringContaining("Pull requests: Read and write"),
+      link: "https://github.com/acme/context/compare/main...openneko%2Fx?expand=1",
+    });
+    await expect(openPullRequest({
+      url: new URL("ssh://git@gitlab.com/acme/context.git"), token: "t", head: "openneko/x", base: "main", title: "T", body: "B",
+      fetchImpl: refused as unknown as typeof fetch,
+    })).rejects.toMatchObject({
+      link: "https://gitlab.com/acme/context/-/merge_requests/new?merge_request%5Bsource_branch%5D=openneko%2Fx&merge_request%5Btarget_branch%5D=main",
+    });
   });
 });
 
