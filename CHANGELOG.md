@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.5.4](https://github.com/open-neko/openneko/compare/v4.5.3...v4.5.4) (2026-10-15)
+
+
+### Bug Fixes
+
+* **backup:** retry the config snapshot when a volume changes during tar ([a93f175](https://github.com/open-neko/openneko/commit/a93f17502ce69dc4690bc0ab99e27fca08478782))
+* **backup:** retry the config snapshot when a volume changes during tar ([5895ead](https://github.com/open-neko/openneko/commit/5895ead47b24e954c96c64e8a8455264d0eb02f9))
+
 ## [4.5.3](https://github.com/open-neko/openneko/compare/v4.5.2...v4.5.3) (2026-10-15)
 
 
