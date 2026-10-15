@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.5.1](https://github.com/open-neko/openneko/compare/v4.5.0...v4.5.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **workflows:** retry API admission conflicts with backoff and answer 503 when busy ([3164742](https://github.com/open-neko/openneko/commit/3164742a0728a85a7548b15f66fd5e4196f71727))
+* **workflows:** retry API admission conflicts with backoff and answer 503 when busy ([eac63f1](https://github.com/open-neko/openneko/commit/eac63f19f67f3a54648bb2bf1822636892d7ddc1))
+
 ## [4.5.0](https://github.com/open-neko/openneko/compare/v4.4.2...v4.5.0) (2026-10-15)
 
 
