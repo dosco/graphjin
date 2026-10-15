@@ -14,7 +14,7 @@ suite:
         "2028.1": intent-phrased tasks with execution twins, v10 ruler
         "2028.2": 'cross-source ruler fix (v11): argument-free file reads count'
     generator_version: graphjin.eval.generator/v12
-    identity: aee1384c34edd76be7a722499d4b659b
+    identity: f1ca58d9a7713ec691f068f4d97390b9
     suite_fingerprint: 8f31247903e5b5cbc49501e3632968d6
     catalog_hash: c4ee2c0d346f636f9230881f7fa9d912
     seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
@@ -22,7 +22,7 @@ suite:
     seed: 23
     repeats: 3
     max_steps: 8
-    reward_version: graphjin.eval.reward/v6
+    reward_version: graphjin.eval.reward/v7
     category_counts:
         action: 15
         aggregate: 15
@@ -2393,13 +2393,14 @@ runs:
       label: Gemini 3.8 Flash
       release: bc994887
       notes: Fresh generation-2028.4 run on GraphJin bc994887 with xhigh reasoning; 339 episodes completed in 340 provider attempts. One attempt has missing usage metadata, so recorded usage is a lower bound; safety precision 1.0 and zero unsafe effects.
-      ranked: true
+      ranked: false
+      unranked_reason: superseded by corrected scoring contract (graphjin.eval.reward/v6 → graphjin.eval.reward/v7)
       generation: "2028.4"
       generated_at: 2026-09-03T04:24:19.85355Z
       model: gemini-3.8-flash
       provider: google-gemini
       model_key: google-gemini/gemini-3.8-flash
-      board_eligible: true
+      board_eligible: false
       service_tier: auto
       reasoning: xhigh
       graphjin_commit: bc994887
@@ -2456,5 +2457,73 @@ runs:
       usage_incomplete: true
       usage_unknown_attempts: 1
       guard_interventions: 11
+      unsafe_effects: 0
+      accepted: true
+    - run_id: 20261015T052931.824674000Z-dab028f6
+      slug: 20261015t052931-dab028f6
+      label: gemini-4-argon
+      release: ea249e97
+      ranked: true
+      generation: "2028.4"
+      generated_at: 2026-10-15T06:29:46.862794Z
+      model: gemini-4-argon
+      provider: google-gemini
+      model_key: google-gemini/gemini-4-argon
+      board_eligible: true
+      service_tier: auto
+      graphjin_commit: ea249e97ce5e9d91951e44dd4ebc687abe679811
+      binary_fingerprint: 2302c052bee60343ce0f228cbba2ae5a83c47c56865895aced30ee273e750afc
+      suite_identity: f1ca58d9a7713ec691f068f4d97390b9
+      suite_fingerprint: 8f31247903e5b5cbc49501e3632968d6
+      catalog_hash: c4ee2c0d346f636f9230881f7fa9d912
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: 7d7f05cf9da7339027ead7fdaff688ef0443a32b4d1d10605f3e1d2e67328ea9
+      data_anchor: "2026-10-15"
+      reward_version: graphjin.eval.reward/v7
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 113
+      episode_count: 339
+      recall: 0.9646017699115044
+      recall_ci_low: 0.9292035398230089
+      recall_ci_high: 0.9911504424778761
+      pass_at_k: 0.9823008849557522
+      pass_power_k: 0.911504424778761
+      ground_truth_recall: 0.9805825242718447
+      method_recall: 0.970873786407767
+      safety_precision: 1
+      behavior_recall: 0.9911504424778761
+      category_recall:
+        action: 1
+        aggregate: 1
+        cross-source: 0.75
+        discovery: 0.8
+        multi-turn: 1
+        ranking: 1
+        reactive: 1
+        refusal: 1
+        saved-metric: 1
+        window: 1
+      rollup_recall:
+        governance: 1
+        operations: 0.9523809523809523
+        questions: 0.9672131147540983
+      rollup_pass_power:
+        governance: 1
+        operations: 0.8809523809523809
+        questions: 0.9180327868852459
+      mean_reward: 0.978167256637168
+      total_tokens: 10092731
+      prompt_tokens: 5838192
+      completion_tokens: 675656
+      provider_total_tokens: 10146087
+      latency_p50_ms: 65425
+      latency_p95_ms: 172298
+      usage_incomplete: true
+      usage_unknown_attempts: 3
+      guard_interventions: 10
       unsafe_effects: 0
       accepted: true
