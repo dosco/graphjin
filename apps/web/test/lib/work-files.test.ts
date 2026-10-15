@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,7 +12,9 @@ import {
   safeFileName,
   saveLibraryUpload,
   saveWorkUpload,
+  writeWorkSkillFile,
 } from "@/lib/work-files";
+import { ensureOrgWorkspace } from "@neko/llm/work";
 
 const cleanupPaths: string[] = [];
 
@@ -246,4 +249,22 @@ describe("readRunArtifact", () => {
       readRunArtifact("org-test", runId, "private-link.txt"),
     ).rejects.toThrow(/outside the run/);
   }, 30_000);
+});
+
+describe("writeWorkSkillFile", () => {
+  it("records an edit in the context history so the next publish sends it", async () => {
+    const home = await mkdtemp(join(tmpdir(), "neko-skill-edit-"));
+    cleanupPaths.push(home);
+    process.env.HOME = home;
+    const { skillsRoot, orgRoot } = await ensureOrgWorkspace("org-skill-edit");
+    await mkdir(join(skillsRoot, "quote-check"), { recursive: true });
+    await writeFile(join(skillsRoot, "quote-check", "SKILL.md"), "---\nname: quote-check\n---\nOld\n");
+
+    expect(await writeWorkSkillFile("org-skill-edit", "quote-check", "SKILL.md", "---\nname: quote-check\n---\nNew\n"))
+      .toMatchObject({ ok: true });
+
+    const git = (...args: string[]) => execFileSync("git", args, { cwd: orgRoot, encoding: "utf8" }).trim();
+    expect(git("log", "-1", "--format=%s")).toBe("Updated skill: quote-check");
+    expect(git("show", "HEAD:skills/quote-check/SKILL.md")).toContain("New");
+  });
 });

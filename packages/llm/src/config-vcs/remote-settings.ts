@@ -9,6 +9,7 @@ import {
   bringInRemoteSkills,
   CONTEXT_REMOTE_KINDS,
   ContextRemoteError,
+  PullRequestNotOpenedError,
   DEFAULT_CONTEXT_REMOTE_KINDS,
   parseRemoteUrl,
   incomingSkillDiff,
@@ -264,7 +265,7 @@ export async function publishOrgContext(
   } catch (error) {
     if (!(error instanceof ContextRemoteError)) console.warn(`[config-vcs] publish failed: ${(error as Error).message}`);
     const detail = error instanceof ContextRemoteError ? error.message : "Publishing failed.";
-    await record("failed", detail, null);
+    await record("failed", detail, error instanceof PullRequestNotOpenedError ? error.link : null);
     throw error instanceof ContextRemoteError ? error : new ContextRemoteError(detail);
   }
 }

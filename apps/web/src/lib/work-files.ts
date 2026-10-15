@@ -3,6 +3,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { recordConfigChange } from "@neko/llm/config-vcs";
 import { ensureOrgWorkspace } from "@neko/llm/work";
 import { LIBRARY_SUPPORTED_EXTENSIONS } from "@neko/llm/library/formats";
 
@@ -384,6 +385,14 @@ export async function writeWorkSkillFile(
   const existing = await readFile(resolved.abs);
   if (looksBinary(existing)) return { ok: false, reason: "binary" };
   await writeFile(resolved.abs, buffer);
+  await recordConfigChange({
+    workspaceRoot: roots.orgRoot,
+    orgId,
+    paths: [`skills/${name}`],
+    message: `Updated skill: ${name}`,
+    artifactKind: "skill",
+    artifactRef: name,
+  });
   return { ok: true, bytes: buffer.byteLength };
 }
 
