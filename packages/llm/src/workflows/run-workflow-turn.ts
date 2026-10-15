@@ -1,3 +1,5 @@
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { graphjinAgentEnabledForOrg, heldItems, pool, resolveUserGroups } from "@neko/db";
 import type { GraphjinDataPath } from "../work/graphjin-tool-policy";
@@ -21,6 +23,7 @@ import {
   setWorkRunValue,
 } from "../work/store";
 import { ensureWorkWorkspace } from "../work/workspace";
+import { WORKFLOW_API_INPUT_FILE } from "./api-contract";
 import { discoverRunArtifacts } from "../work/artifacts";
 import { botThreadForWorkflow } from "../work/bot";
 import { inProcessControlPlane } from "../work/control-plane";
@@ -168,6 +171,8 @@ export type RunWorkflowTurnOptions = {
   /** Efficacy evals disable time-saved metadata. Defaults to true. */
   includeUxMetadata?: boolean;
   userMessage?: string;
+  /** API input, saved as JSON in the run directory before the agent starts. */
+  triggerInput?: unknown;
   mode: "live" | "headless";
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
@@ -249,6 +254,12 @@ async function runWorkflowTurnTraced(
   };
 
   const workspace = await startupPhase("workspace.prepare", async () => ensureWorkWorkspace(orgId, threadId, workRunId));
+  if (opts.triggerInput !== undefined) {
+    await writeFile(
+      join(workspace.runRoot, WORKFLOW_API_INPUT_FILE),
+      `${JSON.stringify(opts.triggerInput, null, 2)}\n`,
+    );
+  }
 
   try {
     if (!backend.capabilities.mcpTools) {

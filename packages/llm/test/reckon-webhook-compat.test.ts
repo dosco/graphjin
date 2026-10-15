@@ -118,6 +118,7 @@ describe("reckon webhook contract", () => {
     expect(message).toContain('"accounts"');
     expect(message).toContain("$ARTIFACT_DIR/result.csv");
     expect(message).toContain("chunks of at most 250 records");
+    expect(message).toContain("$RUN_DIR/trigger_input.json");
     expect(reckonSeedMessageFrom({ openneko_reckon_webhook: { message } })).toBe(message);
     expect(reckonSeedMessageFrom({ other: 1 })).toBeNull();
   });

@@ -54,6 +54,7 @@ vi.mock("@neko/llm/workflows", () => ({
   runCompiledWorkflowApiBatch: mocks.runBatch,
   runWorkflowTurn: mocks.run,
   updateWorkflowApiRunProgress: mocks.updateProgress,
+  WORKFLOW_API_INPUT_FILE: "trigger_input.json",
 }));
 
 vi.mock("../../src/plugins/registry-instance.js", () => ({
@@ -250,6 +251,7 @@ describe("workflow API execution consumer", () => {
         prepared: apiPrepared,
         mode: "headless",
         userMessage: expect.stringContaining('"orderId":"1042"'),
+        triggerInput: expect.objectContaining({ orderId: "1042" }),
         timeoutMs: apiLimits.maxRuntimeSeconds * 1_000,
       }),
       expect.any(Object),

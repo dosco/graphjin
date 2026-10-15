@@ -13,6 +13,7 @@ export const WORKFLOW_API_HARD_MAX_REQUEST_BYTES = 1024 * 1024;
 export const WORKFLOW_API_HARD_MAX_BATCH_RECORDS = 10_000;
 export const WORKFLOW_API_PREVIEW_BYTES = 4_096;
 export const WORKFLOW_API_DEFAULT_RETENTION_HOURS = 168;
+export const WORKFLOW_API_INPUT_FILE = "trigger_input.json";
 
 export type WorkflowApiExecutionMode = "single" | "batch";
 
