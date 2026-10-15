@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.4.1](https://github.com/open-neko/openneko/compare/v4.4.0...v4.4.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **context:** publish skill edits from the UI and link a refused pull request ([14ed8fe](https://github.com/open-neko/openneko/commit/14ed8fea7d974445b76fca7796e710fcd85f1ace))
+* **context:** publish skill edits from the UI and link a refused pull request ([6a4ab5f](https://github.com/open-neko/openneko/commit/6a4ab5f0fa5f0d5eb13d8271ea02a8fa9f44e3da))
+
 ## [4.4.0](https://github.com/open-neko/openneko/compare/v4.3.1...v4.4.0) (2026-10-15)
 
 

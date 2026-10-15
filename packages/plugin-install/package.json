@@ -1,6 +1,6 @@
 {
   "name": "@open-neko/plugin-install",
-  "version": "4.4.0",
+  "version": "4.4.1",
   "private": true,
   "license": "Apache-2.0",
   "description": "Shared library for OpenNeko plugin install + secrets-store. Consumed by both the worker (reads the secrets store, will gain a server-side install path) and the openneko CLI (the operator-facing surface).",
