@@ -327,11 +327,15 @@ async function cleanupStagedFile(
   );
 }
 
-async function withSerializableTransaction<T>(
+const SERIALIZABLE_ATTEMPTS = 8;
+
+export async function withSerializableTransaction<T>(
   fn: (client: PoolClient) => Promise<T>,
+  connect: () => Promise<PoolClient> = () => pool().connect(),
 ): Promise<T> {
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const client = await pool().connect();
+  for (let attempt = 1; ; attempt += 1) {
+    const client = await connect();
+    let conflict = false;
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       const result = await fn(client);
@@ -339,14 +343,21 @@ async function withSerializableTransaction<T>(
       return result;
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
-      const code = (error as { code?: string } | null)?.code;
-      if (code === "40001" && attempt < 3) continue;
-      throw error;
+      if ((error as { code?: string } | null)?.code !== "40001") throw error;
+      conflict = true;
     } finally {
       client.release();
     }
+    if (conflict && attempt >= SERIALIZABLE_ATTEMPTS) {
+      throw new WorkflowApiError(
+        "busy",
+        "The workflow API is busy. Retry the request with the same Idempotency-Key.",
+        503,
+        1,
+      );
+    }
+    await new Promise((done) => setTimeout(done, Math.random() * 25 * 2 ** Math.min(attempt, 5)));
   }
-  throw new Error("Serializable workflow API transaction exhausted retries.");
 }
 
 type ExistingAdmissionRow = {
