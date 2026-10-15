@@ -131,11 +131,13 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [revealedToken, setRevealedToken] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  const origin = useSyncExternalStore(
+  const [publicUrl, setPublicUrl] = useState<string | null>(null);
+  const browserOrigin = useSyncExternalStore(
     subscribeToOrigin,
     () => window.location.origin,
     () => "https://your-openneko.example",
   );
+  const origin = publicUrl ?? browserOrigin;
 
   const apiPath = `/api/v1/workflows/${workflowId}/runs`;
   const singleExample = useMemo(
@@ -190,6 +192,7 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
       const body = (await response.json().catch(() => ({}))) as {
         access?: WorkflowApiAccess;
         lastRequest?: Record<string, unknown> | null;
+        publicUrl?: string | null;
         error?: unknown;
       };
       if (!response.ok || !body.access) {
@@ -197,6 +200,7 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
       }
       setForbidden(false);
       setLastRequest(body.lastRequest ?? null);
+      setPublicUrl(body.publicUrl ?? null);
       applyAccess(body.access);
     } catch (cause) {
       setError(

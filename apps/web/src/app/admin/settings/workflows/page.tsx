@@ -10,6 +10,8 @@ import { AdminDenied } from "@/app/admin/AdminShell";
 import { WorkflowApiAccessPanel } from "@/app/(work)/workflows/WorkflowApiAccessPanel";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
+import { getPublicUrlSetting } from "@/lib/public-url-settings";
+import PublicUrlForm from "./PublicUrlForm";
 import WorkflowOrgLimitsForm from "./WorkflowOrgLimitsForm";
 
 export default async function WorkflowSettingsPage({
@@ -21,12 +23,13 @@ export default async function WorkflowSettingsPage({
   const actor = await getCurrentActor();
   if (actor.role !== "admin") return <AdminDenied />;
   const orgId = await getOrgId();
-  const [workflows, orgLimits] = await Promise.all([
+  const [workflows, orgLimits, publicUrl] = await Promise.all([
     listWorkflows(orgId),
     pool().query<{ rolling_token_budget: number; rolling_cost_micros_budget: string }>(
       "select rolling_token_budget, rolling_cost_micros_budget from workflow_api_org_limits where org_id = $1",
       [orgId],
     ),
+    getPublicUrlSetting(orgId),
   ]);
   const selected = (await searchParams).workflow;
   const workflow = workflows.find((item) => item.id === selected) ?? workflows[0];
@@ -38,9 +41,10 @@ export default async function WorkflowSettingsPage({
         <SectionNav current="admin" />
       </AppHeader>
       <PageHeading
-        title="Workflow API limits"
-        description="Set the organization budget and each workflow's API execution limits. Runtime also sets the agent's time allowance for API runs."
+        title="Workflow API"
+        description="Set the public URL, the organization budget, and each workflow's API execution limits. Runtime also sets the agent's time allowance for API runs."
       />
+      <PublicUrlForm initial={publicUrl} />
       <WorkflowOrgLimitsForm initial={{
         rollingTokenBudget: limits?.rolling_token_budget ?? Number(process.env.OPENNEKO_WORKFLOW_API_ORG_ROLLING_TOKEN_BUDGET ?? 1_000_000),
         rollingCostMicrosBudget: Number(limits?.rolling_cost_micros_budget ?? process.env.OPENNEKO_WORKFLOW_API_ORG_ROLLING_COST_MICROS_BUDGET ?? 50_000_000),

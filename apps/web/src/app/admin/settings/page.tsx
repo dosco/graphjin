@@ -233,8 +233,8 @@ export default async function SettingsPage() {
         },
         {
           href: "/admin/settings/workflows",
-          title: "Workflow API limits",
-          copy: "Budgets for workflows that other systems start through the API.",
+          title: "Workflow API",
+          copy: "Public URL and budgets for workflows that other systems start through the API.",
           status: workflowOrgLimits.rows.length > 0 ? "Custom budget" : "Default budget",
           statusTone: "neutral",
         },
