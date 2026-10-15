@@ -127,3 +127,30 @@ func TestShellHostLimits(t *testing.T) {
 		t.Fatalf("host output cap not applied: truncated=%v len=%d", out.Truncated, len(out.Output))
 	}
 }
+
+func TestShellSetsSkillDirFromTheScriptPath(t *testing.T) {
+	t.Setenv("SKILL_DIR", "")
+	skills := t.TempDir()
+	for _, path := range []string{"stock-check/scripts/check.py", "lead-report/scripts/report.py", "lead-report/scripts/common.py", "stock-check/scripts/common.py"} {
+		if err := os.MkdirAll(filepath.Join(skills, filepath.Dir(path)), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(skills, path), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, _ := OpenShell(t.TempDir(), nil)
+	s.SetSkillsRoot(skills)
+	for command, want := range map[string]string{
+		`echo \"[$SKILL_DIR]\" \"$SKILL_DIR/scripts/check.py\"`:                          "[" + filepath.Join(skills, "stock-check") + "]",
+		`echo \"[${SKILL_DIR}]\" ${SKILL_DIR}/scripts/report.py`:                         "[" + filepath.Join(skills, "lead-report") + "]",
+		`echo \"[$SKILL_DIR]\" $SKILL_DIR/scripts/common.py`:                             "[]",
+		`echo \"[$SKILL_DIR]\" $SKILL_DIR/scripts/check.py $SKILL_DIR/scripts/report.py`: "[]",
+		`echo \"[$SKILL_DIR]\" $SKILL_DIR/../../etc/passwd`:                              "[]",
+	} {
+		result, err := runShell(t, s, context.Background(), `{"command":"`+command+`"}`)
+		if err != nil || !strings.HasPrefix(result.Output, want) {
+			t.Fatalf("%s: result=%+v err=%v want %s", command, result, err, want)
+		}
+	}
+}

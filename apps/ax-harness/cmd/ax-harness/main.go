@@ -53,6 +53,7 @@ func main() {
 		if err != nil {
 			fail(fmt.Errorf("terminal unavailable: %w", err))
 		}
+		shell.SetSkillsRoot(os.Getenv("OPENNEKO_MCP_SKILLS_ROOT"))
 		if err := shell.SetLimits(intEnv("OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS", 180), intEnv("OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT", 50_000)); err != nil {
 			fail(err)
 		}
