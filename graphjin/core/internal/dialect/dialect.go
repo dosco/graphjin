@@ -1,6 +1,7 @@
 package dialect
 
 import (
+	"strings"
 	"fmt"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
@@ -296,4 +297,13 @@ func GenericRenderMutationPostamble(ctx Context, qc *qcode.QCode) {
 
 		ctx.WriteString(`)`)
 	}
+}
+
+// quoteSQLString escapes a value for a single-quoted SQL string literal.
+// MySQL and MariaDB also treat a backslash as an escape character.
+func quoteSQLString(value string, backslash bool) string {
+	if backslash {
+		value = strings.ReplaceAll(value, `\`, `\\`)
+	}
+	return strings.ReplaceAll(value, "'", "''")
 }

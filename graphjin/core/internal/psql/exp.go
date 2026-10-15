@@ -204,6 +204,10 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 			if valType == qcode.ValList {
 				valType = ex.Right.ListType
 			}
+			// is_null takes a boolean flag, not a boolean value to compare.
+			if ex.Op == qcode.OpIsNull || ex.Op == qcode.OpIsNotNull {
+				valType = qcode.ValStr
+			}
 			switch valType {
 			case qcode.ValBool:
 				c.dialect.RenderTryCast(c, func() {
