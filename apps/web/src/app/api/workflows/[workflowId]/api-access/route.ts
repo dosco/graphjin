@@ -10,6 +10,7 @@ import {
 } from "@neko/llm/workflows";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
 import { getOrgId } from "@/lib/db";
+import { getPublicUrl } from "@/lib/public-url-settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,9 +54,10 @@ async function adminContext(context: RouteContext) {
 export async function GET(_request: Request, context: RouteContext) {
   const scope = await adminContext(context);
   if ("denied" in scope) return scope.denied;
-  const [access, lastRequest] = await Promise.all([
+  const [access, lastRequest, publicUrl] = await Promise.all([
     getWorkflowApiAccess(scope.orgId, scope.workflowId),
     getLastWorkflowApiRequest(scope.orgId, scope.workflowId),
+    getPublicUrl(scope.orgId),
   ]);
   if (!access) {
     return response(
@@ -63,7 +65,7 @@ export async function GET(_request: Request, context: RouteContext) {
       404,
     );
   }
-  return response({ access, lastRequest });
+  return response({ access, lastRequest, publicUrl });
 }
 
 export async function POST(request: Request, context: RouteContext) {

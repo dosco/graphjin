@@ -28,6 +28,7 @@ vi.mock("@/lib/admin-auth", () => ({
   isDenied: (value: unknown) => value instanceof Response,
 }));
 vi.mock("@/lib/db", () => ({ getOrgId: mocks.getOrgId }));
+vi.mock("@/lib/public-url-settings", () => ({ getPublicUrl: async () => "https://openneko.example.com" }));
 vi.mock("@neko/llm/workflows", () => ({
   WorkflowApiError: mocks.TestWorkflowApiError,
   getWorkflowApiAccess: mocks.getAccess,
@@ -103,6 +104,7 @@ describe("workflow API access administration", () => {
 
     expect(response.status).toBe(200);
     expect(body.access).toEqual(access);
+    expect(body.publicUrl).toBe("https://openneko.example.com");
     expect(JSON.stringify(body)).not.toContain("one-time-secret");
   });
 
