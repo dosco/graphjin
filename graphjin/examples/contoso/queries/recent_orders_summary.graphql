@@ -1,0 +1,10 @@
+query recent_orders_summary {
+  orders(order_by: { order_date: desc }, limit: 10) {
+    order_key
+    customer_key
+    store_key
+    order_date
+    delivery_date
+    currency_code
+  }
+}

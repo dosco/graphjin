@@ -39,6 +39,15 @@ func resolveEnvSuite(spec string) (gjeval.Suite, string, error) {
 			return gjeval.Suite{}, "", err
 		}
 		return *suite, envSuiteEmbedded, nil
+	} else if strings.EqualFold(trimmed, DeepContosoBenchmarkSlug) {
+		suite, err := loadDeepContosoEvalSuite()
+		if err != nil {
+			return gjeval.Suite{}, "", err
+		}
+		if err := assertServableSuite(*suite); err != nil {
+			return gjeval.Suite{}, "", err
+		}
+		return *suite, DeepContosoBenchmarkSlug, nil
 	}
 	suite, err := gjeval.LoadSuite(trimmed)
 	if err != nil {
