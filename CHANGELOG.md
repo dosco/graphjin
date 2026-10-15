@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.5.2](https://github.com/open-neko/openneko/compare/v4.5.1...v4.5.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* **ax:** give each skill its folder in place of SKILL_DIR ([ceb2924](https://github.com/open-neko/openneko/commit/ceb2924f435e8e14d514b7d887265568d3c3f702))
+
 ## [4.5.1](https://github.com/open-neko/openneko/compare/v4.5.0...v4.5.1) (2026-10-15)
 
 
