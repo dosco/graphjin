@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.4.2](https://github.com/open-neko/openneko/compare/v4.4.1...v4.4.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* **agent:** set RUN_DIR and ARTIFACT_DIR for the agent's shell commands ([c159cf0](https://github.com/open-neko/openneko/commit/c159cf0bcb93f6a5850260e061dfb1a1fe64937e))
+* **agent:** set RUN_DIR and ARTIFACT_DIR for the agent's shell commands ([8f3a949](https://github.com/open-neko/openneko/commit/8f3a9498e37d0d1541bb5576248e69ea6c849beb))
+
 ## [4.4.1](https://github.com/open-neko/openneko/compare/v4.4.0...v4.4.1) (2026-10-15)
 
 
