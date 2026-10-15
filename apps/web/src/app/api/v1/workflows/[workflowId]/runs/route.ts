@@ -14,6 +14,7 @@ import {
   workflowApiJson,
   readWorkflowApiJsonBody,
 } from "@/lib/workflow-api-http";
+import { withSavedPublicUrl } from "@/lib/public-url-settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,19 +68,20 @@ async function postWorkflow(request: NextRequest, context: RouteContext) {
       clientFingerprint: fingerprint,
     }));
     startupEvent("workflow.api_admitted", { workflowRunId: admitted.runId, mode: admitted.mode, replay: admitted.replay, outcome: admitted.status });
+    const statusUrl = await withSavedPublicUrl(admitted.statusUrl);
     return workflowApiJson(
       {
         runId: admitted.runId,
         status: admitted.status,
         mode: admitted.mode,
         replay: admitted.replay,
-        statusUrl: admitted.statusUrl,
+        statusUrl,
         expiresAt: admitted.expiresAt.toISOString(),
       },
       {
         status: 202,
         headers: {
-          Location: admitted.statusUrl,
+          Location: statusUrl,
           "Retry-After": admitted.status === "queued" ? "3" : "1",
         },
       },

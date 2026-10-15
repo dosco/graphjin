@@ -11,6 +11,7 @@ import {
   workflowApiFingerprint,
   workflowApiJson,
 } from "@/lib/workflow-api-http";
+import { withSavedPublicUrl } from "@/lib/public-url-settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,6 +49,7 @@ async function getWorkflow(request: NextRequest, context: RouteContext) {
         startedAt: run.startedAt?.toISOString() ?? null,
         finishedAt: run.finishedAt?.toISOString() ?? null,
         expiresAt: run.expiresAt.toISOString(),
+        artifact: run.artifact ? { ...run.artifact, url: await withSavedPublicUrl(run.artifact.url) } : null,
       },
       {
         headers: run.retryAfterSeconds
