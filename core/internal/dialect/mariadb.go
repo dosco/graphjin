@@ -1582,7 +1582,7 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 			if val, ok := r.GetConfigVar(ex.Right.Val); ok {
 				// Config variable found - render as literal value
 				ctx.WriteString(`'`)
-				ctx.WriteString(val)
+				ctx.WriteString(quoteSQLString(val, true))
 				ctx.WriteString(`'`)
 			} else {
 				// Not a config variable - add as runtime param

@@ -304,7 +304,7 @@ func (d *MySQLDialect) RenderList(ctx Context, ex *qcode.Exp) {
 			ctx.WriteString(ex.Right.ListVal[i])
 		case qcode.ValStr:
 			ctx.WriteString(`'`)
-			ctx.WriteString(ex.Right.ListVal[i])
+			ctx.WriteString(quoteSQLString(ex.Right.ListVal[i], true))
 			ctx.WriteString(`'`)
 		case qcode.ValDBVar:
 			d.RenderVar(ctx, ex.Right.ListVal[i])
@@ -501,7 +501,7 @@ func (d *MySQLDialect) RenderLiteral(ctx Context, val string, valType qcode.ValT
 		ctx.WriteString(val)
 	case qcode.ValStr:
 		ctx.WriteString(`'`)
-		ctx.WriteString(val)
+		ctx.WriteString(quoteSQLString(val, true))
 		ctx.WriteString(`'`)
 	default:
 		d.Quote(ctx, val)

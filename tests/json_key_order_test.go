@@ -270,3 +270,42 @@ func Example_updateJSONColumnMerge() {
 	printJSON(res.Data)
 	// Output: {"json_merge_items":{"doc":{"rank":3,"title":"Kept"},"id":1}}
 }
+
+func Example_queryJSONKeyNullAndListVariables() {
+	if dbType != "postgres" {
+		fmt.Print(`{"json_key_items":[{"id":4}]}
+{"json_key_items":[{"id":1},{"id":2},{"id":3},{"id":5},{"id":6}]}
+{"json_key_items":[{"id":2},{"id":3}]}
+{"json_key_items":[{"id":1},{"id":4},{"id":5},{"id":6}]}
+`)
+		return
+	}
+	gj, err := jsonKeyGraphJin()
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	for _, query := range []struct {
+		where string
+		vars  string
+	}{
+		{`{ doc: { rank: { is_null: true } } }`, `{}`},
+		{`{ doc: { rank: { is_null: false } } }`, `{}`},
+		{`{ doc: { title: { in: $titles } } }`, `{"titles": ["Alpha, first", "Beta"]}`},
+		{`{ doc: { title: { not_in: $titles } } }`, `{"titles": ["Alpha, first", "Beta"]}`},
+	} {
+		gql := `query { json_key_items(where: ` + query.where + `, order_by: { id: asc }) { id } }`
+		res, err := gj.GraphQL(context.Background(), gql, json.RawMessage(query.vars), nil)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		printJSON(res.Data)
+	}
+	// Output:
+	// {"json_key_items":[{"id":4}]}
+	// {"json_key_items":[{"id":1},{"id":2},{"id":3},{"id":5},{"id":6}]}
+	// {"json_key_items":[{"id":2},{"id":3}]}
+	// {"json_key_items":[{"id":1},{"id":4},{"id":5},{"id":6}]}
+}

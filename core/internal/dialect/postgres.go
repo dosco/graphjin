@@ -270,7 +270,7 @@ func (d *PostgresDialect) renderListBodyPostgres(ctx Context, ex *qcode.Exp) {
 			ctx.WriteString(ex.Right.ListVal[i])
 		case qcode.ValStr:
 			ctx.WriteString(`'`)
-			ctx.WriteString(ex.Right.ListVal[i])
+			ctx.WriteString(quoteSQLString(ex.Right.ListVal[i], false))
 			ctx.WriteString(`'`)
 		}
 	}
@@ -331,11 +331,16 @@ func (d *PostgresDialect) RenderSearchHeadline(ctx Context, sel *qcode.Select, f
 
 func (d *PostgresDialect) RenderValVar(ctx Context, ex *qcode.Exp, val string) bool {
 	if ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn || ex.Op == qcode.OpContains || ex.Op == qcode.OpHasInCommon {
+		// A key inside a JSON column is read as text, so its list is text too.
+		elementType := ex.Left.Col.Type
+		if len(ex.Left.Path) != 0 {
+			elementType = "text"
+		}
 		ctx.WriteString(`(ARRAY(SELECT json_array_elements_text(`)
 		ctx.AddParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type, IsArray: true})
 		ctx.WriteString(`))`)
 		ctx.WriteString(` :: `)
-		ctx.WriteString(ex.Left.Col.Type)
+		ctx.WriteString(elementType)
 		ctx.WriteString(`[])`)
 		return true
 	}
@@ -349,7 +354,7 @@ func (d *PostgresDialect) RenderLiteral(ctx Context, val string, valType qcode.V
 	default:
 		// Default to single-quoted string literal (not double-quoted identifier)
 		ctx.WriteString(`'`)
-		ctx.WriteString(val)
+		ctx.WriteString(quoteSQLString(val, false))
 		ctx.WriteString(`'`)
 	}
 }
