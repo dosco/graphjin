@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.6.1](https://github.com/open-neko/openneko/compare/v4.6.0...v4.6.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **web:** start workflow API run and artifact links with the public URL ([6778d69](https://github.com/open-neko/openneko/commit/6778d6980fe262e2cc748dd2ff081f9601cfec4a))
+* **web:** start workflow API run and artifact links with the public URL ([a2247bc](https://github.com/open-neko/openneko/commit/a2247bcf0b765625dd6b11efa9a1dae0bf870542))
+
 ## [4.6.0](https://github.com/open-neko/openneko/compare/v4.5.4...v4.6.0) (2026-10-15)
 
 
