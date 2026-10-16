@@ -1,5 +1,18 @@
 # Changelog
 
+## [4.7.0](https://github.com/open-neko/openneko/compare/v4.6.1...v4.7.0) (2026-10-16)
+
+
+### Features
+
+* **workflows:** stable snake_case keys in the API answer table ([7728933](https://github.com/open-neko/openneko/commit/7728933a7289301905a1e6d51be5e745c4377236))
+* **workflows:** stable snake_case keys in the API answer table ([e3a84d2](https://github.com/open-neko/openneko/commit/e3a84d2e8de7d8b5e9e059a7e1589b839e508681))
+
+
+### Bug Fixes
+
+* **workflows:** read numbers with thousands separators in the API answer table ([33cfcc1](https://github.com/open-neko/openneko/commit/33cfcc131d1b38cf166fee41dc72fbdba7d8b220))
+
 ## [4.6.1](https://github.com/open-neko/openneko/compare/v4.6.0...v4.6.1) (2026-10-15)
 
 
