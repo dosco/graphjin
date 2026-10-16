@@ -341,6 +341,28 @@ func TestSkillShortlistKeepsOnlyRerankedGuides(t *testing.T) {
 	}
 }
 
+func TestDiscoverLoadsANamedGuideAloneAndRerankedSearchMatches(t *testing.T) {
+	var queries []string
+	index := &admittedTool{Capability: Capability{Name: SkillSearchTool, Call: func(_ context.Context, raw json.RawMessage) (json.RawMessage, error) {
+		queries = append(queries, string(raw))
+		return json.RawMessage(`{"content":["{\"skills\":[{\"name\":\"aw-discount-revenue\",\"score\":0.6},{\"name\":\"aw-discount-depth\",\"score\":0.55}]}"]}`), nil
+	}}}
+	skills := []Skill{{Name: "aw-discount-depth", Description: "Average discount depth"}, {Name: "aw-discount-revenue", Description: "Revenue lost to discounts"}}
+	var asked string
+	rerank := func(_ context.Context, request string, candidates []Skill) ([]string, error) {
+		asked = request
+		return []string{"aw-discount-depth"}, nil
+	}
+	named := searchSkills(context.Background(), index, skills, []ax.Value{"aw-discount-depth"}, "How deep were discounts?", rerank)
+	if len(named) != 1 || named[0].Name != "aw-discount-depth" || len(queries) != 0 {
+		t.Fatalf("named discover loaded %+v after %d index calls", named, len(queries))
+	}
+	searched := searchSkills(context.Background(), index, skills, []ax.Value{ax.Object("query", "discount analysis")}, "How deep were discounts?", rerank)
+	if len(searched) != 1 || searched[0].Name != "aw-discount-depth" || asked != "How deep were discounts?\n\nGuide search: discount analysis" {
+		t.Fatalf("searched=%+v asked=%q", searched, asked)
+	}
+}
+
 func TestAxSkillRerankReturnsOnlyRecalledGuides(t *testing.T) {
 	var body string
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

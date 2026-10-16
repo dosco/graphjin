@@ -119,21 +119,33 @@ func axSkillRerank(client ax.AIClient, options map[string]ax.Value, hooks ax.AxR
 	}
 }
 
-// searchSkills asks the host index for the guides closest in meaning to each
-// discover() query and returns the staged guides it names, in rank order.
-func searchSkills(ctx context.Context, search *admittedTool, skills []Skill, searches []ax.Value) []Skill {
-	if search == nil {
-		return nil
-	}
+// searchSkills returns the staged guides for each discover() query, in rank
+// order. A query that names a staged guide loads only that guide. Other
+// queries go to the host index, and the reranker keeps the matches that fit
+// the request.
+func searchSkills(ctx context.Context, search *admittedTool, skills []Skill, searches []ax.Value, request string, rerank skillRerank) []Skill {
 	staged := make(map[string]Skill, len(skills))
 	for _, skill := range skills {
 		staged[skill.Name] = skill
 	}
 	var found []Skill
 	seen := map[string]bool{}
+	add := func(skill Skill) {
+		if !seen[skill.Name] && len(found) < maxSkillMatches {
+			seen[skill.Name] = true
+			found = append(found, skill)
+		}
+	}
 	for _, value := range searches {
-		query := searchText(value)
+		query := strings.TrimSpace(searchText(value))
 		if query == "" {
+			continue
+		}
+		if skill, ok := staged[query]; ok {
+			add(skill)
+			continue
+		}
+		if search == nil {
 			continue
 		}
 		input, _ := json.Marshal(map[string]any{"query": query, "limit": skillMatchesPerSearch})
@@ -141,13 +153,26 @@ func searchSkills(ctx context.Context, search *admittedTool, skills []Skill, sea
 		if err != nil {
 			continue
 		}
+		var matches []Skill
 		for _, match := range skillMatches(raw) {
-			name := match.Name
-			skill, ok := staged[name]
-			if ok && !seen[name] && len(found) < maxSkillMatches {
-				seen[name] = true
-				found = append(found, skill)
+			if skill, ok := staged[match.Name]; ok {
+				matches = append(matches, skill)
 			}
+		}
+		if rerank != nil && len(matches) > 1 {
+			asked := query
+			if strings.TrimSpace(request) != "" {
+				asked = request + "\n\nGuide search: " + query
+			}
+			if picked, err := rerank(ctx, asked, matches); err == nil {
+				matches = matches[:0]
+				for _, name := range picked {
+					matches = append(matches, staged[name])
+				}
+			}
+		}
+		for _, skill := range matches {
+			add(skill)
 		}
 	}
 	return found

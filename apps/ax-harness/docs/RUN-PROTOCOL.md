@@ -17,7 +17,7 @@ Send exactly one object, at most 16 MiB. Unknown fields fail the run.
 | `run_id` | string | Required. 128 characters or fewer. |
 | `input_id` | string | Required. 128 characters or fewer. |
 | `prompt` | string | Required. It carries the whole turn, including history. Only the model context window bounds it. |
-| `skill_query` | string | Optional. The user message. The host skill index recalls up to 10 guides by meaning. When it recalls two or more, one model call on the context route keeps the two or fewer that fit the request. |
+| `skill_query` | string | Optional. The user message. The host skill index recalls up to 10 guides by meaning. When it recalls two or more, one model call on the context route keeps the two or fewer that fit the request. A `discover()` search that names a staged guide loads only that guide; a free-text search gets the same rerank. |
 | `skill_rerank` | string | Optional. `off` keeps the index order and makes no rerank call. The harness also skips the call when `max_model_calls` is 1 to 3. |
 | `stream_responses` | boolean | Optional. Sends live `answer.delta`, `thought.delta` and `actor.step` events. |
 | `timeout_ms` | integer | Optional. Run wall clock, 1,000 to 1,800,000. Default 540,000 (9 minutes). |

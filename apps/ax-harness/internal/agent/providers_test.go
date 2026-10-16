@@ -141,7 +141,7 @@ func TestSkillsCatalogLoadsAndReportsUse(t *testing.T) {
 	if strings.Contains(model.body(0), SkillSearchTool) {
 		t.Fatal("the skill index was offered to the model as a tool")
 	}
-	if len(queries) != 2 || queries[0] != "Make the daily lead report" || queries[1] != "daily-lead" {
+	if len(queries) != 1 || queries[0] != "Make the daily lead report" {
 		t.Fatalf("index queries = %q", queries)
 	}
 	if strings.Contains(model.body(1), "Guide available for this request") {

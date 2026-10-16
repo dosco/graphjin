@@ -429,7 +429,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 			// Host search keeps the catalog out of the prompt: discover() loads
 			// only the guides that match, however many are staged.
 			engineOptions["onSkillsSearch"] = ax.AxSkillsSearchFn(func(searches []ax.Value) []ax.Value {
-				found := searchSkills(ctx, skillSearch, skills, searches)
+				found := searchSkills(ctx, skillSearch, skills, searches, spec.SkillQuery, rerank)
 				out := make([]ax.Value, 0, len(found))
 				for _, skill := range found {
 					out = append(out, ax.Object("id", skill.Name, "name", skill.Name, "content", skill.body()))
