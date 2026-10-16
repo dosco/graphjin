@@ -598,8 +598,8 @@ type AnswerTable = {
 };
 
 function cellValue(value: unknown): string | number {
-  const text = String(value ?? "");
-  return /^-?\d+(\.\d+)?$/.test(text.trim()) ? Number(text) : text;
+  const text = String(value ?? "").trim();
+  return /^-?\d{1,3}(,\d{3})*(\.\d+)?$|^-?\d+(\.\d+)?$/.test(text) ? Number(text.replaceAll(",", "")) : text;
 }
 
 function answerKeys(labels: string[]): string[] {
