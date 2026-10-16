@@ -1,68 +1,30 @@
 package agent
 
-// TokenPrice is a trusted upper-bound price for one approved model route.
-// InputMicrosPerMillion must cover the most expensive input treatment on that
-// route, including cache writes; admission does not assume cache discounts.
-type TokenPrice struct {
-	InputMicrosPerMillion  int64 `json:"input_micros_per_million"`
-	OutputMicrosPerMillion int64 `json:"output_micros_per_million"`
-}
+import "github.com/open-neko/openneko/apps/ax-harness/internal/catalog"
 
-// CostSummary is the admission charge in USD micros. Missing provider
-// usage retains its reservation. It is an estimate, not a provider invoice.
+// CostSummary is the admission charge in USD micros at Ax catalog rates.
+// Missing provider usage retains its reservation. It is an estimate, not a
+// provider invoice.
 type CostSummary struct {
-	PricingVersion string `json:"pricing_version"`
+	CatalogVersion string `json:"catalog_version"`
 	ChargedMicros  int64  `json:"charged_micros"`
 	BudgetMicros   int64  `json:"budget_micros"`
 }
 
-const maxTokenPriceMicrosPerMillion int64 = 1_000_000_000
+const (
+	pricedByCatalog = "catalog"
+	unpriced        = "unpriced"
+)
 
-func (p TokenPrice) Valid() bool {
-	return p.InputMicrosPerMillion > 0 && p.InputMicrosPerMillion <= maxTokenPriceMicrosPerMillion &&
-		p.OutputMicrosPerMillion > 0 && p.OutputMicrosPerMillion <= maxTokenPriceMicrosPerMillion
-}
-
-func (p TokenPrice) Reservation(tokens int64) int64 {
-	if tokens <= 0 || !p.Valid() {
-		return 0
+// price sets the catalog cost of one reported call.
+func (u *ModelUsage) price(rates catalog.Rates, ok bool, version string) {
+	u.CatalogVersion = version
+	if !ok {
+		u.PricedBy = unpriced
+		return
 	}
-	rate := p.InputMicrosPerMillion
-	if p.OutputMicrosPerMillion > rate {
-		rate = p.OutputMicrosPerMillion
-	}
-	return millionthCeil(tokens, rate)
-}
-
-// Observed conservatively prices all reported tokens. Tokens not explained by
-// the provider's input/output split use the higher rate, never a zero charge.
-func (p TokenPrice) Observed(input, output, total int64) int64 {
-	if !p.Valid() || input < 0 || output < 0 || total < 0 {
-		return 0
-	}
-	extra := total - input - output
-	if extra < 0 {
-		extra = 0
-	}
-	return millionthCeil(input, p.InputMicrosPerMillion) +
-		millionthCeil(output, p.OutputMicrosPerMillion) + p.Reservation(extra)
-}
-
-// Ax may report cache traffic separately from ordinary input. Charge both at
-// the full input rate; any overlap only makes the admission estimate safer.
-func (p TokenPrice) ObservedModel(usage ModelUsage) int64 {
-	return p.Observed(usage.InputTokens+usage.CacheReadTokens+usage.CacheWriteTokens,
-		usage.OutputTokens, usage.TotalTokens)
-}
-
-// Prices are bounded at 1e9 micros per million and each reported usage field
-// at 1e12 tokens, so these products fit in int64 without floating point.
-func millionthCeil(tokens, rate int64) int64 {
-	if tokens <= 0 || rate <= 0 {
-		return 0
-	}
-	const million int64 = 1_000_000
-	whole := tokens / million * rate
-	remainder := tokens % million * rate
-	return whole + (remainder+million-1)/million
+	u.PricedBy = pricedByCatalog
+	u.priced = 1
+	u.CostMicros = rates.Cost(catalog.Tokens{Input: u.InputTokens, Output: u.OutputTokens, Total: u.TotalTokens,
+		CacheRead: u.CacheReadTokens, CacheWrite: u.CacheWriteTokens})
 }

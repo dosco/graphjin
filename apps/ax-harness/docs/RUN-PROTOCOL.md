@@ -27,7 +27,7 @@ Send exactly one object, at most 16 MiB. Unknown fields fail the run.
 | `max_operations` | integer | Optional. Tool calls per run, 0 to 4,000. 0 means no cap. |
 | `max_model_calls` | integer | Optional. Model calls per run, 0 to 2,000. 0 means no cap. |
 | `max_model_tokens` | integer | Optional. Token ceiling, up to 10,000,000. 0 means no ceiling. |
-| `max_cost_micros` | integer | Optional. Cost ceiling in USD micros. Needs a priced route profile. |
+| `max_cost_micros` | integer | Optional. Cost ceiling in USD micros at Ax catalog rates. Every route needs a catalog price. |
 | `reasoning_effort` | string | Optional. `low`, `medium` or `high`. |
 | `context_window_tokens` | integer | Optional. The model context window. A prompt larger than this estimate fails before any model call. |
 | `max_output_tokens` | integer | Optional. Maximum output tokens per model call. Must be below `context_window_tokens`. |
@@ -72,7 +72,7 @@ credentials. `tool.finished` carries the tool result in `data`.
 | `run.started` | The run started. |
 | `child.admitted` | The run has a read-only child agent. |
 | `model.request.started` | A model call passed admission. `name` is the configured model, `origin` the route, `provider` the provider type, `call_id` the count. |
-| `model.request.finished` | A model call ended. `usage` holds the tokens, `observed_model` the model the provider reported, and `error` is set on failure. |
+| `model.request.finished` | A model call ended. `usage` holds the tokens and the call's cost, `observed_model` the model the provider reported, and `error` is set on failure. |
 | `model.route.fallback` | A transient provider error moved the call from `name` to `origin`. |
 | `executor.step.failed` | Actor code failed. Later executor calls can use the escalation route. |
 | `skill.used` | The agent declared that the staged skill `name` influenced the turn. |
@@ -100,8 +100,8 @@ them as provisional; only `run.finished` holds the answer.
 | `kind` | `answer`, `summary`, `clarification`, `failure` |
 | `answer` | The final text, unchanged, with any fences. |
 | `code` | Set when the run did not complete, or names the budget for a `summary`. |
-| `usage` | Requests, reported calls, tokens and `coverage`: `complete`, `partial` or `unavailable`. |
-| `cost` | Present when `max_cost_micros` is set. |
+| `usage` | Requests, reported calls, tokens, `coverage` (`complete`, `partial` or `unavailable`) and the fields in [Cost](#cost). |
+| `cost` | Present when `max_cost_micros` is set: `catalog_version`, `charged_micros` (reservations for calls without usage included) and `budget_micros`. |
 
 A tool error is a normal result. The model sees it and can adapt; the run does
 not fail because of it.
@@ -121,6 +121,29 @@ Failure codes: `model_failed`, `model_http_<status>`, `model_context_overflow`,
 
 A tool with effect `pause` ends the turn as `clarification` with the answer
 "Awaiting operator input."
+
+## Cost
+
+The harness prices each model call from the model catalog of the pinned Ax Go
+module, for the route that served the call. A fallback call is priced at the
+fallback route's rates. Cache reads and cache writes use their catalog rates.
+A call whose input, cache reads and cache writes exceed the model's
+`longContextThreshold` uses the long-context rates. Tokens in the total beyond
+input, output and cache are reasoning tokens, billed at the output rate. An
+`openai-compatible` or `azure-openai` route uses OpenAI catalog prices, and a
+`vertex-ai` route uses Gemini or Anthropic prices. With `max_cost_micros`,
+each call reserves its token reservation at the model's highest rate, and the
+catalog cost replaces the reservation when the provider reports usage.
+
+| Usage field | Meaning |
+| --- | --- |
+| `cost_micros` | USD micros for the reported calls, each rounded up. |
+| `priced_by` | `catalog` when every reported call had a catalog price, otherwise `unpriced`. |
+| `catalog_version` | The pinned Ax module version. |
+
+`go run ./cmd/ax-harness catalog` writes the same prices as JSON. OpenNeko
+checks the output in as `packages/llm/src/spend/ax-model-catalog.json`, and a
+test fails when that file differs from the pinned module.
 
 ## Exit codes and signals
 
@@ -164,9 +187,8 @@ takes `api_version`; Ax builds the endpoint from them. Options cannot set the
 key, the URL, the model or the transport.
 
 `executor_escalation` and `executor_after_errors` (1 to 8) name a stronger
-executor route after actor-code errors. `pricing_version` and a `price` on
-every route enable the cost ceiling. Each route names the environment variable
-that holds its key. Ax client retries are off; the harness owns fallback.
+executor route after actor-code errors. Each route names the environment
+variable that holds its key. Ax client retries are off; the harness owns fallback.
 
 `reasoning_effort` sets `reasoning_effort` on OpenAI routes and Ax's thinking
 budget on other providers.

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/catalog"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/command"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/localtool"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/mcp"
@@ -20,6 +21,10 @@ import (
 var bridgeEffects = map[string]string{"interaction_ask_user_question": "pause"}
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "catalog" {
+		exportCatalog()
+		return
+	}
 	if err := validateScope(os.Getenv("OPENNEKO_MCP_ORG_ID"), os.Getenv("OPENNEKO_MCP_THREAD_ID")); err != nil {
 		fail(err)
 	}
@@ -150,6 +155,21 @@ func validateScope(orgID, threadID string) error {
 		return fmt.Errorf("missing or invalid OpenNeko admission scope")
 	}
 	return nil
+}
+
+// exportCatalog writes the pinned Ax model prices for the host.
+func exportCatalog() {
+	version := catalog.Version()
+	if version == "" {
+		fail(fmt.Errorf("the Ax module version is not in the build information"))
+	}
+	out, err := catalog.Export(version)
+	if err != nil {
+		fail(err)
+	}
+	if _, err := os.Stdout.Write(out); err != nil {
+		fail(err)
+	}
 }
 
 func fail(err error) {

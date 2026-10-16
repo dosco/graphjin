@@ -105,7 +105,7 @@ describe("AxBackend", () => {
         totalTokens: 15,
         coverage: "complete",
         costStatus: "estimated",
-        costSource: "official_docs_snapshot",
+        costSource: "ax_model_catalog",
         currency: "USD",
         estimatedCostUsd: expect.closeTo(0.00007, 10),
         pricingCatalogVersion: MODEL_PRICES_VERSION,

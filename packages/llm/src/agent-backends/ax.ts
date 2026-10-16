@@ -1,6 +1,6 @@
 // Ax backend: one ax-harness process per turn. Protocol: apps/ax-harness/docs/RUN-PROTOCOL.md.
 
-import { estimateTokenCostUsd, MODEL_PRICES_VERSION } from "../spend/model-prices";
+import { axCatalogPricingVersion, estimateTokenCost, hasPriceOverride } from "../spend/model-prices";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -49,6 +49,9 @@ type AxUsage = {
   cache_write_tokens?: number;
   reasoning_tokens?: number;
   coverage?: "complete" | "partial" | "unavailable";
+  cost_micros?: number;
+  priced_by?: "catalog" | "unpriced";
+  catalog_version?: string;
 };
 
 type AxResult = {
@@ -104,22 +107,34 @@ export function normalizeAxUsage(usage: AxUsage | undefined, route?: { provider:
   const scale = usage.coverage === "complete" ? 1
     : usage.coverage === "partial" && usage.reported && usage.requests ? usage.requests / usage.reported
     : 0;
-  const reportedCost = route && scale > 0
-    ? estimateTokenCostUsd(route.provider, route.model, {
-        inputTokens: usage.input_tokens,
-        outputTokens: usage.output_tokens,
-        cacheReadTokens: usage.cache_read_tokens,
-        cacheWriteTokens: usage.cache_write_tokens,
-        totalTokens: usage.total_tokens,
-      })
-    : undefined;
-  const cost = reportedCost === undefined ? undefined : reportedCost * scale;
+  // The harness priced each call on the route that served it; a host price override for the route wins.
+  const harnessPriced = usage.priced_by === "catalog" && typeof usage.cost_micros === "number" && Number.isFinite(usage.cost_micros) &&
+    !!usage.catalog_version && !(route && hasPriceOverride(route.provider, route.model));
+  const reported = scale <= 0 ? undefined
+    : harnessPriced
+      ? { usd: usage.cost_micros! / 1_000_000, costSource: "ax_harness_catalog", pricingCatalogVersion: axCatalogPricingVersion(usage.catalog_version!) }
+      : route
+        ? estimateTokenCost(route.provider, route.model, {
+            inputTokens: usage.input_tokens,
+            outputTokens: usage.output_tokens,
+            cacheReadTokens: usage.cache_read_tokens,
+            cacheWriteTokens: usage.cache_write_tokens,
+            totalTokens: usage.total_tokens,
+            calls: usage.reported,
+          })
+        : undefined;
   return {
     ...Object.fromEntries(Object.entries(tokens).filter(([, v]) => typeof v === "number")),
     coverage: usage.coverage ?? "unavailable",
-    ...(cost === undefined
+    ...(reported === undefined
       ? { costStatus: "unknown" as const }
-      : { costStatus: "estimated" as const, estimatedCostUsd: cost, currency: "USD", costSource: "official_docs_snapshot", pricingCatalogVersion: MODEL_PRICES_VERSION }),
+      : {
+          costStatus: "estimated" as const,
+          estimatedCostUsd: reported.usd * scale,
+          currency: "USD",
+          costSource: reported.costSource,
+          pricingCatalogVersion: reported.pricingCatalogVersion,
+        }),
     ...(usage.coverage === "partial"
       ? { missingReasons: [`The provider reported usage for ${usage.reported ?? 0} of ${usage.requests ?? 0} model calls`] }
       : {}),

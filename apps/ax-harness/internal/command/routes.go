@@ -9,15 +9,15 @@ import (
 
 	ax "github.com/ax-llm/ax/packages/go"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/catalog"
 )
 
 type modelRoute struct {
-	Key       string            `json:"key"`
-	Provider  string            `json:"provider,omitempty"`
-	Model     string            `json:"model"`
-	URL       string            `json:"url,omitempty"`
-	APIKeyEnv string            `json:"api_key_env"`
-	Price     *agent.TokenPrice `json:"price,omitempty"`
+	Key       string `json:"key"`
+	Provider  string `json:"provider,omitempty"`
+	Model     string `json:"model"`
+	URL       string `json:"url,omitempty"`
+	APIKeyEnv string `json:"api_key_env"`
 	// Options are Ax provider settings, for example Azure's resource_name,
 	// deployment_name and api_version.
 	Options map[string]string `json:"options,omitempty"`
@@ -73,7 +73,6 @@ type routeConfig struct {
 	Responder           string          `json:"responder"`
 	Fallbacks           []modelFallback `json:"fallbacks,omitempty"`
 	Routes              []modelRoute    `json:"routes"`
-	PricingVersion      string          `json:"pricing_version,omitempty"`
 }
 
 // noClientRetry turns off Ax's request-layer retry. The harness owns retries,
@@ -158,7 +157,8 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, error) {
 			return nil, err
 		}
 		return &agent.RoutedClient{AIClient: client, ModelNames: map[string]string{name: route.Model},
-			Providers: map[string]string{name: route.provider()}, DefaultProvider: route.provider()}, nil
+			Providers: map[string]string{name: route.provider()}, DefaultProvider: route.provider(),
+			CatalogVersion: catalog.Version(), Prices: routePrices([]modelRoute{{Key: name, Provider: route.Provider, Model: route.Model}})}, nil
 	}
 	cfg, err := parseRouteConfig(raw)
 	if err != nil {
@@ -185,16 +185,12 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid HARNESS_MODEL_ROUTES: %w", err)
 	}
-	prices := make(map[string]agent.TokenPrice, len(cfg.Routes))
 	modelNames := make(map[string]string, len(cfg.Routes))
 	providers := make(map[string]string, len(cfg.Routes))
 	fallbacks := make(map[string]string, len(cfg.Fallbacks))
 	for _, route := range cfg.Routes {
 		modelNames[route.Key] = route.Model
 		providers[route.Key] = route.provider()
-		if route.Price != nil {
-			prices[route.Key] = *route.Price
-		}
 	}
 	for _, fallback := range cfg.Fallbacks {
 		fallbacks[fallback.From] = fallback.To
@@ -202,7 +198,18 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, error) {
 	return &agent.RoutedClient{AIClient: router, Stages: agent.StageModels{
 		Context: cfg.Context, Executor: cfg.Executor, Responder: cfg.Responder,
 		ExecutorEscalation: cfg.ExecutorEscalation, ExecutorAfterErrors: cfg.ExecutorAfterErrors,
-	}, ModelNames: modelNames, Providers: providers, Fallbacks: fallbacks, PricingVersion: cfg.PricingVersion, Prices: prices}, nil
+	}, ModelNames: modelNames, Providers: providers, Fallbacks: fallbacks, CatalogVersion: catalog.Version(), Prices: routePrices(cfg.Routes)}, nil
+}
+
+// routePrices looks up each route's provider and model in the Ax catalog.
+func routePrices(routes []modelRoute) map[string]catalog.Rates {
+	prices := make(map[string]catalog.Rates, len(routes))
+	for _, route := range routes {
+		if rates, ok := catalog.Lookup(route.provider(), route.Model); ok {
+			prices[route.Key] = rates
+		}
+	}
+	return prices
 }
 
 // KeyEnvNames lists the environment variables that hold model credentials,
@@ -236,13 +243,9 @@ func parseRouteConfig(raw string) (routeConfig, error) {
 		return routeConfig{}, fmt.Errorf("invalid HARNESS_MODEL_ROUTES profile")
 	}
 	known := make(map[string]bool, len(cfg.Routes))
-	priced := cfg.PricingVersion != ""
-	if len(cfg.PricingVersion) > 128 || strings.TrimSpace(cfg.PricingVersion) != cfg.PricingVersion {
-		return routeConfig{}, fmt.Errorf("invalid HARNESS_MODEL_ROUTES pricing profile")
-	}
 	for _, route := range cfg.Routes {
 		if !validRouteKey(route.Key) || route.Model == "" || len(route.Model) > 128 || known[route.Key] || len(route.Provider) > 64 || validProviderURL(route.provider(), route.URL) != nil ||
-			!validEnvName(route.APIKeyEnv) || !validOptions(route.Options) || route.Price != nil && !route.Price.Valid() || priced && route.Price == nil || !priced && route.Price != nil {
+			!validEnvName(route.APIKeyEnv) || !validOptions(route.Options) {
 			return routeConfig{}, fmt.Errorf("invalid HARNESS_MODEL_ROUTES route")
 		}
 		known[route.Key] = true

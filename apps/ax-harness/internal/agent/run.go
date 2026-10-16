@@ -15,6 +15,7 @@ import (
 
 	ax "github.com/ax-llm/ax/packages/go"
 	axgoja "github.com/ax-llm/ax/packages/go/runtime/goja"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/catalog"
 )
 
 // Spec is trusted host input. It cannot select credentials, endpoints or capabilities.
@@ -33,7 +34,7 @@ type Spec struct {
 	MaxOperations   int    `json:"max_operations,omitempty"`
 	MaxModelCalls   int    `json:"max_model_calls,omitempty"`
 	MaxModelTokens  int64  `json:"max_model_tokens,omitempty"`
-	MaxCostMicros   int64  `json:"max_cost_micros,omitempty"` // Host ceiling against the pinned route price profile.
+	MaxCostMicros   int64  `json:"max_cost_micros,omitempty"` // Host ceiling at Ax catalog rates.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	// Mirror Hermes model.context_length and model.max_tokens.
 	ContextWindowTokens int64 `json:"context_window_tokens,omitempty"`
@@ -211,21 +212,18 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 			return Result{}, fmt.Errorf("invalid executor escalation profile")
 		}
 	}
-	var pricing *RoutedClient
-	if spec.MaxCostMicros > 0 {
-		var ok bool
-		pricing, ok = client.(*RoutedClient)
-		if !ok || pricing.PricingVersion == "" || len(pricing.Prices) == 0 {
-			return Result{}, fmt.Errorf("trusted cost budget requires complete route pricing")
-		}
+	routed, _ := client.(*RoutedClient)
+	if spec.MaxCostMicros > 0 && !routed.fullyPriced() {
+		return Result{}, fmt.Errorf("the cost budget needs an Ax catalog price for every model route")
 	}
 	ctx, cancel := context.WithTimeout(ctx, spec.Timeout())
 	defer cancel()
-	events := &recorder{spec: spec, emit: emit, cancel: cancel, pricing: pricing}
-	routed, _ := client.(*RoutedClient)
+	events := &recorder{spec: spec, emit: emit, cancel: cancel}
 	if routed != nil {
 		events.modelNames = routed.ModelNames
 		events.providers = routed.Providers
+		events.prices = routed.Prices
+		events.catalogVersion = routed.CatalogVersion
 	}
 	events.send(Event{Type: "run.started"})
 	if len(childTools) > 0 {
@@ -571,7 +569,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 	usage := events.usageSnapshot()
 	result.Usage = &usage
 	if spec.MaxCostMicros > 0 {
-		result.Cost = &CostSummary{PricingVersion: pricing.PricingVersion, ChargedMicros: events.costSnapshot(), BudgetMicros: spec.MaxCostMicros}
+		result.Cost = &CostSummary{CatalogVersion: events.catalogVersion, ChargedMicros: events.costSnapshot(), BudgetMicros: spec.MaxCostMicros}
 	}
 	events.send(Event{Type: "run.finished", Result: &result})
 	events.mu.Lock()
@@ -715,7 +713,8 @@ type recorder struct {
 	modelCalls            int
 	usage                 ModelUsage
 	maxReportedCallTokens int64
-	pricing               *RoutedClient
+	prices                map[string]catalog.Rates
+	catalogVersion        string
 	modelNames            map[string]string
 	costMicros            int64
 	costDenied            bool
@@ -764,17 +763,16 @@ func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo
 		r.mu.Unlock()
 		return nil, fmt.Errorf("model token admission budget exhausted")
 	}
-	var price TokenPrice
+	rates, priced := r.prices[info.Provider]
+	priced = priced && rates.Valid()
 	var costReservation int64
 	if r.spec.MaxCostMicros > 0 {
-		var ok bool
-		price, ok = r.pricing.Prices[info.Provider]
-		if !ok || !price.Valid() {
+		if !priced {
 			r.costDenied = true
 			r.mu.Unlock()
-			return nil, fmt.Errorf("model route has no approved price")
+			return nil, fmt.Errorf("model route has no catalog price")
 		}
-		costReservation = price.Reservation(reservation)
+		costReservation = rates.Reservation(reservation)
 		if r.costDenied || r.costOverspent || r.costMicros+costReservation > r.spec.MaxCostMicros {
 			r.costDenied = true
 			r.mu.Unlock()
@@ -814,11 +812,12 @@ func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo
 	}
 	overflow, truncated := contextOverflow(err), outputTruncated(response)
 	if tokens, ok := modelTokens(response); ok {
+		tokens.price(rates, priced, r.catalogVersion)
 		finished.Usage = &tokens
 	}
 	charge := costReservation
-	if finished.Usage != nil && finished.Usage.TotalTokens > 0 {
-		charge = price.ObservedModel(*finished.Usage)
+	if finished.Usage != nil && finished.Usage.TotalTokens > 0 && priced {
+		charge = finished.Usage.CostMicros
 	}
 	if r.spec.MaxCostMicros > 0 {
 		finished.CostMicros = &charge
@@ -860,6 +859,7 @@ func (r *recorder) usageSnapshot() ModelUsage {
 	defer r.mu.Unlock()
 	usage := r.usage
 	usage.setCoverage()
+	usage.CatalogVersion = r.catalogVersion
 	return usage
 }
 
