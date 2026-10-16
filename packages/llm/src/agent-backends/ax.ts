@@ -188,6 +188,7 @@ export class AxBackend implements AgentBackend {
       input_id: runId,
       prompt: opts.userMessage ? `${opts.prompt}\n\nCurrent user message:\n${opts.userMessage}` : opts.prompt,
       ...(opts.userMessage ? { skill_query: opts.userMessage } : {}),
+      ...(process.env.OPENNEKO_AX_SKILL_RERANK === "off" ? { skill_rerank: "off" } : {}),
       stream_responses: Boolean(onEvent),
       ...axRunLimits({
         ...limits,

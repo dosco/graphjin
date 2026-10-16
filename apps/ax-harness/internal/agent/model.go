@@ -83,6 +83,25 @@ func modelOptions(options map[string]ax.Value, routed *RoutedClient, effort stri
 	}
 }
 
+// rerankOptions runs the skill reranker on the context stage model.
+func rerankOptions(routed *RoutedClient) map[string]ax.Value {
+	options := ax.Object()
+	if routed == nil {
+		return options
+	}
+	route := routed.Stages.Context
+	switch routed.providerFor(route) {
+	case "google-gemini":
+		options["structuredOutputMode"] = "native"
+	case "openai-compatible":
+		options["structuredOutputMode"] = "function"
+	}
+	if route != "" {
+		options["model"] = route
+	}
+	return options
+}
+
 func contextOverflow(err error) bool {
 	var axErr ax.AxError
 	if !errors.As(err, &axErr) {

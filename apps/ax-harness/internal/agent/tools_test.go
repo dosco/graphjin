@@ -297,21 +297,71 @@ func TestSkillShortlistKeepsCloseStagedGuides(t *testing.T) {
 		return json.RawMessage(`{"content":["{\"skills\":[{\"name\":\"xlsx\",\"score\":0.61},{\"name\":\"gone\",\"score\":0.5},{\"name\":\"docx\",\"score\":0.12}]}"]}`), nil
 	}}}
 	skills := []Skill{{Name: "xlsx", Description: "Spreadsheets"}, {Name: "docx", Description: "Word documents"}}
-	got, names, err := skillShortlist(context.Background(), index, skills, "make an Excel file")
+	got, names, err := skillShortlist(context.Background(), index, skills, "make an Excel file", nil)
 	if err != nil || strings.Join(names, ",") != "xlsx" {
 		t.Fatalf("names=%q err=%v", names, err)
 	}
 	if !strings.Contains(got, "- xlsx — Spreadsheets") || strings.Contains(got, "gone") || strings.Contains(got, "docx") {
 		t.Fatalf("shortlist = %q", got)
 	}
-	if text, _, _ := skillShortlist(context.Background(), index, skills, "  "); text != "" {
+	if text, _, _ := skillShortlist(context.Background(), index, skills, "  ", nil); text != "" {
 		t.Fatal("a shortlist without a query")
 	}
-	if text, _, _ := skillShortlist(context.Background(), nil, skills, "excel"); text != "" {
+	if text, _, _ := skillShortlist(context.Background(), nil, skills, "excel", nil); text != "" {
 		t.Fatal("a shortlist without a query or an index")
 	}
 	if got := skillMatches(json.RawMessage(`{"content":["not json"]}`)); len(got) != 0 {
 		t.Fatalf("matches from bad text = %v", got)
+	}
+}
+
+func TestSkillShortlistKeepsOnlyRerankedGuides(t *testing.T) {
+	index := &admittedTool{Capability: Capability{Name: SkillSearchTool, Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"content":["{\"skills\":[{\"name\":\"aw-sales\",\"score\":0.5},{\"name\":\"aw-territory\",\"score\":0.45}]}"]}`), nil
+	}}}
+	skills := []Skill{{Name: "aw-sales", Description: "Sales by product"}, {Name: "aw-territory", Description: "Revenue growth by territory"}}
+	pick := func(names ...string) skillRerank {
+		return func(_ context.Context, request string, candidates []Skill) ([]string, error) {
+			if request != "which territory grew fastest" || len(candidates) != 2 || candidates[1].Description != "Revenue growth by territory" {
+				t.Fatalf("rerank input = %q %+v", request, candidates)
+			}
+			return names, nil
+		}
+	}
+	got, names, err := skillShortlist(context.Background(), index, skills, "which territory grew fastest", pick("aw-territory"))
+	if err != nil || strings.Join(names, ",") != "aw-territory" || strings.Contains(got, "aw-sales") {
+		t.Fatalf("names=%q err=%v shortlist=%q", names, err, got)
+	}
+	if got, names, _ := skillShortlist(context.Background(), index, skills, "which territory grew fastest", pick()); got != "" || len(names) != 0 {
+		t.Fatalf("a guide was shortlisted after the reranker kept none: %q", names)
+	}
+	failing := func(context.Context, string, []Skill) ([]string, error) { return nil, fmt.Errorf("provider down") }
+	if _, names, err := skillShortlist(context.Background(), index, skills, "which territory grew fastest", failing); err == nil || strings.Join(names, ",") != "aw-sales,aw-territory" {
+		t.Fatalf("a failed rerank did not keep the index order: %q %v", names, err)
+	}
+}
+
+func TestAxSkillRerankReturnsOnlyRecalledGuides(t *testing.T) {
+	var body string
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant",
+			"content", `Fitting: ["aw-territory", "invented-guide", "aw-sales", "aw-returns"]`), "finish_reason", "stop"))))
+	}))
+	defer model.Close()
+	rerank := axSkillRerank(openAIClient(model), ax.Object(), ax.AxRuntimeHooks{})
+	names, err := rerank(context.Background(), "which territory grew fastest", []Skill{
+		{Name: "aw-sales", Description: "Sales by product"},
+		{Name: "aw-territory", Description: "Revenue growth by territory"},
+		{Name: "aw-returns", Description: "Returned orders"},
+	})
+	if err != nil || strings.Join(names, ",") != "aw-territory,aw-sales" {
+		t.Fatalf("names=%q err=%v", names, err)
+	}
+	if !strings.Contains(body, "aw-territory: Revenue growth by territory") || !strings.Contains(body, "which territory grew fastest") {
+		t.Fatalf("the reranker did not send the request and the guides: %s", body)
 	}
 }
 

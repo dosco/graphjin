@@ -24,6 +24,7 @@ type Spec struct {
 	InputID         string `json:"input_id"`
 	Prompt          string `json:"prompt"`
 	SkillQuery      string `json:"skill_query,omitempty"`      // The user's message; the skill index ranks guides against it.
+	SkillRerank     string `json:"skill_rerank,omitempty"`     // "off" keeps the index order; otherwise a model call picks the guides that fit.
 	StreamResponses bool   `json:"stream_responses,omitempty"` // Host-qualified incremental responder transport.
 	TimeoutMS       int64  `json:"timeout_ms,omitempty"`
 	MaxActorSteps   int    `json:"max_actor_steps,omitempty"`
@@ -73,7 +74,8 @@ func (s Spec) valid() bool {
 		(s.MaxOutputTokens == 0 || s.ContextWindowTokens == 0 || s.MaxOutputTokens < s.ContextWindowTokens) &&
 		strings.TrimSpace(s.RunID) != "" && len(s.RunID) <= 128 && strings.TrimSpace(s.InputID) != "" && len(s.InputID) <= 128 &&
 		strings.TrimSpace(s.Prompt) != "" &&
-		(s.ReasoningEffort == "" || s.ReasoningEffort == "low" || s.ReasoningEffort == "medium" || s.ReasoningEffort == "high")
+		(s.ReasoningEffort == "" || s.ReasoningEffort == "low" || s.ReasoningEffort == "medium" || s.ReasoningEffort == "high") &&
+		(s.SkillRerank == "" || s.SkillRerank == "off")
 }
 
 // promptTooLarge estimates prompt tokens at 4 bytes each, like Hermes' preflight.
@@ -408,10 +410,16 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 		engineOptions := ax.Object("runtime", runtime, "instruction", instruction, "directResponse", "off", "max_actor_steps", spec.ActorSteps(), "validationRetries", 0, "infraRetries", 0,
 			"contextPolicy", ax.Object("preset", "checkpointed", "budget", "balanced"))
 		modelOptions(engineOptions, routed, spec.ReasoningEffort)
-		shortlist, shortlisted, shortlistErr := skillShortlist(ctx, skillSearch, skills, spec.SkillQuery)
+		var rerank skillRerank
+		if spec.SkillRerank == "" && (spec.ModelCallLimit() == 0 || spec.ModelCallLimit() > 3) {
+			rerank = axSkillRerank(client, rerankOptions(routed),
+				ax.AxRuntimeHooks{Tracer: events, RateLimiter: ax.AxRateLimiterFunc(events.admitModel)})
+		}
+		shortlist, shortlisted, shortlistErr := skillShortlist(ctx, skillSearch, skills, spec.SkillQuery, rerank)
 		if shortlistErr != nil {
 			events.send(Event{Type: "skill.shortlist", Error: safePrefix(shortlistErr.Error(), 300)})
-		} else if len(shortlisted) > 0 {
+		}
+		if len(shortlisted) > 0 {
 			data, _ := json.Marshal(shortlisted)
 			events.send(Event{Type: "skill.shortlist", Data: data})
 			engineOptions["skills"] = skillStubs(skills, shortlisted)
