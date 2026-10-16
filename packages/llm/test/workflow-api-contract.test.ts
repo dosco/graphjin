@@ -226,8 +226,8 @@ describe("workflow API contract", () => {
           {
             id: "table",
             component: "Table",
-            columns: [{ key: "c0", label: "Region" }, { key: "c1", label: "Orders" }, { key: "c2", label: "Status" }],
-            rows: [{ c0: "North", c1: "12", c2: "Behind" }],
+            columns: [{ key: "c0", label: "Region" }, { key: "c1", label: "Orders" }, { key: "c2", label: "Due by (UTC)" }, { key: "c3", label: "Orders" }, { key: "c4", label: "" }],
+            rows: [{ c0: "North", c1: "12,699.5", c2: "21 Aug", c3: "3", c4: "x" }],
             details: { North: { columns: [{ key: "c0", label: "Store" }, { key: "c1", label: "Orders" }], rows: [{ c0: "Store 1", c1: "7" }] } },
           },
           { id: "callout", component: "Callout", text: "North is behind plan." },
@@ -236,8 +236,17 @@ describe("workflow API contract", () => {
     }]);
     expect(answer).toEqual({
       title: "Orders by region",
-      table: { columns: ["Region", "Orders", "Status"], rows: [{ Region: "North", Orders: 12, Status: "Behind" }] },
-      details: { North: { columns: ["Store", "Orders"], rows: [{ Store: "Store 1", Orders: 7 }] } },
+      table: {
+        columns: [
+          { key: "region", label: "Region" },
+          { key: "orders", label: "Orders" },
+          { key: "due_by_utc", label: "Due by (UTC)" },
+          { key: "orders_2", label: "Orders" },
+          { key: "column_5", label: "" },
+        ],
+        rows: [{ region: "North", orders: 12699.5, due_by_utc: "21 Aug", orders_2: 3, column_5: "x" }],
+      },
+      details: { North: { columns: [{ key: "store", label: "Store" }, { key: "orders", label: "Orders" }], rows: [{ store: "Store 1", orders: 7 }] } },
       callout: "North is behind plan.",
     });
     expect(workflowApiAnswer([])).toBeNull();

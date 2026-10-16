@@ -592,24 +592,38 @@ export function workflowApiLimitPatch(
   return result;
 }
 
-type AnswerTable = { columns: string[]; rows: Array<Record<string, string | number>> };
+type AnswerTable = {
+  columns: Array<{ key: string; label: string }>;
+  rows: Array<Record<string, string | number>>;
+};
 
 function cellValue(value: unknown): string | number {
-  const text = String(value ?? "");
-  return /^-?\d+(\.\d+)?$/.test(text.trim()) ? Number(text) : text;
+  const text = String(value ?? "").trim();
+  return /^-?\d{1,3}(,\d{3})*(\.\d+)?$|^-?\d+(\.\d+)?$/.test(text) ? Number(text.replaceAll(",", "")) : text;
+}
+
+function answerKeys(labels: string[]): string[] {
+  const seen = new Map<string, number>();
+  return labels.map((label, index) => {
+    const base = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || `column_${index + 1}`;
+    const count = (seen.get(base) ?? 0) + 1;
+    seen.set(base, count);
+    return count > 1 ? `${base}_${count}` : base;
+  });
 }
 
 function answerTable(component: Record<string, unknown>): AnswerTable | null {
   const columns = Array.isArray(component.columns) ? component.columns : [];
   const rows = Array.isArray(component.rows) ? component.rows : [];
-  const keyed = columns
+  const source = columns
     .filter(isPlainObject)
     .map((column) => ({ key: String(column.key ?? ""), label: String(column.label ?? column.key ?? "") }));
-  if (!keyed.length) return null;
+  if (!source.length) return null;
+  const keys = answerKeys(source.map((column) => column.label));
   return {
-    columns: keyed.map((column) => column.label),
+    columns: source.map((column, index) => ({ key: keys[index], label: column.label })),
     rows: rows.filter(isPlainObject).map((row) =>
-      Object.fromEntries(keyed.map((column) => [column.label, cellValue(row[column.key])]))),
+      Object.fromEntries(source.map((column, index) => [keys[index], cellValue(row[column.key])]))),
   };
 }
 
