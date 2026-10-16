@@ -19,7 +19,7 @@ import {
   revokeItem,
   whoHolds,
 } from "../../src";
-import { dbReachable, withTestOrg } from "./_helpers";
+import { createTestOrg, dbReachable, deleteTestOrg, uniqueOrgId, withTestOrg } from "./_helpers";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -31,6 +31,28 @@ async function user(orgId: string, id: string, role = "member") {
 }
 
 describeIfDb("entitlements", () => {
+  it("does not reuse a cached grant index after an org id is deleted and recreated", async () => {
+    const orgId = uniqueOrgId("recreate");
+    const grantDataSource = async () => {
+      await createTestOrg(orgId, "Recreated");
+      await revokeItem(orgId, { groupId: await builtinGroupId(orgId, "everyone"), itemType: "data_source", itemId: "*" });
+      const actor = await user(orgId, "m");
+      const group = await createUserGroup(orgId, { name: "Readers" });
+      await addLocalGroupMember(orgId, group.id, actor.userId);
+      await grantItem(orgId, { groupId: group.id, itemType: "data_source", itemId: "src-1" });
+      return actor;
+    };
+    try {
+      const first = await grantDataSource();
+      expect(await heldItems(first, "data_source")).toContain("src-1");
+      await deleteTestOrg(orgId);
+      const second = await grantDataSource();
+      expect(await heldItems(second, "data_source")).toContain("src-1");
+    } finally {
+      await deleteTestOrg(orgId);
+    }
+  });
+
   it("grants multiple selected items once and audits only new grants", async () => {
     await withTestOrg(async (orgId) => {
       const group = await createUserGroup(orgId, { name: "Metric readers" });

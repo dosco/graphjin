@@ -78,7 +78,7 @@ function rows<T>(result: unknown): T[] {
 
 async function grantIndex(orgId: string): Promise<GrantIndex> {
   const [rev] = rows<{ revision: string }>(
-    await db().execute(sql`select revision::text as revision from item_grant_revision where org_id = ${orgId}`),
+    await db().execute(sql`select revision::text || '@' || updated_at::text as revision from item_grant_revision where org_id = ${orgId}`),
   );
   const revision = rev?.revision ?? "0";
   const cached = indexCache.get(orgId);
