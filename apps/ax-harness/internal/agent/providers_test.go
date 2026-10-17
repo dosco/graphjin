@@ -141,7 +141,7 @@ func TestSkillsCatalogLoadsAndReportsUse(t *testing.T) {
 	if strings.Contains(model.body(0), SkillSearchTool) {
 		t.Fatal("the skill index was offered to the model as a tool")
 	}
-	if len(queries) != 2 || queries[0] != "Make the daily lead report" || queries[1] != "daily-lead" {
+	if len(queries) != 1 || queries[0] != "Make the daily lead report" {
 		t.Fatalf("index queries = %q", queries)
 	}
 	if strings.Contains(model.body(1), "Guide available for this request") {
@@ -174,5 +174,37 @@ func TestShortlistedGuideStubReachesTheExecutor(t *testing.T) {
 	}
 	if !strings.Contains(model.body(1), "Guide available for this request: Build the daily lead report") || strings.Contains(model.body(1), "Step 1: read the leads table.") {
 		t.Fatal("the executor did not see the stub, or saw the unloaded guide")
+	}
+}
+
+func TestRerankedShortlistReachesTheExecutor(t *testing.T) {
+	model := &scripted{replies: []string{
+		`Fitting: ["aw-territory"]`,
+		`{"javascriptCode":"final('Rank territories',{})"}`,
+		`{"javascriptCode":"final('Done',{})"}`,
+		`Answer: done`,
+	}}
+	server := model.server(t)
+	index := Capability{Name: SkillSearchTool, Version: "1", Origin: "mcp", Effect: "read", Description: "Find skills by meaning.",
+		InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			return json.RawMessage(`{"content":["{\"skills\":[{\"name\":\"aw-sales\",\"score\":0.5},{\"name\":\"aw-territory\",\"score\":0.45}]}"]}`), nil
+		}}
+	var shortlist string
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "rerank", InputID: "i", Prompt: "Which territory grew fastest?", SkillQuery: "Which territory grew fastest?"}, openAIClient(server),
+		Tools{Capabilities: []Capability{index}, Skills: []Skill{
+			{Name: "aw-sales", Description: "Sales by product", Content: "x"},
+			{Name: "aw-territory", Description: "Revenue growth by territory", Content: "y"},
+		}},
+		func(e Event) error {
+			if e.Type == "skill.shortlist" {
+				shortlist = string(e.Data)
+			}
+			return nil
+		})
+	if err != nil || result.Status != "completed" || result.Usage == nil || result.Usage.Requests != 4 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if shortlist != `["aw-territory"]` || strings.Contains(model.body(1), "aw-sales") || !strings.Contains(model.body(1), "Revenue growth by territory") {
+		t.Fatalf("shortlist=%s executor saw the dropped guide or missed the kept one", shortlist)
 	}
 }

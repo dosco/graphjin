@@ -157,6 +157,17 @@ describe("AxBackend", () => {
     });
   });
 
+  it("asks the harness to rerank skill guides unless the deployment turns it off", async () => {
+    script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
+    await new AxBackend(config).run({ prompt: "p", userMessage: "How are sales?", workspace });
+    vi.stubEnv("OPENNEKO_AX_SKILL_RERANK", "off");
+    await new AxBackend(config).run({ prompt: "p", userMessage: "How are sales?", workspace });
+    const [on, off] = spawned.map((s) => JSON.parse(s.stdin) as { skill_query?: string; skill_rerank?: string });
+    expect(on).toMatchObject({ skill_query: "How are sales?" });
+    expect(on).not.toHaveProperty("skill_rerank");
+    expect(off).toMatchObject({ skill_query: "How are sales?", skill_rerank: "off" });
+  });
+
   it("admits the child agent unless the run disables delegation", async () => {
     script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
     await new AxBackend(config).run({ prompt: "p", workspace });
