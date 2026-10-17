@@ -1,5 +1,23 @@
 # Changelog
 
+## [4.9.0](https://github.com/open-neko/openneko/compare/v4.8.0...v4.9.0) (2026-10-17)
+
+
+### Features
+
+* **spend:** price model usage from the pinned Ax model catalog ([fa08870](https://github.com/open-neko/openneko/commit/fa08870c0ca8a966fc4ce433825aaceaec69bc49))
+
+
+### Bug Fixes
+
+* **entitlements:** never reuse a grant index cached for a deleted org ([b84a2ed](https://github.com/open-neko/openneko/commit/b84a2edcc53d17ef62701fe27aa71fd2dc56d91e))
+
+
+### Performance Improvements
+
+* **ax:** prompt caching, Ax catalog pricing, and an org-deletion grant fix ([0ac8456](https://github.com/open-neko/openneko/commit/0ac8456fccac6f89bbfd1629ad1becd71ce88002))
+* **ax:** skip needless skill capture, cache stable prompt prefixes ([0376e30](https://github.com/open-neko/openneko/commit/0376e30ed9c039ee97b29d7236431ee0abfc03e7))
+
 ## [4.8.0](https://github.com/open-neko/openneko/compare/v4.7.0...v4.8.0) (2026-10-17)
 
 
