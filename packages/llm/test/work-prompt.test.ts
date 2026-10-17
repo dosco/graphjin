@@ -4,6 +4,7 @@ import type { KnowledgePackContents } from "../src/knowledge-pack";
 import type { PluginCatalog } from "../src/work/control-plane";
 import { buildBotSection, buildCardsSection, buildWorkPrompt } from "../src/work/prompt";
 import { VALUE_ESTIMATE_INSTRUCTIONS } from "../src/prompts/sections";
+import { splitStablePrompt } from "../src/prompts/stable-prefix";
 
 const workspace: AgentWorkspace = {
   orgRoot: "/tmp/org",
@@ -490,5 +491,44 @@ describe("cards in the final answer", () => {
   it("tells only the Ax responder to write a neko_cards fence", () => {
     expect(buildCardsSection(true, true, true)).toContain("```neko_cards");
     expect(buildCardsSection(true, true)).not.toContain("neko_cards");
+  });
+
+  it("keeps the org-wide prefix identical across users, threads, runs and messages", () => {
+    const turn = (n: number) =>
+      buildWorkPrompt({
+        backend: "ax",
+        workspace: { ...workspace, threadUploadsRoot: `/tmp/org/uploads/t${n}`, runRoot: `/tmp/org/runs/r${n}`, artifactRoot: `/tmp/org/runs/r${n}/artifacts` },
+        knowledge,
+        messages: n === 1 ? [] : [{ id: "m1", role: "user", content: "earlier", runId: "r1" }],
+        currentUserMessage: `question ${n}`,
+        memoryContext: `- memory for question ${n}`,
+        operatorProfile: `<operator-profile>\nYou are working for user ${n}.\n</operator-profile>`,
+        bot: { name: `bot ${n}`, instructions: "Watch stock." },
+        wantsCards: true,
+        supportsCardTool: true,
+        supportsSkillTool: true,
+        supportsMemoryTool: true,
+        supportsWorkflowTool: true,
+        supportsPolicyTool: true,
+        supportsSourceConfigTool: false,
+        supportsClarificationTool: true,
+        supportsPluginManagerTool: true,
+        supportsNativeDelegation: true,
+        inlineTranscript: true,
+      });
+    const [first, second] = [turn(1), turn(2)];
+    const stable = first.slice(0, first.indexOf("</closing>") + "</closing>".length);
+    expect(second.startsWith(stable)).toBe(true);
+    expect(stable).toContain("<conduct>");
+    for (const volatile of ["<operator-profile>", "<bot>", "<workspace>", "<long_term_memory>", "<conversation_so_far>"]) {
+      expect(stable).not.toContain(volatile);
+      expect(first.indexOf(volatile)).toBeGreaterThan(stable.length);
+    }
+    expect(first.indexOf("<workspace>")).toBeLessThan(first.indexOf("<long_term_memory>"));
+    expect(first.indexOf("<long_term_memory>")).toBeLessThan(first.indexOf("<conversation_so_far>"));
+    expect(splitStablePrompt(first).stable).toBe(stable);
+    expect(splitStablePrompt(second).stable).toBe(stable);
+    expect(splitStablePrompt(second).turn).toMatch(/^<operator-profile>\nYou are working for user 2\./);
+    expect(splitStablePrompt(second).turn).toContain("question 2");
   });
 });

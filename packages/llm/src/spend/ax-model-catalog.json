@@ -1,0 +1,1119 @@
+{
+  "version": "v0.0.0-20261008025325-987328ccf984",
+  "providers": {
+    "anthropic": {
+      "claude-2.1": {
+        "promptTokenCostPer1M": 8,
+        "completionTokenCostPer1M": 25
+      },
+      "claude-3-5-haiku-latest": {
+        "promptTokenCostPer1M": 0.8,
+        "completionTokenCostPer1M": 4,
+        "cacheReadTokenCostPer1M": 0.08,
+        "cacheWriteTokenCostPer1M": 1
+      },
+      "claude-3-5-haiku@20241022": {
+        "promptTokenCostPer1M": 1,
+        "completionTokenCostPer1M": 5,
+        "cacheReadTokenCostPer1M": 0.1,
+        "cacheWriteTokenCostPer1M": 1.25
+      },
+      "claude-3-5-sonnet-latest": {
+        "promptTokenCostPer1M": 3,
+        "completionTokenCostPer1M": 15,
+        "cacheReadTokenCostPer1M": 0.3,
+        "cacheWriteTokenCostPer1M": 3.75
+      },
+      "claude-3-5-sonnet-v2@20241022": {
+        "promptTokenCostPer1M": 3,
+        "completionTokenCostPer1M": 15,
+        "cacheReadTokenCostPer1M": 0.3,
+        "cacheWriteTokenCostPer1M": 3.75
+      },
+      "claude-3-5-sonnet@20240620": {
+        "promptTokenCostPer1M": 3,
+        "completionTokenCostPer1M": 15,
+        "cacheReadTokenCostPer1M": 0.3,
+        "cacheWriteTokenCostPer1M": 3.75
+      },
+      "claude-3-7-sonnet-latest": {
+        "promptTokenCostPer1M": 3,
+        "completionTokenCostPer1M": 15,
+        "cacheReadTokenCostPer1M": 0.3,
+        "cacheWriteTokenCostPer1M": 3.75
+      },
+      "claude-3-7-sonnet@20250219": {
+        "promptTokenCostPer1M": 3,
+        "completionTokenCostPer1M": 15,
+        "cacheReadTokenCostPer1M": 0.3,
+        "cacheWriteTokenCostPer1M": 3.75
+      },
+      "claude-3-haiku-20240307": {
+        "promptTokenCostPer1M": 0.25,
+        "completionTokenCostPer1M": 1.25,
+        "cacheReadTokenCostPer1M": 0.03,
+        "cacheWriteTokenCostPer1M": 0.3
+      },
+      "claude-3-haiku@20240307": {
+        "promptTokenCostPer1M": 0.25,
+        "completionTokenCostPer1M": 1.25,
+        "cacheReadTokenCostPer1M": 0.03,
+        "cacheWriteTokenCostPer1M": 0.3
+      },
+      "claude-3-opus-latest": {
+        "promptTokenCostPer1M": 15,
+        "completionTokenCostPer1M": 75,
+        "cacheReadTokenCostPer1M": 1.5,
+        "cacheWriteTokenCostPer1M": 18.75
+      },
+      "claude-3-opus@20240229": {
+        "promptTokenCostPer1M": 15,
+        "completionTokenCostPer1M": 75,
+        "cacheReadTokenCostPer1M": 1.5,
+        "cacheWriteTokenCostPer1M": 18.75
+      },
+      "claude-3-sonnet-20240229": {
+        "promptTokenCostPer1M": 3,
+        "completionTokenCostPer1M": 15,
+        "cacheReadTokenCostPer1M": 0.3,
+        "cacheWriteTokenCostPer1M": 3.75
+      },
+      "claude-fable-5": {
+        "promptTokenCostPer1M": 10,
+        "completionTokenCostPer1M": 50,
+        "cacheReadTokenCostPer1M": 1,
+        "cacheWriteTokenCostPer1M": 12.5
+      },
+      "claude-fable-5-1": {
+        "promptTokenCostPer1M": 10,
+        "completionTokenCostPer1M": 50,
+        "cacheReadTokenCostPer1M": 0.25,
+        "cacheWriteTokenCostPer1M": 12.5
+      },
+      "claude-haiku-4-5": {
+        "promptTokenCostPer1M": 1,
+        "completionTokenCostPer1M": 5,
+        "cacheReadTokenCostPer1M": 0.1,
+        "cacheWriteTokenCostPer1M": 1.25
+      },
+      "claude-haiku-4-5@20251001": {
+        "promptTokenCostPer1M": 1,
+        "completionTokenCostPer1M": 5,
+        "cacheReadTokenCostPer1M": 0.1,
+        "cacheWriteTokenCostPer1M": 1.25
+      },
+      "claude-haiku-5-5": {
+        "promptTokenCostPer1M": 0.1,
+        "completionTokenCostPer1M": 0.5,
+        "cacheReadTokenCostPer1M": 0.01,
+        "cacheWriteTokenCostPer1M": 0.125,
+        "longContextThreshold": 100000,
+        "longContextPromptTokenCostPer1M": 0.5,
+        "longContextCompletionTokenCostPer1M": 2.5,
+        "longContextCacheReadTokenCostPer1M": 0.05,
+        "longContextCacheWriteTokenCostPer1M": 0.625
+      },
+      "claude-instant-1.2": {
+        "promptTokenCostPer1M": 0.8,
+        "completionTokenCostPer1M": 2.24
+      },
+      "claude-opus-4-1-20250805": {
+        "promptTokenCostPer1M": 15,
+        "completionTokenCostPer1M": 75,
+        "cacheReadTokenCostPer1M": 1.5,
+        "cacheWriteTokenCostPer1M": 18.75
+      },
+      "claude-opus-4-1@20250805": {
+        "promptTokenCostPer1M": 15,
+        "completionTokenCostPer1M": 75,
+        "cacheReadTokenCostPer1M": 1.5,
+        "cacheWriteTokenCostPer1M": 18.75
+      },
+      "claude-opus-4-20250514": {
+        "promptTokenCostPer1M": 15,
+        "completionTokenCostPer1M": 75,
+        "cacheReadTokenCostPer1M": 1.5,
+        "cacheWriteTokenCostPer1M": 18.75
+      },
+      "claude-opus-4-5-20251101": {
+        "promptTokenCostPer1M": 5,
+        "completionTokenCostPer1M": 25,
+        "cacheReadTokenCostPer1M": 0.5,
+        "cacheWriteTokenCostPer1M": 6.25
+      },
+      "claude-opus-4-5@20251101": {
+        "promptTokenCostPer1M": 5,
+        "completionTokenCostPer1M": 25,
+        "cacheReadTokenCostPer1M": 0.5,
+        "cacheWriteTokenCostPer1M": 6.25
+      },
+      "claude-opus-4-6": {
+        "promptTokenCostPer1M": 5,
+        "completionTokenCostPer1M": 25,
+        "cacheReadTokenCostPer1M": 0.5,
+        "cacheWriteTokenCostPer1M": 6.25
+      },
+      "claude-opus-4-7": {
+        "promptTokenCostPer1M": 5,
+        "completionTokenCostPer1M": 25,
+        "cacheReadTokenCostPer1M": 0.5,
+        "cacheWriteTokenCostPer1M": 6.25
+      },
+      "claude-opus-4-8": {
+        "promptTokenCostPer1M": 5,
+        "completionTokenCostPer1M": 25,
+        "cacheReadTokenCostPer1M": 0.5,
+        "cacheWriteTokenCostPer1M": 6.25
+      },
+      "claude-opus-4@20250514": {
+        "promptTokenCostPer1M": 15,
+        "completionTokenCostPer1M": 75,
+        "cacheReadTokenCostPer1M": 1.5,
+        "cacheWriteTokenCostPer1M": 18.75
+      },
+      "claude-opus-5": {
+        "promptTokenCostPer1M": 5,
+        "completionTokenCostPer1M": 25,
+        "cacheReadTokenCostPer1M": 0.5,
+        "cacheWriteTokenCostPer1M": 6.25
+      },
+      "claude-opus-5-5": {
+        "promptTokenCostPer1M": 4,
+        "completionTokenCostPer1M": 20,
+        "cacheReadTokenCostPer1M": 0.2,
+        "cacheWriteTokenCostPer1M": 5
+      },
+      "claude-sonnet-4-20250514": {
+        "promptTokenCostPer1M": 3,
+        "completionTokenCostPer1M": 15,
+        "cacheReadTokenCostPer1M": 0.3,
+        "cacheWriteTokenCostPer1M": 3.75
+      },
+      "claude-sonnet-4-5-20250929": {
+        "promptTokenCostPer1M": 3,
+        "completionTokenCostPer1M": 15,
+        "cacheReadTokenCostPer1M": 0.3,
+        "cacheWriteTokenCostPer1M": 3.75
+      },
+      "claude-sonnet-4-5@20250929": {
+        "promptTokenCostPer1M": 3,
+        "completionTokenCostPer1M": 15,
+        "cacheReadTokenCostPer1M": 0.3,
+        "cacheWriteTokenCostPer1M": 3.75
+      },
+      "claude-sonnet-4-6": {
+        "promptTokenCostPer1M": 3,
+        "completionTokenCostPer1M": 15,
+        "cacheReadTokenCostPer1M": 0.3,
+        "cacheWriteTokenCostPer1M": 3.75
+      },
+      "claude-sonnet-4@20250514": {
+        "promptTokenCostPer1M": 3,
+        "completionTokenCostPer1M": 15,
+        "cacheReadTokenCostPer1M": 0.3,
+        "cacheWriteTokenCostPer1M": 3.75
+      },
+      "claude-sonnet-5": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 10,
+        "cacheReadTokenCostPer1M": 0.2,
+        "cacheWriteTokenCostPer1M": 2.5
+      },
+      "claude-sonnet-5-5": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 10,
+        "cacheReadTokenCostPer1M": 0.2,
+        "cacheWriteTokenCostPer1M": 2.5
+      }
+    },
+    "cohere": {
+      "command": {
+        "promptTokenCostPer1M": 0.5,
+        "completionTokenCostPer1M": 1.5
+      },
+      "command-light": {
+        "promptTokenCostPer1M": 0.3,
+        "completionTokenCostPer1M": 0.6
+      },
+      "command-r": {
+        "promptTokenCostPer1M": 0.5,
+        "completionTokenCostPer1M": 1.5
+      },
+      "command-r-plus": {
+        "promptTokenCostPer1M": 3,
+        "completionTokenCostPer1M": 15
+      },
+      "embed-english-light-v3.0": {
+        "promptTokenCostPer1M": 0.1,
+        "completionTokenCostPer1M": 0.1
+      },
+      "embed-english-v3.0": {
+        "promptTokenCostPer1M": 0.1,
+        "completionTokenCostPer1M": 0.1
+      },
+      "embed-multilingual-light-v3.0": {
+        "promptTokenCostPer1M": 0.1,
+        "completionTokenCostPer1M": 0.1
+      },
+      "embed-multilingual-v3.0": {
+        "promptTokenCostPer1M": 0.1,
+        "completionTokenCostPer1M": 0.1
+      }
+    },
+    "deepseek": {
+      "deepseek-chat": {
+        "promptTokenCostPer1M": 0.14,
+        "completionTokenCostPer1M": 0.28,
+        "cacheReadTokenCostPer1M": 0.0028
+      },
+      "deepseek-reasoner": {
+        "promptTokenCostPer1M": 0.14,
+        "completionTokenCostPer1M": 0.28,
+        "cacheReadTokenCostPer1M": 0.0028
+      },
+      "deepseek-v4-flash": {
+        "promptTokenCostPer1M": 0.14,
+        "completionTokenCostPer1M": 0.28,
+        "cacheReadTokenCostPer1M": 0.0028
+      },
+      "deepseek-v4-pro": {
+        "promptTokenCostPer1M": 0.435,
+        "completionTokenCostPer1M": 0.87,
+        "cacheReadTokenCostPer1M": 0.003625
+      }
+    },
+    "deepseek-responses": {
+      "deepseek-chat": {
+        "promptTokenCostPer1M": 0.14,
+        "completionTokenCostPer1M": 0.28,
+        "cacheReadTokenCostPer1M": 0.0028
+      },
+      "deepseek-reasoner": {
+        "promptTokenCostPer1M": 0.14,
+        "completionTokenCostPer1M": 0.28,
+        "cacheReadTokenCostPer1M": 0.0028
+      },
+      "deepseek-v4-flash": {
+        "promptTokenCostPer1M": 0.14,
+        "completionTokenCostPer1M": 0.28,
+        "cacheReadTokenCostPer1M": 0.0028
+      },
+      "deepseek-v4-pro": {
+        "promptTokenCostPer1M": 0.435,
+        "completionTokenCostPer1M": 0.87,
+        "cacheReadTokenCostPer1M": 0.003625
+      }
+    },
+    "google-gemini": {
+      "gemini-1.0-pro": {
+        "promptTokenCostPer1M": 0.5,
+        "completionTokenCostPer1M": 1.5
+      },
+      "gemini-1.5-flash": {
+        "promptTokenCostPer1M": 0.075,
+        "completionTokenCostPer1M": 0.3
+      },
+      "gemini-1.5-flash-8b": {
+        "promptTokenCostPer1M": 0.0375,
+        "completionTokenCostPer1M": 0.15
+      },
+      "gemini-1.5-pro": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 5
+      },
+      "gemini-2.0-flash": {
+        "promptTokenCostPer1M": 0.1,
+        "completionTokenCostPer1M": 0.4,
+        "cacheReadTokenCostPer1M": 0.025,
+        "cacheWriteTokenCostPer1M": 0.1
+      },
+      "gemini-2.0-flash-lite": {
+        "promptTokenCostPer1M": 0.075,
+        "completionTokenCostPer1M": 0.3
+      },
+      "gemini-2.5-flash": {
+        "promptTokenCostPer1M": 0.3,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.03,
+        "cacheWriteTokenCostPer1M": 0.3
+      },
+      "gemini-2.5-flash-lite": {
+        "promptTokenCostPer1M": 0.1,
+        "completionTokenCostPer1M": 0.4,
+        "cacheReadTokenCostPer1M": 0.01,
+        "cacheWriteTokenCostPer1M": 0.1
+      },
+      "gemini-2.5-pro": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10,
+        "cacheReadTokenCostPer1M": 0.125,
+        "cacheWriteTokenCostPer1M": 1.25,
+        "longContextThreshold": 200000,
+        "longContextPromptTokenCostPer1M": 2.5,
+        "longContextCompletionTokenCostPer1M": 15,
+        "longContextCacheReadTokenCostPer1M": 0.25
+      },
+      "gemini-3-flash-preview": {
+        "promptTokenCostPer1M": 0.5,
+        "completionTokenCostPer1M": 3,
+        "cacheReadTokenCostPer1M": 0.05,
+        "cacheWriteTokenCostPer1M": 0.5
+      },
+      "gemini-3-pro-image": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 12
+      },
+      "gemini-3-pro-image-preview": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 12
+      },
+      "gemini-3.1-flash-image": {
+        "promptTokenCostPer1M": 0.5,
+        "completionTokenCostPer1M": 3
+      },
+      "gemini-3.1-flash-image-preview": {
+        "promptTokenCostPer1M": 0.5,
+        "completionTokenCostPer1M": 3
+      },
+      "gemini-3.1-flash-lite": {
+        "promptTokenCostPer1M": 0.25,
+        "completionTokenCostPer1M": 1.5,
+        "cacheReadTokenCostPer1M": 0.025,
+        "cacheWriteTokenCostPer1M": 0.25
+      },
+      "gemini-3.1-flash-lite-image": {
+        "promptTokenCostPer1M": 0.25,
+        "completionTokenCostPer1M": 1.5
+      },
+      "gemini-3.1-flash-lite-preview": {
+        "promptTokenCostPer1M": 0.25,
+        "completionTokenCostPer1M": 1.5,
+        "cacheReadTokenCostPer1M": 0.025,
+        "cacheWriteTokenCostPer1M": 0.25
+      },
+      "gemini-3.1-flash-tts-preview": {
+        "promptTokenCostPer1M": 1,
+        "completionTokenCostPer1M": 20
+      },
+      "gemini-3.1-pro-preview": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 12,
+        "cacheReadTokenCostPer1M": 0.2,
+        "cacheWriteTokenCostPer1M": 2,
+        "longContextThreshold": 200000,
+        "longContextPromptTokenCostPer1M": 4,
+        "longContextCompletionTokenCostPer1M": 18,
+        "longContextCacheReadTokenCostPer1M": 0.4
+      },
+      "gemini-3.5-flash": {
+        "promptTokenCostPer1M": 1.5,
+        "completionTokenCostPer1M": 9,
+        "cacheReadTokenCostPer1M": 0.15,
+        "cacheWriteTokenCostPer1M": 1.5
+      },
+      "gemini-3.5-flash-lite": {
+        "promptTokenCostPer1M": 0.3,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.03,
+        "cacheWriteTokenCostPer1M": 0.3
+      },
+      "gemini-3.5-transcribe": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 12
+      },
+      "gemini-3.6-flash": {
+        "promptTokenCostPer1M": 1.5,
+        "completionTokenCostPer1M": 7.5,
+        "cacheReadTokenCostPer1M": 0.15,
+        "cacheWriteTokenCostPer1M": 1.5
+      },
+      "gemini-3.7-flash": {
+        "promptTokenCostPer1M": 1.5,
+        "completionTokenCostPer1M": 7.5,
+        "cacheReadTokenCostPer1M": 0.15,
+        "cacheWriteTokenCostPer1M": 1.5
+      },
+      "gemini-3.8-flash": {
+        "promptTokenCostPer1M": 1.5,
+        "completionTokenCostPer1M": 7.5,
+        "cacheReadTokenCostPer1M": 0.15,
+        "cacheWriteTokenCostPer1M": 1.5
+      },
+      "gemini-3.8-flash-lite-tts": {
+        "promptTokenCostPer1M": 1,
+        "completionTokenCostPer1M": 12
+      },
+      "gemini-3.8-flash-tts": {
+        "promptTokenCostPer1M": 1,
+        "completionTokenCostPer1M": 18
+      },
+      "gemini-embedding-001": {
+        "promptTokenCostPer1M": 0.15,
+        "completionTokenCostPer1M": 0
+      },
+      "gemini-embedding-2": {
+        "promptTokenCostPer1M": 0.2,
+        "completionTokenCostPer1M": 0
+      },
+      "gemini-flash-latest": {
+        "promptTokenCostPer1M": 0.3,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.03,
+        "cacheWriteTokenCostPer1M": 0.3
+      },
+      "gemini-flash-lite-latest": {
+        "promptTokenCostPer1M": 0.1,
+        "completionTokenCostPer1M": 0.4,
+        "cacheReadTokenCostPer1M": 0.01,
+        "cacheWriteTokenCostPer1M": 0.1
+      },
+      "gemini-pro-latest": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10,
+        "cacheReadTokenCostPer1M": 0.125,
+        "cacheWriteTokenCostPer1M": 1.25,
+        "longContextThreshold": 200000,
+        "longContextPromptTokenCostPer1M": 2.5,
+        "longContextCompletionTokenCostPer1M": 15,
+        "longContextCacheReadTokenCostPer1M": 0.25
+      },
+      "nano-banana-2": {
+        "promptTokenCostPer1M": 0.5,
+        "completionTokenCostPer1M": 3
+      }
+    },
+    "grok": {
+      "grok-3": {
+        "promptTokenCostPer1M": 3,
+        "completionTokenCostPer1M": 15
+      },
+      "grok-3-fast": {
+        "promptTokenCostPer1M": 5,
+        "completionTokenCostPer1M": 25
+      },
+      "grok-3-mini": {
+        "promptTokenCostPer1M": 0.3,
+        "completionTokenCostPer1M": 0.5
+      },
+      "grok-3-mini-fast": {
+        "promptTokenCostPer1M": 0.6,
+        "completionTokenCostPer1M": 4
+      },
+      "grok-4-1-fast-non-reasoning": {
+        "promptTokenCostPer1M": 0.2,
+        "completionTokenCostPer1M": 0.5,
+        "cacheReadTokenCostPer1M": 0.05
+      },
+      "grok-4-1-fast-non-reasoning-latest": {
+        "promptTokenCostPer1M": 0.2,
+        "completionTokenCostPer1M": 0.5,
+        "cacheReadTokenCostPer1M": 0.05
+      },
+      "grok-4-1-fast-reasoning": {
+        "promptTokenCostPer1M": 0.2,
+        "completionTokenCostPer1M": 0.5,
+        "cacheReadTokenCostPer1M": 0.05
+      },
+      "grok-4-1-fast-reasoning-latest": {
+        "promptTokenCostPer1M": 0.2,
+        "completionTokenCostPer1M": 0.5,
+        "cacheReadTokenCostPer1M": 0.05
+      },
+      "grok-4.20": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.2
+      },
+      "grok-4.20-0309": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.2
+      },
+      "grok-4.20-0309-non-reasoning": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.2
+      },
+      "grok-4.20-0309-reasoning": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.2
+      },
+      "grok-4.20-multi-agent": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.2
+      },
+      "grok-4.20-multi-agent-0309": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.2
+      },
+      "grok-4.20-multi-agent-latest": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.2
+      },
+      "grok-4.20-non-reasoning": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.2
+      },
+      "grok-4.20-non-reasoning-latest": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.2
+      },
+      "grok-4.20-reasoning": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.2
+      },
+      "grok-4.20-reasoning-latest": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.2
+      },
+      "grok-4.3": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.2
+      },
+      "grok-4.3-latest": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.2
+      },
+      "grok-4.5": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 6,
+        "cacheReadTokenCostPer1M": 0.3
+      },
+      "grok-4.5-latest": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 6,
+        "cacheReadTokenCostPer1M": 0.3
+      },
+      "grok-build-latest": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 6,
+        "cacheReadTokenCostPer1M": 0.3
+      },
+      "grok-latest": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 2.5,
+        "cacheReadTokenCostPer1M": 0.2
+      }
+    },
+    "mistral": {
+      "codestral-latest": {
+        "promptTokenCostPer1M": 0.2,
+        "completionTokenCostPer1M": 0.6
+      },
+      "mistral-large-latest": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 6
+      },
+      "mistral-nemo-latest": {
+        "promptTokenCostPer1M": 0.15,
+        "completionTokenCostPer1M": 0.15
+      },
+      "mistral-small-latest": {
+        "promptTokenCostPer1M": 0.2,
+        "completionTokenCostPer1M": 0.6
+      },
+      "open-codestral-mamba": {
+        "promptTokenCostPer1M": 0.25,
+        "completionTokenCostPer1M": 0.25
+      },
+      "open-mistral-7b": {
+        "promptTokenCostPer1M": 0.25,
+        "completionTokenCostPer1M": 0.25
+      },
+      "open-mistral-nemo-latest": {
+        "promptTokenCostPer1M": 0.3,
+        "completionTokenCostPer1M": 0.3
+      },
+      "open-mixtral-8x7b": {
+        "promptTokenCostPer1M": 0.7,
+        "completionTokenCostPer1M": 0.7
+      }
+    },
+    "openai": {
+      "chatgpt-4o-latest": {
+        "promptTokenCostPer1M": 5,
+        "completionTokenCostPer1M": 15
+      },
+      "gpt-3.5-turbo": {
+        "promptTokenCostPer1M": 0.5,
+        "completionTokenCostPer1M": 1.5
+      },
+      "gpt-4": {
+        "promptTokenCostPer1M": 30,
+        "completionTokenCostPer1M": 60
+      },
+      "gpt-4-turbo": {
+        "promptTokenCostPer1M": 10,
+        "completionTokenCostPer1M": 30
+      },
+      "gpt-4.1": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 8
+      },
+      "gpt-4.1-mini": {
+        "promptTokenCostPer1M": 0.4,
+        "completionTokenCostPer1M": 1.6
+      },
+      "gpt-4.1-nano": {
+        "promptTokenCostPer1M": 0.1,
+        "completionTokenCostPer1M": 0.4
+      },
+      "gpt-4o": {
+        "promptTokenCostPer1M": 2.5,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-4o-mini": {
+        "promptTokenCostPer1M": 0.15,
+        "completionTokenCostPer1M": 0.6
+      },
+      "gpt-5": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5-chat": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5-chat-latest": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5-codex": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5-mini": {
+        "promptTokenCostPer1M": 0.25,
+        "completionTokenCostPer1M": 2
+      },
+      "gpt-5-nano": {
+        "promptTokenCostPer1M": 0.05,
+        "completionTokenCostPer1M": 0.4
+      },
+      "gpt-5-pro": {
+        "promptTokenCostPer1M": 15,
+        "completionTokenCostPer1M": 120
+      },
+      "gpt-5.1": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5.1-chat-latest": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5.1-codex": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5.1-codex-max": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5.1-codex-mini": {
+        "promptTokenCostPer1M": 0.25,
+        "completionTokenCostPer1M": 2
+      },
+      "gpt-5.2": {
+        "promptTokenCostPer1M": 1.75,
+        "completionTokenCostPer1M": 14
+      },
+      "gpt-5.2-chat-latest": {
+        "promptTokenCostPer1M": 1.75,
+        "completionTokenCostPer1M": 14
+      },
+      "gpt-5.2-codex": {
+        "promptTokenCostPer1M": 1.75,
+        "completionTokenCostPer1M": 14
+      },
+      "gpt-5.2-pro": {
+        "promptTokenCostPer1M": 21,
+        "completionTokenCostPer1M": 168
+      },
+      "gpt-5.4": {
+        "promptTokenCostPer1M": 2.5,
+        "completionTokenCostPer1M": 15
+      },
+      "gpt-5.4-mini": {
+        "promptTokenCostPer1M": 0.75,
+        "completionTokenCostPer1M": 4.5
+      },
+      "gpt-5.4-nano": {
+        "promptTokenCostPer1M": 0.2,
+        "completionTokenCostPer1M": 1.25
+      },
+      "gpt-5.5": {
+        "promptTokenCostPer1M": 5,
+        "completionTokenCostPer1M": 30,
+        "cacheReadTokenCostPer1M": 0.5,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 10,
+        "longContextCompletionTokenCostPer1M": 45,
+        "longContextCacheReadTokenCostPer1M": 1
+      },
+      "gpt-5.5-pro": {
+        "promptTokenCostPer1M": 30,
+        "completionTokenCostPer1M": 180,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 60,
+        "longContextCompletionTokenCostPer1M": 270
+      },
+      "gpt-5.6": {
+        "promptTokenCostPer1M": 4,
+        "completionTokenCostPer1M": 20,
+        "cacheReadTokenCostPer1M": 0.4,
+        "cacheWriteTokenCostPer1M": 5,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 8,
+        "longContextCompletionTokenCostPer1M": 30,
+        "longContextCacheReadTokenCostPer1M": 0.8
+      },
+      "gpt-5.6-luna": {
+        "promptTokenCostPer1M": 0.2,
+        "completionTokenCostPer1M": 1.2,
+        "cacheReadTokenCostPer1M": 0.02,
+        "cacheWriteTokenCostPer1M": 0.25,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 0.4,
+        "longContextCompletionTokenCostPer1M": 1.8,
+        "longContextCacheReadTokenCostPer1M": 0.04
+      },
+      "gpt-5.6-sol": {
+        "promptTokenCostPer1M": 4,
+        "completionTokenCostPer1M": 20,
+        "cacheReadTokenCostPer1M": 0.4,
+        "cacheWriteTokenCostPer1M": 5,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 8,
+        "longContextCompletionTokenCostPer1M": 30,
+        "longContextCacheReadTokenCostPer1M": 0.8
+      },
+      "gpt-5.6-terra": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 12,
+        "cacheReadTokenCostPer1M": 0.2,
+        "cacheWriteTokenCostPer1M": 2.5,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 4,
+        "longContextCompletionTokenCostPer1M": 18,
+        "longContextCacheReadTokenCostPer1M": 0.4
+      },
+      "gpt-6-astra": {
+        "promptTokenCostPer1M": 10,
+        "completionTokenCostPer1M": 50,
+        "cacheReadTokenCostPer1M": 1,
+        "cacheWriteTokenCostPer1M": 12.5,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 20,
+        "longContextCompletionTokenCostPer1M": 75,
+        "longContextCacheReadTokenCostPer1M": 2,
+        "longContextCacheWriteTokenCostPer1M": 25
+      },
+      "gpt-6-luna": {
+        "promptTokenCostPer1M": 0.1,
+        "completionTokenCostPer1M": 0.5,
+        "cacheReadTokenCostPer1M": 0.01,
+        "cacheWriteTokenCostPer1M": 0.125,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 0.2,
+        "longContextCompletionTokenCostPer1M": 0.75,
+        "longContextCacheReadTokenCostPer1M": 0.02,
+        "longContextCacheWriteTokenCostPer1M": 0.25
+      },
+      "gpt-6-sol": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 10,
+        "cacheReadTokenCostPer1M": 0.2,
+        "cacheWriteTokenCostPer1M": 2.5,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 4,
+        "longContextCompletionTokenCostPer1M": 15,
+        "longContextCacheReadTokenCostPer1M": 0.4,
+        "longContextCacheWriteTokenCostPer1M": 5
+      },
+      "o1": {
+        "promptTokenCostPer1M": 15,
+        "completionTokenCostPer1M": 60
+      },
+      "o1-mini": {
+        "promptTokenCostPer1M": 1.1,
+        "completionTokenCostPer1M": 4.4
+      },
+      "o3": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 8
+      },
+      "o3-mini": {
+        "promptTokenCostPer1M": 1.1,
+        "completionTokenCostPer1M": 4.4
+      },
+      "o4-mini": {
+        "promptTokenCostPer1M": 1.1,
+        "completionTokenCostPer1M": 4.4
+      },
+      "text-embedding-3-large": {
+        "promptTokenCostPer1M": 0.13,
+        "completionTokenCostPer1M": 0.13
+      },
+      "text-embedding-3-small": {
+        "promptTokenCostPer1M": 0.02,
+        "completionTokenCostPer1M": 0.02
+      },
+      "text-embedding-ada-002": {
+        "promptTokenCostPer1M": 0.1,
+        "completionTokenCostPer1M": 0.1
+      }
+    },
+    "openai-responses": {
+      "chatgpt-4o-latest": {
+        "promptTokenCostPer1M": 5,
+        "completionTokenCostPer1M": 15
+      },
+      "gpt-3.5-turbo": {
+        "promptTokenCostPer1M": 0.5,
+        "completionTokenCostPer1M": 1.5
+      },
+      "gpt-4": {
+        "promptTokenCostPer1M": 30,
+        "completionTokenCostPer1M": 60
+      },
+      "gpt-4-turbo": {
+        "promptTokenCostPer1M": 10,
+        "completionTokenCostPer1M": 30
+      },
+      "gpt-4.1": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 8
+      },
+      "gpt-4.1-mini": {
+        "promptTokenCostPer1M": 0.4,
+        "completionTokenCostPer1M": 1.6
+      },
+      "gpt-4.1-nano": {
+        "promptTokenCostPer1M": 0.1,
+        "completionTokenCostPer1M": 0.4
+      },
+      "gpt-4o": {
+        "promptTokenCostPer1M": 2.5,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-4o-mini": {
+        "promptTokenCostPer1M": 0.15,
+        "completionTokenCostPer1M": 0.6
+      },
+      "gpt-5": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5-chat": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5-chat-latest": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5-codex": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5-mini": {
+        "promptTokenCostPer1M": 0.25,
+        "completionTokenCostPer1M": 2
+      },
+      "gpt-5-nano": {
+        "promptTokenCostPer1M": 0.05,
+        "completionTokenCostPer1M": 0.4
+      },
+      "gpt-5-pro": {
+        "promptTokenCostPer1M": 15,
+        "completionTokenCostPer1M": 120
+      },
+      "gpt-5.1": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5.1-chat-latest": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5.1-codex": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5.1-codex-max": {
+        "promptTokenCostPer1M": 1.25,
+        "completionTokenCostPer1M": 10
+      },
+      "gpt-5.1-codex-mini": {
+        "promptTokenCostPer1M": 0.25,
+        "completionTokenCostPer1M": 2
+      },
+      "gpt-5.2": {
+        "promptTokenCostPer1M": 1.75,
+        "completionTokenCostPer1M": 14
+      },
+      "gpt-5.2-chat-latest": {
+        "promptTokenCostPer1M": 1.75,
+        "completionTokenCostPer1M": 14
+      },
+      "gpt-5.2-codex": {
+        "promptTokenCostPer1M": 1.75,
+        "completionTokenCostPer1M": 14
+      },
+      "gpt-5.2-pro": {
+        "promptTokenCostPer1M": 21,
+        "completionTokenCostPer1M": 168
+      },
+      "gpt-5.4": {
+        "promptTokenCostPer1M": 2.5,
+        "completionTokenCostPer1M": 15
+      },
+      "gpt-5.4-mini": {
+        "promptTokenCostPer1M": 0.75,
+        "completionTokenCostPer1M": 4.5
+      },
+      "gpt-5.4-nano": {
+        "promptTokenCostPer1M": 0.2,
+        "completionTokenCostPer1M": 1.25
+      },
+      "gpt-5.5": {
+        "promptTokenCostPer1M": 5,
+        "completionTokenCostPer1M": 30,
+        "cacheReadTokenCostPer1M": 0.5,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 10,
+        "longContextCompletionTokenCostPer1M": 45,
+        "longContextCacheReadTokenCostPer1M": 1
+      },
+      "gpt-5.5-pro": {
+        "promptTokenCostPer1M": 30,
+        "completionTokenCostPer1M": 180,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 60,
+        "longContextCompletionTokenCostPer1M": 270
+      },
+      "gpt-5.6": {
+        "promptTokenCostPer1M": 4,
+        "completionTokenCostPer1M": 20,
+        "cacheReadTokenCostPer1M": 0.4,
+        "cacheWriteTokenCostPer1M": 5,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 8,
+        "longContextCompletionTokenCostPer1M": 30,
+        "longContextCacheReadTokenCostPer1M": 0.8
+      },
+      "gpt-5.6-luna": {
+        "promptTokenCostPer1M": 0.2,
+        "completionTokenCostPer1M": 1.2,
+        "cacheReadTokenCostPer1M": 0.02,
+        "cacheWriteTokenCostPer1M": 0.25,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 0.4,
+        "longContextCompletionTokenCostPer1M": 1.8,
+        "longContextCacheReadTokenCostPer1M": 0.04
+      },
+      "gpt-5.6-sol": {
+        "promptTokenCostPer1M": 4,
+        "completionTokenCostPer1M": 20,
+        "cacheReadTokenCostPer1M": 0.4,
+        "cacheWriteTokenCostPer1M": 5,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 8,
+        "longContextCompletionTokenCostPer1M": 30,
+        "longContextCacheReadTokenCostPer1M": 0.8
+      },
+      "gpt-5.6-terra": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 12,
+        "cacheReadTokenCostPer1M": 0.2,
+        "cacheWriteTokenCostPer1M": 2.5,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 4,
+        "longContextCompletionTokenCostPer1M": 18,
+        "longContextCacheReadTokenCostPer1M": 0.4
+      },
+      "gpt-6-astra": {
+        "promptTokenCostPer1M": 10,
+        "completionTokenCostPer1M": 50,
+        "cacheReadTokenCostPer1M": 1,
+        "cacheWriteTokenCostPer1M": 12.5,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 20,
+        "longContextCompletionTokenCostPer1M": 75,
+        "longContextCacheReadTokenCostPer1M": 2,
+        "longContextCacheWriteTokenCostPer1M": 25
+      },
+      "gpt-6-luna": {
+        "promptTokenCostPer1M": 0.1,
+        "completionTokenCostPer1M": 0.5,
+        "cacheReadTokenCostPer1M": 0.01,
+        "cacheWriteTokenCostPer1M": 0.125,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 0.2,
+        "longContextCompletionTokenCostPer1M": 0.75,
+        "longContextCacheReadTokenCostPer1M": 0.02,
+        "longContextCacheWriteTokenCostPer1M": 0.25
+      },
+      "gpt-6-sol": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 10,
+        "cacheReadTokenCostPer1M": 0.2,
+        "cacheWriteTokenCostPer1M": 2.5,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 4,
+        "longContextCompletionTokenCostPer1M": 15,
+        "longContextCacheReadTokenCostPer1M": 0.4,
+        "longContextCacheWriteTokenCostPer1M": 5
+      },
+      "o1": {
+        "promptTokenCostPer1M": 15,
+        "completionTokenCostPer1M": 60
+      },
+      "o1-pro": {
+        "promptTokenCostPer1M": 150,
+        "completionTokenCostPer1M": 600
+      },
+      "o3": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 8
+      },
+      "o3-mini": {
+        "promptTokenCostPer1M": 1.1,
+        "completionTokenCostPer1M": 4.4
+      },
+      "o3-pro": {
+        "promptTokenCostPer1M": 20,
+        "completionTokenCostPer1M": 80
+      },
+      "o4-mini": {
+        "promptTokenCostPer1M": 1.1,
+        "completionTokenCostPer1M": 4.4
+      }
+    },
+    "reka": {
+      "reka-core": {
+        "promptTokenCostPer1M": 3,
+        "completionTokenCostPer1M": 15
+      },
+      "reka-edge": {
+        "promptTokenCostPer1M": 0.4,
+        "completionTokenCostPer1M": 1
+      },
+      "reka-flash": {
+        "promptTokenCostPer1M": 0.8,
+        "completionTokenCostPer1M": 2
+      }
+    }
+  }
+}

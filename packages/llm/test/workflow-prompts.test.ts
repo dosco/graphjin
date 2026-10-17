@@ -3,6 +3,7 @@ import type { AgentWorkspace } from "../src/agent-backend";
 import { buildWorkflowRunnerPrompt, buildWorkflowSeedMessage } from "../src/workflows/runner-prompt";
 import type { WorkflowRecord } from "../src/workflows/store";
 import { VALUE_ESTIMATE_INSTRUCTIONS } from "../src/prompts/sections";
+import { splitStablePrompt } from "../src/prompts/stable-prefix";
 import { extractValueFence } from "../src/workflows/fence-parsers";
 
 const sampleWorkspace: AgentWorkspace = {
@@ -54,6 +55,25 @@ describe("buildWorkflowRunnerPrompt", () => {
     workspace: sampleWorkspace,
     knowledge: sampleKnowledge,
   };
+
+  it("puts the run's artifact path and memories after the stable prefix", () => {
+    const run = (n: number) =>
+      buildWorkflowRunnerPrompt({
+        ...base,
+        mcpTools: true,
+        memoryContext: `- memory ${n}`,
+        workspace: { ...sampleWorkspace, runRoot: `/tmp/org/runs/r${n}`, artifactRoot: `/tmp/org/runs/r${n}/artifacts` },
+      });
+    const [first, second] = [run(1), run(2)];
+    const stable = first.slice(0, first.indexOf("<files>"));
+    expect(second.startsWith(stable)).toBe(true);
+    expect(stable).toContain("<finishing>");
+    expect(stable).toContain("<mode>headless</mode>");
+    expect(first.indexOf("<long_term_memory>")).toBeGreaterThan(first.indexOf("<files>"));
+    expect(splitStablePrompt(first).stable).toBe(stable.trimEnd());
+    expect(splitStablePrompt(second).stable).toBe(stable.trimEnd());
+    expect(splitStablePrompt(second).turn).toMatch(/^<files>\nSave every report or file you make under \/tmp\/org\/runs\/r2\/artifacts/);
+  });
 
   it("uses MCP tool names when mcpTools=true", () => {
     const prompt = buildWorkflowRunnerPrompt({ ...base, mcpTools: true });

@@ -69,7 +69,7 @@ func modelOptions(options map[string]ax.Value, routed *RoutedClient, effort stri
 		if len(stage) > 0 {
 			options[key] = stage
 		}
-		cache = cache || provider == "anthropic"
+		cache = cache || breakpointCache(provider)
 	}
 	if cache {
 		options["contextCache"] = ax.Object()

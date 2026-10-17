@@ -16,7 +16,8 @@ Send exactly one object, at most 16 MiB. Unknown fields fail the run.
 | `version` | integer | Must be `1`. |
 | `run_id` | string | Required. 128 characters or fewer. |
 | `input_id` | string | Required. 128 characters or fewer. |
-| `prompt` | string | Required. It carries the whole turn, including history. Only the model context window bounds it. |
+| `instructions` | string | Optional. The org prompt: the same text for every turn of the org. The model sees it first, as `Instructions:`. |
+| `prompt` | string | Required. The rest of the turn, including history and the user message. The model sees it next, as `Question:`. Without `instructions`, it carries the whole turn. Only the model context window bounds the two together. |
 | `skill_query` | string | Optional. The user message. The host skill index recalls up to 10 guides by meaning. When it recalls two or more, one model call on the context route keeps the two or fewer that fit the request. A `discover()` search that names a staged guide loads only that guide; a free-text search gets the same rerank. |
 | `skill_rerank` | string | Optional. `off` keeps the index order and makes no rerank call. The harness also skips the call when `max_model_calls` is 1 to 3. |
 | `stream_responses` | boolean | Optional. Sends live `answer.delta`, `thought.delta` and `actor.step` events. |
@@ -26,7 +27,7 @@ Send exactly one object, at most 16 MiB. Unknown fields fail the run.
 | `max_operations` | integer | Optional. Tool calls per run, 0 to 4,000. 0 means no cap. |
 | `max_model_calls` | integer | Optional. Model calls per run, 0 to 2,000. 0 means no cap. |
 | `max_model_tokens` | integer | Optional. Token ceiling, up to 10,000,000. 0 means no ceiling. |
-| `max_cost_micros` | integer | Optional. Cost ceiling in USD micros. Needs a priced route profile. |
+| `max_cost_micros` | integer | Optional. Cost ceiling in USD micros at Ax catalog rates. Every route needs a catalog price. |
 | `reasoning_effort` | string | Optional. `low`, `medium` or `high`. |
 | `context_window_tokens` | integer | Optional. The model context window. A prompt larger than this estimate fails before any model call. |
 | `max_output_tokens` | integer | Optional. Maximum output tokens per model call. Must be below `context_window_tokens`. |
@@ -71,7 +72,7 @@ credentials. `tool.finished` carries the tool result in `data`.
 | `run.started` | The run started. |
 | `child.admitted` | The run has a read-only child agent. |
 | `model.request.started` | A model call passed admission. `name` is the configured model, `origin` the route, `provider` the provider type, `call_id` the count. |
-| `model.request.finished` | A model call ended. `usage` holds the tokens, `observed_model` the model the provider reported, and `error` is set on failure. |
+| `model.request.finished` | A model call ended. `usage` holds the tokens and the call's cost, `observed_model` the model the provider reported, and `error` is set on failure. |
 | `model.route.fallback` | A transient provider error moved the call from `name` to `origin`. |
 | `executor.step.failed` | Actor code failed. Later executor calls can use the escalation route. |
 | `skill.used` | The agent declared that the staged skill `name` influenced the turn. |
@@ -99,8 +100,8 @@ them as provisional; only `run.finished` holds the answer.
 | `kind` | `answer`, `summary`, `clarification`, `failure` |
 | `answer` | The final text, unchanged, with any fences. |
 | `code` | Set when the run did not complete, or names the budget for a `summary`. |
-| `usage` | Requests, reported calls, tokens and `coverage`: `complete`, `partial` or `unavailable`. |
-| `cost` | Present when `max_cost_micros` is set. |
+| `usage` | Requests, reported calls, tokens, `coverage` (`complete`, `partial` or `unavailable`) and the fields in [Cost](#cost). |
+| `cost` | Present when `max_cost_micros` is set: `catalog_version`, `charged_micros` (reservations for calls without usage included) and `budget_micros`. |
 
 A tool error is a normal result. The model sees it and can adapt; the run does
 not fail because of it.
@@ -120,6 +121,29 @@ Failure codes: `model_failed`, `model_http_<status>`, `model_context_overflow`,
 
 A tool with effect `pause` ends the turn as `clarification` with the answer
 "Awaiting operator input."
+
+## Cost
+
+The harness prices each model call from the model catalog of the pinned Ax Go
+module, for the route that served the call. A fallback call is priced at the
+fallback route's rates. Cache reads and cache writes use their catalog rates.
+A call whose input, cache reads and cache writes exceed the model's
+`longContextThreshold` uses the long-context rates. Tokens in the total beyond
+input, output and cache are reasoning tokens, billed at the output rate. An
+`openai-compatible` or `azure-openai` route uses OpenAI catalog prices, and a
+`vertex-ai` route uses Gemini or Anthropic prices. With `max_cost_micros`,
+each call reserves its token reservation at the model's highest rate, and the
+catalog cost replaces the reservation when the provider reports usage.
+
+| Usage field | Meaning |
+| --- | --- |
+| `cost_micros` | USD micros for the reported calls, each rounded up. |
+| `priced_by` | `catalog` when every reported call had a catalog price, otherwise `unpriced`. |
+| `catalog_version` | The pinned Ax module version. |
+
+`go run ./cmd/ax-harness catalog` writes the same prices as JSON. OpenNeko
+checks the output in as `packages/llm/src/spend/ax-model-catalog.json`, and a
+test fails when that file differs from the pinned module.
 
 ## Exit codes and signals
 
@@ -163,12 +187,22 @@ takes `api_version`; Ax builds the endpoint from them. Options cannot set the
 key, the URL, the model or the transport.
 
 `executor_escalation` and `executor_after_errors` (1 to 8) name a stronger
-executor route after actor-code errors. `pricing_version` and a `price` on
-every route enable the cost ceiling. Each route names the environment variable
-that holds its key. Ax client retries are off; the harness owns fallback.
+executor route after actor-code errors. Each route names the environment
+variable that holds its key. Ax client retries are off; the harness owns fallback.
 
 `reasoning_effort` sets `reasoning_effort` on OpenAI routes and Ax's thinking
-budget on other providers. Anthropic routes use the prompt cache.
+budget on other providers.
+
+Each stage's system prompt is identical for every turn, and `instructions`
+starts the first user message, so every provider sees a stable prefix. On
+`anthropic`, `openai` and `openai-responses` routes the harness turns on Ax's
+context cache and sends `instructions` as a user message of its own with a
+cache mark. Anthropic then puts a `cache_control` breakpoint on it, and OpenAI
+GPT-5.6 and GPT-6 models put an explicit cache breakpoint on it, so a new turn
+of the same org reuses the cached org prompt. Other routes, Gemini included,
+use the provider's implicit prefix cache. The harness does not create Gemini
+cache objects: one process runs one turn, so a cache object would need a
+registry across processes, and Ax creates it outside the metered model calls.
 
 ## OpenNeko entry
 

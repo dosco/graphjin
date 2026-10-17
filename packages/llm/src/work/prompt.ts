@@ -945,8 +945,6 @@ behalf. This is the only chat surface — operators come here to do
 everything, from "what was last week's revenue?" to "set up a workflow
 that flags churn risk every Monday."
 </role>`,
-    bot ? buildBotSection(bot) : "",
-    operatorProfile ?? "",
     CONVERSATION_SECTION,
     buildClarificationSection(supportsClarificationTool),
     dataSurface === "customer" ? buildSelectedMentionsSection(workspace) : "",
@@ -960,13 +958,6 @@ that flags churn risk every Monday."
       dataSurface === "customer",
       backend === "ax" ? "search" : "list",
     ),
-    dataSurface === "customer"
-      ? buildMemorySection({
-          searchTool: supportsMemoryTool,
-          saveMode: supportsMemoryTool ? "tool" : "fence",
-          memoryContext,
-        })
-      : "",
     dataSurface === "customer"
       ? buildWorkflowToolsSection(supportsWorkflowTool, graphjinDataPath)
       : "",
@@ -991,12 +982,22 @@ that flags churn risk every Monday."
             knowledge,
             inlineKnowledge: "syntax",
           }),
-    buildWorkspaceSection(workspace, shellTool),
     dataSurface === "customer"
       ? buildPluginActionsSection(pluginActions ?? [], !supportsCardTool)
       : "",
     RULES_SECTION,
     includeUxMetadata ? CLOSING_SECTION : "",
+    // Prompt caches reuse the identical prefix: org-wide sections above, per-user to per-message below.
+    operatorProfile ?? "",
+    bot ? buildBotSection(bot) : "",
+    buildWorkspaceSection(workspace, shellTool),
+    dataSurface === "customer"
+      ? buildMemorySection({
+          searchTool: supportsMemoryTool,
+          saveMode: supportsMemoryTool ? "tool" : "fence",
+          memoryContext,
+        })
+      : "",
   ].filter((s) => s.length > 0);
 
   if (inlineTranscript) {

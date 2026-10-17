@@ -160,6 +160,15 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   };
 });
 
+const runActor = vi.hoisted(() => ({ actor: null as { userId: string | null; role: string | null } | null }));
+vi.mock("../src/work/personas", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/work/personas")>()),
+  getWorkRunActor: async () => {
+    if (!runActor.actor) throw new Error("no database");
+    return runActor.actor;
+  },
+}));
+
 const {
   makeSandboxRunCore,
   prepareSandboxCapacity,
@@ -934,6 +943,45 @@ describe("makeSandboxRunCore", () => {
     await expect(runCore(fakeInput(async () => {}))).rejects.toThrow(
       /completed without assistant output or surface/,
     );
+  });
+
+  describe("skill capture", () => {
+    const hashExecs = () => h.calls.filter((call) => call.args.some((arg) => arg.endsWith("/hermes-agent/bin/python")));
+    const runWith = async (lines: string[]) => {
+      h.state.execLines = [
+        ...lines,
+        `__openneko_agent_result__${JSON.stringify({ status: "completed", finalText: "done" })}\n`,
+      ];
+      const logs: string[] = [];
+      runActor.actor = { userId: null, role: null };
+      try {
+        await makeSandboxRunCore({ warmPoolSize: 0, agentImage: "test", onLog: (line) => logs.push(line) })(fakeInput(async () => {}));
+      } finally {
+        runActor.actor = null;
+      }
+      return logs.filter((line) => line.includes('"phase":"skill_capture"')).map((line) => JSON.parse(line));
+    };
+    const tool = (name: string, input: unknown) =>
+      `__openneko_event__${JSON.stringify({ type: "tool_start", id: name, name, input })}\n`;
+
+    it("skips the in-box hash when no tool wrote under the skills root", async () => {
+      const phases = await runWith([tool("file_write", { path: "runs/run-1/artifacts/a.md", content: "x" })]);
+      expect(hashExecs()).toHaveLength(0);
+      expect(phases).toEqual([expect.objectContaining({ skipped: true, reason: "no_skill_writes", durationMs: 0 })]);
+    });
+
+    it("hashes the box once after a terminal command", async () => {
+      const phases = await runWith([tool("terminal", { command: "touch x" })]);
+      expect(hashExecs()).toHaveLength(1);
+      expect(phases).toEqual([expect.objectContaining({ reason: "shell" })]);
+      expect(phases[0].skipped).toBeUndefined();
+    });
+
+    it("captures when an event line cannot be read", async () => {
+      const phases = await runWith(["__openneko_event__{broken\n"]);
+      expect(hashExecs()).toHaveLength(1);
+      expect(phases).toEqual([expect.objectContaining({ reason: "evidence_missing" })]);
+    });
   });
 
   it("rejects the run when ordered event delivery fails", async () => {

@@ -1,21 +1,37 @@
 package agent
 
-import "testing"
+import (
+	"testing"
 
-func TestTokenPriceConservativeRounding(t *testing.T) {
-	p := TokenPrice{InputMicrosPerMillion: 250_000, OutputMicrosPerMillion: 1_000_000}
-	if !p.Valid() || p.Reservation(4_096) != 4_096 {
-		t.Fatalf("invalid price or reservation: %+v", p)
+	"github.com/open-neko/openneko/apps/ax-harness/internal/catalog"
+)
+
+func TestRunUsageIsCatalogPricedOnlyWhenEveryCallIs(t *testing.T) {
+	rates, ok := catalog.Lookup("google-gemini", "gemini-3.8-flash")
+	if !ok {
+		t.Fatal("gemini-3.8-flash has no catalog price")
 	}
-	// Every component rounds up separately; unexplained tokens use the
-	// larger rate, including when total is smaller than the split.
-	if got := p.Observed(1, 1, 3); got != 3 {
-		t.Fatalf("observed charge = %d, want 3", got)
+	call := func(priced bool) ModelUsage {
+		u := ModelUsage{Reported: 1, InputTokens: 1_000, CacheReadTokens: 1_000, OutputTokens: 100, TotalTokens: 2_150}
+		u.price(rates, priced, "v-test")
+		return u
 	}
-	if got := p.Observed(4, 1, 2); got != 2 {
-		t.Fatalf("split charge = %d, want 2", got)
+	first := call(true)
+	// $1.50 input, $0.15 cache read, $7.50 output; 50 reasoning tokens bill as output.
+	if first.CostMicros != 1_500+150+1_125 || first.PricedBy != "catalog" || first.CatalogVersion != "v-test" {
+		t.Fatalf("call usage=%+v", first)
 	}
-	if (TokenPrice{InputMicrosPerMillion: -1, OutputMicrosPerMillion: 1}).Valid() {
-		t.Fatal("negative price admitted")
+	run := ModelUsage{Requests: 2}
+	run.AddReported(first)
+	run.AddReported(first)
+	run.setCoverage()
+	if run.CostMicros != 2*first.CostMicros || run.PricedBy != "catalog" {
+		t.Fatalf("run usage=%+v", run)
+	}
+	run.Requests++
+	run.AddReported(call(false))
+	run.setCoverage()
+	if run.PricedBy != "unpriced" {
+		t.Fatalf("a run with an unpriced call reported %q", run.PricedBy)
 	}
 }

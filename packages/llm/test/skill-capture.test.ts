@@ -9,6 +9,8 @@ import {
   hashSkillTree,
   readPersonalSkillFiles,
   SANDBOX_SKILL_HASH_COMMAND,
+  skillCaptureDecision,
+  type SkillToolCall,
 } from "../src/config-vcs/skill-capture";
 import { userConfigRef } from "../src/config-vcs/forks";
 import { commitConfigChange } from "../src/config-vcs/index";
@@ -122,5 +124,45 @@ describe("captureSandboxSkillEdits", () => {
     const baseline = await hashSkillTree(join(orgRoot, "skills"));
     boxHashes = await hashSkillTree(box);
     expect(await capture({ userId: "u-admin", role: "admin" }, baseline)).toBeNull();
+  });
+});
+
+describe("skillCaptureDecision", () => {
+  const decide = (...toolCalls: SkillToolCall[]) =>
+    skillCaptureDecision({ toolCalls, cwd: "/sandbox/org-1", skillsRoots: ["/sandbox/org-1/skills"] });
+
+  it("skips a run whose tools wrote nothing under the skills root", () => {
+    expect(decide(
+      { name: "file_read", input: { path: "skills/shortfall/SKILL.md" } },
+      { name: "skill_used", input: { path: "/sandbox/org-1/skills/shortfall/SKILL.md" } },
+      { name: "mcp_neko_graphjin_query", input: { query: "{ orders { id } }" } },
+      { name: "file_write", input: { path: "/sandbox/org-1/runs/run-1/artifacts/report.md", content: "x" } },
+      { name: "edit", input: { title: "write: runs/run-1/notes.md", locations: [{ path: "runs/run-1/notes.md" }] } },
+    )).toEqual({ capture: false, reason: "no_skill_writes" });
+    expect(decide()).toEqual({ capture: false, reason: "no_skill_writes" });
+  });
+
+  it("captures a file write or edit under the skills root", () => {
+    expect(decide({ name: "file_write", input: { path: "skills/shortfall/notes.md", content: "x" } }).reason).toBe("skill_write");
+    expect(decide({ name: "file_edit", input: { path: "/sandbox/org-1/runs/../skills/a/SKILL.md" } }).reason).toBe("skill_write");
+    expect(decide({ name: "edit", input: { rawInput: { path: "/sandbox/.hermes-warm/home/skills/a/SKILL.md" } } }).reason).toBe("skill_write");
+  });
+
+  it("captures after any shell or terminal command", () => {
+    expect(decide({ name: "terminal", input: { command: "ls" } })).toEqual({ capture: true, reason: "shell" });
+    expect(decide({ name: "execute", input: { title: "terminal: ls" } }).reason).toBe("shell");
+    expect(decide({ name: "delegate_task" }).reason).toBe("shell");
+  });
+
+  it("captures after the skill builder or skill_manage", () => {
+    expect(decide({ name: "mcp_neko_skills_create_skill", input: { name: "new" } }).reason).toBe("skill_tool");
+    expect(decide({ name: "create_skill" }).reason).toBe("skill_tool");
+    expect(decide({ name: "edit", input: { title: "skill edit: shortfall/references/a.md" } }).reason).toBe("skill_tool");
+  });
+
+  it("captures when the evidence is missing or a write has no readable path", () => {
+    expect(skillCaptureDecision(null)).toEqual({ capture: true, reason: "evidence_missing" });
+    expect(decide({ name: "file_write", input: "{\"content\":\"truncated" }).reason).toBe("write_path_unknown");
+    expect(decide({ name: "patch", input: { rawInput: { mode: "patch" } } }).reason).toBe("write_path_unknown");
   });
 });

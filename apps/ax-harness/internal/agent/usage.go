@@ -18,6 +18,12 @@ type ModelUsage struct {
 	CacheWriteTokens int64  `json:"cache_write_tokens,omitempty"`
 	ReasoningTokens  int64  `json:"reasoning_tokens,omitempty"`
 	Coverage         string `json:"coverage,omitempty"`
+	// CostMicros sums the catalog cost of the reported calls. PricedBy is
+	// "catalog" only when every reported call had a catalog price.
+	CostMicros     int64  `json:"cost_micros,omitempty"`
+	PricedBy       string `json:"priced_by,omitempty"`
+	CatalogVersion string `json:"catalog_version,omitempty"`
+	priced         int
 }
 
 func (u *ModelUsage) AddReported(other ModelUsage) {
@@ -28,6 +34,8 @@ func (u *ModelUsage) AddReported(other ModelUsage) {
 	u.CacheReadTokens += other.CacheReadTokens
 	u.CacheWriteTokens += other.CacheWriteTokens
 	u.ReasoningTokens += other.ReasoningTokens
+	u.CostMicros += other.CostMicros
+	u.priced += other.priced
 }
 
 func (u *ModelUsage) setCoverage() {
@@ -38,6 +46,10 @@ func (u *ModelUsage) setCoverage() {
 		u.Coverage = "partial"
 	default:
 		u.Coverage = "unavailable"
+	}
+	u.PricedBy = unpriced
+	if u.Reported > 0 && u.priced == u.Reported {
+		u.PricedBy = pricedByCatalog
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 
 	ax "github.com/ax-llm/ax/packages/go"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/catalog"
 )
 
 // StageModels is host configuration, never a field supplied by a run or a tool.
@@ -31,8 +32,9 @@ type RoutedClient struct {
 	Providers       map[string]string
 	DefaultProvider string
 	Fallbacks       map[string]string
-	PricingVersion  string
-	Prices          map[string]TokenPrice
+	// Prices holds the Ax catalog rates of each priced route key.
+	CatalogVersion string
+	Prices         map[string]catalog.Rates
 }
 
 // transientRouteFallback changes only a failed model-generation request. Ax
@@ -160,4 +162,17 @@ func (r *executorErrorRoute) GetFeatures(model string) map[string]ax.Value {
 		return features.GetFeatures(r.selected(model))
 	}
 	return nil
+}
+
+// fullyPriced reports whether every route has a catalog price.
+func (r *RoutedClient) fullyPriced() bool {
+	if r == nil || len(r.ModelNames) == 0 {
+		return false
+	}
+	for route := range r.ModelNames {
+		if rates, ok := r.Prices[route]; !ok || !rates.Valid() {
+			return false
+		}
+	}
+	return true
 }

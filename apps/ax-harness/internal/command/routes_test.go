@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -108,18 +110,15 @@ func TestExecutorErrorEscalatesOnlyLaterApprovedModelCalls(t *testing.T) {
 	t.Setenv("HARNESS_CONTEXT_KEY", "context-secret")
 	t.Setenv("HARNESS_BASE_KEY", "base-secret")
 	t.Setenv("HARNESS_STRONG_KEY", "strong-secret")
-	price := func(n int64) *agent.TokenPrice {
-		return &agent.TokenPrice{InputMicrosPerMillion: n, OutputMicrosPerMillion: n}
-	}
 	raw, _ := json.Marshal(routeConfig{Context: "context", Executor: "base", ExecutorEscalation: "strong", ExecutorAfterErrors: 1,
-		Responder: "context", PricingVersion: "test-v1", Routes: []modelRoute{
-			{Key: "context", Model: "fixture-context", URL: contextServer.URL, APIKeyEnv: "HARNESS_CONTEXT_KEY", Price: price(1_000_000)},
-			{Key: "base", Model: "fixture-base", URL: baseline.URL, APIKeyEnv: "HARNESS_BASE_KEY", Price: price(2_000_000)},
-			{Key: "strong", Model: "fixture-strong", URL: strong.URL, APIKeyEnv: "HARNESS_STRONG_KEY", Price: price(4_000_000)},
+		Responder: "context", Routes: []modelRoute{
+			{Key: "context", Model: "gpt-6-luna", URL: contextServer.URL, APIKeyEnv: "HARNESS_CONTEXT_KEY"},
+			{Key: "base", Model: "gpt-6-sol", URL: baseline.URL, APIKeyEnv: "HARNESS_BASE_KEY"},
+			{Key: "strong", Model: "gpt-6-astra", URL: strong.URL, APIKeyEnv: "HARNESS_STRONG_KEY"},
 		}})
 	t.Setenv("HARNESS_MODEL_ROUTES", string(raw))
 	var out bytes.Buffer
-	code, err := run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Complete the task","max_cost_micros":50000}`), &out)
+	code, err := run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Complete the task","max_cost_micros":1000000}`), &out)
 	if code != 0 || err != nil {
 		t.Fatalf("code=%d err=%v events=%s", code, err, out.String())
 	}
@@ -142,10 +141,10 @@ func TestExecutorErrorEscalatesOnlyLaterApprovedModelCalls(t *testing.T) {
 			terminal = event.Result
 		}
 	}
-	if got := strings.Join(started, ","); got != "context:fixture-context,base:fixture-base,strong:fixture-strong,context:fixture-context" {
+	if got := strings.Join(started, ","); got != "context:gpt-6-luna,base:gpt-6-sol,strong:gpt-6-astra,context:gpt-6-luna" {
 		t.Fatalf("model admission routes=%s", got)
 	}
-	if failed != 1 || terminal == nil || terminal.Status != "completed" || terminal.Cost == nil || terminal.Cost.ChargedMicros != 120 {
+	if failed != 1 || terminal == nil || terminal.Status != "completed" || terminal.Cost == nil || terminal.Cost.ChargedMicros != 428 {
 		t.Fatalf("failed=%d terminal=%+v", failed, terminal)
 	}
 }
@@ -260,27 +259,27 @@ func TestTransientProviderFallbackChargesEachRouteWithoutReplayingTools(t *testi
 	t.Setenv("HARNESS_PRIMARY_KEY", "synthetic")
 	t.Setenv("HARNESS_SECONDARY_KEY", "synthetic")
 	t.Setenv("HARNESS_EXECUTOR_KEY", "synthetic")
-	price := func(n int64) *agent.TokenPrice {
-		return &agent.TokenPrice{InputMicrosPerMillion: n, OutputMicrosPerMillion: n}
-	}
-	raw, _ := json.Marshal(routeConfig{Context: "primary", Executor: "executor", Responder: "primary", PricingVersion: "test-v1",
+	raw, _ := json.Marshal(routeConfig{Context: "primary", Executor: "executor", Responder: "primary",
 		Fallbacks: []modelFallback{{From: "primary", To: "secondary"}}, Routes: []modelRoute{
-			{Key: "primary", Model: "fixture", URL: primary.URL, APIKeyEnv: "HARNESS_PRIMARY_KEY", Price: price(1_000_000)},
-			{Key: "secondary", Model: "fixture", URL: secondary.URL, APIKeyEnv: "HARNESS_SECONDARY_KEY", Price: price(2_000_000)},
-			{Key: "executor", Model: "fixture", URL: executor.URL, APIKeyEnv: "HARNESS_EXECUTOR_KEY", Price: price(3_000_000)},
+			{Key: "primary", Model: "gpt-6-luna", URL: primary.URL, APIKeyEnv: "HARNESS_PRIMARY_KEY"},
+			{Key: "secondary", Model: "gpt-6-sol", URL: secondary.URL, APIKeyEnv: "HARNESS_SECONDARY_KEY"},
+			{Key: "executor", Model: "gpt-5.6-terra", URL: executor.URL, APIKeyEnv: "HARNESS_EXECUTOR_KEY"},
 		}})
 	t.Setenv("HARNESS_MODEL_ROUTES", string(raw))
 	var out bytes.Buffer
-	code, err := run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Finish","max_cost_micros":50000}`), &out)
+	code, err := run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Finish","max_cost_micros":200000}`), &out)
 	if code != 0 || err != nil || strings.Join(requested, ",") != "primary,secondary,executor,primary" {
 		t.Fatalf("fallback failed: code=%d err=%v routes=%v output=%s", code, err, requested, out.String())
 	}
-	var starts []string
+	var starts, costs []string
 	var decisions int
 	var terminal *agent.Result
 	for _, e := range events(t, &out) {
 		if e.Type == "model.request.started" {
 			starts = append(starts, e.Origin)
+		}
+		if e.Type == "model.request.finished" && e.Usage != nil {
+			costs = append(costs, fmt.Sprintf("%s:%d:%s", e.Origin, e.Usage.CostMicros, e.Usage.PricedBy))
 		}
 		if e.Type == "model.route.fallback" {
 			decisions++
@@ -293,8 +292,15 @@ func TestTransientProviderFallbackChargesEachRouteWithoutReplayingTools(t *testi
 		}
 	}
 	if strings.Join(starts, ",") != "primary,secondary,executor,primary" || decisions != 1 || terminal == nil ||
-		terminal.Cost == nil || terminal.Cost.ChargedMicros != 4186 || terminal.Usage == nil || terminal.Usage.Coverage != "partial" {
+		terminal.Cost == nil || terminal.Cost.ChargedMicros != 3226 || terminal.Usage == nil || terminal.Usage.Coverage != "partial" {
 		t.Fatalf("admission/cost receipts: starts=%v decisions=%d result=%+v", starts, decisions, terminal)
+	}
+	// The failed primary call keeps its 4,096-token reservation at luna's top rate.
+	if got := strings.Join(costs, ","); got != "secondary:70:catalog,executor:80:catalog,primary:4:catalog" {
+		t.Fatalf("per-route catalog costs=%s", got)
+	}
+	if terminal.Usage.CostMicros != 154 || terminal.Usage.PricedBy != "catalog" || terminal.Usage.CatalogVersion != terminal.Cost.CatalogVersion {
+		t.Fatalf("run usage cost=%+v", terminal.Usage)
 	}
 }
 
@@ -411,30 +417,36 @@ func TestRejectCallerRoutingAndUnapprovedStage(t *testing.T) {
 	}
 }
 
-func TestPricingProfileIsComplete(t *testing.T) {
-	base := routeConfig{Context: "cheap", Executor: "work", Responder: "work", Routes: []modelRoute{
-		{Key: "cheap", Model: "fixture", URL: "https://example.invalid/v1", APIKeyEnv: "HARNESS_CHEAP_KEY"},
-		{Key: "work", Model: "fixture", URL: "https://example.invalid/v1", APIKeyEnv: "HARNESS_WORK_KEY"},
-	}}
-	validate := func(c routeConfig) error { b, _ := json.Marshal(c); _, err := parseRouteConfig(string(b)); return err }
-	if err := validate(base); err != nil {
+func TestCostBudgetNeedsCatalogPriceForEveryRoute(t *testing.T) {
+	t.Setenv("HARNESS_CHEAP_KEY", "synthetic")
+	t.Setenv("HARNESS_WORK_KEY", "synthetic")
+	raw, _ := json.Marshal(routeConfig{Context: "cheap", Executor: "work", Responder: "work", Routes: []modelRoute{
+		{Key: "cheap", Model: "gpt-6-luna", URL: "http://127.0.0.1:1/v1", APIKeyEnv: "HARNESS_CHEAP_KEY"},
+		{Key: "work", Model: "uncatalogued-model", URL: "http://127.0.0.1:1/v1", APIKeyEnv: "HARNESS_WORK_KEY"},
+	}})
+	t.Setenv("HARNESS_MODEL_ROUTES", string(raw))
+	client, err := loadModelClient(os.Getenv)
+	if err != nil {
 		t.Fatal(err)
 	}
-	base.PricingVersion = "2026-09"
-	if err := validate(base); err == nil {
-		t.Fatal("unpriced routes admitted with version")
+	routed := client.(*agent.RoutedClient)
+	if _, ok := routed.Prices["cheap"]; !ok || len(routed.Prices) != 1 {
+		t.Fatalf("catalog prices=%+v", routed.Prices)
 	}
-	base.Routes[0].Price = &agent.TokenPrice{InputMicrosPerMillion: 100, OutputMicrosPerMillion: 200}
-	if err := validate(base); err == nil {
-		t.Fatal("partially priced routes admitted")
+	var out bytes.Buffer
+	code, err := run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Answer","max_cost_micros":50000}`), &out)
+	if code != 1 || err == nil || !strings.Contains(err.Error(), "catalog price") || strings.Contains(out.String(), "model.request") {
+		t.Fatalf("unpriced route admitted under a cost budget: code=%d err=%v", code, err)
 	}
-	base.Routes[1].Price = &agent.TokenPrice{InputMicrosPerMillion: 300, OutputMicrosPerMillion: 400}
-	if err := validate(base); err != nil {
-		t.Fatalf("complete price profile rejected: %v", err)
+	t.Setenv("HARNESS_MODEL_ROUTES", "")
+	t.Setenv("HARNESS_MODEL_PROVIDER", "anthropic")
+	t.Setenv("HARNESS_MODEL", "claude-sonnet-5-5")
+	t.Setenv("HARNESS_MODEL_API_KEY", "synthetic")
+	if client, err = loadModelClient(os.Getenv); err != nil {
+		t.Fatal(err)
 	}
-	base.PricingVersion = ""
-	if err := validate(base); err == nil {
-		t.Fatal("unversioned prices admitted")
+	if _, ok := client.(*agent.RoutedClient).Prices["anthropic"]; !ok {
+		t.Fatal("the single-model route has no catalog price")
 	}
 }
 
@@ -448,12 +460,12 @@ func TestCostAdmissionStopsBeforeNextModelDispatch(t *testing.T) {
 			"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}})
 	}))
 	defer server.Close()
-	price := &agent.TokenPrice{InputMicrosPerMillion: 1_000_000, OutputMicrosPerMillion: 1_000_000}
-	raw, _ := json.Marshal(routeConfig{Context: "only", Executor: "only", Responder: "only", PricingVersion: "test-v1", Routes: []modelRoute{
-		{Key: "only", Model: "fixture", URL: server.URL, APIKeyEnv: "HARNESS_TEST_KEY", Price: price},
+	raw, _ := json.Marshal(routeConfig{Context: "only", Executor: "only", Responder: "only", Routes: []modelRoute{
+		{Key: "only", Model: "gpt-6-luna", URL: server.URL, APIKeyEnv: "HARNESS_TEST_KEY"},
 	}})
 	t.Setenv("HARNESS_MODEL_ROUTES", string(raw))
-	input := `{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Answer","max_cost_micros":4100}`
+	// A 4,096-token reservation at luna's top rate is 3,072 micros; the observed call costs 4.
+	input := `{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Answer","max_cost_micros":3075}`
 	var out bytes.Buffer
 	code, err := run(context.Background(), strings.NewReader(input), &out)
 	if code != 1 || err != nil || requests != 1 {
@@ -463,18 +475,18 @@ func TestCostAdmissionStopsBeforeNextModelDispatch(t *testing.T) {
 	for _, event := range events(t, &out) {
 		if event.Type == "model.request.started" {
 			started++
-			if event.CostMicros == nil || *event.CostMicros != 4096 {
+			if event.CostMicros == nil || *event.CostMicros != 3072 {
 				t.Fatalf("reservation: %+v", event)
 			}
 		}
 		if event.Type == "model.request.finished" {
 			finished++
-			if event.CostMicros == nil || *event.CostMicros != 15 {
+			if event.CostMicros == nil || *event.CostMicros != 4 || event.Usage == nil || event.Usage.CostMicros != 4 {
 				t.Fatalf("observed charge: %+v", event)
 			}
 		}
 		if event.Type == "run.finished" && (event.Result == nil || event.Result.Code != "cost_budget_exceeded" ||
-			event.Result.Cost == nil || event.Result.Cost.ChargedMicros != 15 || event.Result.Cost.PricingVersion != "test-v1") {
+			event.Result.Cost == nil || event.Result.Cost.ChargedMicros != 4 || event.Result.Cost.CatalogVersion != event.Result.Usage.CatalogVersion) {
 			t.Fatalf("terminal cost: %+v", event.Result)
 		}
 	}
@@ -492,13 +504,12 @@ func TestMissingUsageRetainsCostReservation(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": `{"javascriptCode":"final('Answer',{})"}`}, "finish_reason": "stop"}}})
 	}))
 	defer server.Close()
-	price := &agent.TokenPrice{InputMicrosPerMillion: 1_000_000, OutputMicrosPerMillion: 1_000_000}
-	raw, _ := json.Marshal(routeConfig{Context: "only", Executor: "only", Responder: "only", PricingVersion: "test-v1", Routes: []modelRoute{
-		{Key: "only", Model: "fixture", URL: server.URL, APIKeyEnv: "HARNESS_TEST_KEY", Price: price},
+	raw, _ := json.Marshal(routeConfig{Context: "only", Executor: "only", Responder: "only", Routes: []modelRoute{
+		{Key: "only", Model: "gpt-6-luna", URL: server.URL, APIKeyEnv: "HARNESS_TEST_KEY"},
 	}})
 	t.Setenv("HARNESS_MODEL_ROUTES", string(raw))
 	var out bytes.Buffer
-	code, err := run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Answer","max_cost_micros":4100}`), &out)
+	code, err := run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Answer","max_cost_micros":3075}`), &out)
 	if code != 1 || err != nil || requests != 1 {
 		t.Fatalf("missing usage: code=%d err=%v requests=%d output=%s", code, err, requests, out.String())
 	}
@@ -508,7 +519,7 @@ func TestMissingUsageRetainsCostReservation(t *testing.T) {
 			terminal = event.Result
 		}
 	}
-	if terminal == nil || terminal.Code != "cost_budget_exceeded" || terminal.Cost == nil || terminal.Cost.ChargedMicros != 4096 ||
+	if terminal == nil || terminal.Code != "cost_budget_exceeded" || terminal.Cost == nil || terminal.Cost.ChargedMicros != 3072 ||
 		terminal.Usage == nil || terminal.Usage.Coverage != "unavailable" {
 		t.Fatalf("reservation or coverage lost: %+v", terminal)
 	}

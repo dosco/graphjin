@@ -250,15 +250,7 @@ ${GRAPHJIN_DATE_RULE}
 
 ${outputsBlock}
 
-<files>
-Save every report or file you make under ${workspace.artifactRoot}. Files
-saved there become downloads for the operator. Files saved anywhere else are
-lost when the run ends.
-</files>
-
 ${actionsBlock}
-
-${memorySection}
 
 ${buildNativeDelegationBlock(backend)}
 
@@ -269,7 +261,15 @@ summarising what you did.${input.includeUxMetadata === false ? "" : ` Then emit 
 ${VALUE_ESTIMATE_INSTRUCTIONS}`}
 </finishing>
 
-${mode === "headless" ? HEADLESS_TAIL : LIVE_TAIL}`;
+${mode === "headless" ? HEADLESS_TAIL : LIVE_TAIL}
+
+<files>
+Save every report or file you make under ${workspace.artifactRoot}. Files
+saved there become downloads for the operator. Files saved anywhere else are
+lost when the run ends.
+</files>
+
+${memorySection}`;
 }
 
 const TRIGGER_INPUT_MAX_CHARS = 16_000;
