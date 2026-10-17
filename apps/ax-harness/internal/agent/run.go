@@ -22,6 +22,7 @@ type Spec struct {
 	Version         int    `json:"version"`
 	RunID           string `json:"run_id"`
 	InputID         string `json:"input_id"`
+	Instructions    string `json:"instructions,omitempty"` // The org prompt: the same for every turn, so it gets its own cached block.
 	Prompt          string `json:"prompt"`
 	SkillQuery      string `json:"skill_query,omitempty"`      // The user's message; the skill index ranks guides against it.
 	SkillRerank     string `json:"skill_rerank,omitempty"`     // "off" keeps the index order; otherwise a model call picks the guides that fit.
@@ -80,7 +81,15 @@ func (s Spec) valid() bool {
 
 // promptTooLarge estimates prompt tokens at 4 bytes each, like Hermes' preflight.
 func (s Spec) promptTooLarge() bool {
-	return s.ContextWindowTokens > 0 && int64(len(s.Prompt))/4+s.MaxOutputTokens > s.ContextWindowTokens
+	return s.ContextWindowTokens > 0 && int64(len(s.Instructions)+len(s.Prompt))/4+s.MaxOutputTokens > s.ContextWindowTokens
+}
+
+// request is the whole accepted request, instructions first.
+func (s Spec) request() []string {
+	if instructions := strings.TrimSpace(s.Instructions); instructions != "" {
+		return []string{instructions, s.Prompt}
+	}
+	return []string{s.Prompt}
 }
 
 func between(value, low, high int) bool { return value >= low && value <= high }
@@ -261,6 +270,10 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 			}
 		}
 		attemptClient := client
+		instructions := strings.TrimSpace(spec.Instructions)
+		if instructions != "" {
+			attemptClient = &instructionsBlockClient{AIClient: client, head: instructionsLabel + instructions, routed: routed}
+		}
 		if routed, ok := client.(*RoutedClient); ok && len(routed.Fallbacks) > 0 {
 			attemptClient = &transientRouteFallback{AIClient: attemptClient, fallbacks: routed.Fallbacks,
 				before: func(from, to string) error {
@@ -424,7 +437,12 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 			events.send(Event{Type: "skill.shortlist", Data: data})
 			engineOptions["skills"] = skillStubs(skills, shortlisted)
 		}
+		signature := "question:string -> answer:string"
 		values := ax.Object("question", spec.Prompt+shortlist)
+		if instructions != "" {
+			signature = "instructions:string, question:string -> answer:string"
+			values["instructions"] = instructions
+		}
 		if len(skills) > 0 {
 			// Host search keeps the catalog out of the prompt: discover() loads
 			// only the guides that match, however many are staged.
@@ -456,7 +474,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 				}
 			})
 		}
-		engine := ax.NewAgent("question:string -> answer:string", engineOptions)
+		engine := ax.NewAgent(signature, engineOptions)
 		if len(childTools) > 0 {
 			childRuntime := &handoffRuntime{Runtime: axgoja.NewRuntime(runtimePolicy())}
 			childInstruction := "Do only the assigned task. Return a concise result with its evidence and uncertainty, and list every change you made."
@@ -470,7 +488,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 			modelOptions(childOptions, routed, spec.ReasoningEffort)
 			engine.AddChildAgent("team", "worker", ax.NewAgent("task:string -> answer:string", childOptions))
 		}
-		anchoredClient := &contextAnchorClient{AIClient: attemptClient, request: spec.Prompt}
+		anchoredClient := &contextAnchorClient{AIClient: attemptClient, request: spec.request()}
 		if routed != nil {
 			anchoredClient.contextRoute = routed.Stages.Context
 		}
@@ -527,7 +545,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 			if routed != nil {
 				summaryModel = routed.Stages.Responder
 			}
-			summary, summaryErr := summarize(ctx, streamClient, summaryModel, spec.Prompt, parentView.snapshot(), events)
+			summary, summaryErr := summarize(ctx, streamClient, summaryModel, strings.Join(spec.request(), "\n\n"), parentView.snapshot(), events)
 			if summaryErr == nil {
 				result = Result{Status: "completed", Kind: "summary", Answer: summary, Code: trigger}
 			} else if events.modelBudgetExceeded() {

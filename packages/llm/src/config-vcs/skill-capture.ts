@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, posix, resolve } from "node:path";
 import { git } from "./git-shell";
 import { insertConfigChangeRow, recordConfigChange } from "./index";
 import { commitToUserRef, userConfigRef } from "./forks";
@@ -155,6 +155,61 @@ export async function saveSkillEdits(opts: {
     actorUserId: opts.actor.userId,
   });
   return { scope: "team", sha, skills, skipped: skipped.sort() };
+}
+
+export type SkillToolCall = { name: string; input?: unknown };
+
+export type SkillCaptureDecision = { capture: boolean; reason: string };
+
+const SHELL_TOOLS = new Set(["terminal", "process", "execute_code", "execute", "delegate_task"]);
+const WRITE_TOOLS = new Set(["file_write", "file_edit", "write_file", "patch", "edit", "delete", "move"]);
+const SKILL_TOOL = /(^|[^a-z0-9])(create_skill|skill_manage)$/;
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function toolPaths(input: unknown): string[] {
+  const top = record(input);
+  const raw = record(top?.rawInput);
+  const locations = Array.isArray(top?.locations) ? top.locations : [];
+  return [top?.path, raw?.path, ...locations.map((location) => record(location)?.path)]
+    .filter((path): path is string => typeof path === "string" && path.length > 0);
+}
+
+function touchesSkills(path: string, cwd: string, skillsRoots: readonly string[]): boolean {
+  if (path.startsWith("~")) return true;
+  const target = posix.resolve(cwd, path);
+  if (target.split("/").includes("skills")) return true;
+  return skillsRoots.some((root) => {
+    const relative = posix.relative(root, target);
+    return relative === "" || (!relative.startsWith("..") && !posix.isAbsolute(relative));
+  });
+}
+
+/**
+ * Decides from the run's tool calls whether the sandbox skills tree can have
+ * changed. A shell can write anywhere, and missing evidence means capture.
+ */
+export function skillCaptureDecision(evidence: {
+  toolCalls: readonly SkillToolCall[];
+  cwd: string;
+  skillsRoots: readonly string[];
+} | null): SkillCaptureDecision {
+  if (!evidence) return { capture: true, reason: "evidence_missing" };
+  for (const call of evidence.toolCalls) {
+    if (SKILL_TOOL.test(call.name)) return { capture: true, reason: "skill_tool" };
+    if (SHELL_TOOLS.has(call.name)) return { capture: true, reason: "shell" };
+    if (!WRITE_TOOLS.has(call.name)) continue;
+    const title = record(call.input)?.title;
+    if (typeof title === "string" && title.startsWith("skill ")) return { capture: true, reason: "skill_tool" };
+    const paths = toolPaths(call.input);
+    if (paths.length === 0) return { capture: true, reason: "write_path_unknown" };
+    if (paths.some((path) => touchesSkills(path, evidence.cwd, evidence.skillsRoots))) {
+      return { capture: true, reason: "skill_write" };
+    }
+  }
+  return { capture: false, reason: "no_skill_writes" };
 }
 
 /**

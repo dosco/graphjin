@@ -13,12 +13,12 @@ import (
 // It copies the request before changing it; Ax retains ownership of its maps.
 type contextAnchorClient struct {
 	ax.AIClient
-	request      string
+	request      []string
 	contextRoute string
 }
 
 func (c *contextAnchorClient) anchored(request map[string]ax.Value) map[string]ax.Value {
-	if strings.TrimSpace(c.request) == "" {
+	if len(c.request) == 0 || strings.TrimSpace(strings.Join(c.request, "")) == "" {
 		return request
 	}
 	key := "chat_prompt"
@@ -49,7 +49,7 @@ func (c *contextAnchorClient) anchored(request map[string]ax.Value) map[string]a
 		if !ok {
 			continue
 		}
-		if content, ok := message["content"].(string); ok && strings.Contains(content, c.request) {
+		if content, ok := message["content"].(string); ok && containsAll(content, c.request) {
 			anchoredContent = true
 			break
 		}
@@ -64,7 +64,7 @@ func (c *contextAnchorClient) anchored(request map[string]ax.Value) map[string]a
 	}
 	if !anchoredContent {
 		copyMessages := make([]ax.Value, 0, len(messages)+1)
-		copyMessages = append(copyMessages, ax.Object("role", "system", "content", "Accepted user request and constraints (authoritative): "+c.request))
+		copyMessages = append(copyMessages, ax.Object("role", "system", "content", "Accepted user request and constraints (authoritative): "+strings.Join(c.request, "\n\n")))
 		copyMessages = append(copyMessages, messages...)
 		anchored[key] = copyMessages
 	}
@@ -72,6 +72,15 @@ func (c *contextAnchorClient) anchored(request map[string]ax.Value) map[string]a
 		anchored["model"] = c.contextRoute
 	}
 	return anchored
+}
+
+func containsAll(content string, parts []string) bool {
+	for _, part := range parts {
+		if !strings.Contains(content, part) {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *contextAnchorClient) Chat(ctx context.Context, request, options map[string]ax.Value) (ax.Value, error) {

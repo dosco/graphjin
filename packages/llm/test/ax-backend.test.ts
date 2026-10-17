@@ -168,6 +168,21 @@ describe("AxBackend", () => {
     expect(off).toMatchObject({ skill_query: "How are sales?", skill_rerank: "off" });
   });
 
+  it("sends the org prompt as instructions and the per-turn rest as prompt", async () => {
+    script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
+    const org = "<role>\nOrg role.\n</role>\n\n<conduct>\nRules.\n</conduct>";
+    const tail = "<operator-profile>\nYou are working for Ana.\n</operator-profile>\n\n<workspace>\nRun r1.\n</workspace>";
+    await new AxBackend(config).run({ prompt: `${org}\n\n${tail}`, userMessage: "How are sales?", workspace });
+    await new AxBackend(config).run({ prompt: `${org}\n\n${tail.replace("r1", "r2")}`, userMessage: "Who churned?", workspace });
+    await new AxBackend(config).run({ prompt: "Context", userMessage: "How are sales?", workspace });
+    const [first, second, combined] = spawned.map((s) => JSON.parse(s.stdin) as { instructions?: string; prompt: string });
+    expect(first).toMatchObject({ instructions: org, prompt: `${tail}\n\nCurrent user message:\nHow are sales?` });
+    expect(second.instructions).toBe(first.instructions);
+    expect(second.prompt).toBe(`${tail.replace("r1", "r2")}\n\nCurrent user message:\nWho churned?`);
+    expect(combined).not.toHaveProperty("instructions");
+    expect(combined.prompt).toBe("Context\n\nCurrent user message:\nHow are sales?");
+  });
+
   it("admits the child agent unless the run disables delegation", async () => {
     script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
     await new AxBackend(config).run({ prompt: "p", workspace });

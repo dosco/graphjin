@@ -35,8 +35,10 @@ import {
   hashSkillTree,
   readPersonalSkillFiles,
   SANDBOX_SKILL_HASH_COMMAND,
+  skillCaptureDecision,
   skillFileHash,
   type SkillFileHashes,
+  type SkillToolCall,
 } from "../config-vcs/skill-capture";
 import { KNOWLEDGE_FILES, readKnowledgeSnapshot } from "../knowledge-cache";
 import { SandboxFailure } from "./sandbox-failure";
@@ -685,11 +687,12 @@ function makeSandboxCore(
     const timed = async <T>(
       phase: string,
       operation: () => Promise<T>,
+      attributes: Record<string, unknown> = {},
     ): Promise<T> => {
       const start = performance.now();
       let ok = false;
       try {
-        const value = await startupPhase(`sandbox.${phase}`, operation);
+        const value = await startupPhase(`sandbox.${phase}`, operation, attributes);
         ok = true;
         return value;
       } catch (error) {
@@ -703,6 +706,7 @@ function makeSandboxCore(
           phase,
           durationMs: Math.round(performance.now() - start),
           ok,
+          ...attributes,
         }));
       }
     };
@@ -857,6 +861,9 @@ function makeSandboxCore(
     let stableInputs: StagedSandboxWorkspace["stable"];
     let skillActor: { userId: string | null; role: string | null } | null = null;
     let skillBaseline: SkillFileHashes | undefined;
+    const skillToolCalls: SkillToolCall[] = [];
+    let skillEvidenceComplete = false;
+    let skillEvidenceUnreadable = false;
     try {
       await input.emit({
         type: "status",
@@ -1106,7 +1113,10 @@ function makeSandboxCore(
           },
           keyAliases: opts.keyAliases,
         }),
-        input.emit,
+        (event) => {
+          if (event.type === "tool_start") skillToolCalls.push({ name: event.name, input: event.input });
+          return input.emit(event);
+        },
         // Must outlive the in-box turn budget with margin, so a long turn
         // dies as the backend's honest timeout error — not an opaque
         // exec-stream kill from out here.
@@ -1116,8 +1126,10 @@ function makeSandboxCore(
             : (jobInput?.run.timeoutMs ?? agentTurnTimeoutMs())) + 120_000,
         signal,
         (present) => { artifactsPresent = present; },
+        () => { skillEvidenceUnreadable = true; },
       ));
       healthy = result.status === "completed" && !signal?.aborted;
+      skillEvidenceComplete = result.status === "completed" && !skillEvidenceUnreadable;
       return result;
     } finally {
       await stableInputs?.release();
@@ -1142,7 +1154,20 @@ function makeSandboxCore(
           120_000,
         )).catch((e) => log(`artifact pull-back skipped: ${(e as Error).message}`));
       }
-      if (sandboxCreated && skillActor && skillBaseline) {
+      const scriptSteps = kind === "workflow" &&
+        ((input as RunWorkflowAgentBackendInput).steps ?? []).some((step) => step.script);
+      const skillDecision = scriptSteps
+        ? { capture: true, reason: "script_step" }
+        : skillCaptureDecision(skillEvidenceComplete
+          ? { toolCalls: skillToolCalls, cwd: boxOrgRoot, skillsRoots: [boxWorkspace.skillsRoot] }
+          : null);
+      if (sandboxCreated && skillActor && skillBaseline && !skillDecision.capture) {
+        startupEvent("sandbox.skill_capture", { outcome: "skipped", reason: skillDecision.reason });
+        log(JSON.stringify({
+          type: "sandbox_phase", runId: input.runId, phase: "skill_capture",
+          durationMs: 0, ok: true, skipped: true, reason: skillDecision.reason,
+        }));
+      } else if (sandboxCreated && skillActor && skillBaseline) {
         await timed("skill_capture", () => captureSandboxSkillEdits({
           listSandboxHashes: () => runCleanup([
             "sandbox", "exec", "-n", name, "--no-tty", "--",
@@ -1156,7 +1181,7 @@ function makeSandboxCore(
           runId: input.runId,
           actor: skillActor!,
           baseline: skillBaseline!,
-        }))
+        }), { reason: skillDecision.reason })
           .then((saved) => {
             if (saved) log(JSON.stringify({ type: "skill_capture", runId: input.runId, ...saved }));
           })
@@ -1662,6 +1687,7 @@ function execAndStream(
   timeoutMs: number,
   signal?: AbortSignal,
   onArtifacts?: (present: boolean) => void,
+  onUnreadableEvent?: () => void,
 ): Promise<AgentRunResult> {
   return new Promise((resolve, reject) => {
     const timeoutSec = Math.max(1, Math.ceil(timeoutMs / 1000));
@@ -1737,7 +1763,7 @@ function execAndStream(
             }
           });
         } catch {
-          /* ignore a partial/garbled event line */
+          onUnreadableEvent?.();
         }
         return;
       }

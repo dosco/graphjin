@@ -16,7 +16,8 @@ Send exactly one object, at most 16 MiB. Unknown fields fail the run.
 | `version` | integer | Must be `1`. |
 | `run_id` | string | Required. 128 characters or fewer. |
 | `input_id` | string | Required. 128 characters or fewer. |
-| `prompt` | string | Required. It carries the whole turn, including history. Only the model context window bounds it. |
+| `instructions` | string | Optional. The org prompt: the same text for every turn of the org. The model sees it first, as `Instructions:`. |
+| `prompt` | string | Required. The rest of the turn, including history and the user message. The model sees it next, as `Question:`. Without `instructions`, it carries the whole turn. Only the model context window bounds the two together. |
 | `skill_query` | string | Optional. The user message. The host skill index recalls up to 10 guides by meaning. When it recalls two or more, one model call on the context route keeps the two or fewer that fit the request. A `discover()` search that names a staged guide loads only that guide; a free-text search gets the same rerank. |
 | `skill_rerank` | string | Optional. `off` keeps the index order and makes no rerank call. The harness also skips the call when `max_model_calls` is 1 to 3. |
 | `stream_responses` | boolean | Optional. Sends live `answer.delta`, `thought.delta` and `actor.step` events. |
@@ -168,7 +169,18 @@ every route enable the cost ceiling. Each route names the environment variable
 that holds its key. Ax client retries are off; the harness owns fallback.
 
 `reasoning_effort` sets `reasoning_effort` on OpenAI routes and Ax's thinking
-budget on other providers. Anthropic routes use the prompt cache.
+budget on other providers.
+
+Each stage's system prompt is identical for every turn, and `instructions`
+starts the first user message, so every provider sees a stable prefix. On
+`anthropic`, `openai` and `openai-responses` routes the harness turns on Ax's
+context cache and sends `instructions` as a user message of its own with a
+cache mark. Anthropic then puts a `cache_control` breakpoint on it, and OpenAI
+GPT-5.6 and GPT-6 models put an explicit cache breakpoint on it, so a new turn
+of the same org reuses the cached org prompt. Other routes, Gemini included,
+use the provider's implicit prefix cache. The harness does not create Gemini
+cache objects: one process runs one turn, so a cache object would need a
+registry across processes, and Ax creates it outside the metered model calls.
 
 ## OpenNeko entry
 
