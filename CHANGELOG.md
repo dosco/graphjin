@@ -1,5 +1,18 @@
 # Changelog
 
+## [4.8.0](https://github.com/open-neko/openneko/compare/v4.7.0...v4.8.0) (2026-10-17)
+
+
+### Features
+
+* **ax-harness:** rerank recalled skill guides with an Ax program ([626bb0e](https://github.com/open-neko/openneko/commit/626bb0e155920d4bd5d19664b47627f79e8e0e18))
+* **ax-harness:** rerank recalled skill guides with an Ax program ([1784786](https://github.com/open-neko/openneko/commit/178478699fc3ec459b8d7a105c1a91979e74a15f))
+
+
+### Bug Fixes
+
+* **ax-harness:** load only the named guide when discover() names one ([b630da7](https://github.com/open-neko/openneko/commit/b630da702ca3a5bc65d3dfc1996a97cfb7c4326b))
+
 ## [4.7.0](https://github.com/open-neko/openneko/compare/v4.6.1...v4.7.0) (2026-10-16)
 
 
