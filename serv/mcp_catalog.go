@@ -891,12 +891,13 @@ func (ms *mcpServer) mcpCatalogSnapshot(ctx context.Context) (*core.CatalogSnaps
 	} else {
 		md = &core.MetadataSnapshot{}
 	}
+	base := md
 	md = s.filterCatalogAPIOperationsForContext(ctx, md)
 	var conf *core.Config
 	if s.conf != nil {
 		conf = &s.conf.Core
 	}
-	return core.BuildCatalogSnapshotWithOptions(md, conf, s.catalogBuildOptionsForContext(ctx)), nil
+	return s.buildCatalogSnapshotCached(base, md, conf, s.catalogBuildOptionsForContext(ctx)), nil
 }
 
 func (s *graphjinService) filterCatalogAPIOperationsForContext(ctx context.Context, md *core.MetadataSnapshot) *core.MetadataSnapshot {

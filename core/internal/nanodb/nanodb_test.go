@@ -2,6 +2,7 @@ package nanodb
 
 import (
 	"errors"
+	"strconv"
 	"testing"
 )
 
@@ -154,5 +155,34 @@ func TestUpdateErrorLeavesSnapshotUnchanged(t *testing.T) {
 	rows, ok := after.Rows(DefaultSchema, "gj_catalog")
 	if !ok || len(rows) != 1 || rows[0]["id"] != "table:app.public.users" {
 		t.Fatalf("snapshot changed after failed update: %#v, ok=%v", rows, ok)
+	}
+}
+
+func TestSearchRankScoresTheRowWithThatKey(t *testing.T) {
+	rows := make([]Row, 0, 2001)
+	for i := 0; i < 2000; i++ {
+		rows = append(rows, Row{"id": "column:" + strconv.Itoa(i), "title": "unrelated"})
+	}
+	rows = append(rows, Row{"id": "table:basemat", "title": "basemat materials"})
+	db, err := New(Snapshot{Tables: []Table{{
+		Name: "gj_catalog",
+		Columns: []Column{
+			{Name: "id", Type: "text", PrimaryKey: true},
+			{Name: "title", Type: "text", FullText: true},
+		},
+		Rows: rows,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := db.Snapshot()
+	if rank := snap.SearchRank(DefaultSchema, "gj_catalog", rows[2000], "basemat"); rank <= 0 {
+		t.Fatalf("expected the last row to rank, got %v", rank)
+	}
+	if rank := snap.SearchRank(DefaultSchema, "gj_catalog", rows[5], "basemat"); rank != 0 {
+		t.Fatalf("expected an unrelated row to score 0, got %v", rank)
+	}
+	if rank := snap.SearchRank(DefaultSchema, "gj_catalog", Row{"id": "missing", "title": "basemat"}, "basemat"); rank != 0 {
+		t.Fatalf("expected a row that is not in the table to score 0, got %v", rank)
 	}
 }

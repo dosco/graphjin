@@ -476,12 +476,13 @@ func (s *graphjinService) catalogSnapshotForContext(ctx context.Context) (*core.
 	} else {
 		md = &core.MetadataSnapshot{}
 	}
+	base := md
 	md = s.filterCatalogAPIOperationsForContext(ctx, md)
 	var conf *core.Config
 	if s.conf != nil {
 		conf = &s.conf.Core
 	}
-	return core.BuildCatalogSnapshotWithOptions(md, conf, s.catalogBuildOptionsForContext(ctx)), nil
+	return s.buildCatalogSnapshotCached(base, md, conf, s.catalogBuildOptionsForContext(ctx)), nil
 }
 
 func (s *graphjinService) catalogFragmentsForContext(ctx context.Context) ([]core.CatalogFragment, error) {

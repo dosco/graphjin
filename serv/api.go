@@ -143,6 +143,7 @@ type graphjinService struct {
 	revisionConsumerWG   sync.WaitGroup
 	catalogMu            sync.Mutex
 	catalogCache         *catalogCacheEntry
+	contextCatalogCache  map[string]contextCatalogEntry
 	onboardingMu         sync.RWMutex
 	onboardingCandidates map[string]cachedDiscoveredCandidate
 	authLogin            *authLoginService // built-in OIDC login (optional)
