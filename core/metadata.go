@@ -135,7 +135,24 @@ func (g *GraphJin) MetadataSnapshot(exclude ...string) (*MetadataSnapshot, error
 			skip[name] = struct{}{}
 		}
 	}
-	return gj.metadataSnapshot(skip), nil
+	return gj.cachedMetadataSnapshot(skip), nil
+}
+
+// cachedMetadataSnapshot keeps one snapshot for each exclude set. A schema
+// reload builds a new engine, so the cache never outlives the schema it
+// describes. Callers treat the snapshot as read-only.
+func (gj *graphjinEngine) cachedMetadataSnapshot(skip map[string]struct{}) *MetadataSnapshot {
+	names := make([]string, 0, len(skip))
+	for name := range skip {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	key := strings.Join(names, "\x00")
+	if cached, ok := gj.metadataSnapshots.Load(key); ok {
+		return cached.(*MetadataSnapshot)
+	}
+	snapshot, _ := gj.metadataSnapshots.LoadOrStore(key, gj.metadataSnapshot(skip))
+	return snapshot.(*MetadataSnapshot)
 }
 
 func (gj *graphjinEngine) metadataSnapshot(skip map[string]struct{}) *MetadataSnapshot {

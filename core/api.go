@@ -85,6 +85,7 @@ type graphjinEngine struct {
 	encryptionKeySet           bool
 	cache                      Cache
 	queries                    sync.Map
+	metadataSnapshots          sync.Map
 	sqliteConflictGetMu        sync.Mutex
 	roles                      map[string]*Role
 	unionRoles                 sync.Map
