@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
 
 	ax "github.com/ax-llm/ax/packages/go"
@@ -10,9 +11,30 @@ import (
 
 const maxWrittenReply = 65536
 
+// writtenAnswer is a finished reply from a tool: its text and the neko_cards
+// fences for its cards. A reply passed to replyAsWritten is explicit and goes
+// to the reader unchanged; a reply printed in a tool result keeps the cards
+// and lets the model write the text.
+type writtenAnswer struct {
+	text, cards string
+	explicit    bool
+}
+
+// answer is the reply the reader gets. A printed reply takes the model's own
+// text when it has one, so the reply can answer the question that was asked.
+func (w writtenAnswer) answer(modelText string) string {
+	text := w.text
+	if own := strings.TrimSpace(cardFence.ReplaceAllString(modelText, "")); !w.explicit && own != "" {
+		text = own
+	}
+	return text + w.cards
+}
+
+var cardFence = regexp.MustCompile("(?s)```neko_cards\\s.*?```")
+
 // writtenReply turns replyAsWritten's argument into the final answer: the
 // reply text, then one neko_cards fence for each card the host renders.
-func writtenReply(value ax.Value) (string, error) {
+func writtenReply(value ax.Value) (writtenAnswer, error) {
 	var text string
 	var cards []ax.Value
 	switch v := value.(type) {
@@ -33,26 +55,26 @@ func writtenReply(value ax.Value) (string, error) {
 		}
 	}
 	if strings.TrimSpace(text) == "" {
-		return "", errors.New("replyAsWritten needs {text} with the reply")
+		return writtenAnswer{}, errors.New("replyAsWritten needs {text} with the reply")
 	}
-	var reply strings.Builder
-	reply.WriteString(strings.TrimSpace(text))
+	var fences strings.Builder
 	for _, card := range cards {
 		if _, ok := card.(map[string]ax.Value); !ok {
-			return "", errors.New("each card must be an object of render_cards arguments")
+			return writtenAnswer{}, errors.New("each card must be an object of render_cards arguments")
 		}
 		data, err := json.Marshal(plainValue(card))
 		if err != nil {
-			return "", errors.New("a card is not valid JSON")
+			return writtenAnswer{}, errors.New("a card is not valid JSON")
 		}
-		reply.WriteString("\n\n```neko_cards\n")
-		reply.Write(data)
-		reply.WriteString("\n```")
+		fences.WriteString("\n\n```neko_cards\n")
+		fences.Write(data)
+		fences.WriteString("\n```")
 	}
-	if reply.Len() > maxWrittenReply {
-		return "", errors.New("the reply is too long; shorten it")
+	reply := writtenAnswer{text: strings.TrimSpace(text), cards: fences.String()}
+	if len(reply.text)+len(reply.cards) > maxWrittenReply {
+		return writtenAnswer{}, errors.New("the reply is too long; shorten it")
 	}
-	return reply.String(), nil
+	return reply, nil
 }
 
 // plainValue drops the key-order entry that ax objects carry.
@@ -78,14 +100,14 @@ func plainValue(value ax.Value) ax.Value {
 
 // replyInResult finds a finished reply that a tool printed as a JSON object
 // with a reply_as_written field, such as a skill script's output.
-func replyInResult(raw json.RawMessage) (string, bool) {
+func replyInResult(raw json.RawMessage) (writtenAnswer, bool) {
 	var result map[string]any
 	if json.Unmarshal(raw, &result) != nil {
-		return "", false
+		return writtenAnswer{}, false
 	}
 	if reply, ok := result["reply_as_written"]; ok {
-		text, err := writtenReply(reply)
-		return text, err == nil
+		written, err := writtenReply(reply)
+		return written, err == nil
 	}
 	output, _ := result["output"].(string)
 	for i := 0; i < len(output); i++ {
@@ -97,9 +119,9 @@ func replyInResult(raw json.RawMessage) (string, bool) {
 			continue
 		}
 		if reply, ok := object["reply_as_written"]; ok {
-			text, err := writtenReply(reply)
-			return text, err == nil
+			written, err := writtenReply(reply)
+			return written, err == nil
 		}
 	}
-	return "", false
+	return writtenAnswer{}, false
 }
