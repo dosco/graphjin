@@ -410,3 +410,26 @@ func coreCatalogWorkflowQuery() core.CatalogQuery {
 		Limit: 10,
 	}
 }
+
+func TestMCPCatalogSnapshotReusesSnapshotAndRevision(t *testing.T) {
+	ms := workflowCatalogTestServer(t, MCPConfig{}, nil)
+	first, err := ms.mcpCatalogSnapshot(context.Background())
+	if err != nil {
+		t.Fatalf("first catalog snapshot: %v", err)
+	}
+	second, err := ms.mcpCatalogSnapshot(context.Background())
+	if err != nil {
+		t.Fatalf("second catalog snapshot: %v", err)
+	}
+	if first != second {
+		t.Fatalf("expected query_catalog reads to reuse the snapshot")
+	}
+	ms.service.invalidateCatalogCache()
+	rebuilt, err := ms.mcpCatalogSnapshot(context.Background())
+	if err != nil {
+		t.Fatalf("rebuilt catalog snapshot: %v", err)
+	}
+	if rebuilt == second || rebuilt.Revision != second.Revision {
+		t.Fatalf("expected a fresh snapshot with the same revision after invalidation")
+	}
+}

@@ -48,7 +48,7 @@ type tableData struct {
 	table       Table
 	columns     map[string]Column
 	primaryKey  string
-	rowIDs      []string
+	rowIndex    map[string]int
 	indexes     map[string]map[string][]int
 	fullText    []string
 	searchIndex map[string]map[int]int
@@ -309,10 +309,13 @@ func buildTableData(table Table) *tableData {
 			td.primaryKey = "id"
 		}
 	}
-	td.rowIDs = make([]string, len(table.Rows))
+	td.rowIndex = make(map[string]int, len(table.Rows))
 	for i, row := range table.Rows {
 		if td.primaryKey != "" {
-			td.rowIDs[i] = valueKey(row[td.primaryKey])
+			id := valueKey(row[td.primaryKey])
+			if _, ok := td.rowIndex[id]; !ok {
+				td.rowIndex[id] = i
+			}
 		}
 		for col := range td.indexes {
 			key := valueKey(row[col])
@@ -376,12 +379,8 @@ func (td *tableData) searchRank(row Row, query string) float64 {
 	}
 	idx := -1
 	if td.primaryKey != "" {
-		key := valueKey(row[td.primaryKey])
-		for i, id := range td.rowIDs {
-			if id == key {
-				idx = i
-				break
-			}
+		if i, ok := td.rowIndex[valueKey(row[td.primaryKey])]; ok {
+			idx = i
 		}
 	} else {
 		for i := range td.table.Rows {

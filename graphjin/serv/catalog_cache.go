@@ -2,6 +2,10 @@ package serv
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -70,12 +74,64 @@ func (s *graphjinService) catalogSnapshot() (*core.CatalogSnapshot, error) {
 	return snapshot, nil
 }
 
+// maxContextCatalogSnapshots bounds the per-caller snapshots kept in memory.
+// Callers with the same visible metadata and options share one entry.
+const maxContextCatalogSnapshots = 16
+
+type contextCatalogEntry struct {
+	metadata *core.MetadataSnapshot
+	snapshot *core.CatalogSnapshot
+}
+
+// buildCatalogSnapshotCached returns the snapshot for md, the caller's view of
+// base. A build indexes every card for search, which takes seconds on a large
+// schema, so the snapshot is reused until an input changes. GraphJin keeps
+// one base snapshot per schema, so its identity stands for the tables and
+// columns, and only the small inputs are hashed on each call.
+func (s *graphjinService) buildCatalogSnapshotCached(base, md *core.MetadataSnapshot, conf *core.Config, opts core.CatalogBuildOptions) *core.CatalogSnapshot {
+	if s == nil || base == nil || md == nil {
+		return core.BuildCatalogSnapshotWithOptions(md, conf, opts)
+	}
+	key := catalogSnapshotKey(base, md, conf, opts)
+	s.catalogMu.Lock()
+	if entry, ok := s.contextCatalogCache[key]; ok && entry.metadata == base {
+		s.catalogMu.Unlock()
+		return entry.snapshot
+	}
+	s.catalogMu.Unlock()
+
+	snapshot := core.BuildCatalogSnapshotWithOptions(md, conf, opts)
+
+	s.catalogMu.Lock()
+	if s.contextCatalogCache == nil || len(s.contextCatalogCache) >= maxContextCatalogSnapshots {
+		s.contextCatalogCache = make(map[string]contextCatalogEntry)
+	}
+	s.contextCatalogCache[key] = contextCatalogEntry{metadata: base, snapshot: snapshot}
+	s.catalogMu.Unlock()
+	return snapshot
+}
+
+// catalogSnapshotKey hashes every build input except the base tables and
+// columns, which the cache entry matches by identity.
+func catalogSnapshotKey(base, md *core.MetadataSnapshot, conf *core.Config, opts core.CatalogBuildOptions) string {
+	small := &core.MetadataSnapshot{Databases: md.Databases, APIOperations: md.APIOperations}
+	revision := core.CatalogRevisionFromSourceRevisions(core.CatalogSourceRevisions(small, conf, opts))
+	data, _ := json.Marshal(struct {
+		Databases     []core.MetadataDatabase
+		APIOperations []core.MetadataAPIOperation
+		Options       core.CatalogBuildOptions
+	}{md.Databases, md.APIOperations, opts})
+	sum := sha256.Sum256(append([]byte(fmt.Sprintf("%p\x00%s\x00", base, revision)), data...))
+	return hex.EncodeToString(sum[:])
+}
+
 func (s *graphjinService) invalidateCatalogCache() {
 	if s == nil {
 		return
 	}
 	s.catalogMu.Lock()
 	s.catalogCache = nil
+	s.contextCatalogCache = nil
 	s.catalogMu.Unlock()
 }
 

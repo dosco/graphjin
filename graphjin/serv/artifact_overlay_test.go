@@ -738,3 +738,38 @@ func workflowSource(t *testing.T, out any) string {
 	source, _ := decoded["source"].(string)
 	return source
 }
+
+func TestCatalogSnapshotForContextReusesSnapshotUntilInputsChange(t *testing.T) {
+	svc := newArtifactOverlayTestService(t, map[string]string{
+		"/queries/global_query.gql": `query global_query { users { id } }`,
+	})
+	ctx := artifactUserCtx("user_1")
+	first, err := svc.catalogSnapshotForContext(ctx)
+	if err != nil {
+		t.Fatalf("first catalog snapshot: %v", err)
+	}
+	second, err := svc.catalogSnapshotForContext(ctx)
+	if err != nil {
+		t.Fatalf("second catalog snapshot: %v", err)
+	}
+	if first != second {
+		t.Fatalf("expected repeated reads with the same inputs to reuse the snapshot")
+	}
+	if _, err := svc.saveUserArtifact(ctx, artifactKindSavedQuery, "user_query", `query user_query { users { id name } }`, map[string]any{"operation": "query"}); err != nil {
+		t.Fatalf("save query artifact: %v", err)
+	}
+	updated, err := svc.catalogSnapshotForContext(ctx)
+	if err != nil {
+		t.Fatalf("updated catalog snapshot: %v", err)
+	}
+	if _, ok := updated.Card("saved_query:user_query"); !ok {
+		t.Fatalf("expected the new artifact in the snapshot after it was saved")
+	}
+	other, err := svc.catalogSnapshotForContext(artifactUserCtx("user_2"))
+	if err != nil {
+		t.Fatalf("other catalog snapshot: %v", err)
+	}
+	if _, ok := other.Card("saved_query:user_query"); ok {
+		t.Fatalf("another caller must not get the cached snapshot of user_1")
+	}
+}
