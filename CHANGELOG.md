@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.9.1](https://github.com/open-neko/openneko/compare/v4.9.0...v4.9.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **ax:** let the model write the text over a script's printed reply ([bd9d129](https://github.com/open-neko/openneko/commit/bd9d12918a2d0f9ae37803944911e769b57242d9))
+* **ax:** let the model write the text over a script's printed reply ([6827d14](https://github.com/open-neko/openneko/commit/6827d14cbb08a1f0dbe3bae788b6517c27575cc6))
+
 ## [4.9.0](https://github.com/open-neko/openneko/compare/v4.8.0...v4.9.0) (2026-10-17)
 
 
