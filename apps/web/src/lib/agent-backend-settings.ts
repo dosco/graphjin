@@ -1,26 +1,16 @@
 import "server-only";
 
 import { and, db, eq, llm_provider_config } from "@neko/db";
-import {
-  AGENT_BACKEND_OPTIONS,
-  AGENT_DEFAULT_GLOBAL_CAP,
-  assertAxSupported,
-  isAgentBackendId,
-  resolveAgentBackendId,
-  type AgentBackendId,
-} from "@neko/llm";
+import { AGENT_DEFAULT_GLOBAL_CAP } from "@neko/llm";
 
 const AGENT_SCOPE = "agent";
 export type AgentSettings = {
   source: "org" | "default";
-  /** Org-wide agent backend. */
-  backend: AgentBackendId;
   globalCap: number;
 };
 
 export type AgentSettingsPayload = {
   agent: AgentSettings;
-  options: typeof AGENT_BACKEND_OPTIONS;
   defaults: {
     globalCap: number;
   };
@@ -65,15 +55,10 @@ export async function getAgentSettings(
   orgId: string,
 ): Promise<AgentSettings> {
   const row = await loadAgentRow(orgId);
-  const cfg = (row?.config ?? {}) as {
-    backend?: unknown;
-    globalCap?: unknown;
-  };
-  const globalCap = readPositiveInt(cfg.globalCap, AGENT_DEFAULT_GLOBAL_CAP);
+  const cfg = (row?.config ?? {}) as { globalCap?: unknown };
   return {
     source: row ? "org" : "default",
-    backend: await resolveAgentBackendId(orgId),
-    globalCap,
+    globalCap: readPositiveInt(cfg.globalCap, AGENT_DEFAULT_GLOBAL_CAP),
   };
 }
 
@@ -83,7 +68,6 @@ export async function getAgentSettingsPayload(
   const agent = await getAgentSettings(orgId);
   return {
     agent,
-    options: AGENT_BACKEND_OPTIONS,
     defaults: {
       globalCap: AGENT_DEFAULT_GLOBAL_CAP,
     },
@@ -91,7 +75,6 @@ export async function getAgentSettingsPayload(
 }
 
 export type AgentSaveDraft = {
-  backend?: unknown;
   globalCap?: number | string;
 };
 
@@ -99,28 +82,19 @@ export async function saveAgentSettingsDraft(
   orgId: string,
   draft: AgentSaveDraft,
 ): Promise<AgentSettings> {
-  if (draft.backend !== undefined && (typeof draft.backend !== "string" || !isAgentBackendId(draft.backend))) {
-    throw new Error(`Unsupported agent backend: ${String(draft.backend)}`);
-  }
   const existing = await loadAgentRow(orgId);
-  const existingCfg = (existing?.config ?? {}) as {
-    backend?: unknown;
-    globalCap?: unknown;
-  };
-  const backend: AgentBackendId =
-    (draft.backend as AgentBackendId | undefined) ?? (await resolveAgentBackendId(orgId));
-  if (backend === "ax") await assertAxSupported(orgId);
+  const existingCfg = (existing?.config ?? {}) as { globalCap?: unknown };
   const globalCap = readPositiveInt(
     draft.globalCap ?? existingCfg.globalCap,
     AGENT_DEFAULT_GLOBAL_CAP,
   );
-  const config = { backend, globalCap };
+  const config = { globalCap };
 
   if (existing) {
     await db()
       .update(llm_provider_config)
       .set({
-        provider: "hermes",
+        provider: "ax",
         config,
         updated_at: new Date(),
       })
@@ -129,12 +103,12 @@ export async function saveAgentSettingsDraft(
     await db().insert(llm_provider_config).values({
       org_id: orgId,
       scope: AGENT_SCOPE,
-      provider: "hermes",
+      provider: "ax",
       enabled: true,
       config,
       secrets: {},
     });
   }
 
-  return { source: "org", backend, globalCap };
+  return { source: "org", globalCap };
 }

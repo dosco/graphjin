@@ -385,7 +385,7 @@ func finishedTools(names *[]string) func(agent.Event) error {
 	}
 }
 
-func TestReadFollowsHermesLimits(t *testing.T) {
+func TestReadFollowsReadLimits(t *testing.T) {
 	root := t.TempDir()
 	var lines []string
 	for i := 1; i <= 2500; i++ {

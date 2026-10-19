@@ -6,8 +6,8 @@ description: Create new skills, modify and improve existing skills, and measure 
 
 # Skill Creator
 
-> **OpenNeko-vendored variant.** This skill runs through Hermes and does not
-> ship a separate prompt-runner CLI. The upstream eval-loop tooling
+> **OpenNeko-vendored variant.** This skill runs through OpenNeko's agent and
+> does not ship a separate prompt-runner CLI. The upstream eval-loop tooling
 > (`scripts/run_eval.py`, `scripts/run_loop.py`, `scripts/improve_description.py`,
 > and the `eval-viewer/`) has been removed — those scripts shell out to
 > an unavailable external prompt process.

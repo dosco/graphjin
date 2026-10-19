@@ -3,7 +3,7 @@ name: resend-email
 description: Send operational email through the Resend pack (resend.email) and design an email with the operator in plain language before a workflow sends it. Use when the operator asks to email someone, to set up an email alert or report, to change how an email looks, or to check whether an email arrived.
 license: Apache-2.0
 metadata:
-  hermes:
+  openneko:
     tags: [resend, email]
     category: communication
     requires_toolsets: [graphjin, pack-actions]

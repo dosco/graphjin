@@ -115,7 +115,7 @@ func TestRunGitSkill_SubPathPicksRightFolder(t *testing.T) {
 	skillsDir := t.TempDir()
 	runner := func(_ context.Context, args []string, _ string) error {
 		dest := args[3]
-		// Stage a Hermes-like layout: skills live under skills/apple/.
+		// Stage a multi-skill catalog layout: skills live under skills/apple/.
 		root := filepath.Join(dest, "skills", "apple", "apple-notes")
 		if err := os.MkdirAll(root, 0o755); err != nil {
 			return err
@@ -125,7 +125,7 @@ func TestRunGitSkill_SubPathPicksRightFolder(t *testing.T) {
 	}
 
 	res, err := RunGitSkill(context.Background(), GitSkillOptions{
-		Spec:             "https://github.com/NousResearch/hermes-agent#skills/apple/apple-notes",
+		Spec:             "https://github.com/example/skill-catalog#skills/apple/apple-notes",
 		SkillsInstallDir: skillsDir,
 		GitRunner:        runner,
 	})
@@ -142,10 +142,10 @@ func TestRunGitSkill_SubPathPicksRightFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Hermes skill carries platforms: a Hermes top-level extension —
+	// The skill carries platforms: a vendor top-level extension —
 	// confirm we copy it through unchanged (tolerance for vendor fields).
 	if !strings.Contains(string(got), "platforms: [macos]") {
-		t.Errorf("Hermes-flavoured top-level field stripped: %s", got)
+		t.Errorf("vendor top-level field stripped: %s", got)
 	}
 }
 

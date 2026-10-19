@@ -27,7 +27,6 @@
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter @neko/worker test:e2e",
     "ui:check": "node scripts/check-web-design-system.mjs",
-    "bench:hermes": "node scripts/bench-hermes-acp.mjs",
     "skills:check": "node --experimental-strip-types scripts/skill-doctor.ts",
     "skills:install": "node --experimental-strip-types scripts/skill-doctor.ts --install",
     "openneko": "OPENNEKO_WORKSPACE_ROOT=\"$PWD\" sh -c 'cd apps/openneko && exec go run ./cmd/openneko \"$@\"' --"

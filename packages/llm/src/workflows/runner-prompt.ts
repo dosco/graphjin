@@ -21,7 +21,7 @@ export type BuildWorkflowRunnerPromptInput = {
   /** Efficacy evals disable time-saved metadata. Defaults to true. */
   includeUxMetadata?: boolean;
   memoryContext?: string;
-  /** True when Hermes has brokered MCP tools for this run. */
+  /** True when the agent has brokered MCP tools for this run. */
   mcpTools: boolean;
   backend: AgentBackendId;
   workspace: AgentWorkspace;
@@ -142,20 +142,8 @@ operator and stop; re-attempting after a denial is wasted effort.
 }
 
 function buildNativeDelegationBlock(backend: AgentBackendId): string {
-  if (backend === "ax") return AX_DELEGATION;
-  if (backend !== "hermes") return "";
-  return `<delegation>
-Use Hermes native \`delegate_task\` when an independent workflow step would
-benefit from fresh context or parallel investigation. You decide whether to
-delegate, how many subtasks to create, and which \`toolsets\` each child gets.
-OpenNeko does not provide named subagent profiles.
-
-Every delegated child starts with no parent history, so include the exact
-business question, source/table hints, file paths, constraints, and expected
-return shape in \`goal\` and \`context\`. Use \`tasks\` for independent parallel
-checks. Use \`role: "orchestrator"\` only for genuinely multi-stage work and
-only when the configured delegation depth supports it.
-</delegation>`;
+  void backend;
+  return AX_DELEGATION;
 }
 
 export function buildWorkflowRunnerPrompt(

@@ -3,7 +3,7 @@ name: google-workspace-gmail
 description: Read Gmail and request approved changes to drafts, messages, and labels through the Google Workspace pack.
 license: Apache-2.0
 metadata:
-  hermes:
+  openneko:
     tags: [google-workspace, gmail, email]
     category: productivity
     requires_toolsets: [graphjin, pack-actions]

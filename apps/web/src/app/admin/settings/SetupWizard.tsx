@@ -107,7 +107,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
   const [savingData, setSavingData] = useState(false);
   const [testingData, setTestingData] = useState(false);
 
-  // Step 2: Hermes + primary provider
+  // Step 2: agent model provider
   const [concurrentJobs, setConcurrentJobs] = useState(
     String(initial.agent.agent.globalCap),
   );
@@ -514,8 +514,8 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
 
       {stepName === "agent" && (
         <Step
-          title="Configure Hermes"
-          description="Hermes runs the agent and works with any supported model provider."
+          title="Configure the agent"
+          description="Choose the model provider the agent uses."
         >
           <div className="settings-grid">
             <Field label="Provider">

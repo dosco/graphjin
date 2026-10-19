@@ -49,8 +49,7 @@ export function presentWorkFailure(message: string): WorkFailurePresentation {
   }
 
   if (
-    lower.includes("package is required for the anthropic provider") ||
-    lower.includes("hermes anthropic provider sdk missing")
+    lower.includes("package is required for the anthropic provider")
   ) {
     return {
       summary:

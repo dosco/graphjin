@@ -208,8 +208,8 @@ at the prompt) to finish at the web UI. Credential flags
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "Stream full image-pull output during bring-up")
 	cmd.Flags().BoolVar(&skipOnboarding, "skip-onboarding", false, "Bring up the stack only; finish configuration in the browser")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "", "Headless: admin database password")
-	cmd.Flags().StringVar(&legacyBackend, "backend", "", "Deprecated: Hermes is the only agent runtime")
-	_ = cmd.Flags().MarkDeprecated("backend", "Hermes is now the only agent runtime")
+	cmd.Flags().StringVar(&legacyBackend, "backend", "", "Deprecated: Ax is the only agent runtime")
+	_ = cmd.Flags().MarkDeprecated("backend", "Ax is now the only agent runtime")
 	cmd.Flags().StringVar(&provider, "provider", "", "Headless: primary model provider")
 	cmd.Flags().StringVar(&providerKey, "provider-key", "", "Headless: primary provider API key")
 	cmd.Flags().StringVar(&model, "model", "", "Headless: primary model (default: provider default)")
@@ -228,10 +228,10 @@ at the prompt) to finish at the web UI. Credential flags
 
 func validateLegacyAgentBackend(value string) error {
 	switch strings.TrimSpace(value) {
-	case "", "hermes":
+	case "", "ax":
 		return nil
 	default:
-		return fmt.Errorf("unsupported --backend %q: Hermes is the only agent runtime", value)
+		return fmt.Errorf("unsupported --backend %q: Ax is the only agent runtime", value)
 	}
 }
 

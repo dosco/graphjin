@@ -155,8 +155,8 @@ export class AxBackend implements AgentBackend {
   }
 
   async run(opts: AgentRunOptions): Promise<AgentRunResult> {
-    const { onEvent, signal, backendState } = opts;
-    if (signal?.aborted) return { finalText: "", status: "cancelled", backendState };
+    const { onEvent, signal, threadState } = opts;
+    if (signal?.aborted) return { finalText: "", status: "cancelled", threadState };
     try {
       let out = await this.runOnce(opts);
       // Gemini sometimes repeats a malformed call past the harness resamples;
@@ -165,18 +165,18 @@ export class AxBackend implements AgentBackend {
         await onEvent?.({ type: "retry", reason: "malformed_function_call" });
         out = await this.runOnce(opts);
       }
-      if (out.status === "cancelled" || signal?.aborted) return { finalText: "", status: "cancelled", backendState };
+      if (out.status === "cancelled" || signal?.aborted) return { finalText: "", status: "cancelled", threadState };
       const code = out.errorCode ? { errorCode: out.errorCode } : {};
       if (out.error) {
         await onEvent?.({ type: "error", message: out.error });
-        return { finalText: "", status: "failed", backendState, error: out.error, ...code, ...(out.timedOut ? { timedOut: true } : {}) };
+        return { finalText: "", status: "failed", threadState, error: out.error, ...code, ...(out.timedOut ? { timedOut: true } : {}) };
       }
-      return { finalText: out.finalText, rawText: out.rawText, status: "completed", backendState, ...code, ...(out.degraded ? { degraded: true } : {}) };
+      return { finalText: out.finalText, rawText: out.rawText, status: "completed", threadState, ...code, ...(out.degraded ? { degraded: true } : {}) };
     } catch (error) {
-      if (signal?.aborted) return { finalText: "", status: "cancelled", backendState };
+      if (signal?.aborted) return { finalText: "", status: "cancelled", threadState };
       const message = error instanceof Error ? error.message : String(error);
       await onEvent?.({ type: "error", message });
-      return { finalText: "", status: "failed", backendState, error: message };
+      return { finalText: "", status: "failed", threadState, error: message };
     }
   }
 
@@ -251,7 +251,7 @@ export class AxBackend implements AgentBackend {
     let eventError: unknown;
     let shownText = false;
     const emit = (event: AgentEvent) => {
-      if ((event.type === "message" || event.type === "interim") && event.content) shownText = true;
+      if (event.type === "message" && event.content) shownText = true;
       if (!onEvent) return;
       queue = queue.then(() => onEvent(event)).catch((e) => {
         eventError ??= e;

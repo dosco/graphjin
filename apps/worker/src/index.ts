@@ -1,7 +1,7 @@
-import { prepareSandboxCapacity, closeSandboxPools } from "@neko/llm/work/sandbox-launcher";
+import { prepareSandboxCapacity, closeSandboxReapers } from "@neko/llm/work/sandbox-launcher";
 import { withStartupTrace, startupPhase, startupEvent } from "@neko/telemetry/startup";
 import { keepProcessThroughDatabaseRestarts, soloAdminNeedsEmail } from "@neko/db";
-import { dispatchEmbeddingJobs, resolveAgentBackendId, runEmbeddingIndexJob, type EmbeddingIndexPayload } from "@neko/llm";
+import { dispatchEmbeddingJobs, runEmbeddingIndexJob, type EmbeddingIndexPayload } from "@neko/llm";
 import "dotenv/config";
 
 import { randomUUID } from "node:crypto";
@@ -956,7 +956,7 @@ const GRAPHJIN_URL = toGraphqlEndpoint(
 console.log(`[worker] neko graphjin client targeting ${GRAPHJIN_URL}`);
 
 if (process.env.OPENNEKO_AGENT_IMAGE) {
-  try { await prepareSandboxCapacity(undefined, await ensureOrgWorkspace(ADMIN_ORG_ID), await resolveAgentBackendId(ADMIN_ORG_ID)); }
+  try { await prepareSandboxCapacity(); }
   catch (error) { console.error("[sandbox] startup preparation failed", error); }
 }
 const b = await boss();
@@ -1733,7 +1733,7 @@ const shutdown = async (signal: string) => {
   } catch (e) {
     console.error("[worker] records pool shutdown error:", e);
   }
-  try { await closeSandboxPools(); }
+  try { await closeSandboxReapers(); }
   catch (error) { console.error("[worker] sandbox shutdown error:", error); }
   await shutdownWorkerTelemetry();
   process.exit(0);

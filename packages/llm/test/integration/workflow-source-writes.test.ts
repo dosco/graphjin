@@ -29,7 +29,7 @@ describeIfDb("workflow source-write recording", () => {
         steps: [{ id: "s1", description: "update a record" }],
       });
       const thread = await createWorkThread(orgId, workflow.name);
-      const workRun = await createWorkRun(orgId, thread.id, "hermes");
+      const workRun = await createWorkRun(orgId, thread.id, "ax");
       const run = await createWorkflowRun({
         orgId,
         workflowId: workflow.id,

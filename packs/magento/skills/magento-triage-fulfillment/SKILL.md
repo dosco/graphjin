@@ -3,7 +3,7 @@ name: magento-triage-fulfillment
 description: Triage Magento paid or invoiced orders that remain unshipped, quantify backlog and aging, and prepare a prioritized fulfillment exception list. Use for shipping SLA breaches, fulfillment backlog, partially shipped orders, or watcher findings; use magento-investigate-order for one already-identified order.
 license: Apache-2.0
 metadata:
-  hermes:
+  openneko:
     tags: [magento, fulfillment, shipping, backlog, sla, operations]
     category: commerce
     requires_toolsets: [graphjin]

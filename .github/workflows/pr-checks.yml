@@ -61,8 +61,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Verify Hermes-only agent backend contract
-        run: bash scripts/check-hermes-only.sh
+      - name: Verify removed agent backends stay removed
+        run: bash scripts/check-removed-backends.sh
       - name: Verify failed-to-recovered release transitions
         run: bash scripts/check-release-recovery-contract.sh
 

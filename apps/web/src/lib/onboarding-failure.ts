@@ -36,7 +36,7 @@ export function profileBuildFailureMessage(error: string | null): string {
     return RUNTIME_MESSAGE;
   }
   if (
-    /no llm provider configured|hermes (?:model|setup)|hermes.*config\.yaml|OPENNEKO_AGENT_HERMES_HOME/i.test(
+    /no llm provider configured|ax backend has no model configured/i.test(
       error,
     )
   ) {

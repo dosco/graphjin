@@ -29,7 +29,7 @@ const STALE_QUEUED_MIN_AGE_MS = 120_000;
 /**
  * Cancel work_run / workflow_run rows stranded in "running" — a run that
  * outlived the process tracking it (worker SIGKILLed mid-run, before its own
- * finalizer could mark it cancelled). With minAgeMs past hermes' own timeout,
+ * finalizer could mark it cancelled). With minAgeMs past the agent's own timeout,
  * a still-"running" row is provably dead. The processing_job reconciler above
  * doesn't cover these tables.
  */

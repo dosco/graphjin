@@ -1,9 +1,6 @@
 import { startupEvent, startupPhase } from "@neko/telemetry/startup";
 import { copyAllowedTeamLibrary, copyTeamConceptSources, type AllowedLibrary } from "../library/staging";
 import { createHash, randomUUID } from "node:crypto";
-import { RECONCILE_COMMAND, syncSandboxDirectories } from "./sandbox-sync";
-import { acquireStableSandboxInputs, clearStableSandboxInputs, type StableWorkspace } from "./sandbox-staging-cache";
-import { SandboxPool, type WarmSlot } from "./sandbox-pool";
 import { acquireAgentSlot } from "./agent-slots";
 import { retryWhileDatabaseUnavailable } from "@neko/db";
 import { touchAgentRun } from "./store";
@@ -20,12 +17,11 @@ import {
   type AgentRunOptions,
   type AgentRunResult,
   type AgentWorkspace,
-  type AgentBackendId,
 } from "../agent-backend";
 import type { RunWorkflowAgentBackendInput } from "../workflows/agent-core";
 import type { RunWorkflowTurnDeps } from "../workflows/run-workflow-turn";
 import type { RunAgentBackendInput } from "./agent-core";
-import { AX_HARNESS_BINARY, VENDORED_HERMES_MODEL_BINARY } from "../agent-runtime-contract";
+import { AX_HARNESS_BINARY } from "../agent-runtime-contract";
 import type { AxBackend } from "../agent-backends/ax";
 import type { RunBinding } from "./broker";
 import type { RunChatTurnDeps } from "./run-chat-turn";
@@ -60,8 +56,8 @@ const SANDBOX_RUNTIME_DIR = ".openneko";
 const SANDBOX_OWNER_LABEL = "openneko.owner";
 const SANDBOX_BOOT_LABEL = "openneko.boot";
 // Next may evaluate this module in separate instrumentation and route bundles
-// inside one process. Those bundles share the warm pool via globalThis, so
-// they must also share its boot label or one reaper deletes another's box.
+// inside one process. Those bundles must share one boot label or one reaper
+// deletes another's box.
 const sandboxBootHost = globalThis as typeof globalThis & { __opennekoSandboxBootId?: string };
 const SANDBOX_BOOT_ID = sandboxBootHost.__opennekoSandboxBootId ??= randomUUID();
 
@@ -77,9 +73,9 @@ export function sandboxOwnerLabelArgs(owner = sandboxOwner(), boot = SANDBOX_BOO
 }
 
 /**
- * Deletes this host's sandboxes from earlier boots. The create command that
- * would delete a warm or job box dies with its host process, so without this
- * every restart leaves running boxes behind.
+ * Deletes this host's sandboxes from earlier boots. The cleanup that would
+ * delete a run's box dies with its host process, so without this every
+ * restart leaves running boxes behind.
  */
 export async function reapStrandedSandboxes(
   run: (args: string[], timeoutMs: number) => Promise<string>,
@@ -134,39 +130,30 @@ export interface SandboxLauncherOptions {
   gatewayEndpoint?: string;
   /** Agent image (the Dockerfile `agent` stage), e.g. ghcr.io/open-neko/agent:<ver>. */
   agentImage: string;
-  /** Per-sandbox limits, including Hermes and all tool children. */
+  /** Per-sandbox limits, including the agent and all tool children. */
   cpu?: string;
   memory?: string;
   /** OpenShell provider holding the model key — the proxy injects it; never in the box. */
   modelProvider?: string;
-  /** Model endpoint egress; always scoped to the vendored Hermes executable. */
+  /** Model endpoint egress; always scoped to the vendored Ax Harness executable. */
   modelHosts?: ReadonlyArray<{ host: string; port?: number }>;
-  /** Extra env exported into the exec sh-wrapper (e.g. HERMES_HOME). Values must be safe. */
+  /** Extra env exported into the exec sh-wrapper. Values must be safe. */
   env?: Record<string, string>;
   /**
    * Alias the OpenShell-injected credential env var (holds the
    * `openshell:resolve:env:…` placeholder) to the env var the backend reads —
-   * e.g. {from:"MODEL_API_KEY", to:"GEMINI_API_KEY"} for hermes-gemini. The proxy
+   * e.g. {from:"MODEL_API_KEY", to:"GEMINI_API_KEY"} for Gemini. The proxy
    * still substitutes the real key on egress, so the box only sees the
    * placeholder. `to` comes from the exhaustive Admin-provider runtime contract.
    */
   keyAliases?: ReadonlyArray<{ from: string; to: string }>;
-  /**
-   * Host HERMES_HOME (hermesHomeForOrg) to mirror into the box KEYLESS — only
-   * config.yaml travels; the `.env` is emptied so the proxy-injected key (via
-   * keyAliases, process env) is what hermes uses. Set for the hermes backend.
-   */
-  hermesHomeHostPath?: string;
-  /** Broker coordinates for Hermes MCP tools. */
+  /** Broker coordinates for the agent's MCP tools. */
   brokerUrl?: string;
   /** Mint a per-run bearer token bound to {runId, orgId, threadId} (the broker forces
    *  org/run from the binding, never the request body). */
   brokerTokenFor?: (binding: RunBinding) => string;
   /** Release the run's token after it finishes (called in the run's finally). */
   brokerRelease?: (runId: string) => void;
-  /** Process-local generic slots; defaults to one. Zero disables prewarming. */
-  warmPoolSize?: number;
-  warmIdleMs?: number;
   execTimeoutMs?: number;
   onLog?: (line: string) => void;
 }
@@ -179,7 +166,7 @@ export interface SandboxLauncherOptions {
  */
 export type AgentRuntimeLaunchConfig = Pick<
   SandboxLauncherOptions,
-  "modelProvider" | "modelHosts" | "keyAliases" | "hermesHomeHostPath"
+  "modelProvider" | "modelHosts" | "keyAliases"
 >;
 
 type RunCore = (input: RunAgentBackendInput) => Promise<AgentRunResult>;
@@ -230,7 +217,7 @@ type SerializableAgentRunOptions = Pick<
   | "debug"
   | "tag"
   | "skills"
-  | "backendState"
+  | "threadState"
   | "nativeDelegation"
   | "wantsCards"
   | "reasoningEffort"
@@ -247,7 +234,7 @@ function serializableAgentRunOptions(
     ...(run.debug !== undefined ? { debug: run.debug } : {}),
     ...(run.tag !== undefined ? { tag: run.tag } : {}),
     ...(run.skills !== undefined ? { skills: run.skills } : {}),
-    ...(run.backendState !== undefined ? { backendState: run.backendState } : {}),
+    ...(run.threadState !== undefined ? { threadState: run.threadState } : {}),
     ...(run.nativeDelegation !== undefined
       ? { nativeDelegation: run.nativeDelegation }
       : {}),
@@ -366,7 +353,6 @@ export type StagedSandboxWorkspace = {
   orgRoot: string;
   workspace: AgentWorkspace;
   skillOverrides: string[];
-  stable?: Awaited<ReturnType<typeof acquireStableSandboxInputs>>;
 };
 
 function workspacePathInStage(
@@ -404,7 +390,7 @@ async function copyDirectoryIfPresent(
 export async function stageSandboxWorkspace(
   workspace: AgentWorkspace,
   stageDir: string,
-  options: { requiredSkillNames?: readonly string[]; allowedSkills?: readonly string[]; allowedLibrary?: AllowedLibrary; cached?: boolean } = {},
+  options: { requiredSkillNames?: readonly string[]; allowedSkills?: readonly string[]; allowedLibrary?: AllowedLibrary } = {},
 ): Promise<StagedSandboxWorkspace> {
   const stageOrgRoot = path.join(
     stageDir,
@@ -419,11 +405,9 @@ export async function stageSandboxWorkspace(
   ) as AgentWorkspace;
 
   await mkdir(stageOrgRoot, { recursive: true });
-  const stable = options.cached ? await acquireStableSandboxInputs(workspace, options.requiredSkillNames, options.allowedSkills, options.allowedLibrary) : undefined;
-  try {
-  const knowledge = stable ? null : await readKnowledgeSnapshot(workspace.knowledgeRoot);
+  const knowledge = await readKnowledgeSnapshot(workspace.knowledgeRoot);
   await Promise.all([
-    stable ? Promise.resolve() : knowledge
+    knowledge
       ? mkdir(stagedWorkspace.knowledgeRoot, { recursive: true }).then(() => Promise.all(
         KNOWLEDGE_FILES.map(file => writeFile(path.join(stagedWorkspace.knowledgeRoot, file), knowledge.files[file])),
       ))
@@ -437,7 +421,7 @@ export async function stageSandboxWorkspace(
     // never writes personal-layer rows there, so staging it leaks nothing;
     // personal concepts reach the agent via mcp_neko_library_search,
     // scoped server-side to the run's owner).
-    stable ? Promise.resolve() : options.allowedLibrary
+    options.allowedLibrary
       ? copyAllowedTeamLibrary(
           path.join(workspace.orgRoot, "library", "okf"),
           path.join(stageOrgRoot, "library", "okf"),
@@ -448,9 +432,7 @@ export async function stageSandboxWorkspace(
           path.join(stageOrgRoot, "library", "okf"),
         ),
   ]);
-  if (!stable) {
-    await copyTeamConceptSources(path.join(stageOrgRoot, "library", "okf"), workspace.orgRoot, stageOrgRoot);
-  }
+  await copyTeamConceptSources(path.join(stageOrgRoot, "library", "okf"), workspace.orgRoot, stageOrgRoot);
 
   // Preserve the expected workspace shape even when a selected source is
   // empty, while deliberately leaving memory and sibling upload/run roots out.
@@ -459,7 +441,7 @@ export async function stageSandboxWorkspace(
       mkdir(directory, { recursive: true }),
     ),
   );
-  const skillOverrides = stable?.skillOverrides ?? await copySkillOverrides(
+  const skillOverrides = await copySkillOverrides(
     workspace.skillsRoot,
     stagedWorkspace.skillsRoot,
     options.requiredSkillNames,
@@ -470,9 +452,7 @@ export async function stageSandboxWorkspace(
     orgRoot: stageOrgRoot,
     workspace: stagedWorkspace,
     skillOverrides,
-    ...(stable ? { stable } : {}),
   };
-  } catch (error) { await stable?.release(); throw error; }
 }
 
 /**
@@ -568,75 +548,48 @@ export async function sandboxAgentBackendForJob(opts: {
   };
 }
 
-// Next instrumentation and route bundles must see the same process-local pool.
-const poolHost = globalThis as typeof globalThis & { __opennekoWarmPools?: Map<string, SandboxPool> };
-const warmPools = poolHost.__opennekoWarmPools ??= new Map<string, SandboxPool>();
-
+/**
+ * Starts this host's sweep of sandboxes stranded by an earlier boot. Every
+ * run creates and deletes its own sandbox, so no capacity is held idle.
+ */
 export async function prepareSandboxCapacity(
   opts = sandboxLauncherOptionsFromEnv(),
-  workspace?: StableWorkspace,
-  backendId?: AgentBackendId,
 ): Promise<void> {
   makeSandboxRunCore(opts);
-  // Only Hermes uses warm slots; an Ax org keeps no idle sandboxes.
-  if (backendId === "ax") return;
-  const pool = getSandboxPool(opts, workspace);
-  await startupPhase("sandbox.prewarm", async () => {
-    await pool?.ready();
-  });
+  startStrandedSandboxReaper(opts);
 }
 
-/** Explicit shutdown hook for hosts/tests; sandbox-side idle expiry also survives host loss. */
-export async function closeSandboxPools(): Promise<void> {
+/** Explicit shutdown hook for hosts/tests. */
+export async function closeSandboxReapers(): Promise<void> {
   for (const { timer } of strandedReapers.values()) clearInterval(timer);
   strandedReapers.clear();
-  await Promise.all([...warmPools.values()].map(pool => pool.close()));
-  warmPools.clear();
-  await clearStableSandboxInputs();
 }
 
-function getSandboxPool(opts: SandboxLauncherOptions, workspace?: StableWorkspace): SandboxPool | undefined {
-  const warmSize = opts.warmPoolSize ?? 1;
-  if (!warmSize) return undefined;
+function startStrandedSandboxReaper(opts: SandboxLauncherOptions): void {
   const cli = opts.cli ?? "openshell";
   const gatewayArgs = opts.gatewayName ? ["--gateway", opts.gatewayName] : opts.gatewayEndpoint ? ["--gateway-endpoint", opts.gatewayEndpoint] : [];
-  const cpu = opts.cpu ?? "2", memory = opts.memory ?? "1Gi", idleMs = opts.warmIdleMs ?? 180_000;
   const runCleanup = (args: string[], timeout: number) => runProcessOnce(cli, [...gatewayArgs, ...args], timeout);
-  // Preloaded org knowledge never enters another organization's spare queue.
-  const poolKey = JSON.stringify([cli, gatewayArgs, opts.agentImage, cpu, memory, warmSize, idleMs, workspace?.orgRoot]);
-  let pool = warmPools.get(poolKey);
   const gatewayKey = JSON.stringify([cli, gatewayArgs]);
-  if (strandedReapers.get(gatewayKey)?.boot !== SANDBOX_BOOT_ID) {
-    const previous = strandedReapers.get(gatewayKey);
-    if (previous) clearInterval(previous.timer);
-    let running = false;
-    const reap = async () => {
-      if (running) return;
-      running = true;
-      try {
-        const names = await reapStrandedSandboxes(runCleanup);
-        if (names.length) (opts.onLog ?? console.log)(`deleted ${names.length} sandboxes left by an earlier start`);
-      } catch (error) {
-        (opts.onLog ?? console.error)(`could not delete sandboxes left by an earlier start: ${describeError(error)}`);
-      } finally {
-        running = false;
-      }
-    };
-    const timer = setInterval(() => { void reap(); }, 300_000);
-    timer.unref();
-    strandedReapers.set(gatewayKey, { boot: SANDBOX_BOOT_ID, timer });
-    void reap();
-  }
-  if (!pool) {
-    pool = new SandboxPool({ size: warmSize, idleMs,
-      onEvent: attributes => startupEvent("sandbox.pool", { poolId: createHash("sha256").update(poolKey).digest("hex").slice(0, 16), ...attributes }),
-      create: () => createWarmSandbox({ cli, gatewayArgs, image: opts.agentImage, cpu, memory, idleMs, runCleanup, workspace }),
-      onError: (error) => (opts.onLog ?? console.error)(`warm sandbox preparation failed: ${describeError(error)}`),
-    });
-    warmPools.set(poolKey, pool);
-    pool.replenish();
-  }
-  return pool;
+  if (strandedReapers.get(gatewayKey)?.boot === SANDBOX_BOOT_ID) return;
+  const previous = strandedReapers.get(gatewayKey);
+  if (previous) clearInterval(previous.timer);
+  let running = false;
+  const reap = async () => {
+    if (running) return;
+    running = true;
+    try {
+      const names = await reapStrandedSandboxes(runCleanup);
+      if (names.length) (opts.onLog ?? console.log)(`deleted ${names.length} sandboxes left by an earlier start`);
+    } catch (error) {
+      (opts.onLog ?? console.error)(`could not delete sandboxes left by an earlier start: ${describeError(error)}`);
+    } finally {
+      running = false;
+    }
+  };
+  const timer = setInterval(() => { void reap(); }, 300_000);
+  timer.unref();
+  strandedReapers.set(gatewayKey, { boot: SANDBOX_BOOT_ID, timer });
+  void reap();
 }
 
 function makeSandboxCore(
@@ -663,20 +616,9 @@ function makeSandboxCore(
   const runCleanup = (args: string[], timeoutMs: number): Promise<string> =>
     runProcessOnce(cli, [...gatewayArgs, ...args], timeoutMs);
 
-  const warmSize = opts.warmPoolSize ?? 1;
-  const idleMs = opts.warmIdleMs ?? 180_000;
-  if (!Number.isInteger(warmSize) || warmSize < 0 || warmSize > 10 ||
-      !Number.isInteger(idleMs) || idleMs < 1_000 || idleMs > 3_600_000) {
-    throw new Error("Invalid warm sandbox limits");
-  }
-
   const runInSandbox = async function (
     input: SandboxRunInput,
   ): Promise<AgentRunResult> {
-    // Warm slots preload Hermes. Ax starts in a fresh sandbox: binding a warm
-    // slot costs it more than a create, and the idle fork server would end the slot mid-run.
-    const hermes = input.backend.id === "hermes";
-    let pool = kind === "work" && hermes ? getSandboxPool(opts, input.workspace) : undefined;
     const isJob = kind === "agent-job";
     const jobInput = isJob ? (input as RunJobAgentBackendInput) : null;
     const signal = isJob
@@ -716,7 +658,7 @@ function makeSandboxCore(
       (input as RunAgentBackendInput | RunWorkflowAgentBackendInput).prompt;
     // OpenShell 0.1.x limits sandbox names to 19 characters. Hash the full
     // run ID so distinct IDs that share a prefix cannot collide.
-    let name = `neko-${isJob ? "j" : "w"}-${createHash("sha256").update(input.runId).digest("hex").slice(0, 12)}`;
+    const name = `neko-${isJob ? "j" : "w"}-${createHash("sha256").update(input.runId).digest("hex").slice(0, 12)}`;
 
     // The box is a separate filesystem; the host workspace path (~/.config/… or
     // /Users/…) can't be recreated under the sandbox user's home. Upload the
@@ -755,14 +697,12 @@ function makeSandboxCore(
       message,
       prompt: toBox(inputPrompt),
       backendId: input.backend.id,
-      configuredIdentity: input.backend.configuredIdentity,
-      // Hermes reads its model from the staged config.yaml; Ax gets its route here.
-      ...(input.backend.id === "ax" ? { ax: (input.backend as AxBackend).ax } : {}),
+      ax: (input.backend as AxBackend).ax,
       workspace: boxWorkspace,
       ...(input.allowedSkills ? { allowedSkills: [...input.allowedSkills] } : {}),
       ...(kind === "work"
         ? {
-            backendState: (input as RunAgentBackendInput).backendState,
+            threadState: (input as RunAgentBackendInput).threadState,
             pluginActions: (input as RunAgentBackendInput).pluginActions,
             packActions: (input as RunAgentBackendInput).packActions,
             sourceConfigEnabled:
@@ -833,7 +773,7 @@ function makeSandboxCore(
         })()
       : [];
     // OpenShell binds model egress to the process that calls the model.
-    const modelBinary = hermes ? VENDORED_HERMES_MODEL_BINARY : AX_HARNESS_BINARY;
+    const modelBinary = AX_HARNESS_BINARY;
     const egressRules: SandboxEgressRule[] = [
       ...(opts.modelHosts ?? []).map((endpoint, index) => ({
         ...endpoint,
@@ -853,12 +793,8 @@ function makeSandboxCore(
 
     const stageDir = await mkdtemp(path.join(tmpdir(), "oss-agent-"));
     let sandboxCreated = false;
-    let lease: Awaited<ReturnType<SandboxPool["acquire"]>> | undefined;
-    let warmSlot: WarmSlot | undefined;
-    let healthy = false;
     // Unknown (old image, timeout, crash) must preserve partial artifacts.
     let artifactsPresent: boolean | undefined;
-    let stableInputs: StagedSandboxWorkspace["stable"];
     let skillActor: { userId: string | null; role: string | null } | null = null;
     let skillBaseline: SkillFileHashes | undefined;
     const skillToolCalls: SkillToolCall[] = [];
@@ -875,9 +811,7 @@ function makeSandboxCore(
         requiredSkillNames: recordsScoped ? ["records"] : [],
         ...(input.allowedSkills ? { allowedSkills: input.allowedSkills } : {}),
         ...(input.allowedLibrary ? { allowedLibrary: input.allowedLibrary } : {}),
-        cached: Boolean(pool),
       }));
-      stableInputs = staged.stable;
       if (!isJob) {
         // Skill edits made in the box are saved when the turn ends; a member
         // runs with their own saved skill versions laid over the company's.
@@ -894,7 +828,6 @@ function makeSandboxCore(
         skillBaseline = await hashSkillTree(input.workspace.skillsRoot);
         for (const file of personal) skillBaseline.set(file.path, skillFileHash(file.content));
       }
-      if (stableInputs) startupEvent("sandbox.staging_cache", { outcome: stableInputs.hit ? "hit" : "miss" });
       const stageRuntimeRoot = path.join(
         staged.workspace.runRoot,
         SANDBOX_RUNTIME_DIR,
@@ -902,12 +835,6 @@ function makeSandboxCore(
       await mkdir(stageRuntimeRoot, { recursive: true });
       const jobFile = path.join(stageRuntimeRoot, "job.json");
       await writeFile(jobFile, JSON.stringify(job));
-      const hermesStage = opts.hermesHomeHostPath && hermes
-        ? await stageKeylessHermesHome(
-            opts.hermesHomeHostPath,
-            pool ? path.join(stageDir, "hermes-home") : path.join(stageRuntimeRoot, "hermes-home"),
-          )
-        : null;
       const policyFile = path.join(stageDir, "policy.json");
       await writeFile(
         policyFile,
@@ -918,170 +845,81 @@ function makeSandboxCore(
         SANDBOX_RUNTIME_DIR,
         "job.json",
       );
-      const coldHermesHome = path.posix.join(
-        boxWorkspace.runRoot,
-        SANDBOX_RUNTIME_DIR,
-        "hermes-home",
-      );
-      let sandboxHermesHome = pool ? "/sandbox/.hermes-warm/home" : coldHermesHome;
 
       await input.emit({
         type: "status",
         message: "Starting secure agent sandbox…",
       });
-      if (pool) {
-        const workInput = input as RunAgentBackendInput;
-        const reuse = workInput.sandboxUser;
-        // The host supplies an opaque CURRENT authorization revision. Never
-        // derive it from a prompt, agent backendState, or a browser claim.
-        const session = reuse?.principalId && reuse.authorizationRevision ? {
-          key: JSON.stringify([input.orgId, reuse.principalId]),
-          modelScope: createHash("sha256").update(JSON.stringify([opts.modelProvider, input.backend.id, input.backend.configuredIdentity])).digest("hex"),
-          authorizationScope: createHash("sha256").update(reuse.authorizationRevision).digest("hex"),
-          scope: createHash("sha256").update(JSON.stringify([
-            reuse.authorizationRevision, opts.modelProvider, opts.modelHosts,
-            opts.keyAliases, opts.env, input.backend.id, input.backend.configuredIdentity,
-            workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled, workInput.allowedSkills ?? null, workInput.allowedLibrary ?? null,
-            workInput.dataSurface, workInput.graphjinToolPolicy, workInput.graphjinDataPath, workInput.nativeDelegation,
-            workInput.backendState, opts.brokerUrl,
-            hermesStage ? await readFile(path.join(hermesStage, "config.yaml"), "utf8") : null,
-          ])).digest("hex"),
-        } : undefined;
-        try {
-          lease = await startupPhase("sandbox.acquire", () => pool!.acquire(session, signal));
-        } catch (error) {
-          // A warm spare that never became ready must not fail the question.
-          if (signal?.aborted) throw error;
-          log(`warm sandbox unavailable, starting a fresh one: ${describeError(error)}`);
-          pool = undefined;
-          sandboxHermesHome = coldHermesHome;
-        }
-      }
-      if (pool && lease) {
-        warmSlot = lease.slot;
-        if (!warmSlot) throw new Error("Warm sandbox admission returned no slot");
-        name = warmSlot.name;
-        sandboxCreated = true;
-        if (signal?.aborted) throw abortError();
-        await timed("warm_bind", async () => {
-          const desiredHome = hermesStage ?? path.join(stageDir, "empty-home");
-          await mkdir(desiredHome, { recursive: true });
-          const bindPolicy = async () => {
-            // A reused slot has the same current authorization/model scope.
-            if (lease!.reused) return;
-            if (opts.modelProvider) {
-              await timed("warm_provider", () => run(["sandbox", "provider", "attach", name, opts.modelProvider!], 60_000));
-            }
-            await timed("warm_policy", () => run(["policy", "set", name, "--policy", policyFile, "--wait", "--timeout", "60"], 65_000));
-            if (opts.modelProvider) {
-              // Endpointless profile credentials remain withheld until the
-              // policy binds this provider to the model endpoint.
-              await timed("warm_provider_ready", () => run([
-                "sandbox", "provider", "status", name, opts.modelProvider!,
-                "--wait", "--timeout", "60",
-              ], 65_000));
-            }
-          };
-          const syncInputs = async () => {
-            const phases = ["workspace", "config"];
-            const results = await timed("inputs_sync", () => syncSandboxDirectories({
-              checkout: true,
-              directories: [
-                { source: staged.orgRoot, destination: boxOrgRoot, layers: stableInputs ? [stableInputs.manifest] : undefined },
-                { source: desiredHome, destination: sandboxHermesHome },
-              ].map((directory, index) => ({
-                ...directory, deltaRoot: path.join(stageDir, `delta-${phases[index]}`),
-                upload: (delta: string) => timed(`${phases[index]}_upload`, () => run([
-                  "sandbox", "upload", name, delta, path.posix.dirname(directory.destination), "--no-git-ignore",
-                ], 120_000)).then(() => {}),
-              })),
-              reconcile: manifest => timed("inputs_reconcile", () => run([
-                "sandbox", "exec", "-n", name, "--no-tty", "--",
-                "/usr/local/uv/tools/hermes-agent/bin/python", "-c", RECONCILE_COMMAND,
-              ], 30_000, manifest)),
-            }));
-            results.forEach((result, index) => startupEvent(`sandbox.${phases[index]}_delta`, result));
-          };
-          // OpenShell 0.1.2 rejects concurrent sandbox mutations with
-          // "sandbox was modified by another operation". Attach the provider
-          // and policy before syncing files against the settled revision.
-          await bindPolicy();
-          await syncInputs();
-        });
-        log(JSON.stringify({ type: "sandbox_warm", runId: input.runId, sandboxName: name,
-          mode: lease.reused ? "user" : lease.slot ? "generic" : "miss" }));
-      } else {
-        const createArgs = [
-          "sandbox",
-          "create",
-          "--name",
-          name,
-          "--from",
-          opts.agentImage,
-          "--cpu",
-          cpu,
-          "--memory",
-          memory,
-          "--detach",
-          "--no-tty",
-          "--no-auto-providers",
-          ...sandboxOwnerLabelArgs(),
-          ...(opts.modelProvider ? ["--provider", opts.modelProvider] : []),
-          "--policy",
-          policyFile,
-          "--",
-          "sleep",
-          "infinity",
-        ];
-        const reclaimAndCreate = async () => {
-          // Run names are deterministic so a durable queue retry can collide
-          // with an OpenShell sandbox orphaned by a worker restart or deploy.
-          // Replace only that exact run sandbox, then let the normal finally
-          // path own cleanup for the newly created instance.
-          log(`replacing stale agent sandbox after name collision: ${name}`);
-          await runCleanup(["sandbox", "delete", name], 60_000);
-          await timed("create", () => run(createArgs, 180_000));
-        };
-        try {
-          await timed("create", () => run(createArgs, 180_000));
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          if (message.includes("already exists")) {
+      const createArgs = [
+        "sandbox",
+        "create",
+        "--name",
+        name,
+        "--from",
+        opts.agentImage,
+        "--cpu",
+        cpu,
+        "--memory",
+        memory,
+        "--detach",
+        "--no-tty",
+        "--no-auto-providers",
+        ...sandboxOwnerLabelArgs(),
+        ...(opts.modelProvider ? ["--provider", opts.modelProvider] : []),
+        "--policy",
+        policyFile,
+        "--",
+        "sleep",
+        "infinity",
+      ];
+      const reclaimAndCreate = async () => {
+        // Run names are deterministic so a durable queue retry can collide
+        // with an OpenShell sandbox orphaned by a worker restart or deploy.
+        // Replace only that exact run sandbox, then let the normal finally
+        // path own cleanup for the newly created instance.
+        log(`replacing stale agent sandbox after name collision: ${name}`);
+        await runCleanup(["sandbox", "delete", name], 60_000);
+        await timed("create", () => run(createArgs, 180_000));
+      };
+      try {
+        await timed("create", () => run(createArgs, 180_000));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes("already exists")) {
+          await reclaimAndCreate();
+        } else {
+          // Not a name collision: a transient gateway hiccup (restart mid
+          // deploy) or a first-use image pull that outran the timeout — the
+          // gateway-side pull keeps going, so a second attempt usually rides
+          // its cache. Retry once before surfacing the real error; a timed-out
+          // first attempt may have half-registered the name, which the retry
+          // then reclaims.
+          log(
+            `agent sandbox create failed (${message.slice(0, 200)}); retrying once`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 3_000));
+          try {
+            await timed("create", () => run(createArgs, 180_000));
+          } catch (retryError) {
+            const retryMessage =
+              retryError instanceof Error ? retryError.message : String(retryError);
+            if (!retryMessage.includes("already exists")) throw retryError;
             await reclaimAndCreate();
-          } else {
-            // Not a name collision: a transient gateway hiccup (restart mid
-            // deploy) or a first-use image pull that outran the timeout — the
-            // gateway-side pull keeps going, so a second attempt usually rides
-            // its cache. Retry once before surfacing the real error; a timed-out
-            // first attempt may have half-registered the name, which the retry
-            // then reclaims.
-            log(
-              `agent sandbox create failed (${message.slice(0, 200)}); retrying once`,
-            );
-            await new Promise((resolve) => setTimeout(resolve, 3_000));
-            try {
-              await timed("create", () => run(createArgs, 180_000));
-            } catch (retryError) {
-              const retryMessage =
-                retryError instanceof Error ? retryError.message : String(retryError);
-              if (!retryMessage.includes("already exists")) throw retryError;
-              await reclaimAndCreate();
-            }
           }
         }
-        sandboxCreated = true;
-        // OpenShell 0.1.2 rejects --upload together with a create command.
-        // Keep the sandbox alive, then upload after creation has settled.
-        await timed("workspace_upload", () => run([
-          "sandbox", "upload", name, staged.orgRoot,
-          path.posix.dirname(boxOrgRoot), "--no-git-ignore",
-        ], 120_000));
-        if (opts.modelProvider) {
-          await timed("provider_ready", () => run([
-            "sandbox", "provider", "status", name, opts.modelProvider!,
-            "--wait", "--timeout", "60",
-          ], 65_000));
-        }
+      }
+      sandboxCreated = true;
+      // OpenShell 0.1.2 rejects --upload together with a create command.
+      // Keep the sandbox alive, then upload after creation has settled.
+      await timed("workspace_upload", () => run([
+        "sandbox", "upload", name, staged.orgRoot,
+        path.posix.dirname(boxOrgRoot), "--no-git-ignore",
+      ], 120_000));
+      if (opts.modelProvider) {
+        await timed("provider_ready", () => run([
+          "sandbox", "provider", "status", name, opts.modelProvider!,
+          "--wait", "--timeout", "60",
+        ], 65_000));
       }
 
       log(
@@ -1108,8 +946,6 @@ function makeSandboxCore(
                 }
               : {}),
             ...(opts.env ?? {}),
-            ...(pool && hermes ? { OPENNEKO_HERMES_WARM: "1", HOME: sandboxHermesHome, HERMES_HOME: sandboxHermesHome } : {}),
-            ...(hermesStage ? { HERMES_HOME: sandboxHermesHome } : {}),
           },
           keyAliases: opts.keyAliases,
         }),
@@ -1128,11 +964,9 @@ function makeSandboxCore(
         (present) => { artifactsPresent = present; },
         () => { skillEvidenceUnreadable = true; },
       ));
-      healthy = result.status === "completed" && !signal?.aborted;
       skillEvidenceComplete = result.status === "completed" && !skillEvidenceUnreadable;
       return result;
     } finally {
-      await stableInputs?.release();
       opts.brokerRelease?.(input.runId);
       // Pull artifacts the agent wrote in the box back to the host run dir
       // before deleting the box — otherwise the file-serving endpoint reads an
@@ -1171,7 +1005,7 @@ function makeSandboxCore(
         await timed("skill_capture", () => captureSandboxSkillEdits({
           listSandboxHashes: () => runCleanup([
             "sandbox", "exec", "-n", name, "--no-tty", "--",
-            "/usr/local/uv/tools/hermes-agent/bin/python", "-c", SANDBOX_SKILL_HASH_COMMAND, boxWorkspace.skillsRoot,
+            "/usr/bin/python3", "-c", SANDBOX_SKILL_HASH_COMMAND, boxWorkspace.skillsRoot,
           ], 60_000),
           downloadSkill: (skill, destination) => runCleanup([
             "sandbox", "download", name, path.posix.join(boxWorkspace.skillsRoot, skill), destination,
@@ -1190,9 +1024,7 @@ function makeSandboxCore(
       // The sandbox is the process-tree boundary. Deleting it terminates the
       // backend plus every child/sub-agent, and cleanup must not inherit the
       // already-aborted run signal.
-      if (lease) {
-        await lease.release(warmSlot, healthy && !signal?.aborted);
-      } else if (sandboxCreated) {
+      if (sandboxCreated) {
         await timed("delete", () => runCleanup(["sandbox", "delete", name], 60_000)).catch(() => {});
       }
       await rm(stageDir, { recursive: true, force: true });
@@ -1320,11 +1152,6 @@ export function workflowRuntimeDepsFromConfig(
   };
 }
 
-/** One warm box serves Ask on the web. Worker runs are background work and start cold. */
-function defaultWarmPoolSize(): number {
-  return sandboxOwner().includes("worker") ? 0 : 1;
-}
-
 export function sandboxLauncherOptionsFromConfig(
   config: AgentRuntimeLaunchConfig,
   broker?: SandboxBrokerHandle,
@@ -1336,8 +1163,6 @@ export function sandboxLauncherOptionsFromConfig(
     gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
     cpu: process.env.OPENNEKO_AGENT_CPUS || undefined,
     memory: process.env.OPENNEKO_AGENT_MEMORY || undefined,
-    warmPoolSize: Number(process.env.OPENNEKO_AGENT_WARM_POOL_SIZE ?? defaultWarmPoolSize()),
-    warmIdleMs: Number(process.env.OPENNEKO_AGENT_WARM_IDLE_MS ?? 180_000),
     ...config,
     brokerUrl: broker?.url,
     brokerTokenFor: broker?.tokenFor,
@@ -1348,14 +1173,14 @@ export function sandboxLauncherOptionsFromConfig(
 export function sandboxLauncherOptionsFromEnv(
   broker?: SandboxBrokerHandle,
 ): SandboxLauncherOptions {
-  // Comma-separated: the model endpoint AND any resolution hosts (hermes needs
-  // models.dev), all scoped to the backend's one connecting binary.
+  // Comma-separated model endpoints, all scoped to the backend's one
+  // connecting binary.
   const hosts = (process.env.OPENNEKO_AGENT_MODEL_HOST ?? "")
     .split(",")
     .map((h) => h.trim())
     .filter(Boolean);
   // OpenShell injects the credential under the credential NAME (default
-  // `MODEL_API_KEY`); alias it to the env var the backend reads (the hermes
+  // `MODEL_API_KEY`); alias it to the env var the backend reads (the
   // provider→key map, e.g. GEMINI_API_KEY). The proxy swaps in the real key on
   // egress, so the box only ever holds the placeholder.
   const keyEnv = process.env.OPENNEKO_AGENT_MODEL_KEY_ENV;
@@ -1368,7 +1193,6 @@ export function sandboxLauncherOptionsFromEnv(
     modelProvider: process.env.OPENNEKO_AGENT_MODEL_PROVIDER || undefined,
     modelHosts: hosts.map((host) => ({ host })),
     keyAliases: keyEnv ? [{ from: credName, to: keyEnv }] : undefined,
-    hermesHomeHostPath: process.env.OPENNEKO_AGENT_HERMES_HOME || undefined,
   }, broker);
 }
 
@@ -1551,23 +1375,6 @@ export async function verifyOpenShellGateway(opts: {
     [...gatewayArgs, "provider", "list", "--names"],
     15_000,
   );
-}
-
-/**
- * Mirror a host HERMES_HOME into `destination` KEYLESS: copy
- * config.yaml, write an empty `.env`. hermes reads `.env` before the process
- * env, so an empty `.env` lets the proxy-injected key (keyAliases) win — and
- * the real key never lands in the box.
- */
-async function stageKeylessHermesHome(
-  hostPath: string,
-  destination: string,
-): Promise<string> {
-  await mkdir(destination, { recursive: true });
-  const config = await readFile(path.join(hostPath, "config.yaml"), "utf8");
-  await writeFile(path.join(destination, "config.yaml"), config);
-  await writeFile(path.join(destination, ".env"), "");
-  return destination;
 }
 
 function buildInnerCommand(o: {
@@ -1833,87 +1640,4 @@ function abortError(): Error {
   const err = new Error("aborted");
   err.name = "AbortError";
   return err;
-}
-
-/** Keep the creation command attached: --no-keep deletes the box when the
- * clean parent exits on its own idle timeout. */
-async function createWarmSandbox(o: {
-  cli: string; gatewayArgs: string[]; image: string; cpu: string; memory: string; idleMs: number;
-  runCleanup: (args: string[], timeout: number) => Promise<string>;
-  workspace?: StableWorkspace;
-}): Promise<WarmSlot> {
-  const name = `neko-p-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
-  const dir = await mkdtemp(path.join(tmpdir(), "oss-warm-"));
-  const policy = path.join(dir, "policy.json");
-  await writeFile(policy, JSON.stringify(buildSandboxPolicy([])));
-  const child = spawn(o.cli, [...o.gatewayArgs, "sandbox", "create", "--name", name,
-    "--from", o.image, "--cpu", o.cpu, "--memory", o.memory,
-    "--no-tty", "--no-keep", "--no-auto-providers", ...sandboxOwnerLabelArgs(), "--policy", policy,
-    "--", "/usr/local/uv/tools/hermes-agent/bin/python", "/app/hermes-warm.py", "serve",
-    String(Math.ceil(o.idleMs / 1000))], { stdio: ["ignore", "pipe", "pipe"] });
-  let alive = true;
-  const closed = new Promise<void>(resolve => child.on("close", () => { alive = false; resolve(); }));
-  child.stderr.resume();
-  const destroy = async () => {
-    try {
-      await o.runCleanup(["sandbox", "delete", name], 60_000);
-    } catch (error) {
-      if (!/not found|does not exist/i.test(String(error))) throw error;
-    } finally {
-      alive = false;
-      child.kill("SIGTERM");
-    }
-  };
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const lines = createInterface({ input: child.stdout });
-      const timer = setTimeout(() => reject(new Error("warm sandbox readiness timeout")), 180_000);
-      timer.unref();
-      const done = (error?: Error) => { clearTimeout(timer); lines.close(); error ? reject(error) : resolve(); };
-      lines.on("line", line => { if (line.trim() === "__openneko_warm_ready__") done(); });
-      child.once("error", error => done(error));
-      child.once("close", () => done(new Error("warm sandbox exited before readiness")));
-    });
-    child.stdout.resume();
-    let preloadedRevision: string | undefined;
-    const preload = async () => {
-      if (!o.workspace) return;
-      const inputs = await acquireStableSandboxInputs(o.workspace);
-      try {
-        if (preloadedRevision === inputs.revision) return;
-        if (!preloadedRevision) {
-          await startupPhase("sandbox.preload", () => o.runCleanup([
-            "sandbox", "upload", name, inputs.root, "/sandbox", "--no-git-ignore",
-          ], 120_000));
-        } else {
-          const stage = await mkdtemp(path.join(tmpdir(), "oss-preload-"));
-          try {
-            const empty = path.join(stage, "empty"); await mkdir(empty);
-            await startupPhase("sandbox.preload", () => syncSandboxDirectories({
-              directories: [{ source: empty, layers: [inputs.manifest], destination: path.posix.join("/sandbox", path.basename(inputs.root)), deltaRoot: path.join(stage, "delta"),
-                upload: delta => o.runCleanup(["sandbox", "upload", name, delta, "/sandbox", "--no-git-ignore"], 120_000).then(() => {}),
-              }],
-              reconcile: manifest => runProcessOnce(o.cli, [...o.gatewayArgs, "sandbox", "exec", "-n", name, "--no-tty", "--",
-                "/usr/local/uv/tools/hermes-agent/bin/python", "-c", RECONCILE_COMMAND], 30_000, undefined, manifest),
-            }));
-          } finally { await rm(stage, { recursive: true, force: true }); }
-        }
-        preloadedRevision = inputs.revision;
-        startupEvent("sandbox.preload_delta", { files: Object.values(inputs.manifest.entries).filter(Boolean).length });
-      } finally { await inputs.release(); }
-    };
-    await preload();
-    return { name, alive: () => alive, destroy, closed,
-      refresh: async () => {
-        await o.runCleanup(["sandbox", "exec", "-n", name, "--no-tty", "--",
-          "/usr/local/uv/tools/hermes-agent/bin/python", "/app/hermes-warm.py", "checkout"], 15_000);
-        await preload();
-      },
-    };
-  } catch (error) {
-    await destroy().catch(() => {});
-    throw error;
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
 }

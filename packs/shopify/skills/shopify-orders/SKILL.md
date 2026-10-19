@@ -3,7 +3,7 @@ name: shopify-orders
 description: Read Shopify orders and request approved changes to an order's internal note or tags through the Shopify pack. Use when the operator asks about recent orders, one order's detail, order counts, or wants to flag an order with a note or tag.
 license: Apache-2.0
 metadata:
-  hermes:
+  openneko:
     tags: [shopify, commerce, orders]
     category: commerce
     requires_toolsets: [graphjin, pack-actions]

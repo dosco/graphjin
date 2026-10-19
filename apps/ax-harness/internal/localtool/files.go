@@ -21,7 +21,7 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
-// Read limits match Hermes read_file: 100,000 characters, 2,000 lines and
+// Read limits: 100,000 characters, 2,000 lines and
 // 2,000 characters per line for one read.
 const (
 	maxFile      = 10 << 20
@@ -415,7 +415,7 @@ func (f *Files) write(ctx context.Context, raw json.RawMessage) (json.RawMessage
 	}{input.Path, digest([]byte(input.Content))})
 }
 
-// Hermes search_files returns 50 results by default; a caller may ask for
+// Search returns 50 results by default; a caller may ask for
 // up to 200.
 const (
 	maxSearchVisits  = 10_000

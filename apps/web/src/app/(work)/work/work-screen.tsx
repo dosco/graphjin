@@ -691,7 +691,7 @@ export default function WorkScreen() {
               ...prev.runs,
               {
                 id: runId,
-                backend: "hermes",
+                backend: "ax",
                 status: "running",
                 error: null,
                 createdAt: new Date().toISOString(),

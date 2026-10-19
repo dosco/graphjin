@@ -17,7 +17,7 @@ describe("agent event telemetry", () => {
     const payload = "customer-private-payload-value";
 
     await telemetry.startAgent({
-      backend: "hermes",
+      backend: "ax",
       model: "safe-model-id",
       inputBytes: Buffer.byteLength(payload),
     });
@@ -84,7 +84,7 @@ describe("agent event telemetry", () => {
       operationId: "workflow:run-2",
     });
 
-    await telemetry.startAgent({ backend: "hermes" });
+    await telemetry.startAgent({ backend: "ax" });
     await telemetry.observeEvent({
       type: "tool_start",
       id: "tool-open",

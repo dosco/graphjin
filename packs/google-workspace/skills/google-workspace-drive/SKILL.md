@@ -3,7 +3,7 @@ name: google-workspace-drive
 description: Find Drive files and request approved file, folder, move, copy, and sharing changes through the Google Workspace pack.
 license: Apache-2.0
 metadata:
-  hermes:
+  openneko:
     tags: [google-workspace, drive, files, sharing]
     category: productivity
     requires_toolsets: [graphjin, pack-actions]

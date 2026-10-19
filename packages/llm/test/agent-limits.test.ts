@@ -3,8 +3,6 @@ import {
   agentLimits,
   axLimitEnv,
   axRunLimits,
-  hermesLimitConfigLines,
-  hermesLimitEnv,
 } from "../src/agent-limits";
 import { agentTurnTimeoutMs, workflowTurnBudget } from "../src/agent-backend";
 
@@ -13,19 +11,13 @@ afterEach(() => {
 });
 
 describe("agentLimits", () => {
-  it("keeps the Hermes defaults for chat", () => {
+  it("keeps the defaults for chat", () => {
     const limits = agentLimits("chat");
     expect(limits.timeoutMs).toBe(9 * 60_000);
     expect(limits.maxTurns).toBe(25);
     expect(limits.maxToolCalls).toBeUndefined();
-    expect(limits.delegation).toEqual({
-      maxIterations: 50,
-      maxConcurrentChildren: 3,
-      maxSpawnDepth: 1,
-      childTimeoutSeconds: 0,
-      orchestratorEnabled: true,
-    });
-    expect(limits.toolOutput).toEqual({ maxBytes: 50_000, maxLines: 2_000, maxLineLength: 2_000 });
+    expect(limits.delegation).toEqual({ maxIterations: 50 });
+    expect(limits.toolOutput).toEqual({ maxBytes: 50_000 });
     expect(limits.terminal.timeoutSeconds).toBe(180);
   });
 
@@ -40,12 +32,12 @@ describe("agentLimits", () => {
   it("reads overrides and clamps them to their ranges", () => {
     vi.stubEnv("OPENNEKO_AGENT_TURN_TIMEOUT_MS", "120000");
     vi.stubEnv("OPENNEKO_AGENT_MAX_TURNS", "9000");
-    vi.stubEnv("OPENNEKO_AGENT_DELEGATION_MAX_SPAWN_DEPTH", "7");
+    vi.stubEnv("OPENNEKO_AGENT_DELEGATION_MAX_ITERATIONS", "0");
     vi.stubEnv("OPENNEKO_AGENT_TERMINAL_TIMEOUT_SECONDS", "x");
     const limits = agentLimits("chat");
     expect(limits.timeoutMs).toBe(120_000);
     expect(limits.maxTurns).toBe(500);
-    expect(limits.delegation.maxSpawnDepth).toBe(3);
+    expect(limits.delegation.maxIterations).toBe(1);
     expect(limits.terminal.timeoutSeconds).toBe(180);
   });
 
@@ -63,15 +55,6 @@ describe("agentLimits", () => {
 });
 
 describe("backend mappings", () => {
-  it("writes the Hermes config and per-run env from the same limits", () => {
-    const limits = agentLimits("chat");
-    const yaml = hermesLimitConfigLines(limits).join("\n");
-    expect(yaml).toContain("  max_iterations: 50");
-    expect(yaml).toContain("  max_spawn_depth: 1");
-    expect(yaml).toContain("tool_output:\n  max_bytes: 50000");
-    expect(hermesLimitEnv(limits)).toEqual({ TERMINAL_TIMEOUT: "180" });
-  });
-
   it("maps the same limits onto the Ax run spec and env", () => {
     expect(axRunLimits(agentLimits("chat"))).toEqual({
       timeout_ms: 9 * 60_000,

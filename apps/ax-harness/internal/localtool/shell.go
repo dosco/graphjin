@@ -17,7 +17,7 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
-// Default terminal limits match Hermes: 180 s default, 600 s maximum, and
+// Default terminal limits: 180 s default, 600 s maximum, and
 // 50,000 characters of combined output. The host can set both defaults.
 const (
 	defaultShellTimeout = 180

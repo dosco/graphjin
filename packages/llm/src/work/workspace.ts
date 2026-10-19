@@ -233,7 +233,7 @@ export async function listSkillNames(skillsRoot: string): Promise<string[]> {
 export type InstalledSkill = { name: string; description: string };
 
 // Parse SKILL.md frontmatter from each skill dir. Used to build a catalog for
-// the Hermes prompt and native skill catalog.
+// the agent prompt.
 export async function listInstalledSkills(
   skillsRoot: string,
 ): Promise<InstalledSkill[]> {

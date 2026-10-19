@@ -7,12 +7,13 @@ export type ProviderEndpoint = {
   port?: number;
 };
 
-export type HermesProviderRuntime = {
-  provider: string;
+/** Where an admin-configured provider is reached and how it authenticates. */
+export type ProviderRuntime = {
+  /** The model id the provider's API expects (an Azure deployment name for Azure). */
   model: string;
   baseUrl: string;
+  /** The env var the agent reads the key from; OpenShell injects it on egress. */
   keyEnv?: string;
-  apiMode?: "chat_completions";
   credentialSource: ProviderCredentialSource;
   endpoint: ProviderEndpoint;
 };
@@ -44,13 +45,11 @@ function endpointFromUrl(baseUrl: string): ProviderEndpoint {
 }
 
 function fixedRuntime(
-  provider: string,
   model: string,
   baseUrl: string,
   keyEnv: string,
-): HermesProviderRuntime {
+): ProviderRuntime {
   return {
-    provider,
     model,
     baseUrl,
     keyEnv,
@@ -102,98 +101,64 @@ function ollamaBaseUrl(config: Record<string, unknown>): string {
 }
 
 /**
- * OpenNeko's complete Admin-provider -> Hermes 0.21 runtime contract.
+ * OpenNeko's complete Admin-provider runtime contract.
  *
  * Keep this exhaustive. A provider must not appear in Admin unless it has an
- * explicit Hermes identity, credential source, base URL and sandbox endpoint.
+ * explicit credential source, base URL and sandbox endpoint.
  */
-export function resolveHermesProviderRuntime(args: {
+export function resolveProviderRuntime(args: {
   provider: PrimaryProviderId;
   model: string;
   config?: Record<string, unknown> | null;
-}): HermesProviderRuntime {
+}): ProviderRuntime {
   const config = args.config ?? {};
 
   switch (args.provider) {
     case "openai":
-      // In Hermes 0.21, bare `openai` is intentionally an OpenRouter alias.
-      return fixedRuntime("openai-api", args.model, "https://api.openai.com/v1", "OPENAI_API_KEY");
+      return fixedRuntime(args.model, "https://api.openai.com/v1", "OPENAI_API_KEY");
     case "anthropic":
-      return fixedRuntime("anthropic", args.model, "https://api.anthropic.com", "ANTHROPIC_API_KEY");
+      return fixedRuntime(args.model, "https://api.anthropic.com", "ANTHROPIC_API_KEY");
     case "google-gemini":
-      return fixedRuntime("gemini", args.model, "https://generativelanguage.googleapis.com/v1beta", "GEMINI_API_KEY");
-    case "azure-openai": {
-      const baseUrl = azureBaseUrl(config);
-      return {
-        ...fixedRuntime(
-          "azure-foundry",
-          requiredConfig(config, "deploymentName", "Azure deployment name"),
-          baseUrl,
-          "AZURE_FOUNDRY_API_KEY",
-        ),
-        apiMode: "chat_completions",
-      };
-    }
-    // Hermes 0.21 does not register these four vendor slugs as runtime
-    // providers. Their APIs are OpenAI-compatible, so route them through the
-    // explicit custom transport instead of letting Hermes fail with
-    // "Unknown provider" before making a request.
+      return fixedRuntime(args.model, "https://generativelanguage.googleapis.com/v1beta", "GEMINI_API_KEY");
+    case "azure-openai":
+      return fixedRuntime(
+        requiredConfig(config, "deploymentName", "Azure deployment name"),
+        azureBaseUrl(config),
+        "AZURE_FOUNDRY_API_KEY",
+      );
     case "mistral":
-      return {
-        ...fixedRuntime("custom", args.model, "https://api.mistral.ai/v1", "MISTRAL_API_KEY"),
-        apiMode: "chat_completions",
-      };
+      return fixedRuntime(args.model, "https://api.mistral.ai/v1", "MISTRAL_API_KEY");
     case "groq":
-      return {
-        ...fixedRuntime("custom", args.model, "https://api.groq.com/openai/v1", "GROQ_API_KEY"),
-        apiMode: "chat_completions",
-      };
+      return fixedRuntime(args.model, "https://api.groq.com/openai/v1", "GROQ_API_KEY");
     case "cohere":
-      return {
-        ...fixedRuntime(
-          "custom",
-          args.model,
-          "https://api.cohere.ai/compatibility/v1",
-          "COHERE_API_KEY",
-        ),
-        apiMode: "chat_completions",
-      };
+      return fixedRuntime(args.model, "https://api.cohere.ai/compatibility/v1", "COHERE_API_KEY");
     case "together":
-      return {
-        ...fixedRuntime("custom", args.model, "https://api.together.ai/v1", "TOGETHER_API_KEY"),
-        apiMode: "chat_completions",
-      };
+      return fixedRuntime(args.model, "https://api.together.ai/v1", "TOGETHER_API_KEY");
     case "deepseek":
-      return fixedRuntime("deepseek", args.model, "https://api.deepseek.com/v1", "DEEPSEEK_API_KEY");
+      return fixedRuntime(args.model, "https://api.deepseek.com/v1", "DEEPSEEK_API_KEY");
     case "ollama": {
       const baseUrl = ollamaBaseUrl(config);
       return {
-        provider: "custom",
         model: args.model,
         baseUrl,
-        apiMode: "chat_completions",
         credentialSource: "none",
         endpoint: endpointFromUrl(baseUrl),
       };
     }
     case "huggingface":
-      return fixedRuntime("huggingface", args.model, "https://router.huggingface.co/v1", "HF_TOKEN");
+      return fixedRuntime(args.model, "https://router.huggingface.co/v1", "HF_TOKEN");
     case "openrouter":
-      return fixedRuntime("openrouter", args.model, "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY");
-    case "reka": {
-      const runtime = fixedRuntime("custom", args.model, "https://api.reka.ai/v1", "REKA_API_KEY");
-      return { ...runtime, apiMode: "chat_completions" };
-    }
+      return fixedRuntime(args.model, "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY");
+    case "reka":
+      return fixedRuntime(args.model, "https://api.reka.ai/v1", "REKA_API_KEY");
     case "x-grok":
-      return fixedRuntime("xai", args.model, "https://api.x.ai/v1", "XAI_API_KEY");
+      return fixedRuntime(args.model, "https://api.x.ai/v1", "XAI_API_KEY");
     case "vertex": {
       const baseUrl = vertexOpenAiBaseUrl(config);
       return {
-        provider: "custom",
         model: args.model,
         baseUrl,
         keyEnv: "VERTEX_ACCESS_TOKEN",
-        apiMode: "chat_completions",
         credentialSource: "google-adc",
         endpoint: endpointFromUrl(baseUrl),
       };
@@ -232,15 +197,15 @@ export const AX_AZURE_API_VERSION = "2024-10-21";
 
 /**
  * Maps the admin provider onto an Ax provider profile. Profiles that call an
- * OpenAI-style endpoint keep the Hermes base URL, so model egress reaches the
- * same host for both backends.
+ * OpenAI-style endpoint use the runtime base URL, so model egress reaches the
+ * host the sandbox policy allows.
  */
 export function resolveAxModelRoute(args: {
   provider: PrimaryProviderId;
   model: string;
   config?: Record<string, unknown> | null;
 }): AxModelRoute {
-  const runtime = resolveHermesProviderRuntime(args);
+  const runtime = resolveProviderRuntime(args);
   const keyEnv = runtime.keyEnv ? { keyEnv: runtime.keyEnv } : {};
   switch (args.provider) {
     case "openai":
@@ -261,35 +226,4 @@ export function resolveAxModelRoute(args: {
     default:
       return { provider: AX_PROFILES[args.provider] ?? "openai-compatible", model: runtime.model, url: runtime.baseUrl, ...keyEnv };
   }
-}
-
-// Hermes names a provider its own way; OpenNeko and Ax use the names on the left.
-const HERMES_PROVIDER_NAMES: Record<string, string> = {
-  gemini: "google-gemini",
-  "openai-api": "openai",
-  "azure-foundry": "azure-openai",
-  anthropic: "anthropic",
-  deepseek: "deepseek",
-};
-
-/**
- * The OpenNeko provider name for one Hermes reports. Hermes reuses "custom" for
- * several providers, so the configured provider wins when it maps to the
- * reported name.
- */
-export function nekoProviderFromHermes(
-  hermesProvider: string,
-  configured?: { provider: string; model: string },
-): string {
-  if (configured) {
-    try {
-      const provider = configured.provider as Parameters<typeof resolveHermesProviderRuntime>[0]["provider"];
-      if (resolveHermesProviderRuntime({ provider, model: configured.model }).provider === hermesProvider) {
-        return configured.provider;
-      }
-    } catch {
-      // A provider that needs more configuration falls back to the fixed names.
-    }
-  }
-  return HERMES_PROVIDER_NAMES[hermesProvider] ?? hermesProvider;
 }

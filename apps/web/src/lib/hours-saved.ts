@@ -3,7 +3,7 @@
 // with a "~" so the estimate framing is unmistakable.
 
 // Conservative floor for the Ask-rail tile when a substantive answer
-// completed but the agent skipped its self-estimate (hermes occasionally
+// completed but the agent skipped its self-estimate (a model occasionally
 // drops the closing value block on long turns). Matches the prompt's
 // minimum anchor — a single metric lookup. Display-only: it never enters
 // the dashboard's cumulative total, which sums real agent estimates.

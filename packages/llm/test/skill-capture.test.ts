@@ -145,7 +145,7 @@ describe("skillCaptureDecision", () => {
   it("captures a file write or edit under the skills root", () => {
     expect(decide({ name: "file_write", input: { path: "skills/shortfall/notes.md", content: "x" } }).reason).toBe("skill_write");
     expect(decide({ name: "file_edit", input: { path: "/sandbox/org-1/runs/../skills/a/SKILL.md" } }).reason).toBe("skill_write");
-    expect(decide({ name: "edit", input: { rawInput: { path: "/sandbox/.hermes-warm/home/skills/a/SKILL.md" } } }).reason).toBe("skill_write");
+    expect(decide({ name: "edit", input: { rawInput: { path: "/sandbox/org-1/skills/a/SKILL.md" } } }).reason).toBe("skill_write");
   });
 
   it("captures after any shell or terminal command", () => {

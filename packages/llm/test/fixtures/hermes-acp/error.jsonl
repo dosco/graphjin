@@ -1,3 +1,0 @@
-{"jsonrpc":"2.0","id":1,"result":{"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true},"sessionCapabilities":{"fork":{},"list":{},"resume":{}}},"agentInfo":{"name":"hermes-agent","version":"0.14.0"},"authMethods":[],"protocolVersion":1}}
-{"jsonrpc":"2.0","id":2,"result":{"sessionId":"err-session-1"}}
-{"jsonrpc":"2.0","id":3,"error":{"code":-32603,"message":"Provider gemini returned 503: model overloaded"}}

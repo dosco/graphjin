@@ -48,7 +48,7 @@ describeIfDb("SEC5 dual-identity audit", () => {
         org_id: orgId,
       });
       const thread = await createWorkThread(orgId, "t", "web", ada);
-      const run = await createWorkRun(orgId, thread.id, "hermes", {
+      const run = await createWorkRun(orgId, thread.id, "ax", {
         userId: ada,
         role: "member",
       });
@@ -63,7 +63,7 @@ describeIfDb("SEC5 dual-identity audit", () => {
       });
       expect(request.actorUserId).toBe(ada);
       expect(request.actorRole).toBe("member");
-      expect(request.actorBackend).toBe("hermes");
+      expect(request.actorBackend).toBe("ax");
 
       // No run context → identity stays null rather than inventing one.
       const bare = await createActionRequest({
@@ -86,7 +86,7 @@ describeIfDb("SEC5 dual-identity audit", () => {
     await createTestOrg(orgId);
     try {
       const thread = await createWorkThread(orgId, "t", "web");
-      const run = await createWorkRun(orgId, thread.id, "hermes", {
+      const run = await createWorkRun(orgId, thread.id, "ax", {
         userId: null,
         role: "admin",
       });
@@ -115,7 +115,7 @@ describeIfDb("SEC5 dual-identity audit", () => {
         expect(row).toMatchObject({
           run_id: run.id,
           actor_role: "admin",
-          backend: "hermes",
+          backend: "ax",
         });
       } finally {
         await broker.close();

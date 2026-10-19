@@ -1,6 +1,6 @@
 // Lightweight YAML-frontmatter parser for SKILL.md files. We only need
 // to extract the agentskills.io spec fields (name, description, license,
-// metadata, compatibility, allowed-tools) plus the Hermes-flavoured
+// metadata, compatibility, allowed-tools) plus the community
 // `prerequisites` extension that the skill-doctor uses to synthesise
 // dep entries for community skills installed under ~/.openneko/skills/.
 //
@@ -19,7 +19,7 @@ export interface SkillFrontmatter {
   compatibility?: string;
   /** Imported skill metadata retained for round-trip compatibility. */
   allowedTools?: string;
-  /** Hermes/community extension: prerequisites the skill assumes. */
+  /** Community extension: prerequisites the skill assumes. */
   prerequisites?: {
     commands?: string[];
     envVars?: string[];
@@ -153,7 +153,7 @@ function collectIndentedBlock(
 function parseFlatStringMap(block: string): Record<string, string> {
   // metadata: a flat key: value dict (spec says values must be strings).
   // We tolerate nested keys by joining the path with `.` so e.g.
-  // `metadata.hermes.tags` collapses to a single key. Lists become
+  // `metadata.openneko.tags` collapses to a single key. Lists become
   // comma-joined string values.
   const out: Record<string, string> = {};
   const stack: string[] = [];
@@ -183,7 +183,7 @@ function parseFlatStringMap(block: string): Record<string, string> {
 }
 
 function parsePrerequisites(block: string): { commands?: string[]; envVars?: string[] } {
-  // Two shapes Hermes uses:
+  // Two shapes community skills use:
   //   prerequisites:
   //     commands: [foo, bar]
   //     env_vars: [API_KEY]

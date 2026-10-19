@@ -5,11 +5,9 @@ import {
   type AgentReasoningEffort,
 } from "./agent-limits";
 
-export const AGENT_BACKEND_IDS = ["hermes", "ax"] as const;
+/** Ax Harness is the only agent backend. */
+export const AGENT_BACKEND_IDS = ["ax"] as const;
 export type AgentBackendId = (typeof AGENT_BACKEND_IDS)[number];
-
-/** The backend for an org that has not chosen one, when its primary provider supports it. */
-export const DEFAULT_AGENT_BACKEND: AgentBackendId = "ax";
 
 export { AGENT_DEFAULT_GLOBAL_CAP, METRIC_REFRESH_DEFAULT_CAP } from "./agent-limits";
 
@@ -19,19 +17,6 @@ export function metricRefreshConcurrency(globalCap: number, configured?: string)
   const cap = configured?.trim() && Number.isInteger(value) && value >= 1 ? value : METRIC_REFRESH_DEFAULT_CAP;
   return Math.max(1, Math.min(cap, globalCap));
 }
-
-export const AGENT_BACKEND_OPTIONS = [
-  {
-    value: "ax",
-    label: "Ax (default)",
-    description: "OpenNeko's Go agent. Calls tools from code, so one model step can run many tools.",
-  },
-  {
-    value: "hermes",
-    label: "Hermes",
-    description: "Subprocess agent. Works with any LLM provider.",
-  },
-] as const;
 
 export function isAgentBackendId(value: string): value is AgentBackendId {
   return (AGENT_BACKEND_IDS as readonly string[]).includes(value);
@@ -105,8 +90,6 @@ export type AgentEvent =
   // structured-output payloads (a2ui fences, tool-call JSON, etc.) here — use
   // the `surface` event for cards.
   | { type: "message"; role: "user" | "assistant"; content: string }
-  /** Hermes ACP's provider-neutral, model-authored mid-turn commentary. */
-  | { type: "interim"; id: string; content: string; source: "hermes_interim_assistant" }
   | {
       type: "tool_start";
       id: string;
@@ -230,7 +213,7 @@ export type AgentEvent =
   | {
       type: "skill_used";
       name: string;
-      source: "hermes" | "read";
+      source: "read";
       contentHash: string;
       origin: "builtin" | "custom" | "pack";
       packId?: string;
@@ -297,10 +280,10 @@ export type AgentRunOptions = {
   skills?: string[];
   signal?: AbortSignal;
   onEvent?: (event: AgentEvent) => Promise<void> | void;
-  backendState?: Record<string, unknown>;
+  threadState?: Record<string, unknown>;
   mcpServers?: Record<string, unknown>;
   /** Per-run context for backends that mount MCP servers as stdio child
-   *  processes (hermes/ACP) instead of in-process SDK instances. The bridge
+   *  processes instead of in-process SDK instances. The bridge
    *  entry (OPENNEKO_MCP_BRIDGE) rebuilds each named server from this env;
    *  broker coords are copied into the clean bridge-child env only. */
   mcpBridgeEnv?: Record<string, string>;
@@ -310,9 +293,7 @@ export type AgentRunOptions = {
    * delegation ignore this setting.
    */
   nativeDelegation?: AgentNativeDelegationPolicy;
-  /** Web turn ⇒ the agent renders a2ui cards. Backends that can't take the
-   *  in-process SDK card server (hermes) wire their own render tool when set.
-   *  See docs/PER_CHANNEL_RENDERING.md. */
+  /** Web turn ⇒ the agent renders a2ui cards. See docs/PER_CHANNEL_RENDERING.md. */
   wantsCards?: boolean;
   /** Overrides the configured reasoning effort for this run. */
   reasoningEffort?: AgentReasoningEffort;
@@ -327,14 +308,14 @@ export type AgentRunResult = {
   /**
    * Unprocessed agent output, for out-of-band fence parsing by the runtime
    * (action/workflow/rule/memory fences). finalText is the cleaned display
-   * text — Hermes strips its hidden builder fences from it AND from the
+   * text — the backend strips its hidden builder fences from it AND from the
    * message stream, so neither carries the fence bodies. rawText preserves
    * them. Omit when finalText already carries any fences (the runtime falls
    * back to finalText).
    */
   rawText?: string;
   status: "completed" | "failed" | "cancelled";
-  backendState?: Record<string, unknown>;
+  threadState?: Record<string, unknown>;
   error?: string;
   /** The turn hit its wall-clock budget; work in the run directory survives. */
   timedOut?: boolean;
@@ -344,7 +325,7 @@ export type AgentRunResult = {
   degraded?: boolean;
 };
 
-export type AgentNativeDelegation = "hermes-delegate-task" | "ax-worker";
+export type AgentNativeDelegation = "ax-worker";
 
 // Per-backend feature flags so shared runtime code (runChatTurn, prompt
 // builder, auto-memory dispatch) never branches on backend.id. Adding a new

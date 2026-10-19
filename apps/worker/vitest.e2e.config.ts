@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 
 /**
  * E2E (slow tier) config. Only runs `test/e2e/**` — exercises real
- * Hermes subprocesses against the seeded AdventureWorks
+ * agent runs against the seeded AdventureWorks
  * Docker stack. Requires:
  *   - neko-db, graphjin, adventureworks-db containers up
  *   - At least one provider API key reachable to the worker
@@ -17,7 +17,7 @@ export default defineConfig({
     include: ["test/e2e/**/*.test.ts"],
     pool: "forks",
     poolOptions: { forks: { singleFork: true } },
-    // Real metric_refresh runs are 30–90s with Hermes; budget generously.
+    // Real metric_refresh runs take 30–90s; budget generously.
     testTimeout: 5 * 60_000,
     hookTimeout: 60_000,
   },

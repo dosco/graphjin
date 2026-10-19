@@ -96,7 +96,7 @@ describeIfDb("CV2 memory fork overlay", () => {
 
   it("a member run's save lands in their personal layer (resolved from the K1 actor)", async () => {
     const thread = await createWorkThread(orgId, "fork-thread", "web", ada);
-    const run = await createWorkRun(orgId, thread.id, "hermes", {
+    const run = await createWorkRun(orgId, thread.id, "ax", {
       userId: ada,
       role: "member",
     });
@@ -358,7 +358,7 @@ describeIfDb("CV2 memory fork overlay", () => {
     expect(updated.integrityOk).toBe(true);
 
     const thread = await createWorkThread(orgId, "edit-thread", "web", ada);
-    const run = await createWorkRun(orgId, thread.id, "hermes", { userId: ada, role: "member" });
+    const run = await createWorkRun(orgId, thread.id, "ax", { userId: ada, role: "member" });
     const forked = await updateWorkMemoryForRun({
       orgId,
       runId: run.id,
@@ -382,7 +382,7 @@ describeIfDb("CV2 memory fork overlay", () => {
       scope: "global",
     });
     const thread = await createWorkThread(orgId, "edit-guard", "web", ada);
-    const run = await createWorkRun(orgId, thread.id, "hermes", { userId: ada, role: "member" });
+    const run = await createWorkRun(orgId, thread.id, "ax", { userId: ada, role: "member" });
     await expect(
       updateWorkMemoryForRun({ orgId, runId: run.id, memoryId: bobs.id, text: "Ada rewrote this" }),
     ).rejects.toThrow(/not found/);

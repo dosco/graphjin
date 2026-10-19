@@ -350,9 +350,9 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
     }
   }
   // Synthesize an end for any tool that never got a tool_end before the run
-  // terminated. Without this, ACP runs that miss the final tool_call_update
-  // notification (Hermes occasionally drops it for read tools) leave the
-  // cluster stuck on "running" forever.
+  // terminated. Without this, a run that misses a final tool_end (a stream
+  // cut short, or a run recorded by an earlier release) leaves the cluster
+  // stuck on "running" forever.
   if (isDone) {
     for (const tool of toolsById.values()) {
       if (!tool.end) {

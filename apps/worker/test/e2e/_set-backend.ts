@@ -1,12 +1,11 @@
 /**
  * Apply a RunPlan to the throwaway org by upserting both provider rows:
  *   - llm_provider_config (scope='primary')  ← provider/model/apiKey
- *   - llm_provider_config (scope='agent')    ← backend
+ *   - llm_provider_config (scope='agent')    ← the Ax runtime row
  *
  * Used between sub-suites when iterating plans against the same org.
  * After this returns, callers should call `provisionHostConfig(orgId)` to
- * push the new state to host config files (Hermes config.yaml + .env,
- * graphjin client.json).
+ * sync the model key to the gateway and write graphjin client.json.
  */
 
 import { and, db, eq, llm_provider_config } from "@neko/db";
@@ -64,7 +63,8 @@ async function upsertAgent(orgId: string, plan: RunPlan): Promise<void> {
     .limit(1);
 
   const prevConfig = (existing[0]?.config ?? {}) as Record<string, unknown>;
-  const nextConfig = { ...prevConfig, backend: plan.backend };
+  const { backend: _legacyBackend, ...nextConfig } = prevConfig;
+  void _legacyBackend;
 
   if (existing[0]) {
     await db()

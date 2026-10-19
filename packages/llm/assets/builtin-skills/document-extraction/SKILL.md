@@ -7,7 +7,7 @@ author: OpenNeko
 license: Apache-2.0
 platforms: [linux, macos]
 metadata:
-  hermes:
+  openneko:
     tags: [documents, pdf, docx, pptx, xlsx, ocr, text-extraction, library]
     category: documents
     requires_toolsets: [terminal]

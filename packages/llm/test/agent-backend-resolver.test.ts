@@ -10,7 +10,6 @@ import {
 import { pool } from "@neko/db";
 import {
   resolveAgentBackend,
-  resolveAgentBackendId,
   resolveAgentConcurrency,
 } from "../src/agent-backend-resolver";
 import { AGENT_DEFAULT_GLOBAL_CAP } from "../src/agent-backend";
@@ -44,47 +43,33 @@ describeIfDb("agent backend resolution", () => {
     await pool().end();
   });
 
-  it("resolves Hermes when no primary provider can run Ax", async () => {
-    expect(await resolveAgentBackendId(orgId)).toBe("hermes");
-    expect((await resolveAgentBackend(orgId)).id).toBe("hermes");
+  it("always resolves Ax", async () => {
+    expect((await resolveAgentBackend(orgId)).id).toBe("ax");
   });
 
-  it("defaults to Ax when the primary provider has an Ax route", async () => {
-    await seedProvider(orgId, {
-      scope: "primary",
-      provider: "google-gemini",
-      model: "gemini-3.6-flash",
-    });
-    expect(await resolveAgentBackendId(orgId)).toBe("ax");
-  });
-
-  it("keeps a saved Hermes choice", async () => {
-    await seedProvider(orgId, {
-      scope: "primary",
-      provider: "google-gemini",
-      model: "gemini-3.6-flash",
-    });
-    await seedProvider(orgId, {
-      scope: "agent",
-      provider: "hermes",
-      config: { backend: "hermes" },
-    });
-    expect(await resolveAgentBackendId(orgId)).toBe("hermes");
-  });
-
-  it("exposes the exact provider and model configured for the Hermes runtime", async () => {
+  it("exposes the Ax route configured for the primary provider", async () => {
     await seedProvider(orgId, {
       scope: "primary",
       provider: "google-gemini",
       model: "gemini-3.6-flash",
     });
 
-    const backend = await resolveAgentBackend(orgId, "hermes");
+    const backend = await resolveAgentBackend(orgId);
+    expect(backend.id).toBe("ax");
     expect(backend.configuredIdentity).toEqual({
-      provider: "gemini",
+      provider: "google-gemini",
       model: "gemini-3.6-flash",
     });
     expect(backend.model).toBe("gemini-3.6-flash");
+  });
+
+  it("overrides the primary model when asked", async () => {
+    await seedProvider(orgId, {
+      scope: "primary",
+      provider: "google-gemini",
+      model: "gemini-3.6-flash",
+    });
+    expect((await resolveAgentBackend(orgId, "gemini-3.8-flash")).model).toBe("gemini-3.8-flash");
   });
 
   it("does not claim configured identity for a disabled provider", async () => {
@@ -106,8 +91,7 @@ describeIfDb("agent backend resolution", () => {
       provider: "obsolete-runtime",
       config: { backend: "obsolete-runtime", globalCap: 30 },
     });
-    expect(await resolveAgentBackendId(orgId)).toBe("hermes");
-    expect((await resolveAgentBackend(orgId)).id).toBe("hermes");
+    expect((await resolveAgentBackend(orgId)).id).toBe("ax");
     expect((await resolveAgentConcurrency(orgId)).globalCap).toBe(30);
   });
 
@@ -120,7 +104,7 @@ describeIfDb("agent backend resolution", () => {
   it("falls back when stored concurrency is malformed", async () => {
     await seedProvider(orgId, {
       scope: "agent",
-      provider: "hermes",
+      provider: "ax",
       config: { globalCap: "not-a-number" },
     });
     expect((await resolveAgentConcurrency(orgId)).globalCap).toBe(

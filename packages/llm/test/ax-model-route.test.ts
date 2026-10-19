@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PRIMARY_PROVIDER_OPTIONS } from "../src/config";
-import { resolveAxModelRoute, resolveHermesProviderRuntime } from "../src/provider-runtime";
+import { resolveAxModelRoute, resolveProviderRuntime } from "../src/provider-runtime";
 
 describe("resolveAxModelRoute", () => {
   it("uses native clients for OpenAI, Anthropic and Gemini", () => {
@@ -24,7 +24,7 @@ describe("resolveAxModelRoute", () => {
     });
   });
 
-  it("uses each provider's Ax profile on the Hermes host", () => {
+  it("uses each provider's Ax profile on the provider's API host", () => {
     expect(resolveAxModelRoute({ provider: "groq", model: "llama-5" })).toEqual({
       provider: "groq",
       model: "llama-5",
@@ -40,12 +40,12 @@ describe("resolveAxModelRoute", () => {
     });
   });
 
-  it("reaches the same model host as Hermes for every admin provider", () => {
+  it("reaches the egress host the sandbox allows for every admin provider", () => {
     const config = { resourceName: "acme", deploymentName: "d", projectId: "p", region: "us-central1", url: "http://localhost:11434" };
     for (const { value } of PRIMARY_PROVIDER_OPTIONS) {
-      let hermes: ReturnType<typeof resolveHermesProviderRuntime>;
+      let runtime: ReturnType<typeof resolveProviderRuntime>;
       try {
-        hermes = resolveHermesProviderRuntime({ provider: value, model: "m", config });
+        runtime = resolveProviderRuntime({ provider: value, model: "m", config });
       } catch {
         continue;
       }
@@ -54,8 +54,8 @@ describe("resolveAxModelRoute", () => {
         ? new URL(ax.url).hostname
         : ax.provider === "azure-openai"
           ? `${ax.options?.resource_name}.openai.azure.com`
-          : new URL(hermes.baseUrl).hostname;
-      expect(host, value).toBe(hermes.endpoint.host);
+          : new URL(runtime.baseUrl).hostname;
+      expect(host, value).toBe(runtime.endpoint.host);
     }
   });
 });

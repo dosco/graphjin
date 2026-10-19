@@ -84,7 +84,7 @@ export function createAgentBroker(deps: AgentBrokerDeps): Server {
   return createServer((req, res) => {
     void handle(deps, req, res).catch((err) => {
       const message = err instanceof Error ? err.message : String(err);
-      // The bridge runs outside the worker process and Hermes captures its
+      // The bridge runs outside the worker process and the agent captures its
       // stderr inside an ephemeral sandbox. Keep the trusted-side failure in
       // worker logs as well; never include the request body or bearer token.
       console.error(

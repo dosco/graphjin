@@ -31,11 +31,11 @@ describe("runAgentBackend", () => {
   it("mounts actor-scoped native records tools for MCP-capable chat agents", async () => {
     let captured: AgentRunOptions | undefined;
     const backend: AgentBackend = {
-      id: "hermes",
+      id: "ax",
       capabilities: {
         mcpTools: true,
         sessionResume: false,
-        nativeDelegation: "hermes-delegate-task",
+        nativeDelegation: "ax-worker",
       },
       async run(opts) {
         captured = opts;
@@ -74,11 +74,11 @@ describe("runAgentBackend", () => {
   it("mounts pack actions separately from plugin actions", async () => {
     let captured: AgentRunOptions | undefined;
     const backend: AgentBackend = {
-      id: "hermes",
+      id: "ax",
       capabilities: {
         mcpTools: true,
         sessionResume: false,
-        nativeDelegation: "hermes-delegate-task",
+        nativeDelegation: "ax-worker",
       },
       async run(opts) {
         captured = opts;
@@ -119,11 +119,11 @@ describe("runAgentBackend", () => {
   it("applies and serializes the same per-run GraphJin policy", async () => {
     let captured: AgentRunOptions | undefined;
     const backend: AgentBackend = {
-      id: "hermes",
+      id: "ax",
       capabilities: {
         mcpTools: true,
         sessionResume: false,
-        nativeDelegation: "hermes-delegate-task",
+        nativeDelegation: "ax-worker",
       },
       async run(opts) {
         captured = opts;
@@ -153,7 +153,7 @@ describe("runAgentBackend", () => {
     );
   });
 
-  it.each(["hermes", "ax"] as const)("mounts only GraphJin's agent on the agent path for %s", async (id) => {
+  it.each(["ax"] as const)("mounts only GraphJin's agent on the agent path for %s", async (id) => {
     let captured: AgentRunOptions | undefined;
     const backend: AgentBackend = {
       id,
@@ -185,11 +185,11 @@ describe("runAgentBackend", () => {
   it("does not mount customer data-source tools in records mode", async () => {
     let captured: AgentRunOptions | undefined;
     const backend: AgentBackend = {
-      id: "hermes",
+      id: "ax",
       capabilities: {
         mcpTools: true,
         sessionResume: false,
-        nativeDelegation: "hermes-delegate-task",
+        nativeDelegation: "ax-worker",
       },
       async run(opts) {
         captured = opts;
@@ -209,7 +209,7 @@ describe("runAgentBackend", () => {
       pluginActions: [],
       sourceConfigEnabled: true,
       dataSurface: "records",
-      backendState: {
+      threadState: {
         recordContext: {
           surface: "list",
           appId: "crm",
@@ -233,11 +233,11 @@ describe("runAgentBackend", () => {
   it("uses app ownership as context without narrowing the actor's records grants", async () => {
     let captured: AgentRunOptions | undefined;
     const backend: AgentBackend = {
-      id: "hermes",
+      id: "ax",
       capabilities: {
         mcpTools: true,
         sessionResume: false,
-        nativeDelegation: "hermes-delegate-task",
+        nativeDelegation: "ax-worker",
       },
       async run(opts) {
         captured = opts;
@@ -256,7 +256,7 @@ describe("runAgentBackend", () => {
       controlPlane,
       pluginActions: [],
       dataSurface: "records",
-      backendState: {
+      threadState: {
         appContext: { appId: "crm", appLabel: "CRM" },
         recordContext: {
           surface: "detail",

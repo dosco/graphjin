@@ -3,7 +3,7 @@ name: slack-messages
 description: Post Slack messages and reactions through the Slack pack (slack.message), look up Slack users and channels, and draft messages that survive the approval queue. Use when the operator wants to alert someone, escalate a finding, acknowledge an event, or chase a stalled item in Slack.
 license: Apache-2.0
 metadata:
-  hermes:
+  openneko:
     tags: [slack, messaging]
     category: communication
     requires_toolsets: [graphjin, pack-actions]

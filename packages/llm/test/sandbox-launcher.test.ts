@@ -16,7 +16,6 @@ import type { AgentEvent, AgentWorkspace } from "../src/agent-backend";
 import type { RunAgentBackendInput } from "../src/work/agent-core";
 import { GRAPHJIN_DIRECT_GOVERNED_POLICY } from "../src/work/graphjin-tool-policy";
 import { SandboxFailure } from "../src/work/sandbox-failure";
-import { SandboxPool } from "../src/work/sandbox-pool";
 import { KNOWLEDGE_FILES, refreshKnowledgeSnapshot } from "../src/knowledge-cache";
 import type { RunWorkflowAgentBackendInput } from "../src/workflows/agent-core";
 
@@ -30,8 +29,6 @@ const h = vi.hoisted(() => {
   const calls: { args: string[]; stdin?: string }[] = [];
   const state = {
     holdExec: false,
-    failPolicy: false,
-    failReconcile: false,
     deleteMissing: false,
     collideOnNextCreate: false,
     failProviderReconcile: false,
@@ -44,8 +41,6 @@ const h = vi.hoisted(() => {
     const call: { args: string[]; stdin?: string } = { args };
     calls.push(call);
     const isExec = args.includes("exec");
-    const warmCreate = args.includes("create") && args.includes("/app/hermes-warm.py");
-    const failedPolicy = args.includes("set") && state.failPolicy;
     const missingDelete = args.includes("delete") && state.deleteMissing;
     const createCollision =
       args.includes("create") && state.collideOnNextCreate;
@@ -77,33 +72,25 @@ const h = vi.hoisted(() => {
         ? ["Error: × sandbox 'work-run-1' already exists\n"]
         : [],
     );
-    const reconciliation = args.findIndex(arg => arg.startsWith("exec(__import__('base64')"));
     const providerList = args.includes("provider") && args.includes("list");
-    const lines = (providerList ? state.providerNames.map((name) => `${name}\n`) : warmCreate ? ["__openneko_warm_ready__\n"] : failedPolicy ? ["policy submitted\n"] : isExec
+    const lines = (providerList ? state.providerNames.map((name) => `${name}\n`) : isExec
       ? state.execLines ?? [
           'noise before\n',
           `\n__openneko_event__${JSON.stringify({ type: "message", role: "assistant", content: "hi" })}\n`,
-          `\n__openneko_agent_result__${JSON.stringify({ status: "completed", finalText: "hi there", backendState: { t: 1 } })}\n`,
+          `\n__openneko_agent_result__${JSON.stringify({ status: "completed", finalText: "hi there", threadState: { t: 1 } })}\n`,
         ]
       : []);
     let closed = false;
     const closeOnce = () => {
       if (closed) return;
       closed = true;
-      fire(ch, "close", providerFailure || legacyProviderFailure || missingProviderFailure || createCollision || failedPolicy || missingDelete ? 1 : 0);
+      fire(ch, "close", providerFailure || legacyProviderFailure || missingProviderFailure || createCollision || missingDelete ? 1 : 0);
     };
-    const stdout = reconciliation < 0 ? Readable.from(lines) : new Readable({ read() {} });
+    const stdout = Readable.from(lines);
     const stdin = new Writable({
       write(chunk, _encoding, done) { call.stdin = (call.stdin ?? "") + chunk.toString(); done(); },
-      final(done) {
-        if (reconciliation >= 0) {
-          const response = state.failReconcile ? "invalid reconciliation" : "__openneko_sync__" + JSON.stringify(JSON.parse(call.stdin!).directories.map((directory: { entries: Record<string, unknown> }) => Object.entries(directory.entries).filter(([, value]) => value !== null).map(([key]) => key)));
-          stdout.push(response + "\n"); stdout.push(null);
-        }
-        done();
-      },
     });
-    if (!warmCreate && (!isExec || !state.holdExec)) {
+    if (!isExec || !state.holdExec) {
       stdout.on("end", () => queueMicrotask(closeOnce));
     }
     return {
@@ -128,7 +115,6 @@ vi.mock("node:child_process", () => ({ spawn: h.spawn }));
 const jobCapture = vi.hoisted(() => ({
   jobs: [] as Array<Record<string, unknown>>,
   policies: [] as Array<ReturnType<typeof JSON.parse>>,
-  hermesEnvs: [] as string[],
 }));
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -149,12 +135,6 @@ vi.mock("node:fs/promises", async (importOriginal) => {
           /* ignore non-JSON writes */
         }
       }
-      if (
-        typeof p === "string" &&
-        p.endsWith("hermes-home/.env")
-      ) {
-        jobCapture.hermesEnvs.push(String(data));
-      }
       return (actual.writeFile as (...a: unknown[]) => Promise<void>)(p, data, ...rest);
     },
   };
@@ -172,7 +152,7 @@ vi.mock("../src/work/personas", async (importOriginal) => ({
 const {
   makeSandboxRunCore,
   prepareSandboxCapacity,
-  closeSandboxPools,
+  closeSandboxReapers,
   reapStrandedSandboxes,
   sandboxOwnerLabelArgs,
   makeSandboxJobRunCore,
@@ -234,7 +214,7 @@ describe("sandboxLauncherOptionsFromEnv", () => {
   });
 
   it("ignores a persisted operator binary and exposes only model hosts", () => {
-    vi.stubEnv("OPENNEKO_AGENT_MODEL_HOST", "models.example.com,models.dev");
+    vi.stubEnv("OPENNEKO_AGENT_MODEL_HOST", "models.example.com,models-2.example.com");
     vi.stubEnv(
       "OPENNEKO_AGENT_MODEL_BINARY",
       "/usr/local/uv/python/cpython-3.11.16-linux-x86_64-gnu/bin/python3.11",
@@ -243,7 +223,7 @@ describe("sandboxLauncherOptionsFromEnv", () => {
       const options = sandboxLauncherOptionsFromEnv();
       expect(options.modelHosts).toEqual([
         { host: "models.example.com" },
-        { host: "models.dev" },
+        { host: "models-2.example.com" },
       ]);
       expect(options).not.toHaveProperty("modelEgress");
     } finally {
@@ -253,21 +233,6 @@ describe("sandboxLauncherOptionsFromEnv", () => {
 });
 
 describe("sandboxLauncherOptionsFromConfig", () => {
-  it("keeps one warm slot on the web, none on the worker, and honors an explicit size", () => {
-    vi.stubEnv("OPENNEKO_AGENT_WARM_POOL_SIZE", undefined);
-    try {
-      vi.stubEnv("OPENNEKO_SANDBOX_OWNER", "web");
-      expect(sandboxLauncherOptionsFromConfig({}).warmPoolSize).toBe(1);
-      vi.stubEnv("OPENNEKO_SANDBOX_OWNER", "openneko-worker");
-      expect(sandboxLauncherOptionsFromConfig({}).warmPoolSize).toBe(0);
-      vi.stubEnv("OPENNEKO_AGENT_WARM_POOL_SIZE", "2");
-      expect(sandboxLauncherOptionsFromConfig({}).warmPoolSize).toBe(2);
-      vi.stubEnv("OPENNEKO_SANDBOX_OWNER", "web");
-      vi.stubEnv("OPENNEKO_AGENT_WARM_POOL_SIZE", "0");
-      expect(sandboxLauncherOptionsFromConfig({}).warmPoolSize).toBe(0);
-    } finally { vi.unstubAllEnvs(); }
-  });
-
   it("forwards resource limits from the host environment", () => {
     vi.stubEnv("OPENNEKO_AGENT_CPUS", "500m");
     vi.stubEnv("OPENNEKO_AGENT_MEMORY", "2Gi");
@@ -281,30 +246,25 @@ describe("sandboxLauncherOptionsFromConfig", () => {
   it("uses the run-local provider snapshot instead of stale process globals", () => {
     vi.stubEnv(
       "OPENNEKO_AGENT_MODEL_HOST",
-      "generativelanguage.googleapis.com,models.dev",
+      "generativelanguage.googleapis.com",
     );
     vi.stubEnv("OPENNEKO_AGENT_MODEL_KEY_ENV", "GEMINI_API_KEY");
     vi.stubEnv("OPENNEKO_AGENT_MODEL_PROVIDER", "stale-gemini-provider");
-    vi.stubEnv("OPENNEKO_AGENT_HERMES_HOME", "/tmp/stale-gemini-home");
     try {
       const options = sandboxLauncherOptionsFromConfig({
         modelProvider: "openneko-agent",
         modelHosts: [
           { host: "api.anthropic.com" },
-          { host: "models.dev" },
         ],
         keyAliases: [{ from: "api_key", to: "ANTHROPIC_API_KEY" }],
-        hermesHomeHostPath: "/tmp/current-anthropic-home",
       });
 
       expect(options).toMatchObject({
         modelProvider: "openneko-agent",
         modelHosts: [
           { host: "api.anthropic.com" },
-          { host: "models.dev" },
         ],
         keyAliases: [{ from: "api_key", to: "ANTHROPIC_API_KEY" }],
-        hermesHomeHostPath: "/tmp/current-anthropic-home",
       });
     } finally {
       vi.unstubAllEnvs();
@@ -319,14 +279,14 @@ function fakeInput(
   return {
     backend:
       backend ??
-      ({ id: "hermes", capabilities: { mcpTools: false } } as RunAgentBackendInput["backend"]),
+      ({ id: "ax", capabilities: { mcpTools: false } } as RunAgentBackendInput["backend"]),
     prompt: "PROMPT",
     userMessage: "hello",
     orgId: "org-1",
     threadId: "thr-1",
     runId: "run-1",
     workspace: fullWorkspace("/tmp/ws/org-1"),
-    backendState: undefined,
+    threadState: undefined,
     pluginActions: [],
     emit,
   };
@@ -340,7 +300,7 @@ function fakeWorkflowInput(
   return {
     backend:
       backend ??
-      ({ id: "hermes", capabilities: { mcpTools: false } } as RunWorkflowAgentBackendInput["backend"]),
+      ({ id: "ax", capabilities: { mcpTools: false } } as RunWorkflowAgentBackendInput["backend"]),
     prompt: "WORKFLOW PROMPT",
     userMessage: "begin",
     orgId: "org-1",
@@ -367,7 +327,7 @@ function fakeJobInput(
 ) {
   return {
     backend: {
-      id: "hermes",
+      id: "ax",
       capabilities: { mcpTools: true },
     } as RunAgentBackendInput["backend"],
     orgId: "org-1",
@@ -577,164 +537,54 @@ describe("makeSandboxRunCore", () => {
   beforeEach(() => {
     h.calls.length = 0;
     h.state.holdExec = false;
-    h.state.failPolicy = false;
-    h.state.failReconcile = false;
     h.state.deleteMissing = false;
     h.state.collideOnNextCreate = false;
     h.state.execLines = undefined;
     jobCapture.jobs.length = 0;
     jobCapture.policies.length = 0;
-    jobCapture.hermesEnvs.length = 0;
   });
-  afterEach(async () => { await closeSandboxPools(); vi.restoreAllMocks(); });
+  afterEach(async () => { await closeSandboxReapers(); vi.restoreAllMocks(); });
 
-  it("prepares capacity before the first turn and reuses the startup pool", async () => {
+  it("prepares no idle sandbox at startup and runs each turn in a fresh one", async () => {
     const logs: string[] = [];
     const options = { agentImage: "startup-test", onLog: (line: string) => logs.push(line) };
     await prepareSandboxCapacity(options);
+    expect(h.calls.filter(call => call.args.includes("create"))).toHaveLength(0);
+    await makeSandboxRunCore(options)(fakeInput(async () => {}));
     expect(h.calls.filter(call => call.args.includes("create"))).toHaveLength(1);
-    await makeSandboxRunCore({ ...options, modelProvider: "configured-after-startup" })(fakeInput(async () => {}));
-    expect(logs.some(line => line.includes('"mode":"generic"'))).toBe(true);
-    expect(logs.some(line => line.includes('"phase":"warm_miss"'))).toBe(false);
-    for (const phase of ["inputs_reconcile", "workspace_upload", "inputs_sync"]) {
-      expect(logs.some(line => line.includes(`"phase":"${phase}"`))).toBe(true);
-    }
-  });
-
-  it("starts a fresh sandbox when no warm spare becomes ready", async () => {
-    const logs: string[] = [];
-    const acquire = vi.spyOn(SandboxPool.prototype, "acquire").mockRejectedValue(new Error("warm sandbox readiness timeout"));
-    try {
-      const core = makeSandboxRunCore({ agentImage: "test", warmPoolSize: 1, onLog: line => logs.push(line) });
-      const result = await core(fakeInput(async () => {}));
-      expect(result.status).toBe("completed");
-      expect(logs.some(line => line.includes("warm sandbox unavailable, starting a fresh one"))).toBe(true);
-      expect(h.calls.some(call => call.args.includes("create") && call.args.includes("infinity"))).toBe(true);
-    } finally {
-      acquire.mockRestore();
-    }
-  });
-
-  it("prewarms by default without an explicit pool option", async () => {
-    const logs: string[] = [];
-    const core = makeSandboxRunCore({ agentImage: "test", onLog: line => logs.push(line) });
-    await core(fakeInput(async () => {}));
-    expect(logs.some(line => line.includes('"type":"sandbox_warm"'))).toBe(true);
-  });
-
-  it("runs an Ax chat turn in a fresh sandbox, never a warm Hermes slot", async () => {
-    const logs: string[] = [];
-    const core = makeSandboxRunCore({ agentImage: "test", warmPoolSize: 1, onLog: line => logs.push(line) });
-    const input = fakeInput(async () => {});
-    input.backend = { ...input.backend, id: "ax" } as RunAgentBackendInput["backend"];
-    await core(input);
-    expect(logs.some(line => line.includes('"type":"sandbox_warm"'))).toBe(false);
     expect(logs.some(line => line.includes('"phase":"create"'))).toBe(true);
   });
 
-  it("reuses only the same trusted user scope and binds providers before policy readiness", async () => {
-    const logs: string[] = [];
-    const core = makeSandboxRunCore({ agentImage: "test", warmPoolSize: 1,
-      modelProvider: "provider", onLog: line => logs.push(line) });
-    const first = fakeInput(async () => {});
-    first.sandboxUser = { principalId: "alice", authorizationRevision: "v1" };
-    await core(first);
-    await core({ ...first, threadId: "different-chat", runId: "second" });
-    expect(logs.some(line => line.includes('"mode":"user"'))).toBe(true);
-    await core({ ...first, runId: "third", sandboxUser: { principalId: "alice", authorizationRevision: "v2" } });
-    const commands = h.calls.map(call => call.args);
-    const policies = commands.filter(args => args.includes("set"));
-    expect(policies).toHaveLength(2);
-    const attachedAt = commands.findIndex(args => args.includes("attach"));
-    const readyAt = commands.findIndex(args => args.includes("status") && args.includes("--wait"));
-    const policyAt = commands.findIndex(args => args.includes("set"));
-    const uploadAt = commands.findIndex((args, index) => index > attachedAt && args.includes("upload"));
-    expect(attachedAt).toBeLessThan(readyAt);
-    expect(attachedAt).toBeLessThan(policyAt);
-    expect(policyAt).toBeLessThan(readyAt);
-    expect(readyAt).toBeLessThan(uploadAt);
-    expect(commands.filter(args => args.includes("create")).every(args => !args.includes("--provider"))).toBe(true);
-  });
-
-  it("streams large manifests through stdin instead of OpenShell command arguments", async () => {
-    const input = fakeInput(async () => {});
-    await mkdir(input.workspace.knowledgeRoot, { recursive: true });
-    const files: string[] = [];
-    try {
-      for (let i = 0; i < 400; i++) {
-        const file = join(input.workspace.knowledgeRoot, `large-manifest-${i}-${"x".repeat(80)}`);
-        files.push(file); await writeFile(file, "fixture");
-      }
-      await makeSandboxRunCore({ agentImage: "manifest-test", onLog: () => {} })(input);
-      const reconciliations = h.calls.filter(call => call.stdin !== undefined);
-      expect(reconciliations.some(call => Buffer.byteLength(call.stdin!) > 32768)).toBe(true);
-      for (const call of reconciliations) {
-        expect(call.args.every(arg => Buffer.byteLength(arg) <= 32768)).toBe(true);
-        expect(call.args).not.toContain(call.stdin);
-      }
-    } finally { await Promise.all(files.map(file => rm(file, { force: true }))); }
-  });
-
-  it("discards the slot without executing the agent when file reconciliation fails", async () => {
-    h.state.failReconcile = true;
-    const logs: string[] = [];
-    const core = makeSandboxRunCore({ agentImage: "sync-failure-test", onLog: line => logs.push(line) });
-    const error = await core(fakeInput(async () => {})).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(SandboxFailure);
-    expect(error).toMatchObject({ code: "sandbox.inputs_sync", message: expect.stringMatching(/reconciliation/) });
-    expect(logs.some(line => line.includes('"phase":"exec"'))).toBe(false);
-    expect(h.calls.some(call => call.args.includes("delete"))).toBe(true);
-  });
-
-  it("fails closed on a rejected policy even when the CLI printed stdout", async () => {
-    h.state.failPolicy = true;
-    const core = makeSandboxRunCore({ agentImage: "test", warmPoolSize: 1, onLog: () => {} });
-    await expect(core(fakeInput(async () => {}))).rejects.toThrow(/exited 1/);
-    expect(h.calls.some(call => call.args.some(arg => arg.includes("exec node /app/entry.js")))).toBe(false);
-  });
-
-  it("tolerates cleanup when the sandbox idle timer has already deleted it", async () => {
+  it("tolerates cleanup when the sandbox was already deleted", async () => {
     h.state.deleteMissing = true;
-    const core = makeSandboxRunCore({ agentImage: "test", warmPoolSize: 1, onLog: () => {} });
+    const core = makeSandboxRunCore({ agentImage: "test", onLog: () => {} });
     await expect(core(fakeInput(async () => {}))).resolves.toMatchObject({ status: "completed" });
   });
 
-  it("omits model for hermes (it reads config.yaml, not the job)", async () => {
-    const runCore = makeSandboxRunCore({ warmPoolSize: 0, agentImage: "ghcr.io/open-neko/agent:test", onLog: () => {} });
-    await runCore(fakeInput(async () => {}));
-    expect(jobCapture.jobs.at(-1)?.model).toBeUndefined();
-  });
-
-  it("carries configured model identity into the sandbox for attestation", async () => {
+  it("carries the Ax route, not a separate model field, into the sandbox job", async () => {
     const runCore = makeSandboxRunCore({
-      warmPoolSize: 0,
       agentImage: "ghcr.io/open-neko/agent:test",
       onLog: () => {},
     });
+    const ax = { route: { provider: "google-gemini", model: "gemini-3.6-flash", keyEnv: "GEMINI_API_KEY" } };
     await runCore(
       fakeInput(async () => {}, {
-        id: "hermes",
-        configuredIdentity: {
-          provider: "gemini",
-          model: "gemini-3.6-flash",
-        },
+        id: "ax",
+        ax,
+        configuredIdentity: { provider: "google-gemini", model: "gemini-3.6-flash" },
         model: "gemini-3.6-flash",
         capabilities: { mcpTools: true, sessionResume: false },
         run: async () => ({ finalText: "", status: "completed" }),
-      }),
+      } as unknown as RunAgentBackendInput["backend"]),
     );
 
-    expect(jobCapture.jobs.at(-1)?.configuredIdentity).toEqual({
-      provider: "gemini",
-      model: "gemini-3.6-flash",
-    });
+    expect(jobCapture.jobs.at(-1)).toMatchObject({ backendId: "ax", ax });
     expect(jobCapture.jobs.at(-1)?.model).toBeUndefined();
   });
 
   it("carries the per-run GraphJin policy into the OpenShell job", async () => {
     const runCore = makeSandboxRunCore({
-      warmPoolSize: 0,
-      agentImage: "ghcr.io/open-neko/agent:test",
+        agentImage: "ghcr.io/open-neko/agent:test",
       onLog: () => {},
     });
     await runCore({
@@ -748,8 +598,7 @@ describe("makeSandboxRunCore", () => {
 
   it("never injects direct GraphJin credentials into records turns", async () => {
     const runCore = makeSandboxRunCore({
-      warmPoolSize: 0,
-      agentImage: "ghcr.io/open-neko/agent:test",
+        agentImage: "ghcr.io/open-neko/agent:test",
       onLog: () => {},
     });
     await runCore({
@@ -776,7 +625,7 @@ describe("makeSandboxRunCore", () => {
       `__openneko_artifacts__${hint}\n`,
     ];
     const logs: string[] = [];
-    await makeSandboxRunCore({ warmPoolSize: 0, agentImage: "test", onLog: (line) => logs.push(line) })(fakeInput(async () => {}));
+    await makeSandboxRunCore({ agentImage: "test", onLog: (line) => logs.push(line) })(fakeInput(async () => {}));
     expect(h.calls.some((call) => call.args.includes("download"))).toBe(download);
     expect(h.calls.at(-1)?.args).toContain("delete");
     const phases = logs.filter((line) => line.startsWith("{")).map((line) => JSON.parse(line));
@@ -787,7 +636,7 @@ describe("makeSandboxRunCore", () => {
   });
 
   it("creates a running sandbox before uploading its workspace", async () => {
-    await makeSandboxRunCore({ warmPoolSize: 0, agentImage: "test", onLog: () => {} })(fakeInput(async () => {}));
+    await makeSandboxRunCore({ agentImage: "test", onLog: () => {} })(fakeInput(async () => {}));
     const createIndex = h.calls.findIndex(call => call.args.includes("create"));
     const uploadIndex = h.calls.findIndex(call => call.args.includes("upload"));
     expect(createIndex).toBeGreaterThanOrEqual(0);
@@ -799,7 +648,7 @@ describe("makeSandboxRunCore", () => {
 
   it("recovers partial artifacts when the agent fails without a filesystem hint", async () => {
     h.state.execLines = [];
-    const error = await makeSandboxRunCore({ warmPoolSize: 0, agentImage: "test", onLog: () => {} })(fakeInput(async () => {})).catch((e: unknown) => e);
+    const error = await makeSandboxRunCore({ agentImage: "test", onLog: () => {} })(fakeInput(async () => {})).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SandboxFailure);
     expect(error).toMatchObject({ code: "sandbox.no_result" });
     expect(h.calls.some((call) => call.args.includes("download"))).toBe(true);
@@ -807,21 +656,20 @@ describe("makeSandboxRunCore", () => {
   });
 
   it("applies configurable resource limits and rejects invalid quantities before spawning", async () => {
-    await makeSandboxRunCore({ warmPoolSize: 0, agentImage: "test", cpu: "500m", memory: "2Gi", onLog: () => {} })(fakeInput(async () => {}));
+    await makeSandboxRunCore({ agentImage: "test", cpu: "500m", memory: "2Gi", onLog: () => {} })(fakeInput(async () => {}));
     expect(h.calls[0]?.args).toEqual(expect.arrayContaining(["--cpu", "500m", "--memory", "2Gi"]));
     for (const cpu of ["0", "0.0", "-1", "unlimited", "1;exit"]) {
-      expect(() => makeSandboxRunCore({ warmPoolSize: 0, agentImage: "test", cpu })).toThrow(/CPU limit/);
+      expect(() => makeSandboxRunCore({ agentImage: "test", cpu })).toThrow(/CPU limit/);
     }
     for (const memory of ["0", "-1Gi", "unlimited", "4Gi;exit"]) {
-      expect(() => makeSandboxRunCore({ warmPoolSize: 0, agentImage: "test", memory })).toThrow(/memory limit/);
+      expect(() => makeSandboxRunCore({ agentImage: "test", memory })).toThrow(/memory limit/);
     }
   });
 
   it("creates, uploads, exec-streams, returns the result, and deletes", async () => {
     const events: AgentEvent[] = [];
     const runCore = makeSandboxRunCore({
-      warmPoolSize: 0,
-      agentImage: "ghcr.io/open-neko/agent:test",
+        agentImage: "ghcr.io/open-neko/agent:test",
       modelHosts: [{ host: "m.example.com" }],
       keyAliases: [{ from: "api_key", to: "GEMINI_API_KEY" }],
       onLog: () => {},
@@ -843,7 +691,7 @@ describe("makeSandboxRunCore", () => {
       message: "Agent is working…",
     });
     // result parsed from the RESULT line:
-    expect(result).toEqual({ status: "completed", finalText: "hi there", backendState: { t: 1 } });
+    expect(result).toEqual({ status: "completed", finalText: "hi there", threadState: { t: 1 } });
     // The detached main process keeps the box ready; exec runs the bundle:
     expect(h.calls[0]?.args).toContain("ghcr.io/open-neko/agent:test");
     expect(h.calls[0]?.args).toContain("--policy");
@@ -854,7 +702,7 @@ describe("makeSandboxRunCore", () => {
         { binaries: Array<{ path: string }>; endpoints: Array<{ host: string }> }
       >,
     ).find((policy) => policy.endpoints.some((endpoint) => endpoint.host === "m.example.com"));
-    expect(modelPolicy?.binaries).toEqual([{ path: "/usr/bin/python3.11" }]);
+    expect(modelPolicy?.binaries).toEqual([{ path: "/usr/local/bin/ax-harness" }]);
     expect(h.calls[0]?.args.slice(-2)).toEqual(["sleep", "infinity"]);
     expect(h.calls[0]?.args).toContain("--detach");
     expect(h.calls[0]?.args).toContain("--cpu");
@@ -869,15 +717,13 @@ describe("makeSandboxRunCore", () => {
     // carries no ambient image environment across the security boundary.
     expect(execCommand).not.toContain("OPENNEKO_BUILTIN_SKILLS_ROOT");
     expect(execCommand).not.toContain("OPENNEKO_MCP_BRIDGE");
-    expect(execCommand).not.toContain("HERMES_DISABLE_LAZY_INSTALLS");
     // the credential alias references the OpenShell-injected var at runtime, never a value:
     expect(execCommand).toContain('export GEMINI_API_KEY="$api_key"');
   });
 
   it("serializes pack actions into the isolated Work job", async () => {
     const runCore = makeSandboxRunCore({
-      warmPoolSize: 0,
-      agentImage: "ghcr.io/open-neko/agent:test",
+        agentImage: "ghcr.io/open-neko/agent:test",
       onLog: () => {},
     });
     const input = fakeInput(async () => {});
@@ -907,8 +753,7 @@ describe("makeSandboxRunCore", () => {
     let activeEmits = 0;
     let maxActiveEmits = 0;
     const runCore = makeSandboxRunCore({
-      warmPoolSize: 0,
-      agentImage: "ghcr.io/open-neko/agent:test",
+        agentImage: "ghcr.io/open-neko/agent:test",
       onLog: () => {},
     });
 
@@ -935,8 +780,7 @@ describe("makeSandboxRunCore", () => {
       `__openneko_agent_result__${JSON.stringify({ status: "completed", finalText: "", rawText: "" })}\n`,
     ];
     const runCore = makeSandboxRunCore({
-      warmPoolSize: 0,
-      agentImage: "ghcr.io/open-neko/agent:test",
+        agentImage: "ghcr.io/open-neko/agent:test",
       onLog: () => {},
     });
 
@@ -946,7 +790,7 @@ describe("makeSandboxRunCore", () => {
   });
 
   describe("skill capture", () => {
-    const hashExecs = () => h.calls.filter((call) => call.args.some((arg) => arg.endsWith("/hermes-agent/bin/python")));
+    const hashExecs = () => h.calls.filter((call) => call.args.includes("exec") && call.args.includes("/usr/bin/python3"));
     const runWith = async (lines: string[]) => {
       h.state.execLines = [
         ...lines,
@@ -955,7 +799,7 @@ describe("makeSandboxRunCore", () => {
       const logs: string[] = [];
       runActor.actor = { userId: null, role: null };
       try {
-        await makeSandboxRunCore({ warmPoolSize: 0, agentImage: "test", onLog: (line) => logs.push(line) })(fakeInput(async () => {}));
+        await makeSandboxRunCore({ agentImage: "test", onLog: (line) => logs.push(line) })(fakeInput(async () => {}));
       } finally {
         runActor.actor = null;
       }
@@ -986,8 +830,7 @@ describe("makeSandboxRunCore", () => {
 
   it("rejects the run when ordered event delivery fails", async () => {
     const runCore = makeSandboxRunCore({
-      warmPoolSize: 0,
-      agentImage: "ghcr.io/open-neko/agent:test",
+        agentImage: "ghcr.io/open-neko/agent:test",
       onLog: () => {},
     });
 
@@ -1007,8 +850,7 @@ describe("makeSandboxRunCore", () => {
     ];
     const events: AgentEvent[] = [];
     const runCore = makeSandboxRunCore({
-      warmPoolSize: 0,
-      agentImage: "ghcr.io/open-neko/agent:test",
+        agentImage: "ghcr.io/open-neko/agent:test",
       onLog: () => {},
     });
 
@@ -1025,8 +867,7 @@ describe("makeSandboxRunCore", () => {
   it("replaces an orphaned sandbox when a durable retry collides on the run name", async () => {
     h.state.collideOnNextCreate = true;
     const runCore = makeSandboxRunCore({
-      warmPoolSize: 0,
-      agentImage: "ghcr.io/open-neko/agent:test",
+        agentImage: "ghcr.io/open-neko/agent:test",
       onLog: () => {},
     });
 
@@ -1053,8 +894,7 @@ describe("makeSandboxRunCore", () => {
     h.state.holdExec = true;
     const controller = new AbortController();
     const runCore = makeSandboxRunCore({
-      warmPoolSize: 0,
-      agentImage: "ghcr.io/open-neko/agent:test",
+        agentImage: "ghcr.io/open-neko/agent:test",
       onLog: () => {},
     });
 
@@ -1074,17 +914,16 @@ describe("makeSandboxRunCore", () => {
 
   it("uses one OpenShell sandbox for a native-delegation-capable backend", async () => {
     const runCore = makeSandboxRunCore({
-      warmPoolSize: 0,
-      agentImage: "ghcr.io/open-neko/agent:test",
+        agentImage: "ghcr.io/open-neko/agent:test",
       onLog: () => {},
     });
 
     await runCore(
       fakeInput(async () => {}, {
-        id: "hermes",
+        id: "ax",
         capabilities: {
           mcpTools: false,
-          nativeDelegation: "hermes-delegate-task",
+          nativeDelegation: "ax-worker",
         },
       } as RunAgentBackendInput["backend"]),
     );
@@ -1113,14 +952,14 @@ describe("makeSandboxRunCore", () => {
       mode: "headless",
       triggeredByObservationId: "obs-1",
       networkHosts: [],
-      backendId: "hermes",
+      backendId: "ax",
       message: "begin",
       agentRun: { timeoutMs: 1_800_000 },
     });
     const execArgs = h.calls.find((call) => call.args.includes("exec"))?.args ?? [];
     expect(execArgs[execArgs.indexOf("--timeout") + 1]).toBe("1920");
     expect(job).not.toHaveProperty("model");
-    expect(job).not.toHaveProperty("backendState");
+    expect(job).not.toHaveProperty("threadState");
     expect(job).not.toHaveProperty("pluginActions");
     expect(h.calls.filter((c) => c.args.includes("create"))).toHaveLength(1);
     expect(h.calls.filter((c) => c.args.includes("exec"))).toHaveLength(1);
@@ -1202,7 +1041,6 @@ describe("makeSandboxRunCore", () => {
       .filter((policy) => policy.binaries[0]?.path === "/usr/local/bin/ax-harness")
       .flatMap((policy) => policy.endpoints.map((endpoint) => endpoint.host));
     expect(hosts.sort()).toEqual(["api.anthropic.com", "helpx.adobe.com"]);
-    expect(policies.some((policy) => policy.binaries[0]?.path === "/usr/bin/python3.11")).toBe(false);
     expect(jobCapture.jobs.at(-1)).toMatchObject({ backendId: "ax", ax });
   });
 
@@ -1223,7 +1061,7 @@ describe("makeSandboxRunCore", () => {
       >,
     );
     const workflowPolicy = policies.find(
-      (policy) => policy.binaries[0]?.path === "/usr/bin/python3.11",
+      (policy) => policy.binaries[0]?.path === "/usr/local/bin/ax-harness",
     );
     expect(workflowPolicy?.endpoints.map((endpoint) => endpoint.host)).toEqual([
       "experienceleague.adobe.com",
@@ -1319,8 +1157,7 @@ describe("makeSandboxRunCore", () => {
   it("scopes broker egress to node, injects url+token, and releases on finish", async () => {
     const released: string[] = [];
     const runCore = makeSandboxRunCore({
-      warmPoolSize: 0,
-      agentImage: "ghcr.io/open-neko/agent:test",
+        agentImage: "ghcr.io/open-neko/agent:test",
       brokerUrl: "http://host.openshell.internal:4199",
       brokerTokenFor: ({ runId, orgId }) => `tok-${orgId}-${runId}`,
       brokerRelease: (runId) => released.push(runId),
@@ -1352,10 +1189,9 @@ describe("makeSandboxRunCore", () => {
     expect(released).toEqual(["run-1"]);
   });
 
-  it("omits broker env when no broker is wired (hermes-only path)", async () => {
+  it("omits broker env when no broker is wired", async () => {
     const runCore = makeSandboxRunCore({
-      warmPoolSize: 0,
-      agentImage: "ghcr.io/open-neko/agent:test",
+        agentImage: "ghcr.io/open-neko/agent:test",
       onLog: () => {},
     });
     await runCore(fakeInput(async () => {}));
@@ -1364,15 +1200,9 @@ describe("makeSandboxRunCore", () => {
     expect(execCall?.args.join(" ")).not.toContain("OPENNEKO_BROKER_TOKEN");
   });
 
-  it("mirrors HERMES_HOME keyless and points the box at it", async () => {
-    const hostHome = await mkdtemp(join(tmpdir(), "hh-"));
-    await writeFile(join(hostHome, "config.yaml"), 'model:\n  provider: "gemini"\n');
-    await writeFile(join(hostHome, ".env"), "GEMINI_API_KEY=REAL_SECRET\n");
-
+  it("creates a live sandbox before its single workspace upload and never ships a key", async () => {
     const runCore = makeSandboxRunCore({
-      warmPoolSize: 0,
       agentImage: "ghcr.io/open-neko/agent:test",
-      hermesHomeHostPath: hostHome,
       keyAliases: [{ from: "api_key", to: "GEMINI_API_KEY" }],
       onLog: () => {},
     });
@@ -1385,12 +1215,6 @@ describe("makeSandboxRunCore", () => {
     expect(create?.args).toContain("--detach");
     expect(create?.args.slice(-2)).toEqual(["sleep", "infinity"]);
     expect(create?.args[create.args.indexOf("--name") + 1]).toMatch(/^neko-w-[0-9a-f]{12}$/);
-    // the box reads the mirror, not a host path:
-    const execCall = h.calls.find((c) => c.args.includes("exec"));
-    expect(execCall?.args.join(" ")).toContain(
-      "HERMES_HOME='/sandbox/org-1/runs/run-1/.openneko/hermes-home'",
-    );
-    expect(jobCapture.hermesEnvs).toEqual([""]);
     expect(
       JSON.stringify({
         calls: h.calls,

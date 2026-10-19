@@ -37,7 +37,7 @@ const reachable = await pool().query("select 1").then(() => true, () => false);
       const workflowId = wf.rows[0]!.id;
       const thread = await db().execute<{ id: string }>(`insert into work_thread (org_id, title) values ('${orgId}', 't') returning id`);
       const run = await db().execute<{ id: string }>(
-        `insert into work_run (org_id, thread_id, backend, status) values ('${orgId}', '${thread.rows[0]!.id}', 'hermes', 'completed') returning id`,
+        `insert into work_run (org_id, thread_id, backend, status) values ('${orgId}', '${thread.rows[0]!.id}', 'ax', 'completed') returning id`,
       );
       const wr = await db().execute<{ id: string }>(
         `insert into workflow_run (org_id, workflow_id, thread_id, work_run_id, trigger_kind, trigger_payload)

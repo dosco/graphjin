@@ -3,7 +3,7 @@ name: google-workspace-read
 description: Read Gmail, Drive, Calendar, Sheets, Docs, and Slides through the Google Workspace pack. Use for mailbox searches, file discovery, calendar review, spreadsheet values, document content, and presentation content.
 license: Apache-2.0
 metadata:
-  hermes:
+  openneko:
     tags: [google-workspace, gmail, drive, calendar, sheets, docs, slides]
     category: productivity
     requires_toolsets: [graphjin]

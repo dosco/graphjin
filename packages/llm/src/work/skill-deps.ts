@@ -78,7 +78,7 @@ export const KNOWN_SKILL_DEPS: Record<string, SkillDeps> = {
     apt: [],
     brew: [],
   },
-  // ─── Tier-A finance skills (Hermes-sourced, Apache-2.0) ────────────
+  // ─── Tier-A finance skills (Anthropic, adapted by Nous Research; Apache-2.0)
   // All five model skills pair with excel-author and use openpyxl — same
   // dep set as the generic xlsx builtin, so no new pip/apt requirements
   // beyond what's already baked.
@@ -127,23 +127,6 @@ export const KNOWN_SKILL_DEPS: Record<string, SkillDeps> = {
   "merger-model": {
     python: ["openpyxl"],
     pip: ["openpyxl"],
-    binaries: [],
-    apt: [],
-    brew: [],
-  },
-  // ─── Tier-A devops procedural-knowledge skills ─────────────────────
-  // Both are pure procedural prompts — no Python imports beyond stdlib,
-  // no binaries beyond the worker's shell tools.
-  watchers: {
-    python: [],
-    pip: [],
-    binaries: [],
-    apt: [],
-    brew: [],
-  },
-  "webhook-subscriptions": {
-    python: [],
-    pip: [],
     binaries: [],
     apt: [],
     brew: [],

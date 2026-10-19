@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { normalizeHermesUsage } from "../src/agent-backends/hermes";
 import {
   combineAgentTokenUsage,
   normalizeAxProgramUsage,
@@ -50,27 +49,6 @@ describe("provider usage normalization", () => {
       totalTokens: 12,
       coverage: "partial",
       missingReasons: ["metric-agent usage unavailable"],
-    });
-  });
-
-  it("normalizes Hermes ACP camelCase and snake_case usage", () => {
-    expect(
-      normalizeHermesUsage({
-        input_tokens: 10,
-        outputTokens: 4,
-        cached_read_tokens: 3,
-        thought_tokens: 2,
-        cost_usd: 0.125,
-      }),
-    ).toEqual({
-      inputTokens: 10,
-      outputTokens: 4,
-      cacheReadTokens: 3,
-      reasoningTokens: 2,
-      totalTokens: 14,
-      billedCostUsd: 0.125,
-      currency: "USD",
-      coverage: "complete",
     });
   });
 

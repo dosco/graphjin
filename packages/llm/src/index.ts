@@ -21,9 +21,7 @@ export * from "./industry-researcher";
 export * from "./agent-backend";
 export { makeAgentBackend } from "./agent-runtime";
 export {
-  assertAxSupported,
   resolveAgentBackend,
-  resolveAgentBackendId,
   resolveAgentConcurrency,
   type AgentConcurrency,
 } from "./agent-backend-resolver";
@@ -39,7 +37,6 @@ export {
   ensureHostConfigProvisioned,
   gatewayProviderName,
   provisionHostConfig,
-  VENDORED_HERMES_MODEL_BINARY,
   verifyAgentRuntimeReady,
 } from "./host-provision";
 export {

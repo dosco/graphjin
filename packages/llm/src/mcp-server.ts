@@ -29,7 +29,7 @@ export type NekoMcpServer = {
 
 /**
  * Define an OpenNeko MCP tool without coupling its schema or handler to an
- * agent vendor SDK. The same definition is mounted by Hermes through the
+ * agent vendor SDK. The same definition is mounted by the agent through the
  * sandbox's stdio MCP bridge.
  */
 export function defineMcpTool<Schema extends ToolShape>(

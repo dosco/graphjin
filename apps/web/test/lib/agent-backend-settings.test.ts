@@ -8,7 +8,7 @@ import {
   uniqueOrgId,
 } from "@neko/db/test-helpers";
 import { and, db, eq, llm_provider_config, pool } from "@neko/db";
-import { AGENT_BACKEND_OPTIONS, AGENT_DEFAULT_GLOBAL_CAP } from "@neko/llm";
+import { AGENT_DEFAULT_GLOBAL_CAP } from "@neko/llm";
 import {
   getAgentSettings,
   getAgentSettingsPayload,
@@ -40,28 +40,24 @@ describeIfDb("agent-settings", () => {
     await clearProvider(orgId, "primary");
   });
 
-  it("returns Hermes concurrency defaults with no row", async () => {
+  it("returns concurrency defaults with no row", async () => {
     await expect(getAgentSettings(orgId)).resolves.toEqual({
       source: "default",
-      backend: "hermes",
       globalCap: AGENT_DEFAULT_GLOBAL_CAP,
     });
   });
 
-  it("returns the backend choice and both backends", async () => {
+  it("returns the concurrency payload", async () => {
     await expect(getAgentSettingsPayload(orgId)).resolves.toEqual({
       agent: {
         source: "default",
-        backend: "hermes",
         globalCap: AGENT_DEFAULT_GLOBAL_CAP,
       },
-      options: AGENT_BACKEND_OPTIONS,
       defaults: { globalCap: AGENT_DEFAULT_GLOBAL_CAP },
     });
-    expect(AGENT_BACKEND_OPTIONS.map((o) => o.value)).toEqual(["ax", "hermes"]);
   });
 
-  it("persists the backend and concurrency", async () => {
+  it("persists the concurrency on the Ax agent row", async () => {
     await saveAgentSettingsDraft(orgId, { globalCap: 50 });
     expect((await getAgentSettings(orgId)).globalCap).toBe(50);
 
@@ -77,8 +73,8 @@ describeIfDb("agent-settings", () => {
           eq(llm_provider_config.scope, "agent"),
         ),
       );
-    expect(row.provider).toBe("hermes");
-    expect(row.config).toEqual({ backend: "hermes", globalCap: 50 });
+    expect(row.provider).toBe("ax");
+    expect(row.config).toEqual({ globalCap: 50 });
   });
 
   it("falls back to the default for an invalid cap", async () => {
@@ -88,28 +84,9 @@ describeIfDb("agent-settings", () => {
     );
   });
 
-  it("accepts Hermes and rejects an unknown backend", async () => {
-    await expect(
-      saveAgentSettingsDraft(orgId, { backend: "hermes", globalCap: 8 }),
-    ).resolves.toEqual({ source: "org", backend: "hermes", globalCap: 8 });
-    await expect(
-      saveAgentSettingsDraft(orgId, { backend: "removed-runtime", globalCap: 8 }),
-    ).rejects.toThrow("Unsupported agent backend: removed-runtime");
-  });
-
-  it("switches to Ax only with a primary provider, and keeps it on later saves", async () => {
-    await expect(saveAgentSettingsDraft(orgId, { backend: "ax" })).rejects.toThrow(
-      "Configure and enable a primary model provider before switching to Ax.",
-    );
-    await seedProvider(orgId, {
-      scope: "primary",
-      provider: "google-gemini",
-      model: "gemini-pro-latest",
-      secrets: { apiKey: "gemini-key" },
-    });
-    await expect(saveAgentSettingsDraft(orgId, { backend: "ax" })).resolves.toMatchObject({ backend: "ax" });
+  it("keeps the saved cap on a later save without one", async () => {
     await saveAgentSettingsDraft(orgId, { globalCap: 9 });
-    await expect(getAgentSettings(orgId)).resolves.toMatchObject({ backend: "ax", globalCap: 9 });
+    await expect(saveAgentSettingsDraft(orgId, {})).resolves.toEqual({ source: "org", globalCap: 9 });
   });
 
   it("does not alter the primary provider", async () => {

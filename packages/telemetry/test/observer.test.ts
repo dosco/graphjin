@@ -73,7 +73,7 @@ describe("harness observations", () => {
     await observer.observe({
       kind: "run.start",
       operationId: "run-1",
-      attributes: { "openneko.backend": "hermes" },
+      attributes: { "openneko.backend": "ax" },
     });
     await observer.observe({
       kind: "model.request",
@@ -100,7 +100,7 @@ describe("harness observations", () => {
 
     expect(summary.snapshot()).toMatchObject({
       status: "completed",
-      backend: "hermes",
+      backend: "ax",
       counts: { inference: 1 },
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
       io: { inputBytes: 120, outputBytes: 48 },

@@ -165,7 +165,7 @@ describe("buildProfilerPrompt knowledge inlining", () => {
     expect(prompt).not.toContain("graphjin cli find_path");
     expect(prompt).not.toContain("graphjin cli explore_relationships");
     // Raw agentic packs run 50KB+; the whole prompt must stay well under
-    // the size that hangs the hermes first stream.
+    // the size that hung the agent's first stream.
     expect(prompt.length).toBeLessThan(25_000);
   });
 
