@@ -10,6 +10,14 @@ describe("profileBuildFailureMessage", () => {
     expect(message).not.toContain("agent became unavailable");
   });
 
+  it("treats an unavailable openneko serve as the runtime vanishing", () => {
+    expect(
+      profileBuildFailureMessage(
+        "openneko serve is unavailable: connect ENOENT /run/openneko/serve.sock",
+      ),
+    ).toContain("agent became unavailable");
+  });
+
   it("keeps serving-status recovery for an actual sandbox contract failure", () => {
     expect(
       profileBuildFailureMessage(

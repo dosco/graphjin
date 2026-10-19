@@ -13,7 +13,7 @@ import {
 
 /**
  * Marks admin setup complete on the org. Data, provider configuration, and a
- * live OpenShell control-plane call are re-checked server-side so neither a
+ * live check that openneko serve answers are re-checked server-side so neither a
  * direct API call nor a fresh-install race can send users into onboarding with
  * an unusable agent. Research remains optional.
  */

@@ -67,7 +67,7 @@ export default function SecurityForm({
               <>
                 Lets operators run <Command>openneko install &lt;git-url&gt;</Command> to pull a
                 skill directly from GitHub, GitLab, or Codeberg. Skills are procedural knowledge
-                the agent follows; any shell blocks run inside the agent&apos;s OpenShell sandbox.
+                the agent follows; any shell blocks run in the agent&apos;s sandbox, as a user of their own with no secrets.
               </>
             }
             checked={policy.allowGitUrlInstalls}

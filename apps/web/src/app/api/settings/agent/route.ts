@@ -29,7 +29,7 @@ export async function PUT(request: NextRequest) {
     const saved = await saveAgentSettingsDraft((await getOrgId()), {
       globalCap: body.globalCap,
     });
-    // Reprovision so the agent sandbox uses the latest provider settings.
+    // Reprovision so the next agent run uses the latest provider settings.
     await provisionHostConfig((await getOrgId()));
     return NextResponse.json(saved);
   } catch (e) {

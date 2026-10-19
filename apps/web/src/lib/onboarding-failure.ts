@@ -29,7 +29,7 @@ export function profileBuildFailureMessage(error: string | null): string {
     return TIMEOUT_MESSAGE;
   }
   if (
-    /openshell|agent sandbox|agent runtime|builtin-skills|mcp-bridge|scandir/i.test(
+    /openneko serve|serve socket|agent sandbox|agent runtime|builtin-skills|mcp-bridge|scandir/i.test(
       error,
     )
   ) {

@@ -20,8 +20,8 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
     const saved = await saveProviderDraft((await getOrgId()), body);
-    // Saving the primary provider re-syncs the gateway-side model credential
-    // so the next agent run picks it up without a restart.
+    // Saving the primary provider re-provisions the agent settings so the
+    // next agent run picks them up without a restart.
     if (body?.scope === "primary") {
       await provisionHostConfig((await getOrgId()));
     }

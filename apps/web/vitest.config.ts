@@ -14,10 +14,6 @@ export default defineConfig({
     pool: "forks",
     poolOptions: { forks: { singleFork: false } },
     testTimeout: 10_000,
-    // Production defaults to openshell (SEC11); tests exercise the
-    // in-process core. Openshell-path tests override per-test.
-    env: {
-    },
     alias: {
       // Match the Next.js TS path alias from tsconfig.json.
       "@/": `${here("./src/")}`,

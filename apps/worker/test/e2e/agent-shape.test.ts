@@ -7,14 +7,15 @@
  * in afterAll.
  *
  * Plan matrix (gated independently by env keys):
- *   - Ax × Google Gemini (GEMINI_API_KEY + `openshell` CLI)
- *   - Ax × Anthropic     (ANTHROPIC_API_KEY + `openshell` CLI)
+ *   - Ax × Google Gemini (GEMINI_API_KEY)
+ *   - Ax × Anthropic     (ANTHROPIC_API_KEY)
  *
  * Required external state:
  *   - docker compose stack up (neko-db + adventureworks-db + graphjin)
  *   - At least one of GEMINI_API_KEY / ANTHROPIC_API_KEY set
  *   - graphjin CLI on PATH
- *   - OpenShell CLI on PATH
+ *   - the agent runtime: `openneko serve` and `openneko sandbox`
+ *     (pnpm dev:agent), with OPENNEKO_SERVE_SOCKET set
  *
  * Asserts only shape — validateResult returns null, mood + chartType +
  * chartData fields are well-formed. NOT an accuracy gate.
