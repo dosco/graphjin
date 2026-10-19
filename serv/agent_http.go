@@ -185,34 +185,7 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 			}
 			return
 		}
-		var resp gjagent.Response
-		if err == nil {
-			resp, err = runner.Run(ctx, req)
-			if err == nil {
-				s.appendWatchNotices(ctx, &resp)
-				s.appendTaskNotices(ctx, req, &resp)
-				s.appendAnnotationNotices(ctx, &resp)
-				appendTaskContextNotice(taskWarm, &resp)
-			}
-		}
-		status := agentHTTPStatus(err)
-		agentConf := agentConfigFromService(s.conf)
-		if err != nil {
-			info, publicErr := agentPublicFailure(agentConf, err)
-			spanError(span, publicErr)
-			err = publicErr
-			resp = gjagent.Response{
-				Status: gjagent.StatusError,
-				Errors: []gjagent.ErrorInfo{info},
-			}
-		} else {
-			resp = sanitizeAgentResponse(agentConf, resp)
-		}
-		if taskResolved {
-			s.appendTaskTrailEntry(ctx, req, resp, time.Since(start), err)
-		}
-		recordAgentRuntimeEvent(s, ctx, req, resp, taskWarm, time.Since(start), err)
-		recordAgentUsageObservability(s, span, "rest", agentConf, resp, time.Since(start))
+		resp, status, err := s.finishAgentAsk(ctx, span, req, runner, taskWarm, taskResolved, err, start, "rest")
 
 		if span.IsRecording() {
 			attrs := []attribute.KeyValue{
@@ -229,6 +202,85 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 		_ = json.NewEncoder(w).Encode(resp)
 	}
 	return http.HandlerFunc(h)
+}
+
+// finishAgentAsk runs a prepared agent request and records it, for both the
+// REST route and in-process AskAgent. prepErr is an error from preparing it.
+// It returns the HTTP status for the raw error and the public error.
+func (s *graphjinService) finishAgentAsk(
+	ctx context.Context,
+	span trace.Span,
+	req gjagent.Request,
+	runner graphjinAgentRunner,
+	taskWarm taskWarmStart,
+	taskResolved bool,
+	prepErr error,
+	start time.Time,
+	surface string,
+) (gjagent.Response, int, error) {
+	var resp gjagent.Response
+	err := prepErr
+	if err == nil {
+		resp, err = runner.Run(ctx, req)
+		if err == nil {
+			s.appendWatchNotices(ctx, &resp)
+			s.appendTaskNotices(ctx, req, &resp)
+			s.appendAnnotationNotices(ctx, &resp)
+			appendTaskContextNotice(taskWarm, &resp)
+		}
+	}
+	status := agentHTTPStatus(err)
+	agentConf := agentConfigFromService(s.conf)
+	if err != nil {
+		info, publicErr := agentPublicFailure(agentConf, err)
+		spanError(span, publicErr)
+		err = publicErr
+		resp = gjagent.Response{
+			Status: gjagent.StatusError,
+			Errors: []gjagent.ErrorInfo{info},
+		}
+	} else {
+		resp = sanitizeAgentResponse(agentConf, resp)
+	}
+	if taskResolved {
+		s.appendTaskTrailEntry(ctx, req, resp, time.Since(start), err)
+	}
+	recordAgentRuntimeEvent(s, ctx, req, resp, taskWarm, time.Since(start), err)
+	recordAgentUsageObservability(s, span, surface, agentConf, resp, time.Since(start))
+	return resp, status, err
+}
+
+// ErrAgentDisabled is returned by AskAgent when GraphJin's agent is off.
+var ErrAgentDisabled = errors.New("GraphJin agent is disabled")
+
+// AskAgent asks GraphJin's agent in-process, for a host that runs GraphJin
+// as a library. claims are the caller's identity, the same claims its JWT
+// would carry; GraphJin derives the role, namespace and capability profile
+// from them exactly as it does for /api/v1/agent. req.Observer receives each
+// step and req.History carries earlier turns. The response is sanitized as
+// the REST response is; err is non-nil when the run failed.
+func (s1 *HttpService) AskAgent(ctx context.Context, claims map[string]any, req gjagent.Request) (gjagent.Response, error) {
+	start := time.Now()
+	s := s1.Load().(*graphjinService)
+	if !s.conf.agentEnabled() {
+		return gjagent.Response{}, ErrAgentDisabled
+	}
+	ctx, span := s.spanStart(ctx, "Agent Ask")
+	defer span.End()
+	ctx, err := auth.ContextWithClaims(ctx, s.conf.Auth, claims)
+	if err != nil {
+		return gjagent.Response{}, err
+	}
+	ctx = s.applyIdentityContext(ctx)
+	req.Capabilities = s.agentCapabilityProfile(ctx)
+	taskWarm, err := s.resolveAgentTaskContext(ctx, &req)
+	taskResolved := err == nil
+	var runner graphjinAgentRunner
+	if err == nil {
+		runner, err = newGraphJinAgentRunner(s, agentConfigFromService(s.conf))
+	}
+	resp, _, err := s.finishAgentAsk(ctx, span, req, runner, taskWarm, taskResolved, err, start, "in_process")
+	return resp, err
 }
 
 func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient ...bool) AgentStatusResponse {

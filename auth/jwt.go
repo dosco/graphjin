@@ -9,6 +9,7 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/dosco/graphjin/auth/v3/provider"
+	"github.com/dosco/graphjin/core/v3"
 )
 
 const (
@@ -61,25 +62,53 @@ func JwtHandler(ac Auth) (HandlerFunc, error) {
 				return nil, fmt.Errorf("invalid iss claim")
 			}
 
-			ctx, err = jwtProvider.SetContextValues(ctx, claims)
-			if err != nil {
-				return ctx, err
-			}
-
-			// Attach optional identity claims for audit logging. These are
-			// strictly informational — the role / authorization decision is
-			// driven by sub / role.
-			if email, ok := claims["email"].(string); ok && email != "" {
-				ctx = context.WithValue(ctx, userEmailKey, email)
-			}
-			if name, ok := claims["name"].(string); ok && name != "" {
-				ctx = context.WithValue(ctx, userNameKey, name)
-			}
-			ctx = context.WithValue(ctx, userClaimsKey, cloneJWTClaims(claims))
-			return ctx, nil
+			return withVerifiedClaims(ctx, jwtProvider, claims)
 		}
 		return nil, fmt.Errorf("invalid claims")
 	}, nil
+}
+
+// ContextWithClaims attaches claims to ctx as JwtHandler does after it
+// verifies a token. It is for in-process callers that already trust the
+// claims, such as a host that runs GraphJin as a library; it checks no
+// signature, so it needs no verification key: without a usable JWT config
+// the subject maps to the user ID as the generic provider maps it.
+func ContextWithClaims(ctx context.Context, ac Auth, claims map[string]interface{}) (context.Context, error) {
+	jwtProvider, err := provider.NewProvider(ac.JWT)
+	if err != nil {
+		jwtProvider = claimsOnlyProvider{}
+	}
+	return withVerifiedClaims(ctx, jwtProvider, jwt.MapClaims(claims))
+}
+
+// claimsOnlyProvider maps claims to context values and verifies nothing.
+type claimsOnlyProvider struct{ *provider.GenericProvider }
+
+func (claimsOnlyProvider) SetContextValues(ctx context.Context, claims jwt.MapClaims) (context.Context, error) {
+	sub, _ := claims["sub"].(string)
+	if sub == "" {
+		return ctx, fmt.Errorf("subject claim not found")
+	}
+	return context.WithValue(ctx, core.UserIDKey, sub), nil
+}
+
+func withVerifiedClaims(ctx context.Context, jwtProvider provider.JWTProvider, claims jwt.MapClaims) (context.Context, error) {
+	ctx, err := jwtProvider.SetContextValues(ctx, claims)
+	if err != nil {
+		return ctx, err
+	}
+
+	// Attach optional identity claims for audit logging. These are
+	// strictly informational — the role / authorization decision is
+	// driven by sub / role.
+	if email, ok := claims["email"].(string); ok && email != "" {
+		ctx = context.WithValue(ctx, userEmailKey, email)
+	}
+	if name, ok := claims["name"].(string); ok && name != "" {
+		ctx = context.WithValue(ctx, userNameKey, name)
+	}
+	ctx = context.WithValue(ctx, userClaimsKey, cloneJWTClaims(claims))
+	return ctx, nil
 }
 
 func cloneJWTClaims(claims jwt.MapClaims) map[string]interface{} {
