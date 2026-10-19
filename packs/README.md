@@ -1,5 +1,20 @@
 # Solution packs
 
+## First-party packs
+
+| Pack | What it does |
+| --- | --- |
+| [magento](magento/README.md) | Commerce analytics and governed store changes |
+| [google-workspace](google-workspace/README.md) | Gmail, Drive, Calendar, Sheets, Docs, and Slides with per-user OAuth |
+| [resend](resend/README.md) | Operational email from a fixed sender |
+| [slack](slack/README.md) | Slack messages, reactions, and user and channel lookups |
+| [shopify](shopify/README.md) | Shopify orders, and order notes and tags |
+| [parallel-search](parallel-search/README.md) | Web search through Parallel |
+
+Resend, Slack, Shopify, and Parallel replace the plugins of the same names.
+They call each vendor's REST API through GraphJin, so no third-party code runs
+inside OpenNeko.
+
 ## Installation and configuration
 
 Built-in packs install in one click from Admin, Settings, Packs. Installation registers the included definition without contacting external services or requiring credentials. The installed pack then exposes fields from `inputs`, `secrets`, and `oauth`. Reviewing and applying those settings activates its artifacts through the existing lifecycle. Until then, readiness reports that configuration is required. Uploaded packs retain the archive review and installation flow.

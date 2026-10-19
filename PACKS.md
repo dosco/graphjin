@@ -17,6 +17,11 @@ For contributing code, see [CONTRIBUTING.md](CONTRIBUTING.md).
   [README](packs/magento/README.md) explains application-specific prerequisites.
 - [Google Workspace](packs/google-workspace/pack.yaml) shows customer-owned
   per-user OAuth, REST reads, and generic governed API actions.
+- [Resend](packs/resend/pack.yaml), [Slack](packs/slack/pack.yaml),
+  [Shopify](packs/shopify/pack.yaml), and
+  [Parallel web search](packs/parallel-search/pack.yaml) replace the former
+  action plugins with API-key sources. Resend shows all three
+  [action safety fields](#action-safety-fields).
 
 Use the small example for read-only custom packs. Use Google Workspace as the
 reference for generic REST writes. Magento uses additional commerce-specific
