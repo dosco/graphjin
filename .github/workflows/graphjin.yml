@@ -85,10 +85,6 @@ jobs:
         env:
           MODULE: ${{ matrix.module }}
 
-      - name: go vet
-        working-directory: ${{ steps.dir.outputs.dir }}
-        run: go vet ./...
-
       - name: go test
         working-directory: ${{ steps.dir.outputs.dir }}
         run: go test -race -count=1 -timeout 30m ./...

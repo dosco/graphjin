@@ -1,29 +1,184 @@
 name: PR checks
 
+# A pull request runs only the jobs it needs. scripts/ci-affected.mjs reads
+# the changed files and picks the pnpm packages to typecheck, build and test,
+# and the Docker and browser jobs to run. Each package tests in its own job
+# with its own Postgres, in parallel. A manual run with "all" runs everything.
+# graphjin/ has its own workflow, and the Go apps have go.yml and
+# ax-harness.yml.
+
 on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      all:
+        description: Run every job
+        type: boolean
+        default: true
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  GRAPHJIN_VERSION: "3.21.13"
+
 jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.affected.outputs.packages }}
+      design_system: ${{ steps.affected.outputs.design_system }}
+      graphjin_integration: ${{ steps.affected.outputs.graphjin_integration }}
+      records_recovery: ${{ steps.affected.outputs.records_recovery }}
+      embedding_image: ${{ steps.affected.outputs.embedding_image }}
+      librarian_image: ${{ steps.affected.outputs.librarian_image }}
+      lazy_service: ${{ steps.affected.outputs.lazy_service }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Pick jobs from the changed files
+        id: affected
+        env:
+          EVENT: ${{ github.event_name }}
+          RUN_ALL: ${{ inputs.all }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            base="$(git merge-base "$PR_BASE" HEAD)"
+            git diff --name-only "$base" HEAD | node scripts/ci-affected.mjs --base "$base" | tee -a "$GITHUB_OUTPUT"
+          elif [ "$RUN_ALL" = "true" ]; then
+            node scripts/ci-affected.mjs --all | tee -a "$GITHUB_OUTPUT"
+          else
+            base="$(git merge-base origin/main HEAD)"
+            git diff --name-only "$base" HEAD | node scripts/ci-affected.mjs --base "$base" | tee -a "$GITHUB_OUTPUT"
+          fi
+
+  # Fast source checks that run on every pull request.
+  contracts:
+    name: Repository contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify Hermes-only agent backend contract
+        run: bash scripts/check-hermes-only.sh
+      - name: Verify failed-to-recovered release transitions
+        run: bash scripts/check-release-recovery-contract.sh
+
+  package:
+    name: Package (${{ matrix.package }})
+    needs: plan
+    if: needs.plan.outputs.packages != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.plan.outputs.packages) }}
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: neko
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: neko
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U neko"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NEKO_PG_HOST: localhost
+      NEKO_PG_PORT: "5432"
+      NEKO_PG_USER: neko
+      NEKO_PG_PASSWORD: secret
+      NEKO_PG_DATABASE: neko
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.14.1
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.work
+          cache-dependency-path: apps/openneko/go.sum
+
+      - name: Install
+        run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
+
+      - name: Install graphjin CLI
+        run: |
+          curl -fsSL -o /tmp/graphjin.tgz \
+            "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_amd64.tar.gz"
+          sudo tar -xzf /tmp/graphjin.tgz -C /usr/local/bin graphjin
+          graphjin version
+
+      - name: Run migrations
+        working-directory: apps/openneko
+        run: go run ./cmd/openneko migrate
+
+      - name: Verify durable embedding queue
+        if: matrix.package == 'apps/worker'
+        env:
+          PGPASSWORD: secret
+          EMBEDDING_TEST_DATABASE_URL: postgres://neko:secret@127.0.0.1:5432/embedding_jobs_test
+        run: |
+          createdb -h 127.0.0.1 -U neko embedding_jobs_test
+          pnpm --filter @neko/worker exec vitest run test/embedding-jobs.test.ts
+
+      - name: Verify eval definitions and checked-in results
+        if: matrix.package == 'packages/evals'
+        run: |
+          pnpm --filter @neko/evals schemas:generate
+          pnpm --filter @neko/evals semantics:generate
+          git diff --exit-code -- evals/schemas evals/semantics.yaml
+          pnpm --filter @neko/evals repo:check
+
+      - name: Typecheck
+        run: pnpm --filter "./${{ matrix.package }}" run --if-present typecheck
+
+      - name: Build the package and its workspace dependencies
+        run: pnpm --filter "{./${{ matrix.package }}}..." run --if-present build
+
+      - name: Test
+        env:
+          LIBRARY_BROWSE_REQUIRE_DB: "1"
+          AGENT_AUTO_MEMORY: "off"
+        run: pnpm --filter "./${{ matrix.package }}" test
+
   lazy-service:
     name: Lazy service lifecycle
+    needs: plan
+    if: needs.plan.outputs.lazy_service == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version-file: go.work
           cache: false
       - run: go test -race ./...
         working-directory: apps/lazy-service
 
   embedding-image:
     name: Offline embedding service
+    needs: plan
+    if: needs.plan.outputs.embedding_image == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -33,6 +188,8 @@ jobs:
 
   librarian-image:
     name: Librarian image
+    needs: plan
+    if: needs.plan.outputs.librarian_image == 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 25
 
@@ -48,18 +205,10 @@ jobs:
       - name: Verify lazy extraction and idle restart offline
         run: docker run --rm --network none --memory 4g --cpus 1 --pids-limit 256 --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:size=512m --mount type=volume,target=/var/lib/neko-librarian/results --entrypoint python3 openneko-librarian:pr /app/smoke.py
 
-  release-recovery-contract:
-    name: Release recovery contract
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Verify failed-to-recovered release transitions
-        run: bash scripts/check-release-recovery-contract.sh
-
   design-system:
     name: Web design system
+    needs: plan
+    if: needs.plan.outputs.design_system == 'true'
     runs-on: ubuntu-latest
 
     # Solo-mode pages resolve a persisted identity, just like installed instances.
@@ -133,6 +282,8 @@ jobs:
 
   records-recovery:
     name: Records recovery
+    needs: plan
+    if: needs.plan.outputs.records_recovery == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -144,6 +295,8 @@ jobs:
 
   graphjin-integration:
     name: GraphJin integration
+    needs: plan
+    if: needs.plan.outputs.graphjin_integration == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -163,7 +316,6 @@ jobs:
           --health-retries 10
 
     env:
-      GRAPHJIN_VERSION: "3.21.13"
       RECORDS_GRAPHJIN_IMAGE: openneko/graphjin-integration:3.21.13
       REQUIRE_GRAPHJIN_INTEGRATION: "1"
       OPENNEKO_PG_ENV_OVERRIDE: "1"
@@ -223,97 +375,31 @@ jobs:
             test/import-executor.integration.test.ts \
             --no-file-parallelism
 
-  test:
-    name: Test
+  # One check to require in branch protection. It passes when every job the
+  # plan picked passed, and when the plan picked none.
+  pr-checks:
+    name: PR checks
+    needs:
+      - plan
+      - contracts
+      - package
+      - lazy-service
+      - embedding-image
+      - librarian-image
+      - design-system
+      - records-recovery
+      - graphjin-integration
+    if: always()
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: neko
-          POSTGRES_PASSWORD: secret
-          POSTGRES_DB: neko
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U neko"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 9.14.1
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "1.25"
-          cache-dependency-path: apps/openneko/go.sum
-
-      - name: Install
-        run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
-
-      - name: Verify Hermes-only agent backend contract
-        run: bash scripts/check-hermes-only.sh
-
-      - name: Install graphjin CLI
+      - name: Check job results
         env:
-          GRAPHJIN_VERSION: "3.21.13"
+          RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          curl -fsSL -o /tmp/graphjin.tgz \
-            "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_amd64.tar.gz"
-          sudo tar -xzf /tmp/graphjin.tgz -C /usr/local/bin graphjin
-          graphjin version
-
-
-      - name: Verify durable embedding queue
-        env:
-          PGPASSWORD: secret
-          EMBEDDING_TEST_DATABASE_URL: postgres://neko:secret@127.0.0.1:5432/embedding_jobs_test
-        run: |
-          createdb -h 127.0.0.1 -U neko embedding_jobs_test
-          pnpm --filter @neko/worker exec vitest run test/embedding-jobs.test.ts
-
-      - name: Run migrations
-        env:
-          NEKO_PG_HOST: localhost
-          NEKO_PG_PORT: "5432"
-          NEKO_PG_USER: neko
-          NEKO_PG_PASSWORD: secret
-          NEKO_PG_DATABASE: neko
-        working-directory: apps/openneko
-        run: go run ./cmd/openneko migrate
-
-      - name: Typecheck
-        run: pnpm -r --if-present typecheck
-
-      - name: Verify eval definitions and checked-in results
-        run: |
-          pnpm --filter @neko/evals schemas:generate
-          pnpm --filter @neko/evals semantics:generate
-          git diff --exit-code -- evals/schemas evals/semantics.yaml
-          pnpm --filter @neko/evals repo:check
-
-      - name: Build
-        run: pnpm -r build
-
-      - name: Test
-        env:
-          LIBRARY_BROWSE_REQUIRE_DB: "1"
-          NEKO_PG_HOST: localhost
-          NEKO_PG_PORT: "5432"
-          NEKO_PG_USER: neko
-          NEKO_PG_PASSWORD: secret
-          NEKO_PG_DATABASE: neko
-          AGENT_AUTO_MEMORY: "off"
-        # apps/web and apps/worker share Postgres; worker's reconciler scans processing_job globally and races with web's onboarding tests.
-        run: pnpm -r --workspace-concurrency=1 test
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in
+              success | skipped) ;;
+              *) exit 1 ;;
+            esac
+          done
