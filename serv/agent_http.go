@@ -29,7 +29,8 @@ const (
 	defaultAgentTimeoutSeconds = 50
 )
 
-type agentStatusResponse struct {
+// AgentStatusResponse is the body of GET /api/v1/agent/status.
+type AgentStatusResponse struct {
 	Status               string                   `json:"status"`
 	Enabled              bool                     `json:"enabled"`
 	Ready                bool                     `json:"ready"`
@@ -231,7 +232,7 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 	return http.HandlerFunc(h)
 }
 
-func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient ...bool) agentStatusResponse {
+func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient ...bool) AgentStatusResponse {
 	provider := strings.TrimSpace(conf.Provider)
 	if provider == "" {
 		provider = defaultAgentProvider
@@ -260,7 +261,7 @@ func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient
 		message = "GraphJin agent is enabled but " + apiKeyEnv + " is not set."
 	}
 
-	resp := agentStatusResponse{
+	resp := AgentStatusResponse{
 		Status:               status,
 		Enabled:              conf.Enabled,
 		Ready:                ready,
@@ -438,7 +439,7 @@ func recordAgentUsageObservability(s *graphjinService, span trace.Span, surface 
 	}
 }
 
-func agentEvalFingerprint(status agentStatusResponse) string {
+func agentEvalFingerprint(status AgentStatusResponse) string {
 	available := append([]string(nil), status.AvailableSystemRoots...)
 	blocked := append([]string(nil), status.BlockedSystemRoots...)
 	allowedActions := append([]string(nil), status.AllowedActions...)

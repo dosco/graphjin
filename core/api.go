@@ -1671,6 +1671,12 @@ func newError(query string, err error) (errList []Error) {
 	if repair := BuildGraphJinErrorRepair(query, err.Error()); repair.Known() {
 		e.Extensions = map[string]any{"graphjin_repair": repair}
 	}
+	if code := ErrorCode(err); code != "" {
+		if e.Extensions == nil {
+			e.Extensions = map[string]any{}
+		}
+		e.Extensions["code"] = code
+	}
 	errList = []Error{e}
 	return
 }
