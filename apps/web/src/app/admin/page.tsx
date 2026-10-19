@@ -119,6 +119,16 @@ export default async function AdminPage() {
       ok: pluginStatus.flagged.length === 0,
     },
     {
+      href: "/admin/graphjin",
+      title: "GraphJin",
+      copy: "Data engine status, workbench, catalog, security, API reference, and eval reports.",
+      status:
+        enabledSources.length === 0
+          ? "No sources"
+          : `${enabledSources.length} source${enabledSources.length === 1 ? "" : "s"} enabled`,
+      ok: enabledSources.length > 0,
+    },
+    {
       href: "/admin/rules",
       title: "Rules",
       copy: "Skill learning, plus what OpenNeko can act on its own, queue for review, or never run.",

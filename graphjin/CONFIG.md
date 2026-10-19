@@ -401,7 +401,7 @@ workflows:
 | `host` | string | - | Host to run the service on (alternative to host_port) |
 | `port` | string | - | Port to run the service on (alternative to host_port) |
 | `production` | boolean | `false` | Legacy production switch; prefer `mode: prod` or `mode: agentic` in new configs |
-| `web_ui` | boolean | `false` | Enable the GraphJin web UI |
+| `web_ui` | boolean | `false` | No-op, kept for one release so existing configs load. The web console moved to OpenNeko admin. |
 | `log_level` | string | `info` | Logging level: `debug`, `error`, `warn`, `info` |
 | `log_format` | string | `auto` | Log format: `auto`, `json`, `simple` |
 | `http_compress` | boolean | `true` | Enable HTTP gzip compression |

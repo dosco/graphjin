@@ -386,7 +386,7 @@ func servConfigMap(conf *Config) map[string]any {
 		"log_format":              s.LogFormat,
 		"http_compress":           s.HTTPGZip,
 		"server_timing":           s.ServerTiming,
-		"web_ui":                  s.WebUI,
+		"web_ui":                  s.WebUI, // no-op kept for one release; the console moved to OpenNeko admin
 		"reload_on_config_change": s.WatchAndReload,
 		"cors_allowed_origins":    s.AllowedOrigins,
 		"cors_allowed_headers":    s.AllowedHeaders,

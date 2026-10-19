@@ -230,24 +230,18 @@ func TestOptionSetOperatorSeedRequiresUserID(t *testing.T) {
 	}
 }
 
-// Running a watch and driving the console need different access, so the two
-// roles are allowed to diverge; the console role falls back to the watch role.
-func TestOperatorSeedConsoleRoleFallsBackToWatchRole(t *testing.T) {
+// Seeded watches run under the declared role, falling back to least-privilege user.
+func TestOperatorSeedRoleFallsBackToUser(t *testing.T) {
 	for name, tc := range map[string]struct {
-		seed        OperatorSeed
-		wantWatch   string
-		wantConsole string
+		seed OperatorSeed
+		want string
 	}{
-		"defaults":      {OperatorSeed{UserID: "op"}, "user", "user"},
-		"watch only":    {OperatorSeed{UserID: "op", Role: "analyst"}, "analyst", "analyst"},
-		"both declared": {OperatorSeed{UserID: "op", Role: "user", ConsoleRole: "admin"}, "user", "admin"},
+		"defaults": {OperatorSeed{UserID: "op"}, "user"},
+		"declared": {OperatorSeed{UserID: "op", Role: "analyst"}, "analyst"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := tc.seed.operatorSeedRole(); got != tc.wantWatch {
-				t.Fatalf("watch role = %q, want %q", got, tc.wantWatch)
-			}
-			if got := tc.seed.consoleSeedRole(); got != tc.wantConsole {
-				t.Fatalf("console role = %q, want %q", got, tc.wantConsole)
+			if got := tc.seed.operatorSeedRole(); got != tc.want {
+				t.Fatalf("watch role = %q, want %q", got, tc.want)
 			}
 		})
 	}

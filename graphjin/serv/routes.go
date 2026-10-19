@@ -10,7 +10,6 @@ const (
 	routeGraphQL           = "/api/v1/graphql"
 	routeAgent             = "/api/v1/agent"
 	routeAgentStatus       = "/api/v1/agent/status"
-	routeConsoleBootstrap  = "/api/v1/console/bootstrap"
 	routeEvalReports       = "/api/v1/eval/reports"
 	routeEvalScore         = "/api/v1/eval/score"
 	routeEvalReportsPrefix = "/api/v1/eval/reports/"
@@ -49,7 +48,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 	// 	mux.Handle(DeployRoute, adminDeployHandler(s1))
 	// }
 
-	// Skip GraphQL/REST/OpenAPI/WebUI in MCP-only mode.
+	// Skip GraphQL/REST/OpenAPI in MCP-only mode.
 	if !s.conf.MCP.Only {
 		ah, err := auth.NewAuthHandlerFunc(s.conf.Auth)
 		if err != nil {
@@ -59,14 +58,9 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 			s.log.Warn("api: auth.development=true this allows clients to bypass authentication")
 		}
 
-		if s.conf.WebUI {
-			mux.Handle("/", s1.WebUI("/", routeGraphQL))
-		}
-
 		// GraphQL / REST API
 		if ns == nil {
 			mux.Handle(routeGraphQL, s1.GraphQL(ah))
-			mux.Handle(routeConsoleBootstrap, s1.ConsoleBootstrap(ah))
 			if evalReportsConfigured(s.conf) {
 				mux.Handle(routeEvalScore, s1.EvalScore(ah))
 				mux.Handle(routeEvalReports, s1.EvalReports(ah))
@@ -89,7 +83,6 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 			mux.Handle(routeOpenAPI, apiV1Handler(s1, nil, s1.OpenAPI(), ah))
 		} else {
 			mux.Handle(routeGraphQL, s1.GraphQLWithNS(ah, *ns))
-			mux.Handle(routeConsoleBootstrap, s1.ConsoleBootstrapWithNS(ah, *ns))
 			if evalReportsConfigured(s.conf) {
 				mux.Handle(routeEvalScore, s1.EvalScoreWithNS(ah, *ns))
 				mux.Handle(routeEvalReports, s1.EvalReportsWithNS(ah, *ns))

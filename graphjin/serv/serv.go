@@ -162,9 +162,6 @@ func printDevModeInfo(s *graphjinService) {
 	fmt.Println("Development Server URLs")
 	fmt.Println("───────────────────────")
 
-	if s.conf.WebUI && !s.conf.MCP.Only {
-		fmt.Printf("  Web UI:      http://%s/\n", displayHost)
-	}
 	if !s.conf.MCP.Only {
 		fmt.Printf("  GraphQL:     http://%s/api/v1/graphql\n", displayHost)
 		fmt.Printf("  REST API:    http://%s/api/v1/rest/<name>\n", displayHost)

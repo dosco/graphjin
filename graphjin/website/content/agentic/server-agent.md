@@ -28,7 +28,7 @@ curl -sS localhost:8080/api/v1/agent \
   -d '{"instruction": "What production work should we prioritize next?"}'
 ```
 
-The answer comes back as typed JSON - `status`, `answer`, `data`, `evidence`, `actions`, `next` - grounded in the discovery the agent actually performed on this run. The same conversation is available as a chat page in the built-in web console at `localhost:8080/agent`, streaming one action event per tool call as the agent works.
+The answer comes back as typed JSON - `status`, `answer`, `data`, `evidence`, `actions`, `next` - grounded in the discovery the agent actually performed on this run.
 
 Agent chat also renders response notices as actions. Open tasks can be pinned
 above the composer, which sends their `task_id` on later turns; watch, failed
@@ -145,7 +145,7 @@ curl -sS http://localhost:8080/api/v1/agent \
 
 ### Streaming and status
 
-The REST endpoint streams progress when called with `Accept: text/event-stream`: `action` frames as the agent works, `result` frames as evidence lands, then a final `complete` frame carrying the full response. MCP callers that pass `_meta.progressToken` receive `notifications/progress` events per action. `GET /api/v1/agent/status` reports server-model readiness; the built-in web console uses that result to decide whether to offer the chat page.
+The REST endpoint streams progress when called with `Accept: text/event-stream`: `action` frames as the agent works, `result` frames as evidence lands, then a final `complete` frame carrying the full response. MCP callers that pass `_meta.progressToken` receive `notifications/progress` events per action. `GET /api/v1/agent/status` reports server-model readiness.
 
 ## Structured refusals
 

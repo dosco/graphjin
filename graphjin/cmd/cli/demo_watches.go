@@ -23,10 +23,9 @@ type demoWatchSeedDoc struct {
 }
 
 type demoWatchSeedOperator struct {
-	UserID      string `yaml:"user_id"`
-	Role        string `yaml:"role"`
-	ConsoleRole string `yaml:"console_role"`
-	AccountID   string `yaml:"account_id"`
+	UserID    string `yaml:"user_id"`
+	Role      string `yaml:"role"`
+	AccountID string `yaml:"account_id"`
 }
 
 type demoWatchSeedEntry struct {
@@ -66,10 +65,9 @@ func loadDemoWatchSeeds(configPath string) (serv.OperatorSeed, bool, error) {
 	}
 
 	seed := serv.OperatorSeed{
-		UserID:      doc.Operator.UserID,
-		Role:        doc.Operator.Role,
-		ConsoleRole: doc.Operator.ConsoleRole,
-		AccountID:   doc.Operator.AccountID,
+		UserID:    doc.Operator.UserID,
+		Role:      doc.Operator.Role,
+		AccountID: doc.Operator.AccountID,
 	}
 	for _, entry := range doc.Watches {
 		watch := serv.WatchSeed{

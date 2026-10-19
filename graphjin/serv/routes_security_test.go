@@ -88,6 +88,21 @@ func newSecuredTestHandler(t *testing.T) http.Handler {
 	return handler
 }
 
+// The web console moved to OpenNeko admin; web_ui: true must not serve it.
+func TestWebUIIsNoLongerServed(t *testing.T) {
+	handler := newSecuredTestHandler(t)
+
+	for _, path := range []string{"/", "/admin/runtime", "/api/v1/console/bootstrap"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("X-Test-Auth", "secret")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("GET %s = %d, want 404", path, rec.Code)
+		}
+	}
+}
+
 func TestOpenAPIRouteRequiresAuth(t *testing.T) {
 	handler := newSecuredTestHandler(t)
 
