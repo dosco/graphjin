@@ -1,0 +1,15 @@
+sources:
+  - key: source.resend
+    name: resend
+    kind: api
+    base_url: https://api.resend.com
+    openapi: graphjin/specs/resend.yaml
+    operations:
+      getEmail: { expose_top_level: true }
+      listTemplates: { expose_top_level: true }
+      getTemplate: { expose_top_level: true }
+    auth:
+      type: bearer
+      token: "{{secret.resend.api_key}}"
+    read_only: false
+    capabilities: { api.read: true, api.write: true, api.delete: false }

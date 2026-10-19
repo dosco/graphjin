@@ -1,0 +1,15 @@
+key: policy.resend_approved_domains
+targetRef: resend.policy.approved_domains
+name: Resend approved recipient domains
+description: Sends without approval when every recipient's domain is on the list. Add domains, such as acme.com or *.acme.com, then enable. Any other recipient falls through to the approval policy.
+appliesToKinds: [resend.email]
+appliesToScopes: [external]
+mode: auto
+priority: 5
+enabled: true
+allowedTargets:
+  patterns: []
+  on_miss: next
+limits:
+  retry: never
+  requireCompletePayload: true

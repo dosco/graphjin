@@ -1,0 +1,42 @@
+key: action.resend_email
+targetRef: resend.email
+kind: resend.email
+description: Send one email through Resend from the configured sender, using a Resend template, HTML, or plain text.
+readiness:
+  capability: operator
+  unavailableReasons: [secret_not_configured, graphjin_restart_required]
+inputSchema:
+  type: object
+  additionalProperties: false
+  required: [operation, body]
+  properties:
+    operation: { type: string, enum: [send_email] }
+    body: { type: object }
+example:
+  operation: send_email
+  body:
+    to: [ops@acme.com]
+    subject: "Low stock: 3 SKUs below reorder point"
+    html: "<h2>Low stock</h2><table><tr><th>SKU</th><th>On hand</th></tr><tr><td>WB-120</td><td>4</td></tr></table>"
+    text: "Low stock\n\nWB-120: 4 on hand"
+# The policy engine reads every recipient's domain, so a policy can allow or
+# deny recipient domains. The agent's own target text does not count.
+targets:
+  fields: [body.to, body.cc, body.bcc]
+  as: email_domain
+adapter:
+  kind: graphjin_api_operation
+  source: resend
+  spec: resend
+  # The sender is the configured resend.from, whatever the payload says.
+  lockedBody:
+    from: { input: resend.from }
+  operations:
+    send_email:
+      operationId: sendEmail
+      mutationRoot: resend_send_email
+      reversible: false
+      # Resend keeps a key for 24 hours, so a retried request sends once.
+      idempotencyHeader: Idempotency-Key
+  ambiguousOutcome: reconcile_required
+  retry: never

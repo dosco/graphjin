@@ -1,0 +1,4 @@
+key: relationships.resend
+targetRef: resend
+source: resend
+relationships: []
