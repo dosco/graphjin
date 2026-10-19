@@ -105,39 +105,16 @@ EXPOSE 9470
 ENTRYPOINT ["/usr/local/bin/openneko-backup-entrypoint"]
 CMD ["serve"]
 
-# Pinned static OpenShell client shared by control planes and the readiness
-# one-shot without pulling a Node/worker filesystem into the latter.
-FROM debian:bookworm-slim AS openshell-bin
-ARG OPENSHELL_VERSION=0.1.2
-ARG OPENSHELL_ASSET_AMD64=594438336
-ARG OPENSHELL_ASSET_ARM64=594438335
-ARG TARGETARCH
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
-    && OPENSHELL_ASSET_ID="$(case "${TARGETARCH}" in amd64) echo "${OPENSHELL_ASSET_AMD64}" ;; arm64) echo "${OPENSHELL_ASSET_ARM64}" ;; *) exit 1 ;; esac)" \
-    && curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors -o /tmp/openshell.tgz \
-      -H 'Accept: application/octet-stream' \
-      "https://api.github.com/repos/NVIDIA/OpenShell/releases/assets/${OPENSHELL_ASSET_ID}" \
-    && tar -xzf /tmp/openshell.tgz -C /usr/local/bin openshell \
-    && rm /tmp/openshell.tgz \
-    && rm -rf /var/lib/apt/lists/* \
-    && test "$(openshell --version)" = "openshell ${OPENSHELL_VERSION}"
-
-FROM alpine:3.22 AS openshell-ready
-RUN apk add --no-cache ca-certificates
-COPY --from=openshell-bin /usr/local/bin/openshell /usr/local/bin/openshell
-CMD ["openshell", "--version"]
-
-# ─── 2. control-plane runtime: sandbox launcher only ───────────────────
-# Web is a trusted control plane that launches OpenShell sandboxes but never
-# contains an agent runtime, GraphJin CLI, or document toolchain. The worker
-# uses the narrower shared GraphJin/npm runtime defined below.
+# ─── 2. control-plane runtime ──────────────────────────────────────────
+# Web is a trusted control plane. It runs each agent run's runner as a child
+# process but carries no GraphJin CLI or document toolchain; terminal
+# commands run in the agent image's sandbox. The worker uses the narrower
+# shared GraphJin/npm runtime defined below.
 FROM node-runtime AS runtime-base
-# Git supports trusted config VCS and git-backed installs. openssh-client is
-# required by `openshell sandbox exec`.
+# Git supports trusted config VCS and git-backed installs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git openssh-client \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=openshell-bin /usr/local/bin/openshell /usr/local/bin/openshell
 
 # ─── 2a. the openneko binary ───────────────────────────────────────────
 # Every Go process in an install runs this one binary. It picks its role from
@@ -163,14 +140,15 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     sh scripts/build-openneko.sh /out/openneko
 
 # The worker requires npm plus the GraphJin CLI for trusted host-side Records
-# configuration. It is never part of the sandbox agent image.
+# configuration.
 FROM npm-runtime AS graphjin-node-runtime
 COPY --from=go-build /out/openneko /usr/local/bin/openneko
 RUN ln -s openneko /usr/local/bin/graphjin && graphjin version
 
-# ─── 2b. agent OS base (sandbox only) ─────────────────────────────────
-# The agent runs as the Ax Harness binary (copied in the `agent` stage). The
-# document toolchain below uses Debian's system Python and pip.
+# ─── 2b. agent OS base (serve and sandbox) ────────────────────────────
+# The agent image runs `openneko serve` and `openneko sandbox` (the binary is
+# copied in the `agent` stage). The document toolchain below uses Debian's
+# system Python and pip.
 FROM npm-runtime AS agent-base
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git python3 python3-pip \
@@ -178,8 +156,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ─── 2c. document toolchain (agent image only) ─────────────────────────
 # Bundled skills (xlsx / pptx / docx / pdf / document-extraction) shell out to
-# Python + LibreOffice + Poppler / qpdf / Tesseract via the agent's Bash inside
-# the OpenShell sandbox — web never runs these, so the ~1GB toolchain stays out
+# Python + LibreOffice + Poppler / qpdf / Tesseract via the agent's terminal,
+# which `openneko sandbox` runs — web never runs these, so the ~1GB toolchain stays out
 # of its image (the worker gets a minimal subset below for the librarian).
 # Keep this list in sync with KNOWN_SKILL_DEPS (packages/llm/src/work/skill-deps.ts);
 # `pnpm skills:check` prints the current aggregate.
@@ -325,8 +303,23 @@ EXPOSE 5003
 ENTRYPOINT ["lazy-service"]
 CMD ["--listen", ":5003", "--upstream", "http://127.0.0.1:5004", "--", "node", "/app/server.mjs"]
 
+# ─── 4z. agent runner bundle ───────────────────────────────────────────
+# Compile the runner entry and multiplexed tool bridge. Ship their assets,
+# not the worker's dependency closure (DB, ONNX, transformers, tsx). Web and
+# worker copy the bundle to /opt/openneko-agent.
+FROM source AS agent-deploy
+RUN cd apps/worker && pnpm exec esbuild \
+      src/agent-sandbox/entry.ts src/agent-sandbox/mcp-bridge.ts \
+      --bundle --platform=node --format=esm \
+      --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
+      --outdir=/out/agent-app \
+    && printf '{"type":"module"}\n' > /out/agent-app/package.json \
+    && mkdir -p /out/agent-app/assets \
+    && cp -R ../../packages/llm/assets/builtin-skills /out/agent-app/assets/
+
 # ─── 5a. web runtime ───────────────────────────────────────────────────
-# Web remains a trusted OpenShell control plane; the agent runtime is not here.
+# Web is a trusted control plane. It runs agent runners (the bundle at
+# /opt/openneko-agent); their turns run in `openneko serve`.
 FROM runtime-base AS web
 ARG OPENNEKO_VERSION=unknown
 ARG OPENNEKO_COMMIT=unknown
@@ -342,7 +335,14 @@ ENV NODE_ENV=production \
     HOME=/tmp/openneko-home \
     XDG_CONFIG_HOME=/tmp/openneko-config \
     NEXT_TELEMETRY_DISABLED=1
-RUN useradd --system --create-home --uid 1001 neko
+RUN groupadd --system --gid 1001 neko \
+    && useradd --system --create-home --uid 1001 --gid neko neko
+# Shared agent-run folders. Fresh named volumes mounted here take this
+# ownership: runs (setgid, group neko) are shared by the runner, serve and the
+# sandbox's run users; /run/openneko holds serve's and the sandbox's sockets.
+RUN install -d -o 1001 -g 1001 -m 2770 /var/lib/openneko/agent-runs \
+    && install -d -o root -g root -m 0711 /var/lib/openneko/sandbox-homes \
+    && install -d -o 1001 -g 1001 -m 0770 /run/openneko
 RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-tmp \
     && chown -R neko:neko /config /tmp/openneko-home /tmp/openneko-tmp
 # Standalone output is self-contained (server.js + traced node_modules).
@@ -363,6 +363,10 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # worker image and the host install.
 COPY --from=go-build --chown=neko:neko /out/openneko /usr/local/bin/openneko
 RUN chmod +x /usr/local/bin/openneko
+# The agent runner bundle; the launcher runs `node /opt/openneko-agent/entry.js`
+# for each run.
+COPY --from=agent-deploy /out/agent-app /opt/openneko-agent
+RUN chmod -R a+rX /opt/openneko-agent
 USER neko
 EXPOSE 8080
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
@@ -398,13 +402,19 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git openssh-client python3 poppler-utils unzip postgresql-client \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=openshell-bin /usr/local/bin/openshell /usr/local/bin/openshell
 ENV NODE_ENV=production \
     PORT=4100 \
     HOSTNAME=0.0.0.0 \
     HOME=/tmp/openneko-home \
     XDG_CONFIG_HOME=/tmp/openneko-config
-RUN useradd --system --create-home --uid 1001 neko
+RUN groupadd --system --gid 1001 neko \
+    && useradd --system --create-home --uid 1001 --gid neko neko
+# Shared agent-run folders. Fresh named volumes mounted here take this
+# ownership: runs (setgid, group neko) are shared by the runner, serve and the
+# sandbox's run users; /run/openneko holds serve's and the sandbox's sockets.
+RUN install -d -o 1001 -g 1001 -m 2770 /var/lib/openneko/agent-runs \
+    && install -d -o root -g root -m 0711 /var/lib/openneko/sandbox-homes \
+    && install -d -o 1001 -g 1001 -m 0770 /run/openneko
 # /cache is mounted by the demo-mode adventureworks-init step; pre-creating
 # it here lets the named volume initialize with neko ownership instead of root
 # (Docker copies image-side ownership into a fresh named volume on first mount).
@@ -426,55 +436,43 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # extra install step. Same binary operators install on their host.
 COPY --from=go-build --chown=neko:neko /out/openneko /usr/local/bin/openneko
 RUN chmod +x /usr/local/bin/openneko
+# The agent runner bundle; the launcher runs `node /opt/openneko-agent/entry.js`
+# for each run.
+COPY --from=agent-deploy /out/agent-app /opt/openneko-agent
+RUN chmod -R a+rX /opt/openneko-agent
 USER neko
+# Fail the image build if a non-root user cannot read and boot the bundled
+# runner without workspace node_modules.
+RUN cd /opt/openneko-agent && node entry.js --preflight \
+    && node --input-type=module -e "await import('./mcp-bridge.js')"
 EXPOSE 4100
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "--import", "tsx/esm", "src/index.ts"]
 
-# ─── 5d. agent sandbox runtime (OpenShell) ─────────────────────────────
-# Compile the sandbox-only entry and multiplexed bridge. Ship their assets,
-# not the worker's dependency closure (DB, ONNX, transformers, tsx).
-FROM source AS agent-deploy
-RUN cd apps/worker && pnpm exec esbuild \
-      src/agent-sandbox/entry.ts src/agent-sandbox/mcp-bridge.ts \
-      --bundle --platform=node --format=esm \
-      --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
-      --outdir=/out/agent-app \
-    && printf '{"type":"module"}\n' > /out/agent-app/package.json \
-    && mkdir -p /out/agent-app/assets \
-    && cp -R ../../packages/llm/assets/builtin-skills /out/agent-app/assets/
-
+# ─── 5d. agent runtime: openneko serve and openneko sandbox ───────────
+# One image for both services. `openneko serve` runs each agent turn and holds
+# model keys only for that turn; `openneko sandbox` runs the agent's terminal
+# commands as a per-run user and holds no secrets. The document toolchain from
+# `cli` is here because terminal commands run in this image. The openneko
+# binary carries GraphJin's code but no GraphJin config or credentials.
 FROM cli AS agent
 USER root
-# Late-bound warm slots must observe policy/provider revisions promptly.
-ENV OPENSHELL_POLICY_POLL_INTERVAL_SECS=1
-# Supervisor egress-netns tools + a non-root `sandbox` user (high UID, OpenShell
-# convention). The openneko binary here carries GraphJin's code but no GraphJin
-# config or credentials; the agent reaches GraphJin only through the
-# authenticated host broker.
-RUN apt-get update && apt-get install -y --no-install-recommends iproute2 nftables jq ripgrep \
+RUN apt-get update && apt-get install -y --no-install-recommends jq ripgrep \
     && rm -rf /var/lib/apt/lists/*
-# The Ax harness is the openneko binary's ax-harness role.
 COPY --from=go-build /out/openneko /usr/local/bin/openneko
 RUN ln -s openneko /usr/local/bin/ax-harness
 COPY --from=duckdb-bin /usr/local/bin/duckdb /usr/local/bin/duckdb
-RUN groupadd -g 1000660000 sandbox \
-    && useradd -u 1000660000 -g sandbox -d /sandbox -M sandbox \
-    && install -d -o sandbox -g sandbox /sandbox
-# Only the two bundles and built-in skills enter the agent filesystem.
-COPY --from=agent-deploy --chown=1000660000:1000660000 /out/agent-app /app
-# OpenShell may execute as a remapped non-root UID. Build output can inherit
-# restrictive source modes, so every runtime bundle and parent directory must
-# be readable regardless of the sandbox's assigned UID.
-RUN chmod -R a+rX /app
-USER sandbox
-# Fail the image build if the non-root sandbox cannot read and boot the
-# bundled runtime without workspace node_modules.
-RUN cd /app && node entry.js --preflight \
-    && node --input-type=module -e "await import('./mcp-bridge.js')"
-WORKDIR /sandbox
-# Supervisor-replaced; launcher runs: cd /app && node /app/entry.js
-CMD ["node", "--version"]
+RUN groupadd --system --gid 1001 neko \
+    && useradd --system --create-home --uid 1001 --gid neko neko
+# Shared agent-run folders. Fresh named volumes mounted here take this
+# ownership: runs (setgid, group neko) are shared by the runner, serve and the
+# sandbox's run users; /run/openneko holds serve's and the sandbox's sockets.
+RUN install -d -o 1001 -g 1001 -m 2770 /var/lib/openneko/agent-runs \
+    && install -d -o root -g root -m 0711 /var/lib/openneko/sandbox-homes \
+    && install -d -o 1001 -g 1001 -m 0770 /run/openneko
+# Compose runs serve as neko (user 1001:1001) and the sandbox as root, so the
+# sandbox can give each run its own user.
+CMD ["openneko", "serve"]
 
 # ─── 5c. neko-cli runtime ──────────────────────────────────────────────
 # Minimal image containing just the openneko Go binary. Used as the

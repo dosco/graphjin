@@ -96,12 +96,11 @@ func readRootCompose(t *testing.T, name string) []byte {
 }
 
 func TestPackagedComposeModesAreAcyclic(t *testing.T) {
-	// Mirrors internal/compose.Materialize: core + mode overlay, and the
-	// OpenShell overlay always applies.
+	// Mirrors internal/compose.Materialize: core + mode overlay.
 	combos := map[string][]string{
-		"prod": {"core.yml", "openshell.yml"},
-		"dev":  {"core.yml", "dev.yml", "openshell.yml"},
-		"demo": {"core.yml", "demo.yml", "openshell.yml"},
+		"prod": {"core.yml"},
+		"dev":  {"core.yml", "dev.yml"},
+		"demo": {"core.yml", "demo.yml"},
 	}
 	for mode, files := range combos {
 		t.Run(mode, func(t *testing.T) {
@@ -122,8 +121,7 @@ func TestSourceComposeOverlaysAreAcyclic(t *testing.T) {
 		"base":           {"compose.yml"},
 		"adventureworks": {"compose.yml", "compose.adventureworks.yml"},
 		"graphjin-agent": {"compose.yml", "compose.adventureworks.yml", "compose.graphjin-agent.yml"},
-		"openshell":      {"compose.yml", "compose.openshell.yml"},
-		"openshell-host": {"compose.yml", "compose.openshell-host.yml"},
+		"dev":            {"compose.yml", "compose.adventureworks.yml", "compose.graphjin-agent.yml", "compose.dev.yml"},
 	}
 	for name, files := range combos {
 		t.Run(name, func(t *testing.T) {
@@ -144,10 +142,7 @@ func TestSourceComposeOverlaysAreAcyclic(t *testing.T) {
 // config (3.18 does not hot-reload auth keys), and worker/web must not
 // race the org-row bootstrap it performs.
 func TestGraphjinSecretInitGatesItsConsumers(t *testing.T) {
-	graph := mergedDependencyGraph(t,
-		readEmbeddedCompose(t, "core.yml"),
-		readEmbeddedCompose(t, "openshell.yml"),
-	)
+	graph := mergedDependencyGraph(t, readEmbeddedCompose(t, "core.yml"))
 	for _, consumer := range []string{"graphjin", "worker", "web"} {
 		deps := graph[consumer]
 		found := false

@@ -27,9 +27,8 @@ resource "google_service_account" "openneko" {
 
 # 80 (ACME challenge + HTTP->HTTPS redirect) and 443 (the app, via Caddy) stay
 # open to the internet -- end users reach OpenNeko directly on 443, no IAP
-# involved. OpenNeko's own web port (3000) and the OpenShell gateway (18080)
-# stay bound to 127.0.0.1 and are never reachable from this firewall's allow
-# rules.
+# involved. OpenNeko's own web port (3000) stays bound to 127.0.0.1 and is
+# never reachable from this firewall's allow rules.
 resource "google_compute_firewall" "allow_web" {
   name    = "${var.name}-allow-web"
   network = var.network

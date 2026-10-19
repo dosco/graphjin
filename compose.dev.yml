@@ -1,7 +1,8 @@
 # Development backing services. Web and worker run on the host with hot
-# reload (`pnpm dev`); `pnpm dev:up` starts these services with compose.yml,
-# compose.openshell.yml, compose.adventureworks.yml and
-# compose.graphjin-agent.yml (sources-mode customer GraphJin).
+# reload (`pnpm dev`), and so do `openneko serve` and `openneko sandbox`
+# (scripts/dev-agent.sh). `pnpm dev:up` starts these services with
+# compose.yml, compose.adventureworks.yml and compose.graphjin-agent.yml
+# (sources-mode customer GraphJin).
 #
 # Every service a host process calls publishes a loopback port, and GraphJin
 # config directories live on the host so the worker manages them.

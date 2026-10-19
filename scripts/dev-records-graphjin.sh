@@ -24,5 +24,5 @@ if [ -n "$work" ]; then
 fi
 
 cd "$root"
-exec docker compose -f compose.yml -f compose.openshell.yml -f compose.adventureworks.yml -f compose.graphjin-agent.yml -f compose.dev.yml \
+exec docker compose -f compose.yml -f compose.adventureworks.yml -f compose.graphjin-agent.yml -f compose.dev.yml \
   run --rm --no-deps -T "$@"

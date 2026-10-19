@@ -23,10 +23,10 @@ variable "machine_type" {
   description = <<-EOT
     OpenNeko's "prod" mode runs ~10 containers on one Docker daemon: web,
     worker, two Postgres instances, three internal GraphJin instances, the
-    customer-facing GraphJin, and the OpenShell gateway -- plus whatever
-    agent/plugin sandboxes it spawns on top. e2-standard-4 (4 vCPU / 16GB) is
-    a reasonable floor; size up if you run several named instances on one VM
-    or expect concurrent agent sandbox load.
+    customer-facing GraphJin, and the agent runtime (openneko serve and
+    sandbox), whose terminal commands share the VM. e2-standard-4 (4 vCPU /
+    16GB) is a reasonable floor; size up if you run several named instances on
+    one VM or expect concurrent agent load.
   EOT
   type    = string
   default = "e2-standard-4"

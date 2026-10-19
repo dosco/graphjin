@@ -1,8 +1,8 @@
 # OpenNeko on a GCP Compute Engine VM
 
-Terraform for the single-VM shape discussed: a real Docker daemon (OpenNeko
-and its OpenShell sandbox runtime require one -- neither runs on bare
-containerd, which is all GKE nodes provide), fronted by Caddy on 443 with
+Terraform for the single-VM shape discussed: a real Docker daemon (OpenNeko's
+Compose stack requires one -- it does not run on bare containerd, which is all
+GKE nodes provide), fronted by Caddy on 443 with
 automatic Let's Encrypt TLS for your own domain.
 
 ## What this creates
@@ -12,9 +12,9 @@ automatic Let's Encrypt TLS for your own domain.
 - A static external IP, so the domain's A record survives VM rebuilds.
 - Firewall rules opening 80 (ACME challenge + HTTP->HTTPS redirect) and 443
   (the app, via Caddy) to the internet -- end users hit these directly, no
-  IAP in their path. OpenNeko's web port (3000) and the OpenShell gateway
-  (18080) are never opened at the firewall -- they stay loopback-only per
-  OpenNeko's own defaults, reachable only through Caddy.
+  IAP in their path. OpenNeko's web port (3000) is never opened at the
+  firewall -- it stays loopback-only per OpenNeko's own defaults, reachable
+  only through Caddy.
 - SSH (22) has **no public route at all**. It's reachable only via an IAP
   tunnel from Google's fixed `35.235.240.0/20` relay range, gated by IAM
   (`admin_members`), with OS Login handling authentication -- no SSH keys to
