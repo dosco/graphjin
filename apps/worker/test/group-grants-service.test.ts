@@ -47,15 +47,15 @@ describe("scheduleGroupGrantsApply", () => {
 });
 
 (reachable ? describe : describe.skip)("applyGroupGrants", () => {
-  it("does nothing while off, then writes grants once and restarts GraphJin only on change", async () => {
+  it("does nothing while off, then writes grants once and applies them live only on change", async () => {
     const orgId = `grants-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const dir = await mkdtemp(join(tmpdir(), "gj-grants-"));
     const configFile = join(dir, "config.yml");
     await writeFile(configFile, CONFIG);
     await db().insert(organization).values({ id: orgId, name: "Grants" });
-    const restart = vi.fn(async () => undefined);
+    const applyLive = vi.fn(async (_update: Record<string, unknown>) => undefined);
     try {
-      expect(await applyGroupGrants(orgId, { configFile, restart })).toEqual({ enabled: false, changed: false, roles: [] });
+      expect(await applyGroupGrants(orgId, { configFile, applyLive })).toEqual({ enabled: false, changed: false, roles: [] });
       expect(await readFile(configFile, "utf8")).toBe(CONFIG);
 
       const finance = await createUserGroup(orgId, { name: "Finance" });
@@ -64,7 +64,7 @@ describe("scheduleGroupGrantsApply", () => {
       await upsertDataAccessRule(orgId, { groupId: finance.id, source: "shop", tableName: "orders", columns: ["id"], rowFilter: { column: "region", op: "eq", value: "emea" } });
       await setGroupGrantsEnabled(orgId, true, null);
 
-      expect(await applyGroupGrants(orgId, { configFile, restart })).toEqual({ enabled: true, changed: true, roles: ["og_finance"] });
+      expect(await applyGroupGrants(orgId, { configFile, applyLive })).toEqual({ enabled: true, changed: true, roles: ["og_finance"] });
       const config = parse(await readFile(configFile, "utf8"));
       expect(config.identity.role_mode).toBe("union");
       expect(config.sources[0].access).toEqual({
@@ -72,10 +72,15 @@ describe("scheduleGroupGrantsApply", () => {
         grants: [{ role: "og_finance", tables: [{ name: "orders", columns: ["id"], filter: '{ and: [{ account_id: { eq: $account_id } }, { region: { eq: "emea" } }] }' }] }],
       });
       expect(await getPreviousReadModes(orgId)).toEqual({ shop: "account" });
-      expect(restart).toHaveBeenCalledTimes(1);
+      expect(applyLive).toHaveBeenCalledTimes(1);
+      expect(applyLive.mock.calls[0]![0]).toMatchObject({
+        identity: { role_mode: "union" },
+        roles: [{ name: "og_finance" }],
+        source_patches: [{ name: "shop", access: { read: "admin", grants: [{ role: "og_finance" }] } }],
+      });
 
-      expect((await applyGroupGrants(orgId, { configFile, restart })).changed).toBe(false);
-      expect(restart).toHaveBeenCalledTimes(1);
+      expect((await applyGroupGrants(orgId, { configFile, applyLive })).changed).toBe(false);
+      expect(applyLive).toHaveBeenCalledTimes(1);
     } finally {
       await db().delete(organization).where(eq(organization.id, orgId));
       await rm(dir, { recursive: true, force: true });
@@ -88,13 +93,13 @@ describe("scheduleGroupGrantsApply", () => {
     const configFile = join(dir, "config.yml");
     await writeFile(configFile, CONFIG);
     await db().insert(organization).values({ id: orgId, name: "Grants" });
-    const restart = vi.fn(async () => undefined);
+    const applyLive = vi.fn(async (_update: Record<string, unknown>) => undefined);
     const catalog = vi.fn(async () => new Map([["shop", [
       { schema: "public", table: "orders", columns: ["id", "amount"] },
       { schema: "public", table: "customers", columns: ["id", "email"] },
     ]]]));
     try {
-      const enabled = await enableGroupGrants(orgId, null, { configFile, restart, catalog });
+      const enabled = await enableGroupGrants(orgId, null, { configFile, applyLive, catalog });
       expect(enabled).toMatchObject({ enabled: true, changed: true, seededRules: 2, roles: ["og_everyone"] });
       expect(catalog).toHaveBeenCalledWith(["shop"]);
       const on = parse(await readFile(configFile, "utf8"));
@@ -103,13 +108,13 @@ describe("scheduleGroupGrantsApply", () => {
         { name: "public.customers", columns: ["id", "email"], filter: "{ account_id: { eq: $account_id } }" },
         { name: "public.orders", columns: ["id", "amount"], filter: "{ account_id: { eq: $account_id } }" },
       ] }]);
-      expect((await enableGroupGrants(orgId, null, { configFile, restart, catalog })).seededRules).toBe(0);
+      expect((await enableGroupGrants(orgId, null, { configFile, applyLive, catalog })).seededRules).toBe(0);
 
-      expect(await disableGroupGrants(orgId, null, { configFile, restart, catalog })).toEqual({ changed: true });
+      expect(await disableGroupGrants(orgId, null, { configFile, applyLive, catalog })).toEqual({ changed: true });
       const off = parse(await readFile(configFile, "utf8"));
       expect(off.sources[0].access).toEqual({ read: "account" });
       expect(off.identity.role_mode).toBe("first");
-      expect(restart).toHaveBeenCalledTimes(2);
+      expect(applyLive).toHaveBeenCalledTimes(2);
     } finally {
       await db().delete(organization).where(eq(organization.id, orgId));
       await rm(dir, { recursive: true, force: true });
