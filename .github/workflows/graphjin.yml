@@ -1,7 +1,11 @@
 name: graphjin (go)
 
 # GraphJin lives under graphjin/ and is exported to dosco/graphjin.
-# These jobs run GraphJin's own build, lint, and tests for changes there.
+#
+# A change runs only the jobs it needs. graphjin/scripts/ci-affected.sh reads
+# the changed files and picks the Go modules to unit-test and the database
+# suites to run. Each module and each database runs as its own job, in
+# parallel. The nightly run and a manual run with "all" run everything.
 # graphjin/.github/workflows stay as they are for the mirror.
 
 on:
@@ -9,22 +13,95 @@ on:
     branches: [main]
     paths:
       - "graphjin/**"
-      - "!graphjin/**.md"
-      - "!graphjin/docs/**"
-      - "!graphjin/website/**"
       - ".github/workflows/graphjin.yml"
   pull_request:
     paths:
       - "graphjin/**"
-      - "!graphjin/**.md"
-      - "!graphjin/docs/**"
-      - "!graphjin/website/**"
       - ".github/workflows/graphjin.yml"
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      all:
+        description: Run every module and every database suite
+        type: boolean
+        default: true
+
+concurrency:
+  group: graphjin-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  lint-and-test:
-    name: build and test
+  plan:
+    name: plan
     runs-on: ubuntu-latest
+    outputs:
+      modules: ${{ steps.affected.outputs.modules }}
+      dialects: ${{ steps.affected.outputs.dialects }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Pick jobs from the changed files
+        id: affected
+        env:
+          EVENT: ${{ github.event_name }}
+          RUN_ALL: ${{ inputs.all }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          case "$EVENT" in
+            schedule) base="" ;;
+            workflow_dispatch) [ "$RUN_ALL" = "true" ] && base="" || base="origin/main" ;;
+            pull_request) base="$(git merge-base "$PR_BASE" HEAD)" ;;
+            push) base="$PUSH_BEFORE" ;;
+          esac
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            bash graphjin/scripts/ci-affected.sh --all | tee -a "$GITHUB_OUTPUT"
+          else
+            git diff --name-only "$base" HEAD | bash graphjin/scripts/ci-affected.sh | tee -a "$GITHUB_OUTPUT"
+          fi
+
+  unit:
+    name: unit (${{ matrix.module }})
+    needs: plan
+    if: needs.plan.outputs.modules != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.plan.outputs.modules) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: graphjin/go.work
+          cache-dependency-path: graphjin/**/go.sum
+
+      - name: Locate module
+        id: dir
+        run: echo "dir=graphjin/${MODULE/plugin-otel/plugin/otel}" >> "$GITHUB_OUTPUT"
+        env:
+          MODULE: ${{ matrix.module }}
+
+      - name: go vet
+        working-directory: ${{ steps.dir.outputs.dir }}
+        run: go vet ./...
+
+      - name: go test
+        working-directory: ${{ steps.dir.outputs.dir }}
+        run: go test -race -count=1 -timeout 30m ./...
+
+  database:
+    name: database (${{ matrix.dialect }})
+    needs: plan
+    if: needs.plan.outputs.dialects != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dialect: ${{ fromJSON(needs.plan.outputs.dialects) }}
     defaults:
       run:
         working-directory: graphjin
@@ -35,14 +112,13 @@ jobs:
           go-version-file: graphjin/go.work
           cache-dependency-path: graphjin/**/go.sum
 
-      - name: Build
-        run: make build
-
-      - name: Test
-        run: make test
+      - name: Run the ${{ matrix.dialect }} suite
+        run: PARALLEL_DBS="${{ matrix.dialect }}" MAX_PARALLEL=1 bash scripts/test-parallel.sh
 
   codeql:
     name: codeql
+    needs: plan
+    if: needs.plan.outputs.modules != '[]' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -63,3 +139,23 @@ jobs:
       - uses: github/codeql-action/analyze@v3
         with:
           category: graphjin
+
+  # One check to require in branch protection. It passes when every job the
+  # plan picked passed, and when the plan picked none.
+  graphjin-ci:
+    name: graphjin ci
+    needs: [plan, unit, database]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check job results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in
+              success | skipped) ;;
+              *) exit 1 ;;
+            esac
+          done
