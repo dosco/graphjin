@@ -68,7 +68,57 @@ func newLocalKeystore(conf *Config) (*localKeystore, error) {
 	if err := ks.load(); err != nil {
 		return nil, err
 	}
+	if conf != nil && len(conf.Secrets.Keystore.PreviousKeys) > 0 {
+		var previous [][]byte
+		for _, text := range conf.Secrets.Keystore.PreviousKeys {
+			if strings.TrimSpace(text) == "" {
+				continue
+			}
+			old, err := decodeLocalKeystoreKey(strings.TrimSpace(text))
+			if err != nil {
+				return nil, fmt.Errorf("secrets.keystore.previous_keys: %w", err)
+			}
+			previous = append(previous, old)
+		}
+		if err := ks.rekey(previous); err != nil {
+			return nil, err
+		}
+	}
 	return ks, nil
+}
+
+// rekey re-seals under the current key every value that only a previous key
+// opens, and saves the keystore when it changed anything. A value that no key
+// opens is left as it is; reading it reports the error as before.
+func (ks *localKeystore) rekey(previous [][]byte) error {
+	if len(previous) == 0 || len(ks.entries) == 0 {
+		return nil
+	}
+	current := ks.key
+	changed := false
+	for ref := range ks.entries {
+		if _, err := ks.Open(ref); err == nil {
+			continue
+		}
+		for _, old := range previous {
+			ks.key = old
+			plaintext, err := ks.Open(ref)
+			ks.key = current
+			if err != nil {
+				continue
+			}
+			if err := ks.Seal(ref, plaintext); err != nil {
+				return err
+			}
+			changed = true
+			break
+		}
+	}
+	ks.key = current
+	if !changed {
+		return nil
+	}
+	return ks.Save(nil)
 }
 
 func resolveLocalKeystorePath(conf *Config) string {
