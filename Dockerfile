@@ -470,8 +470,10 @@ RUN groupadd --system --gid 1001 neko \
 RUN install -d -o 1001 -g 1001 -m 2770 /var/lib/openneko/agent-runs \
     && install -d -o root -g root -m 0711 /var/lib/openneko/sandbox-homes \
     && install -d -o 1001 -g 1001 -m 0770 /run/openneko
-# Compose runs serve as neko (user 1001:1001) and the sandbox as root, so the
-# sandbox can give each turn's commands their own user.
+# serve runs as neko by default. Compose runs the sandbox as root (user 0:0)
+# with most capabilities dropped, so it can give each turn's commands their
+# own user.
+USER neko
 CMD ["openneko", "serve"]
 
 # ─── 5c. neko-cli runtime ──────────────────────────────────────────────
