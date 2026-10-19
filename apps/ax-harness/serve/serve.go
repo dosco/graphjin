@@ -80,6 +80,9 @@ func Main(args []string) {
 	_ = flags.Parse(args)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// The run's terminal runs as another user in the shared group, so files
+	// the harness writes stay group-writable.
+	syscall.Umask(0o007)
 	listener, err := Listen(*socket)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

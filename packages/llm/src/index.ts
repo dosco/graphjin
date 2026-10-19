@@ -35,7 +35,7 @@ export {
 } from "./agent-error";
 export {
   ensureHostConfigProvisioned,
-  gatewayProviderName,
+  loadAgentModelKeys,
   provisionHostConfig,
   verifyAgentRuntimeReady,
 } from "./host-provision";

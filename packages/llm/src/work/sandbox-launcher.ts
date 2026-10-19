@@ -1,11 +1,11 @@
 import { startupEvent, startupPhase } from "@neko/telemetry/startup";
 import { copyAllowedTeamLibrary, copyTeamConceptSources, type AllowedLibrary } from "../library/staging";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { acquireAgentSlot } from "./agent-slots";
 import { retryWhileDatabaseUnavailable } from "@neko/db";
 import { touchAgentRun } from "./store";
-import { spawn } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { spawn, type ChildProcess } from "node:child_process";
+import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -21,7 +21,6 @@ import {
 import type { RunWorkflowAgentBackendInput } from "../workflows/agent-core";
 import type { RunWorkflowTurnDeps } from "../workflows/run-workflow-turn";
 import type { RunAgentBackendInput } from "./agent-core";
-import { AX_HARNESS_BINARY } from "../agent-runtime-contract";
 import type { AxBackend } from "../agent-backends/ax";
 import type { RunBinding } from "./broker";
 import type { RunChatTurnDeps } from "./run-chat-turn";
@@ -39,114 +38,78 @@ import {
 import { KNOWLEDGE_FILES, readKnowledgeSnapshot } from "../knowledge-cache";
 import { SandboxFailure } from "./sandbox-failure";
 
-// Wire protocol shared with the in-image entrypoint. The agent runs in a
-// separate container, so these can't share a module at runtime — they MUST
-// stay identical to apps/worker/src/agent-sandbox/protocol.ts (a unit test
-// asserts that). The launcher greps the exec's stdout for these markers.
+// Wire protocol shared with the agent runner (apps/worker/src/agent-sandbox/
+// entry.ts). They MUST stay identical to apps/worker/src/agent-sandbox/
+// protocol.ts (a unit test asserts that). The launcher reads these markers
+// from the runner's stdout.
 const EVENT_MARKER = "__openneko_event__";
 const RESULT_MARKER = "__openneko_agent_result__";
 const ARTIFACTS_MARKER = "__openneko_artifacts__";
 
 /**
- * Standalone bundle inside the `agent` Docker stage, beside its bridge/assets.
+ * The agent runner: the bundled entry.js the images ship, or entry.ts from a
+ * source checkout (run with tsx).
  */
-const AGENT_ENTRY = "/app/entry.js";
+function agentEntry(): string {
+  return process.env.OPENNEKO_AGENT_ENTRY || "/opt/openneko-agent/entry.js";
+}
 const SANDBOX_RUNTIME_DIR = ".openneko";
 
-const SANDBOX_OWNER_LABEL = "openneko.owner";
-const SANDBOX_BOOT_LABEL = "openneko.boot";
+/** Where each run's staged workspace lives; shared with serve and the sandbox. */
+function runsRoot(): string {
+  return process.env.OPENNEKO_AGENT_RUNS_DIR || path.join(tmpdir(), "openneko-agent-runs");
+}
+
 // Next may evaluate this module in separate instrumentation and route bundles
-// inside one process. Those bundles must share one boot label or one reaper
-// deletes another's box.
+// inside one process. Those bundles must share one boot ID, or one bundle's
+// sweep deletes another's live run.
 const sandboxBootHost = globalThis as typeof globalThis & { __opennekoSandboxBootId?: string };
 const SANDBOX_BOOT_ID = sandboxBootHost.__opennekoSandboxBootId ??= randomUUID();
 
-/** web or worker; each host deletes only boxes it owns. */
+/** web or worker; each host sweeps only the runs it staged. */
 function sandboxOwner(): string {
   return process.env.OPENNEKO_SANDBOX_OWNER ||
     (process.env.OPENNEKO_BROKER_PORT ? `openneko-broker-${process.env.OPENNEKO_BROKER_PORT}` : "openneko");
-}
-
-/** Labels that let the next boot of this host find boxes a restart stranded. */
-export function sandboxOwnerLabelArgs(owner = sandboxOwner(), boot = SANDBOX_BOOT_ID): string[] {
-  return ["--label", `${SANDBOX_OWNER_LABEL}=${owner}`, "--label", `${SANDBOX_BOOT_LABEL}=${boot}`];
-}
-
-/**
- * Deletes this host's sandboxes from earlier boots. The cleanup that would
- * delete a run's box dies with its host process, so without this every
- * restart leaves running boxes behind.
- */
-export async function reapStrandedSandboxes(
-  run: (args: string[], timeoutMs: number) => Promise<string>,
-  owner = sandboxOwner(),
-  boot = SANDBOX_BOOT_ID,
-): Promise<string[]> {
-  const listed: Array<{ name: string; labels?: Record<string, string> }> = [];
-  let pageToken = "";
-  do {
-    const response = JSON.parse(await run([
-      "sandbox", "list", "--selector", `${SANDBOX_OWNER_LABEL}=${owner}`,
-      "-o", "json", "--page-size", "500",
-      ...(pageToken ? ["--page-token", pageToken] : []),
-    ], 30_000)) as {
-      sandboxes: Array<{ name: string; labels?: Record<string, string> }>;
-      next_page_token: string;
-    };
-    listed.push(...response.sandboxes);
-    if (response.next_page_token && response.next_page_token === pageToken) {
-      throw new Error("OpenShell repeated a sandbox list page token");
-    }
-    pageToken = response.next_page_token;
-  } while (pageToken);
-  const stranded = listed.filter((box) => box.labels?.[SANDBOX_BOOT_LABEL] !== boot).map((box) => box.name);
-  const outcomes = await Promise.allSettled(stranded.map(async (name) => {
-    try {
-      await run(["sandbox", "delete", name], 60_000);
-    } catch (error) {
-      // Another process or the gateway may have removed it after list.
-      if (!/\b(?:not found|does not exist)\b/i.test(describeError(error))) throw error;
-    }
-  }));
-  const failed = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
-  if (failed.length) throw new AggregateError(failed.map((outcome) => outcome.reason), `could not delete ${failed.length} stranded sandboxes`);
-  return stranded;
 }
 
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-const reaperHost = globalThis as typeof globalThis & {
-  __opennekoStrandedReapers?: Map<string, { boot: string; timer: ReturnType<typeof setInterval> }>;
-};
-const strandedReapers = reaperHost.__opennekoStrandedReapers ??= new Map();
+/**
+ * Deletes this host's run folders from earlier boots. A run removes its own
+ * folder when it ends, but a restart mid-run leaves it behind.
+ */
+export async function reapStrandedRuns(root = runsRoot(), owner = sandboxOwner(), boot = SANDBOX_BOOT_ID): Promise<string[]> {
+  let names: string[];
+  try {
+    names = await readdir(root);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const prefix = `${safeSegment(owner)}.`;
+  const stranded = names.filter((name) => name.startsWith(prefix) && !name.startsWith(`${prefix}${boot}.`));
+  await Promise.all(stranded.map((name) => rm(path.join(root, name), { recursive: true, force: true })));
+  return stranded;
+}
+
+function safeSegment(value: string): string {
+  return value.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 64);
+}
+
+const reaperHost = globalThis as typeof globalThis & { __opennekoStrandedReaper?: ReturnType<typeof setInterval> };
 
 export interface SandboxLauncherOptions {
-  /** `openshell` binary; default resolves from PATH. */
-  cli?: string;
-  /** Registered gateway name (mTLS) — preferred; else gatewayEndpoint; else CLI default. */
-  gatewayName?: string;
-  gatewayEndpoint?: string;
-  /** Agent image (the Dockerfile `agent` stage), e.g. ghcr.io/open-neko/agent:<ver>. */
-  agentImage: string;
-  /** Per-sandbox limits, including the agent and all tool children. */
-  cpu?: string;
-  memory?: string;
-  /** OpenShell provider holding the model key — the proxy injects it; never in the box. */
-  modelProvider?: string;
-  /** Model endpoint egress; always scoped to the vendored Ax Harness executable. */
-  modelHosts?: ReadonlyArray<{ host: string; port?: number }>;
-  /** Extra env exported into the exec sh-wrapper. Values must be safe. */
-  env?: Record<string, string>;
   /**
-   * Alias the OpenShell-injected credential env var (holds the
-   * `openshell:resolve:env:…` placeholder) to the env var the backend reads —
-   * e.g. {from:"MODEL_API_KEY", to:"GEMINI_API_KEY"} for Gemini. The proxy
-   * still substitutes the real key on egress, so the box only sees the
-   * placeholder. `to` comes from the exhaustive Admin-provider runtime contract.
+   * Model keys the run's agent may use, by variable name; unset loads the
+   * org's key for each run. They reach only the runner, which passes them to
+   * openneko serve with each turn; the run's tools and terminal never see
+   * them.
    */
-  keyAliases?: ReadonlyArray<{ from: string; to: string }>;
+  modelKeys?: Record<string, string>;
+  /** Extra variables for the runner. */
+  env?: Record<string, string>;
   /** Broker coordinates for the agent's MCP tools. */
   brokerUrl?: string;
   /** Mint a per-run bearer token bound to {runId, orgId, threadId} (the broker forces
@@ -159,15 +122,11 @@ export interface SandboxLauncherOptions {
 }
 
 /**
- * Per-org model routing captured from the persisted provider row immediately
- * before a sandbox run. Keep this separate from process.env: the web and
- * worker hosts are long-lived, and Next.js may evaluate route bundles at
- * different times inside the same process.
+ * Per-org launch settings captured before a run. Model keys are not among
+ * them: the launcher loads the org's key for each run, so none stays in
+ * process state.
  */
-export type AgentRuntimeLaunchConfig = Pick<
-  SandboxLauncherOptions,
-  "modelProvider" | "modelHosts" | "keyAliases"
->;
+export type AgentRuntimeLaunchConfig = Pick<SandboxLauncherOptions, "modelKeys">;
 
 type RunCore = (input: RunAgentBackendInput) => Promise<AgentRunResult>;
 type RunWorkflowCore = (input: RunWorkflowAgentBackendInput) => Promise<AgentRunResult>;
@@ -200,14 +159,6 @@ type SandboxRunInput =
   | RunAgentBackendInput
   | RunWorkflowAgentBackendInput
   | RunJobAgentBackendInput;
-
-const SHELL_KEY_RX = /^[A-Z_][A-Z0-9_]*$/;
-// Shell variable names also support the profile's uppercase MODEL_API_KEY.
-const SHELL_VARNAME_RX = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
 
 type SerializableAgentRunOptions = Pick<
   AgentRunOptions,
@@ -245,107 +196,6 @@ function serializableAgentRunOptions(
     ...(run.maxToolIterations !== undefined
       ? { maxToolIterations: run.maxToolIterations }
       : {}),
-  };
-}
-
-type SandboxEgressRule = { host: string; binary: string; port?: number; credentialProvider?: string };
-
-export type OpenShellSandboxPolicy = {
-  version: 1;
-  filesystem_policy: {
-    include_workdir: true;
-    read_only: string[];
-    read_write: string[];
-  };
-  landlock: { compatibility: "best_effort" };
-  process: { run_as_user: "sandbox"; run_as_group: "sandbox" };
-  network_policies: Record<
-    string,
-    {
-      name: string;
-      binaries: Array<{ path: string }>;
-      endpoints: Array<{
-        host: string;
-        port: number;
-        protocol: "rest";
-        enforcement: "enforce";
-        credential_binding?: { provider: string };
-        rules: Array<{ allow: { method: "*"; path: "/**" } }>;
-      }>;
-    }
-  >;
-};
-
-/**
- * Build the complete policy before sandbox creation. Grouping is by binary,
- * so model, broker, and GraphJin endpoints never gain one another's executable
- * allowlist through an endpoint/binary cross-product.
- */
-export function buildSandboxPolicy(
-  egress: ReadonlyArray<SandboxEgressRule>,
-): OpenShellSandboxPolicy {
-  const byBinary = new Map<
-    string,
-    Map<string, { host: string; port: number; credentialProvider?: string }>
-  >();
-  for (const rule of egress) {
-    const port = rule.port ?? 443;
-    const endpoints = byBinary.get(rule.binary) ?? new Map();
-    const key = `${rule.host}\0${port}`;
-    const previous = endpoints.get(key);
-    endpoints.set(key, {
-      host: rule.host,
-      port,
-      ...(rule.credentialProvider || previous?.credentialProvider
-        ? { credentialProvider: rule.credentialProvider ?? previous!.credentialProvider }
-        : {}),
-    });
-    byBinary.set(rule.binary, endpoints);
-  }
-
-  const networkPolicies: OpenShellSandboxPolicy["network_policies"] = {};
-  let index = 0;
-  for (const [binary, endpoints] of [...byBinary.entries()].sort(([a], [b]) =>
-    a.localeCompare(b),
-  )) {
-    const label =
-      path.posix.basename(binary).replace(/[^a-zA-Z0-9_]/g, "_") ||
-      "binary";
-    const name = `allow_${label}_${index++}`;
-    networkPolicies[name] = {
-      name,
-      binaries: [{ path: binary }],
-      endpoints: [...endpoints.values()]
-        .sort((a, b) => a.host.localeCompare(b.host) || a.port - b.port)
-        .map(({ host, port, credentialProvider }) => ({
-          host,
-          port,
-          protocol: "rest",
-          enforcement: "enforce",
-          ...(credentialProvider ? { credential_binding: { provider: credentialProvider } } : {}),
-          rules: [{ allow: { method: "*", path: "/**" } }],
-        })),
-    };
-  }
-
-  return {
-    version: 1,
-    filesystem_policy: {
-      include_workdir: true,
-      read_only: [
-        "/usr",
-        "/lib",
-        "/proc",
-        "/dev/urandom",
-        "/app",
-        "/etc",
-        "/var/log",
-      ],
-      read_write: ["/sandbox", "/tmp", "/dev/null"],
-    },
-    landlock: { compatibility: "best_effort" },
-    process: { run_as_user: "sandbox", run_as_group: "sandbox" },
-    network_policies: networkPolicies,
   };
 }
 
@@ -457,7 +307,7 @@ export async function stageSandboxWorkspace(
 
 /**
  * Build the `runCore` the launcher injects into runChatTurn: run the
- * agent loop in an OpenShell sandbox.
+ * agent loop in its own runner process, with its terminal in the sandbox.
  * The host-side prologue (prompt build) and epilogue (fence handling +
  * persistence) stay in runChatTurn around this call. Shared by the worker
  * (channel runs) and the web route (interactive chat) — both are control-plane
@@ -473,7 +323,7 @@ export function makeSandboxWorkflowRunCore(
   return makeSandboxCore(opts, "workflow") as RunWorkflowCore;
 }
 
-/** Run one non-interactive backend turn inside OpenShell. */
+/** Run one non-interactive backend turn in a runner process. */
 export function makeSandboxJobRunCore(
   opts: SandboxLauncherOptions,
 ): RunJobCore {
@@ -481,7 +331,7 @@ export function makeSandboxJobRunCore(
 }
 
 /**
- * Wrap a configured backend so every run happens in an OpenShell sandbox.
+ * Wrap a configured backend so every run happens in a runner process.
  * The wrapper accepts only serializable, non-interactive run options; tools
  * are derived from `access` inside the box instead of trusting caller-supplied
  * MCP servers or permission callbacks.
@@ -506,7 +356,7 @@ export async function sandboxAgentBackendForJob(opts: {
   }
   // Resolve the org's persisted provider into an immutable launch snapshot.
   // Import lazily because host-provision owns the gateway sync and itself
-  // imports this module's OpenShell helpers.
+  // imports this module.
   const launchConfig = await import("../host-provision").then(
     ({ ensureHostConfigProvisioned }) =>
       ensureHostConfigProvisioned(opts.orgId),
@@ -527,7 +377,7 @@ export async function sandboxAgentBackendForJob(opts: {
       }
       if (run.mcpServers) {
         throw new Error(
-          "agent job tools must be declared through the OpenShell access envelope",
+          "agent job tools must be declared through the access envelope",
         );
       }
       if (run.signal) {
@@ -549,72 +399,45 @@ export async function sandboxAgentBackendForJob(opts: {
 }
 
 /**
- * Starts this host's sweep of sandboxes stranded by an earlier boot. Every
- * run creates and deletes its own sandbox, so no capacity is held idle.
+ * Starts this host's sweep of run folders stranded by an earlier boot. Every
+ * run stages and removes its own folder, so nothing is held between runs.
  */
 export async function prepareSandboxCapacity(
-  opts = sandboxLauncherOptionsFromEnv(),
+  opts: Pick<SandboxLauncherOptions, "onLog"> = {},
 ): Promise<void> {
-  makeSandboxRunCore(opts);
-  startStrandedSandboxReaper(opts);
+  if (reaperHost.__opennekoStrandedReaper) return;
+  const log = opts.onLog ?? console.log;
+  const reap = () => reapStrandedRuns()
+    .then((names) => {
+      if (names.length) log(`deleted ${names.length} agent run folders left by an earlier start`);
+    })
+    .catch((error) => log(`could not delete agent run folders left by an earlier start: ${describeError(error)}`));
+  const timer = setInterval(() => { void reap(); }, 300_000);
+  timer.unref();
+  reaperHost.__opennekoStrandedReaper = timer;
+  await reap();
 }
 
 /** Explicit shutdown hook for hosts/tests. */
 export async function closeSandboxReapers(): Promise<void> {
-  for (const { timer } of strandedReapers.values()) clearInterval(timer);
-  strandedReapers.clear();
+  if (reaperHost.__opennekoStrandedReaper) clearInterval(reaperHost.__opennekoStrandedReaper);
+  reaperHost.__opennekoStrandedReaper = undefined;
 }
 
-function startStrandedSandboxReaper(opts: SandboxLauncherOptions): void {
-  const cli = opts.cli ?? "openshell";
-  const gatewayArgs = opts.gatewayName ? ["--gateway", opts.gatewayName] : opts.gatewayEndpoint ? ["--gateway-endpoint", opts.gatewayEndpoint] : [];
-  const runCleanup = (args: string[], timeout: number) => runProcessOnce(cli, [...gatewayArgs, ...args], timeout);
-  const gatewayKey = JSON.stringify([cli, gatewayArgs]);
-  if (strandedReapers.get(gatewayKey)?.boot === SANDBOX_BOOT_ID) return;
-  const previous = strandedReapers.get(gatewayKey);
-  if (previous) clearInterval(previous.timer);
-  let running = false;
-  const reap = async () => {
-    if (running) return;
-    running = true;
-    try {
-      const names = await reapStrandedSandboxes(runCleanup);
-      if (names.length) (opts.onLog ?? console.log)(`deleted ${names.length} sandboxes left by an earlier start`);
-    } catch (error) {
-      (opts.onLog ?? console.error)(`could not delete sandboxes left by an earlier start: ${describeError(error)}`);
-    } finally {
-      running = false;
-    }
-  };
-  const timer = setInterval(() => { void reap(); }, 300_000);
-  timer.unref();
-  strandedReapers.set(gatewayKey, { boot: SANDBOX_BOOT_ID, timer });
-  void reap();
+/** Makes the stage readable and writable by the group serve and the sandbox share. */
+async function shareWithGroup(dir: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("chmod", ["-R", "g+rwX,o-rwx", dir], { stdio: "ignore" });
+    child.on("error", reject);
+    child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`chmod exited ${code}`))));
+  });
 }
 
 function makeSandboxCore(
   opts: SandboxLauncherOptions,
   kind: SandboxRunKind,
 ): (input: SandboxRunInput) => Promise<AgentRunResult> {
-  const cli = opts.cli ?? "openshell";
-  const log = opts.onLog ?? ((l: string) => console.log(`[agent-sandbox] ${l}`));
-  const cpu = opts.cpu ?? "2";
-  const memory = opts.memory ?? "1Gi";
-  if (!/^(?:[1-9]\d*|\d+\.\d+|[1-9]\d*m)$/.test(cpu) || parseFloat(cpu) <= 0) {
-    throw new Error("Invalid agent sandbox CPU limit");
-  }
-  if (!/^[1-9]\d*(?:Ki|Mi|Gi|Ti|K|M|G|T)?$/.test(memory)) {
-    throw new Error("Invalid agent sandbox memory limit");
-  }
-
-  const gatewayArgs = opts.gatewayName
-    ? ["--gateway", opts.gatewayName]
-    : opts.gatewayEndpoint
-      ? ["--gateway-endpoint", opts.gatewayEndpoint]
-      : [];
-
-  const runCleanup = (args: string[], timeoutMs: number): Promise<string> =>
-    runProcessOnce(cli, [...gatewayArgs, ...args], timeoutMs);
+  const log = opts.onLog ?? ((l: string) => console.log(`[agent-run] ${l}`));
 
   const runInSandbox = async function (
     input: SandboxRunInput,
@@ -652,31 +475,19 @@ function makeSandboxCore(
         }));
       }
     };
-    const run = (args: string[], timeoutMs: number, stdin?: string): Promise<string> =>
-      runProcessOnce(cli, [...gatewayArgs, ...args], timeoutMs, signal, stdin);
     const inputPrompt = jobInput?.run.prompt ??
       (input as RunAgentBackendInput | RunWorkflowAgentBackendInput).prompt;
-    // OpenShell 0.1.x limits sandbox names to 19 characters. Hash the full
-    // run ID so distinct IDs that share a prefix cannot collide.
-    const name = `neko-${isJob ? "j" : "w"}-${createHash("sha256").update(input.runId).digest("hex").slice(0, 12)}`;
 
-    // The box is a separate filesystem; the host workspace path (~/.config/… or
-    // /Users/…) can't be recreated under the sandbox user's home. Upload the
-    // workspace under /sandbox and remap every workspace path + the prompt from
-    // the host orgRoot prefix to the box prefix (all roots are under orgRoot).
+    // The run sees a staged copy of the least it needs, under the runs root
+    // that serve and the sandbox share; workspace paths and the prompt are
+    // remapped from the host org root to the stage.
     const hostOrgRoot = input.workspace.orgRoot;
-    const boxOrgRoot = path.posix.join("/sandbox", path.basename(hostOrgRoot));
-    const toBox = (s: string): string => s.split(hostOrgRoot).join(boxOrgRoot);
-    const boxWorkspace = Object.fromEntries(
-      Object.entries(input.workspace).map(([k, v]) => [
-        k,
-        typeof v === "string" ? toBox(v) : v,
-      ]),
-    ) as RunAgentBackendInput["workspace"];
+    const root = runsRoot();
+    await mkdir(root, { recursive: true });
+    const stageDir = await mkdtemp(path.join(root, `${safeSegment(sandboxOwner())}.${SANDBOX_BOOT_ID}.`));
+    const stageOrgRoot = path.join(stageDir, "workspace", path.basename(hostOrgRoot));
+    const toStage = (s: string): string => s.split(hostOrgRoot).join(stageOrgRoot);
 
-    // Every sandboxed path uses brokered GraphQL. The source URL and actor
-    // credential stay on the trusted host, and no source egress is granted to
-    // any general-purpose sandbox binary.
     const recordsScoped =
       !isJob &&
       kind === "work" &&
@@ -689,112 +500,10 @@ function makeSandboxCore(
       ? jobInput?.run.userMessage ?? ""
       : (input as RunAgentBackendInput | RunWorkflowAgentBackendInput).userMessage;
 
-    const job = {
-      kind,
-      orgId: input.orgId,
-      threadId,
-      runId: input.runId,
-      message,
-      prompt: toBox(inputPrompt),
-      backendId: input.backend.id,
-      ax: (input.backend as AxBackend).ax,
-      workspace: boxWorkspace,
-      ...(input.allowedSkills ? { allowedSkills: [...input.allowedSkills] } : {}),
-      ...(kind === "work"
-        ? {
-            threadState: (input as RunAgentBackendInput).threadState,
-            pluginActions: (input as RunAgentBackendInput).pluginActions,
-            packActions: (input as RunAgentBackendInput).packActions,
-            sourceConfigEnabled:
-              (input as RunAgentBackendInput).sourceConfigEnabled ?? false,
-            dataSurface:
-              (input as RunAgentBackendInput).dataSurface ?? "customer",
-            ...((input as RunAgentBackendInput).graphjinToolPolicy
-              ? {
-                  graphjinToolPolicy: (input as RunAgentBackendInput)
-                    .graphjinToolPolicy,
-                }
-              : {}),
-            ...((input as RunAgentBackendInput).graphjinDataPath === "agent"
-              ? { graphjinDataPath: "agent" }
-              : {}),
-            ...((input as RunAgentBackendInput).nativeDelegation
-              ? {
-                  nativeDelegation: (input as RunAgentBackendInput)
-                    .nativeDelegation,
-                }
-              : {}),
-            // Channel render intent — gates the in-box render tool (see
-            // docs/PER_CHANNEL_RENDERING.md). Default true if absent.
-            wantsCards: (input as RunAgentBackendInput).wantsCards ?? true,
-            cardSchema: (input as RunAgentBackendInput).cardSchema ?? "core",
-          }
-        : kind === "workflow"
-          ? {
-            workflowRunId: (input as RunWorkflowAgentBackendInput).workflowRunId,
-            mode: (input as RunWorkflowAgentBackendInput).mode,
-            networkHosts: (input as RunWorkflowAgentBackendInput).networkHosts,
-            ...((input as RunWorkflowAgentBackendInput).graphjinDataPath === "agent"
-              ? { graphjinDataPath: "agent" }
-              : {}),
-            triggeredByObservationId:
-              (input as RunWorkflowAgentBackendInput).triggeredByObservationId ?? null,
-            steps: (input as RunWorkflowAgentBackendInput).steps ?? [],
-            input: (input as RunWorkflowAgentBackendInput).input ?? {},
-            maxContinuations:
-              (input as RunWorkflowAgentBackendInput).maxContinuations ?? 0,
-            ...((input as RunWorkflowAgentBackendInput).wantsCards === false ? { wantsCards: false } : {}),
-            agentRun: serializableAgentRunOptions({
-              prompt: inputPrompt,
-              timeoutMs: (input as RunWorkflowAgentBackendInput).timeoutMs,
-              reasoningEffort: (input as RunWorkflowAgentBackendInput).reasoningEffort,
-              maxToolIterations: (input as RunWorkflowAgentBackendInput).maxToolIterations,
-            }),
-            }
-          : {
-              agentAccess: jobInput?.access ?? {},
-              agentRun: serializableAgentRunOptions(jobInput?.run ?? { prompt: inputPrompt }),
-            }),
-    };
-
-    // MCP tools reach the control plane via the broker — node's
-    // fetch routes through the egress proxy. Keep this endpoint scoped to the
-    // node binary in the creation-time policy.
-    const brokerEgress: SandboxEgressRule[] = opts.brokerUrl
-      ? (() => {
-          const u = new URL(opts.brokerUrl);
-          return [
-            {
-              host: u.hostname,
-              port: Number(u.port) || 80,
-              binary: "/usr/local/bin/node",
-            },
-          ];
-        })()
-      : [];
-    // OpenShell binds model egress to the process that calls the model.
-    const modelBinary = AX_HARNESS_BINARY;
-    const egressRules: SandboxEgressRule[] = [
-      ...(opts.modelHosts ?? []).map((endpoint, index) => ({
-        ...endpoint,
-        binary: modelBinary,
-        ...(index === 0 && opts.modelProvider
-          ? { credentialProvider: opts.modelProvider }
-          : {}),
-      })),
-      ...(kind === "workflow"
-        ? ((input as RunWorkflowAgentBackendInput).networkHosts ?? []).map((host) => ({
-            host,
-            binary: modelBinary,
-          }))
-        : []),
-      ...brokerEgress,
-    ];
-
-    const stageDir = await mkdtemp(path.join(tmpdir(), "oss-agent-"));
-    let sandboxCreated = false;
-    // Unknown (old image, timeout, crash) must preserve partial artifacts.
+    let child: ChildProcess | undefined;
+    // Unknown (timeout, crash) must preserve partial artifacts.
     let artifactsPresent: boolean | undefined;
+    let staged: StagedSandboxWorkspace | undefined;
     let skillActor: { userId: string | null; role: string | null } | null = null;
     let skillBaseline: SkillFileHashes | undefined;
     const skillToolCalls: SkillToolCall[] = [];
@@ -805,15 +514,16 @@ function makeSandboxCore(
         type: "status",
         message: "Preparing secure agent workspace…",
       });
-      const staged = await timed("stage", () => stageSandboxWorkspace(input.workspace, stageDir, {
+      staged = await timed("stage", () => stageSandboxWorkspace(input.workspace, stageDir, {
         // A records-scoped turn must remain functional during a rolling
-        // upgrade even if the sandbox image predates the records skill.
+        // upgrade even if the runner predates the records skill.
         requiredSkillNames: recordsScoped ? ["records"] : [],
         ...(input.allowedSkills ? { allowedSkills: input.allowedSkills } : {}),
         ...(input.allowedLibrary ? { allowedLibrary: input.allowedLibrary } : {}),
       }));
+      const stagedWorkspace = staged.workspace;
       if (!isJob) {
-        // Skill edits made in the box are saved when the turn ends; a member
+        // Skill edits made in the run are saved when the turn ends; a member
         // runs with their own saved skill versions laid over the company's.
         const { getWorkRunActor } = await import("./personas");
         skillActor = await getWorkRunActor(input.runId, input.orgId).catch(() => null);
@@ -821,141 +531,127 @@ function makeSandboxCore(
           ? await readPersonalSkillFiles(hostOrgRoot, skillActor.userId).catch(() => [])
           : [];
         for (const file of personal) {
-          const target = path.join(staged.workspace.skillsRoot, file.path);
+          const target = path.join(stagedWorkspace.skillsRoot, file.path);
           await mkdir(path.dirname(target), { recursive: true });
           await writeFile(target, file.content);
         }
         skillBaseline = await hashSkillTree(input.workspace.skillsRoot);
         for (const file of personal) skillBaseline.set(file.path, skillFileHash(file.content));
       }
-      const stageRuntimeRoot = path.join(
-        staged.workspace.runRoot,
-        SANDBOX_RUNTIME_DIR,
-      );
-      await mkdir(stageRuntimeRoot, { recursive: true });
-      const jobFile = path.join(stageRuntimeRoot, "job.json");
-      await writeFile(jobFile, JSON.stringify(job));
-      const policyFile = path.join(stageDir, "policy.json");
-      await writeFile(
-        policyFile,
-        JSON.stringify(buildSandboxPolicy(egressRules)),
-      );
-      const sandboxJobPath = path.posix.join(
-        boxWorkspace.runRoot,
-        SANDBOX_RUNTIME_DIR,
-        "job.json",
-      );
 
-      await input.emit({
-        type: "status",
-        message: "Starting secure agent sandbox…",
-      });
-      const createArgs = [
-        "sandbox",
-        "create",
-        "--name",
-        name,
-        "--from",
-        opts.agentImage,
-        "--cpu",
-        cpu,
-        "--memory",
-        memory,
-        "--detach",
-        "--no-tty",
-        "--no-auto-providers",
-        ...sandboxOwnerLabelArgs(),
-        ...(opts.modelProvider ? ["--provider", opts.modelProvider] : []),
-        "--policy",
-        policyFile,
-        "--",
-        "sleep",
-        "infinity",
-      ];
-      const reclaimAndCreate = async () => {
-        // Run names are deterministic so a durable queue retry can collide
-        // with an OpenShell sandbox orphaned by a worker restart or deploy.
-        // Replace only that exact run sandbox, then let the normal finally
-        // path own cleanup for the newly created instance.
-        log(`replacing stale agent sandbox after name collision: ${name}`);
-        await runCleanup(["sandbox", "delete", name], 60_000);
-        await timed("create", () => run(createArgs, 180_000));
+      const job = {
+        kind,
+        orgId: input.orgId,
+        threadId,
+        runId: input.runId,
+        message,
+        prompt: toStage(inputPrompt),
+        backendId: input.backend.id,
+        ax: (input.backend as AxBackend).ax,
+        workspace: stagedWorkspace,
+        ...(input.allowedSkills ? { allowedSkills: [...input.allowedSkills] } : {}),
+        ...(kind === "work"
+          ? {
+              threadState: (input as RunAgentBackendInput).threadState,
+              pluginActions: (input as RunAgentBackendInput).pluginActions,
+              packActions: (input as RunAgentBackendInput).packActions,
+              sourceConfigEnabled:
+                (input as RunAgentBackendInput).sourceConfigEnabled ?? false,
+              dataSurface:
+                (input as RunAgentBackendInput).dataSurface ?? "customer",
+              ...((input as RunAgentBackendInput).graphjinToolPolicy
+                ? {
+                    graphjinToolPolicy: (input as RunAgentBackendInput)
+                      .graphjinToolPolicy,
+                  }
+                : {}),
+              ...((input as RunAgentBackendInput).graphjinDataPath === "agent"
+                ? { graphjinDataPath: "agent" }
+                : {}),
+              ...((input as RunAgentBackendInput).nativeDelegation
+                ? {
+                    nativeDelegation: (input as RunAgentBackendInput)
+                      .nativeDelegation,
+                  }
+                : {}),
+              // Channel render intent — gates the render tool (see
+              // docs/PER_CHANNEL_RENDERING.md). Default true if absent.
+              wantsCards: (input as RunAgentBackendInput).wantsCards ?? true,
+              cardSchema: (input as RunAgentBackendInput).cardSchema ?? "core",
+            }
+          : kind === "workflow"
+            ? {
+              workflowRunId: (input as RunWorkflowAgentBackendInput).workflowRunId,
+              mode: (input as RunWorkflowAgentBackendInput).mode,
+              networkHosts: (input as RunWorkflowAgentBackendInput).networkHosts,
+              ...((input as RunWorkflowAgentBackendInput).graphjinDataPath === "agent"
+                ? { graphjinDataPath: "agent" }
+                : {}),
+              triggeredByObservationId:
+                (input as RunWorkflowAgentBackendInput).triggeredByObservationId ?? null,
+              steps: (input as RunWorkflowAgentBackendInput).steps ?? [],
+              input: (input as RunWorkflowAgentBackendInput).input ?? {},
+              maxContinuations:
+                (input as RunWorkflowAgentBackendInput).maxContinuations ?? 0,
+              ...((input as RunWorkflowAgentBackendInput).wantsCards === false ? { wantsCards: false } : {}),
+              agentRun: serializableAgentRunOptions({
+                prompt: inputPrompt,
+                timeoutMs: (input as RunWorkflowAgentBackendInput).timeoutMs,
+                reasoningEffort: (input as RunWorkflowAgentBackendInput).reasoningEffort,
+                maxToolIterations: (input as RunWorkflowAgentBackendInput).maxToolIterations,
+              }),
+              }
+            : {
+                agentAccess: jobInput?.access ?? {},
+                agentRun: serializableAgentRunOptions(jobInput?.run ?? { prompt: inputPrompt }),
+              }),
       };
-      try {
-        await timed("create", () => run(createArgs, 180_000));
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (message.includes("already exists")) {
-          await reclaimAndCreate();
-        } else {
-          // Not a name collision: a transient gateway hiccup (restart mid
-          // deploy) or a first-use image pull that outran the timeout — the
-          // gateway-side pull keeps going, so a second attempt usually rides
-          // its cache. Retry once before surfacing the real error; a timed-out
-          // first attempt may have half-registered the name, which the retry
-          // then reclaims.
-          log(
-            `agent sandbox create failed (${message.slice(0, 200)}); retrying once`,
-          );
-          await new Promise((resolve) => setTimeout(resolve, 3_000));
-          try {
-            await timed("create", () => run(createArgs, 180_000));
-          } catch (retryError) {
-            const retryMessage =
-              retryError instanceof Error ? retryError.message : String(retryError);
-            if (!retryMessage.includes("already exists")) throw retryError;
-            await reclaimAndCreate();
-          }
-        }
-      }
-      sandboxCreated = true;
-      // OpenShell 0.1.2 rejects --upload together with a create command.
-      // Keep the sandbox alive, then upload after creation has settled.
-      await timed("workspace_upload", () => run([
-        "sandbox", "upload", name, staged.orgRoot,
-        path.posix.dirname(boxOrgRoot), "--no-git-ignore",
-      ], 120_000));
-      if (opts.modelProvider) {
-        await timed("provider_ready", () => run([
-          "sandbox", "provider", "status", name, opts.modelProvider!,
-          "--wait", "--timeout", "60",
-        ], 65_000));
-      }
+      const runtimeRoot = path.join(stagedWorkspace.runRoot, SANDBOX_RUNTIME_DIR);
+      await mkdir(runtimeRoot, { recursive: true });
+      const jobFile = path.join(runtimeRoot, "job.json");
+      await writeFile(jobFile, JSON.stringify(job), { mode: 0o600 });
+      await shareWithGroup(stageDir);
 
       log(
-        `agent sandbox ready: ${name} (backend=${input.backend.id}, kind=${kind}, ` +
-          `graphjin=brokered, skill_overrides=${staged.skillOverrides.length})`,
+        `agent run staged: ${stageDir} (backend=${input.backend.id}, kind=${kind}, ` +
+          `skill_overrides=${staged.skillOverrides.length})`,
       );
       await input.emit({ type: "status", message: "Agent is working…" });
+      const entry = agentEntry();
+      const env: Record<string, string> = {
+        ...passThroughEnv(),
+        HOME: stageDir,
+        OPENNEKO_RUN_JOB_FILE: jobFile,
+        ...(opts.brokerUrl ? { OPENNEKO_BROKER_URL: opts.brokerUrl } : {}),
+        ...(opts.brokerUrl && opts.brokerTokenFor
+          ? {
+              OPENNEKO_BROKER_TOKEN: opts.brokerTokenFor({
+                runId: input.runId,
+                orgId: input.orgId,
+                threadId,
+                kind,
+              }),
+            }
+          : {}),
+        ...(opts.modelKeys ??
+          (await import("../host-provision").then(({ loadAgentModelKeys }) => loadAgentModelKeys(input.orgId)))),
+        ...(opts.env ?? {}),
+      };
       const result = await timed("exec", () => execAndStream(
-        cli,
-        gatewayArgs,
-        name,
-        buildInnerCommand({
-          env: {
-            OPENNEKO_RUN_JOB_FILE: sandboxJobPath,
-            ...(opts.brokerUrl ? { OPENNEKO_BROKER_URL: opts.brokerUrl } : {}),
-            ...(opts.brokerUrl && opts.brokerTokenFor
-              ? {
-                  OPENNEKO_BROKER_TOKEN: opts.brokerTokenFor({
-                  runId: input.runId,
-                  orgId: input.orgId,
-                  threadId,
-                  kind,
-                }),
-                }
-              : {}),
-            ...(opts.env ?? {}),
-          },
-          keyAliases: opts.keyAliases,
-        }),
+        {
+          command: process.execPath,
+          args: entry.endsWith(".ts") ? ["--import", "tsx", entry] : [entry],
+          cwd: path.dirname(entry),
+          env,
+          onSpawn: (spawned) => { child = spawned; },
+        },
         (event) => {
           if (event.type === "tool_start") skillToolCalls.push({ name: event.name, input: event.input });
           return input.emit(event);
         },
-        // Must outlive the in-box turn budget with margin, so a long turn
-        // dies as the backend's honest timeout error — not an opaque
-        // exec-stream kill from out here.
+        // Must outlive the runner's turn budget with margin, so a long turn
+        // dies as the backend's honest timeout error — not an opaque kill
+        // from out here.
         opts.execTimeoutMs ??
           (kind === "workflow"
             ? workflowExecBudgetMs(input as RunWorkflowAgentBackendInput)
@@ -968,48 +664,36 @@ function makeSandboxCore(
       return result;
     } finally {
       opts.brokerRelease?.(input.runId);
-      // Pull artifacts the agent wrote in the box back to the host run dir
-      // before deleting the box — otherwise the file-serving endpoint reads an
-      // empty host dir and 404s the download. Best-effort, and runs even when
-      // the turn errored or timed out (the box is still alive here), so a
-      // partial artifact from a long run isn't lost.
-      if (sandboxCreated && !isJob && !signal?.aborted && artifactsPresent !== false) {
-        await mkdir(input.workspace.artifactRoot, { recursive: true }).catch(
-          () => {},
-        );
-        await timed("download", () => runCleanup(
-          [
-            "sandbox",
-            "download",
-            name,
-            boxWorkspace.artifactRoot,
-            input.workspace.artifactRoot,
-          ],
-          120_000,
-        )).catch((e) => log(`artifact pull-back skipped: ${(e as Error).message}`));
+      // The runner's process group is the run's process tree.
+      if (child) killGroup(child);
+      // Copy artifacts the agent wrote back to the host run dir, so the
+      // file-serving endpoint finds them. Best-effort, and runs even when the
+      // turn errored or timed out, so a partial artifact isn't lost.
+      if (staged && !isJob && !signal?.aborted && artifactsPresent !== false) {
+        await timed("download", async () => {
+          await mkdir(input.workspace.artifactRoot, { recursive: true });
+          await cp(staged!.workspace.artifactRoot, input.workspace.artifactRoot, { recursive: true, force: true });
+        }).catch((e) => log(`artifact copy-back skipped: ${(e as Error).message}`));
       }
       const scriptSteps = kind === "workflow" &&
         ((input as RunWorkflowAgentBackendInput).steps ?? []).some((step) => step.script);
       const skillDecision = scriptSteps
         ? { capture: true, reason: "script_step" }
-        : skillCaptureDecision(skillEvidenceComplete
-          ? { toolCalls: skillToolCalls, cwd: boxOrgRoot, skillsRoots: [boxWorkspace.skillsRoot] }
+        : skillCaptureDecision(skillEvidenceComplete && staged
+          ? { toolCalls: skillToolCalls, cwd: staged.orgRoot, skillsRoots: [staged.workspace.skillsRoot] }
           : null);
-      if (sandboxCreated && skillActor && skillBaseline && !skillDecision.capture) {
+      if (staged && skillActor && skillBaseline && !skillDecision.capture) {
         startupEvent("sandbox.skill_capture", { outcome: "skipped", reason: skillDecision.reason });
         log(JSON.stringify({
           type: "sandbox_phase", runId: input.runId, phase: "skill_capture",
           durationMs: 0, ok: true, skipped: true, reason: skillDecision.reason,
         }));
-      } else if (sandboxCreated && skillActor && skillBaseline) {
+      } else if (staged && skillActor && skillBaseline) {
+        const stagedSkills = staged.workspace.skillsRoot;
         await timed("skill_capture", () => captureSandboxSkillEdits({
-          listSandboxHashes: () => runCleanup([
-            "sandbox", "exec", "-n", name, "--no-tty", "--",
-            "/usr/bin/python3", "-c", SANDBOX_SKILL_HASH_COMMAND, boxWorkspace.skillsRoot,
-          ], 60_000),
-          downloadSkill: (skill, destination) => runCleanup([
-            "sandbox", "download", name, path.posix.join(boxWorkspace.skillsRoot, skill), destination,
-          ], 120_000).then(() => {}),
+          listSandboxHashes: async () => JSON.stringify(Object.fromEntries(await hashSkillTree(stagedSkills))),
+          downloadSkill: (skill, destination) =>
+            cp(path.join(stagedSkills, skill), destination, { recursive: true, force: true }),
           orgRoot: hostOrgRoot,
           orgId: input.orgId,
           runId: input.runId,
@@ -1020,12 +704,6 @@ function makeSandboxCore(
             if (saved) log(JSON.stringify({ type: "skill_capture", runId: input.runId, ...saved }));
           })
           .catch((e) => log(`skill capture failed: ${(e as Error).message}`));
-      }
-      // The sandbox is the process-tree boundary. Deleting it terminates the
-      // backend plus every child/sub-agent, and cleanup must not inherit the
-      // already-aborted run signal.
-      if (sandboxCreated) {
-        await timed("delete", () => runCleanup(["sandbox", "delete", name], 60_000)).catch(() => {});
       }
       await rm(stageDir, { recursive: true, force: true });
       log(JSON.stringify({
@@ -1055,6 +733,27 @@ function makeSandboxCore(
   };
 }
 
+/** The runner's environment from this host: the search path, proxies and CA bundle, and serve's socket. Nothing else. */
+function passThroughEnv(): Record<string, string> {
+  const names = [
+    "PATH", "LANG", "TZ", "NODE_ENV", "NODE_EXTRA_CA_CERTS",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "ALL_PROXY", "NODE_USE_ENV_PROXY",
+    "OPENNEKO_SERVE_SOCKET", "OPENNEKO_MCP_BRIDGE", "OPENNEKO_AX_SKILL_RERANK", "OPENNEKO_AGENT_TURN_TIMEOUT_MS",
+  ];
+  return Object.fromEntries(
+    names.flatMap((name) => (process.env[name] ? [[name, process.env[name]!]] : [])),
+  );
+}
+
+function killGroup(child: ChildProcess): void {
+  if (!child.pid || child.exitCode != null) return;
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    child.kill("SIGKILL");
+  }
+}
+
 /** Script steps, then the first turn and every continuation, back to back. */
 export function workflowExecBudgetMs(input: RunWorkflowAgentBackendInput): number {
   const turnMs = input.timeoutMs ?? agentTurnTimeoutMs();
@@ -1064,49 +763,11 @@ export function workflowExecBudgetMs(input: RunWorkflowAgentBackendInput): numbe
   return stepsMs + turnMs * (1 + (input.maxContinuations ?? 0));
 }
 
-/** `policy update` adding the model endpoint(s) scoped to the backend binary. */
-export function buildModelEgressArgs(
-  name: string,
-  egress: ReadonlyArray<{ host: string; binary: string; port?: number }>,
-): string[] | null {
-  if (egress.length === 0) return null;
-  const args = ["policy", "update", name];
-  for (const { host, port } of egress) {
-    args.push("--add-endpoint", `${host}:${port ?? 443}:read-write:rest:enforce`);
-  }
-  for (const { binary } of egress) args.push("--binary", binary);
-  for (const { host, port } of egress)
-    args.push("--add-allow", `${host}:${port ?? 443}:*:/**`);
-  args.push("--wait", "--timeout", "60");
-  return args;
-}
-
-export function buildScopedEgressArgs(
-  name: string,
-  egress: ReadonlyArray<{ host: string; binary: string; port?: number }>,
-): string[][] {
-  const byBinary = new Map<
-    string,
-    Array<{ host: string; binary: string; port?: number }>
-  >();
-  for (const rule of egress) {
-    const rules = byBinary.get(rule.binary) ?? [];
-    rules.push(rule);
-    byBinary.set(rule.binary, rules);
-  }
-  return Array.from(byBinary.values()).flatMap((rules) => {
-    const args = buildModelEgressArgs(name, rules);
-    return args ? [args] : [];
-  });
-}
-
 /**
- * Build the OpenShell runtime deps for runChatTurn from env. SEC9: OpenShell
- * is the only agent runtime — every production host injects this runCore;
- * tests inject their own in-process runCore via deps. Env-wired for now;
- * per-org auto-sync (provider/egress/key-var from the org row) is a follow-up.
+ * Build the agent runtime deps for runChatTurn. Every production host injects
+ * this runCore; tests inject their own in-process runCore via deps.
  *
- * `broker` wires the sandbox MCP-tool path: the caller starts a host broker
+ * `broker` wires the run's MCP-tool path: the caller starts a host broker
  * bound to its control plane and passes the handle so every backend can reach
  * policy-gated host capabilities and return their UI events mid-turn.
  */
@@ -1157,12 +818,6 @@ export function sandboxLauncherOptionsFromConfig(
   broker?: SandboxBrokerHandle,
 ): SandboxLauncherOptions {
   return {
-    agentImage:
-      process.env.OPENNEKO_AGENT_IMAGE ?? "ghcr.io/open-neko/agent:latest",
-    gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
-    gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
-    cpu: process.env.OPENNEKO_AGENT_CPUS || undefined,
-    memory: process.env.OPENNEKO_AGENT_MEMORY || undefined,
     ...config,
     brokerUrl: broker?.url,
     brokerTokenFor: broker?.tokenFor,
@@ -1170,326 +825,29 @@ export function sandboxLauncherOptionsFromConfig(
   };
 }
 
+/** Options for a host whose model key is in its environment (development). */
 export function sandboxLauncherOptionsFromEnv(
   broker?: SandboxBrokerHandle,
 ): SandboxLauncherOptions {
-  // Comma-separated model endpoints, all scoped to the backend's one
-  // connecting binary.
-  const hosts = (process.env.OPENNEKO_AGENT_MODEL_HOST ?? "")
-    .split(",")
-    .map((h) => h.trim())
-    .filter(Boolean);
-  // OpenShell injects the credential under the credential NAME (default
-  // `MODEL_API_KEY`); alias it to the env var the backend reads (the
-  // provider→key map, e.g. GEMINI_API_KEY). The proxy swaps in the real key on
-  // egress, so the box only ever holds the placeholder.
   const keyEnv = process.env.OPENNEKO_AGENT_MODEL_KEY_ENV;
-  const configuredCredential = process.env.OPENNEKO_AGENT_MODEL_CREDENTIAL;
-  const credName =
-    !configuredCredential || configuredCredential === "api_key"
-      ? "MODEL_API_KEY"
-      : configuredCredential;
+  const key = (keyEnv && process.env[keyEnv]) || process.env.MODEL_API_KEY;
   return sandboxLauncherOptionsFromConfig({
-    modelProvider: process.env.OPENNEKO_AGENT_MODEL_PROVIDER || undefined,
-    modelHosts: hosts.map((host) => ({ host })),
-    keyAliases: keyEnv ? [{ from: credName, to: keyEnv }] : undefined,
+    ...(key ? { modelKeys: { MODEL_API_KEY: key, ...(keyEnv ? { [keyEnv]: key } : {}) } } : {}),
   }, broker);
 }
 
-// Generic provider profile: holds just the model credential. The proxy
-// substitutes the injected `openshell:resolve:env:…` placeholder wherever the
-// agent puts it (query parameters or provider-specific auth headers,
-// verified), so endpoints/binaries aren't needed here; egress is applied
-// per-run by the launcher using the vendored executable. One profile covers
-// every provider.
-const OPENNEKO_AGENT_PROFILE_ID = "openneko-agent";
-const OPENNEKO_AGENT_CREDENTIAL = "MODEL_API_KEY";
-const OPENNEKO_AGENT_PROFILE_YAML = `id: ${OPENNEKO_AGENT_PROFILE_ID}
-display_name: OpenNeko Agent
-description: OpenNeko agent model credential (generic; egress applied per-run)
-category: agent
-credentials:
-- name: api_key
-  description: model API key — proxy substitutes the placeholder on egress
-  env_vars:
-  - MODEL_API_KEY
-  required: true
-  auth_style: query
-  header_name: ''
-  query_param: key
-endpoints: []
-binaries: []
-inference_capable: false
-discovery:
-  credentials:
-  - api_key
-`;
-
 /**
- * Ensure a gateway-side OpenShell provider exists holding the org's model key,
- * so the egress proxy can inject it (the key never enters the box). Idempotent:
- * registers the generic profile, then creates-or-updates the named provider.
- * Run at worker startup (provisionHostConfig) — replaces the manual
- * `openshell provider create` step. Egress + the key-env alias stay with the
- * launcher; this only owns the credential.
- */
-/** Runs in flight keep the provider they started with; a replaced one goes after this. */
-const STALE_PROVIDER_DELAY_MS = 30 * 60_000;
-
-export async function ensureOpenShellProvider(opts: {
-  providerName: string;
-  apiKey: string;
-  /** Name prefix of versioned providers: an existing name already holds this credential. */
-  family?: string;
-  staleDelayMs?: number;
-  cli?: string;
-  gatewayName?: string;
-  gatewayEndpoint?: string;
-}): Promise<void> {
-  const cli = opts.cli ?? "openshell";
-  const gatewayArgs = opts.gatewayName
-    ? ["--gateway", opts.gatewayName]
-    : opts.gatewayEndpoint
-      ? ["--gateway-endpoint", opts.gatewayEndpoint]
-      : [];
-  const run = (args: string[]): Promise<string> =>
-    runProcessOnce(cli, [...gatewayArgs, ...args], 60_000);
-
-  const dir = await mkdtemp(path.join(tmpdir(), "oss-profile-"));
-  let profileImportError: unknown;
-  try {
-    const file = path.join(dir, `${OPENNEKO_AGENT_PROFILE_ID}.yaml`);
-    await writeFile(file, OPENNEKO_AGENT_PROFILE_YAML);
-    // Import is upsert-ish; "already registered" is fine. But a swallowed
-    // TRANSPORT failure (gateway restarting) means the profile type the
-    // create below references may not exist — remember the failure so the
-    // create's error path can surface the real cause instead of a cryptic
-    // unknown-profile error.
-    await run(["provider", "profile", "import", "--file", file]).catch((e) => {
-      profileImportError = e;
-    });
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-
-  const credential = `${OPENNEKO_AGENT_CREDENTIAL}=${opts.apiKey}`;
-  const safeError = (error: unknown): string =>
-    opts.apiKey
-      ? describeError(error).replaceAll(opts.apiKey, "[REDACTED_SECRET]")
-      : describeError(error);
-  const create = () => run([
-    "provider", "create", "--name", opts.providerName,
-    "--type", OPENNEKO_AGENT_PROFILE_ID, "--credential", credential,
-  ]);
-  if (opts.family) {
-    const family = opts.family;
-    const listed = (await run(["provider", "list", "--names"])).split(/\s+/).filter(Boolean);
-    if (!listed.includes(opts.providerName)) {
-      await create().catch((error) => {
-        throw new Error(
-          `OpenShell provider ${opts.providerName} creation failed: ${safeError(error)}` +
-          (profileImportError ? `; profile import: ${safeError(profileImportError)}` : ""),
-        );
-      });
-    }
-    const stale = listed.filter((name) => name !== opts.providerName && (name === family || name.startsWith(`${family}-`)));
-    if (stale.length > 0) {
-      setTimeout(() => {
-        void Promise.allSettled(stale.map((name) => run(["provider", "delete", name])));
-      }, opts.staleDelayMs ?? STALE_PROVIDER_DELAY_MS).unref();
-    }
-    return;
-  }
-
-  // The provider exists after the first run, so refresh its key first. A
-  // create-first order wrote a failed duplicate insert to the gateway's
-  // database on every sync.
-  try {
-    await run(["provider", "update", opts.providerName, "--credential", credential]);
-  } catch (updateError) {
-    try {
-      // A provider created before OpenShell 0.1.2 stores the legacy `api_key`
-      // credential key, which 0.1.2 cannot update. Recreate it.
-      if (describeError(updateError).includes("invalid argument")) {
-        await run(["provider", "delete", opts.providerName]);
-      }
-      await create();
-    } catch (createError) {
-      throw new Error(
-        `OpenShell provider ${opts.providerName} reconciliation failed: ` +
-        `update: ${safeError(updateError)}; ` +
-        `create: ${safeError(createError)}` +
-        (profileImportError ? `; profile import: ${safeError(profileImportError)}` : ""),
-      );
-    }
-  }
-}
-
-/** Remove one explicitly named gateway-side provider. Eval fixtures use this
- * after each isolated org so copied model credentials do not accumulate in
- * OpenShell after the corresponding metadata row has been deleted. */
-export async function deleteOpenShellProvider(opts: {
-  providerName: string;
-  /** Also delete the versioned providers named `<providerName>-<fingerprint>`. */
-  family?: boolean;
-  cli?: string;
-  gatewayName?: string;
-  gatewayEndpoint?: string;
-}): Promise<void> {
-  const cli = opts.cli ?? "openshell";
-  const gatewayArgs = opts.gatewayName
-    ? ["--gateway", opts.gatewayName]
-    : opts.gatewayEndpoint
-      ? ["--gateway-endpoint", opts.gatewayEndpoint]
-      : [];
-  const names = opts.family
-    ? (await runProcessOnce(cli, [...gatewayArgs, "provider", "list", "--names"], 60_000))
-      .split(/\s+/)
-      .filter((name) => name === opts.providerName || name.startsWith(`${opts.providerName}-`))
-    : [opts.providerName];
-  for (const name of names) {
-    await runProcessOnce(cli, [...gatewayArgs, "provider", "delete", name], 60_000);
-  }
-}
-
-/**
- * Prove that the configured OpenShell gateway is reachable over its real mTLS
- * control-plane path. `openshell status` is not suitable for readiness: it
- * exits successfully even when no gateway is configured. Listing providers is
- * a read-only gateway RPC, so a successful call proves both registration and
- * connectivity without creating a sandbox or exposing credentials.
- */
-export async function verifyOpenShellGateway(opts: {
-  cli?: string;
-  gatewayName?: string;
-  gatewayEndpoint?: string;
-} = {}): Promise<void> {
-  const cli = opts.cli ?? "openshell";
-  const gatewayArgs = opts.gatewayName
-    ? ["--gateway", opts.gatewayName]
-    : opts.gatewayEndpoint
-      ? ["--gateway-endpoint", opts.gatewayEndpoint]
-      : [];
-  await runProcessOnce(
-    cli,
-    [...gatewayArgs, "provider", "list", "--names"],
-    15_000,
-  );
-}
-
-function buildInnerCommand(o: {
-  env: Record<string, string>;
-  keyAliases?: ReadonlyArray<{ from: string; to: string }>;
-}): string {
-  const exports = Object.entries(o.env)
-    .map(([k, v]) => {
-      if (!SHELL_KEY_RX.test(k)) throw new Error(`bad env key ${k}`);
-      return `export ${k}=${shellQuote(v)}`;
-    })
-    .join("; ");
-  // Reference the OpenShell-injected var at runtime ("$from") — never a value.
-  const aliases = (o.keyAliases ?? [])
-    .map(({ from, to }) => {
-      if (!SHELL_VARNAME_RX.test(from) || !SHELL_VARNAME_RX.test(to)) {
-        throw new Error(`bad key alias ${from}->${to}`);
-      }
-      return `export ${to}="$${from}"`;
-    })
-    .join("; ");
-  // Run from the deployed package root so tsx and workspace dependencies use
-  // the exact production closure created by pnpm deploy.
-  const parts = [
-    exports,
-    aliases,
-    "cd /app",
-    `exec node ${AGENT_ENTRY}`,
-  ];
-  return parts.filter(Boolean).join("; ");
-}
-
-function runProcessOnce(
-  cmd: string,
-  args: string[],
-  timeoutMs: number,
-  signal?: AbortSignal,
-  stdin?: string,
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const cleanup = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-    };
-    const fail = (err: Error) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(err);
-    };
-    const onAbort = () => {
-      child.kill("SIGKILL");
-      fail(abortError());
-    };
-    child.stdout!.on("data", (d: Buffer) => (stdout += d.toString("utf8")));
-    child.stderr!.on("data", (d: Buffer) => (stderr += d.toString("utf8")));
-    timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      fail(new Error(`openshell ${args[0] ?? ""} timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-    timer.unref();
-    if (signal?.aborted) onAbort();
-    else signal?.addEventListener("abort", onAbort, { once: true });
-    child.on("error", (err) => {
-      fail(err);
-    });
-    child.on("close", (code) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      if (code !== 0) {
-        // Redact secret-bearing values (--credential name=value) — this
-        // message reaches console logs.
-        const shown = args
-          .map((a, i) =>
-            args[i - 1] === "--credential" ? a.replace(/=.*/u, "=[redacted]") : a,
-          )
-          .join(" ");
-        reject(
-          new Error(
-            `openshell ${shown.slice(0, 160)} exited ${code}; stderr=${stderr.slice(0, 400)}`,
-          ),
-        );
-        return;
-      }
-      resolve(stdout);
-    });
-    if (stdin !== undefined) {
-      child.stdin?.on("error", error => {
-        // EPIPE usually means the CLI rejected the command; let its exit status
-        // report the actual error. Other transport failures must stop the run.
-        if ((error as NodeJS.ErrnoException).code !== "EPIPE") {
-          child.kill("SIGKILL");
-          fail(error);
-        }
-      });
-      child.stdin?.end(stdin);
-    }
-  });
-}
-
-/**
- * exec entry.ts and stream its tagged stdout: EVENT_MARKER lines → emit (host
+ * Run the agent runner and stream its tagged stdout: EVENT_MARKER lines → emit (host
  * scrubs + persists → web UI), the RESULT_MARKER line → the AgentRunResult.
  */
 function execAndStream(
-  cli: string,
-  gatewayArgs: string[],
-  name: string,
-  innerCmd: string,
+  runner: {
+    command: string;
+    args: string[];
+    cwd: string;
+    env: Record<string, string>;
+    onSpawn: (child: ChildProcess) => void;
+  },
   emit: (event: AgentEvent) => Promise<void>,
   timeoutMs: number,
   signal?: AbortSignal,
@@ -1497,25 +855,14 @@ function execAndStream(
   onUnreadableEvent?: () => void,
 ): Promise<AgentRunResult> {
   return new Promise((resolve, reject) => {
-    const timeoutSec = Math.max(1, Math.ceil(timeoutMs / 1000));
-    const child = spawn(
-      cli,
-      [
-        ...gatewayArgs,
-        "sandbox",
-        "exec",
-        "-n",
-        name,
-        "--no-tty",
-        "--timeout",
-        String(timeoutSec),
-        "--",
-        "sh",
-        "-c",
-        innerCmd,
-      ],
-      { stdio: ["ignore", "pipe", "pipe"] },
-    );
+    // Its own process group, so ending the run ends every child it started.
+    const child = spawn(runner.command, runner.args, {
+      cwd: runner.cwd,
+      env: runner.env as NodeJS.ProcessEnv,
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    runner.onSpawn(child);
     let result: AgentRunResult | undefined;
     let stderr = "";
     let settled = false;
@@ -1531,7 +878,7 @@ function execAndStream(
       if (settled) return;
       settled = true;
       cleanup();
-      child.kill("SIGKILL");
+      killGroup(child);
       reject(err);
     };
     const onAbort = () => fail(abortError());
@@ -1585,7 +932,7 @@ function execAndStream(
     });
     child.stderr.on("data", (d: Buffer) => (stderr += d.toString("utf8")));
     timer = setTimeout(() => {
-      fail(new SandboxFailure("sandbox.exec_timeout", `agent sandbox exec timed out after ${timeoutMs}ms`));
+      fail(new SandboxFailure("sandbox.exec_timeout", `agent run timed out after ${timeoutMs}ms`));
     }, timeoutMs);
     timer.unref();
     if (signal?.aborted) onAbort();
@@ -1628,7 +975,7 @@ function execAndStream(
         reject(
           new SandboxFailure(
             "sandbox.no_result",
-            `agent sandbox exited ${code} without a result line; stderr=${stderr.slice(0, 500)}`,
+            `agent run exited ${code} without a result line; stderr=${stderr.slice(-500)}`,
           ),
         );
       })();

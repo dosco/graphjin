@@ -116,6 +116,9 @@ function loadJob(): SandboxJob {
 }
 
 export async function main(job = loadJob()): Promise<void> {
+  // The run's terminal runs as another user in the shared group, so files
+  // this runner writes stay group-writable.
+  process.umask(0o007);
   // The launcher transfers only custom or modified skill directories. Fill in
   // unchanged built-ins from the agent image. Skill bodies remain filesystem
   // resources and are read only when the agent chooses one.

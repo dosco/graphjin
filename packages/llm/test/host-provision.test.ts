@@ -33,28 +33,16 @@ import {
   llm_provider_config,
   pool,
 } from "@neko/db";
+import { createServer } from "node:net";
 import {
   ensureHostConfigProvisioned,
-  gatewayProviderName,
+  loadAgentModelKeys,
   patchGraphjinSourcesJwtSecret,
   provisionHostConfig,
   shouldReconcileDemoSourceAuthMode,
   verifyAgentRuntimeReady,
 } from "../src/host-provision";
-import {
-  ensureOpenShellProvider,
-  verifyOpenShellGateway,
-} from "../src/work/sandbox-launcher";
 import { graphjinSigningSecretB64 } from "../src/graphjin/token";
-
-vi.mock("../src/work/sandbox-launcher", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/work/sandbox-launcher")>();
-  return {
-    ...actual,
-    ensureOpenShellProvider: vi.fn().mockResolvedValue(undefined),
-    verifyOpenShellGateway: vi.fn().mockResolvedValue(undefined),
-  };
-});
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -78,8 +66,6 @@ function graphjinPath(home: string): string {
 
 const ORIGINAL_HOME = process.env.HOME;
 const ORIGINAL_XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
-const ensureOpenShellProviderMock = vi.mocked(ensureOpenShellProvider);
-const verifyOpenShellGatewayMock = vi.mocked(verifyOpenShellGateway);
 
 describe("patchGraphjinSourcesJwtSecret", () => {
   it("replaces a source-mode placeholder", () => {
@@ -178,17 +164,6 @@ describe("shouldReconcileDemoSourceAuthMode", () => {
   });
 });
 
-describe("gatewayProviderName", () => {
-  it("isolates gateway credentials by organization without exposing the org id", () => {
-    const first = gatewayProviderName("customer-a");
-    const second = gatewayProviderName("customer-b");
-    expect(first).toMatch(/^openneko-agent-[a-f0-9]{16}$/);
-    expect(second).toMatch(/^openneko-agent-[a-f0-9]{16}$/);
-    expect(first).not.toBe(second);
-    expect(first).not.toContain("customer-a");
-  });
-});
-
 describeIfDb("provisionHostConfig", () => {
   let orgId: string;
   let tempHome: string;
@@ -203,10 +178,6 @@ describeIfDb("provisionHostConfig", () => {
   });
 
   beforeEach(async () => {
-    ensureOpenShellProviderMock.mockReset();
-    ensureOpenShellProviderMock.mockResolvedValue(undefined);
-    verifyOpenShellGatewayMock.mockReset();
-    verifyOpenShellGatewayMock.mockResolvedValue(undefined);
     tempHome = await mkdtemp(join(tmpdir(), "neko-test-home-"));
     process.env.HOME = tempHome;
     delete process.env.XDG_CONFIG_HOME;
@@ -260,13 +231,8 @@ describeIfDb("provisionHostConfig", () => {
     expect(content.server).toBe("https://api.example.com");
   });
 
-  it("syncs the model key to the gateway, never to a host file", async () => {
+  it("loads the model key for a run, never into a host file or the launch config", async () => {
     await seedDataSource(orgId);
-    await seedProvider(orgId, {
-      scope: "agent",
-      provider: "obsolete-runtime",
-      config: { backend: "obsolete-runtime" },
-    });
     await seedProvider(orgId, {
       scope: "primary",
       provider: "anthropic",
@@ -274,13 +240,11 @@ describeIfDb("provisionHostConfig", () => {
       secrets: { apiKey: "sk-ant-test" },
     });
 
-    await expect(provisionHostConfig(orgId)).resolves.toMatchObject({
-      modelHosts: [{ host: "api.anthropic.com" }],
-      keyAliases: [{ from: "MODEL_API_KEY", to: "ANTHROPIC_API_KEY" }],
+    await expect(provisionHostConfig(orgId)).resolves.toEqual({});
+    await expect(loadAgentModelKeys(orgId)).resolves.toEqual({
+      MODEL_API_KEY: "sk-ant-test",
+      ANTHROPIC_API_KEY: "sk-ant-test",
     });
-    expect(ensureOpenShellProviderMock).toHaveBeenCalledWith(
-      expect.objectContaining({ apiKey: "sk-ant-test" }),
-    );
 
     const gj = await readFile(graphjinPath(tempHome), "utf8");
     expect(gj).toContain("server");
@@ -294,16 +258,13 @@ describeIfDb("provisionHostConfig", () => {
       provider: "ax",
       config: {},
     });
-    await expect(provisionHostConfig(orgId)).resolves.toEqual({
-      modelHosts: [],
-    });
+    await expect(provisionHostConfig(orgId)).resolves.toEqual({});
+    await expect(loadAgentModelKeys(orgId)).resolves.toEqual({});
     await readFile(graphjinPath(tempHome), "utf8");
   });
 
   it("does not throw when no data source exists (graphjin write skipped)", async () => {
-    await expect(provisionHostConfig(orgId)).resolves.toEqual({
-      modelHosts: [],
-    });
+    await expect(provisionHostConfig(orgId)).resolves.toEqual({});
   });
 
   it("preserves an explicitly configured development-header auth mode", async () => {
@@ -394,248 +355,61 @@ describeIfDb("provisionHostConfig", () => {
     expect(source?.authMode).toBe("jwt");
   });
 
-  it("re-derives the sandbox egress env on a provider switch", async () => {
+  it("loads the current key under the current provider's variable after a switch or rotation", async () => {
     await seedDataSource(orgId);
-    await seedProvider(orgId, {
-      scope: "agent",
-      provider: "ax",
-      config: {},
-    });
     await seedProvider(orgId, {
       scope: "primary",
       provider: "google-gemini",
       model: "gemini-pro-latest",
       secrets: { apiKey: "key-a" },
     });
-    const firstLaunch = await provisionHostConfig(orgId);
-    expect(firstLaunch).toMatchObject({
-      modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}-[a-f0-9]{8}$/),
-      modelHosts: [
-        { host: "generativelanguage.googleapis.com" },
-      ],
-      keyAliases: [{ from: "MODEL_API_KEY", to: "GEMINI_API_KEY" }],
-    });
+    await expect(loadAgentModelKeys(orgId)).resolves.toEqual({ MODEL_API_KEY: "key-a", GEMINI_API_KEY: "key-a" });
 
-    // Operator switches provider; the old `||=` writes pinned the first
-    // pass's derived values for the process lifetime, leaving the egress
-    // allowlist and key env var on the previous provider.
-    await clearProvider(orgId, "primary");
-    await seedProvider(orgId, {
-      scope: "primary",
-      provider: "anthropic",
-      model: "claude-opus-4-7",
-      secrets: { apiKey: "key-b" },
-    });
-    const secondLaunch = await provisionHostConfig(orgId);
-    expect(secondLaunch).toMatchObject({
-      modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}-[a-f0-9]{8}$/),
-      modelHosts: [
-        { host: "api.anthropic.com" },
-      ],
-      keyAliases: [{ from: "MODEL_API_KEY", to: "ANTHROPIC_API_KEY" }],
-    });
+    await db()
+      .update(llm_provider_config)
+      .set({ provider: "anthropic", model: "claude-opus-4-7", secrets: { apiKey: "key-b" }, updated_at: new Date() })
+      .where(and(eq(llm_provider_config.org_id, orgId), eq(llm_provider_config.scope, "primary")));
+    await expect(loadAgentModelKeys(orgId)).resolves.toEqual({ MODEL_API_KEY: "key-b", ANTHROPIC_API_KEY: "key-b" });
 
-    // Persisted org configuration is returned as a run-local snapshot. It
-    // must not contaminate process.env, where a separately bundled Next.js
-    // route could later mistake it for an operator override.
-    expect(process.env.OPENNEKO_AGENT_MODEL_HOST).toBeUndefined();
+    await db()
+      .update(llm_provider_config)
+      .set({ enabled: false, updated_at: new Date() })
+      .where(and(eq(llm_provider_config.org_id, orgId), eq(llm_provider_config.scope, "primary")));
+    await expect(loadAgentModelKeys(orgId)).resolves.toEqual({});
+    // Persisted org configuration never leaks into process.env.
     expect(process.env.OPENNEKO_AGENT_MODEL_KEY_ENV).toBeUndefined();
   });
 
-  it("keeps direct provisioning best-effort when OpenShell provider sync fails", async () => {
-    // Persistent failure: the sync now retries in place (3 attempts) before
-    // giving up, so a single rejection would be healed by the retry.
-    process.env.OPENNEKO_PROVISION_RETRY_BASE_MS = "10";
-    ensureOpenShellProviderMock.mockRejectedValue(new Error("gateway unavailable"));
-    await seedDataSource(orgId);
-    await seedProvider(orgId, {
-      scope: "agent",
-      provider: "ax",
-      config: {},
-    });
-    await seedProvider(orgId, {
-      scope: "primary",
-      provider: "google-gemini",
-      model: "gemini-pro-latest",
-      secrets: { apiKey: "test-gemini-key" },
-    });
-
-    await expect(provisionHostConfig(orgId)).resolves.toEqual({
-      modelHosts: [],
-    });
-    expect(ensureOpenShellProviderMock).toHaveBeenCalledTimes(3);
-    await readFile(graphjinPath(tempHome), "utf8");
-    delete process.env.OPENNEKO_PROVISION_RETRY_BASE_MS;
-  });
-
-  it("verifies the gateway and syncs the provider before an agent job", async () => {
-    await seedProvider(orgId, {
-      scope: "agent",
-      provider: "ax",
-      config: {},
-    });
-    await seedProvider(orgId, {
-      scope: "primary",
-      provider: "google-gemini",
-      model: "gemini-pro-latest",
-      secrets: { apiKey: "test-gemini-key" },
-    });
-
-    await verifyAgentRuntimeReady(orgId);
-
-    expect(verifyOpenShellGatewayMock).toHaveBeenCalledWith({
-      gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
-      gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
-    });
-    expect(ensureOpenShellProviderMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("fails readiness when the gateway RPC fails", async () => {
-    verifyOpenShellGatewayMock.mockRejectedValueOnce(
-      new Error("No active gateway"),
-    );
-
-    await expect(verifyAgentRuntimeReady(orgId)).rejects.toThrow(
-      "No active gateway",
-    );
-    expect(ensureOpenShellProviderMock).not.toHaveBeenCalled();
-  });
-
-  it("refreshes worker-owned provisioning after first setup, key rotation, and provider switch", async () => {
-    const refreshOrgId = uniqueOrgId("provision-refresh");
-    await createTestOrg(refreshOrgId);
+  it("is ready when openneko serve answers, and not when it is gone", async () => {
+    const socket = join(tempHome, "serve.sock");
+    const server = createServer((conn) => conn.end());
+    await new Promise<void>((done) => server.listen(socket, done));
+    vi.stubEnv("OPENNEKO_SERVE_SOCKET", socket);
     try {
-      await seedDataSource(refreshOrgId);
-      await seedProvider(refreshOrgId, {
-        scope: "agent",
-        provider: "ax",
-        config: {},
-      });
-
-      // The worker can become healthy before System Setup creates a primary
-      // provider. That empty pass must not be memoized for the process lifetime.
-      await ensureHostConfigProvisioned(refreshOrgId);
-      expect(ensureOpenShellProviderMock).not.toHaveBeenCalled();
-
-      await seedProvider(refreshOrgId, {
-        scope: "primary",
-        provider: "google-gemini",
-        model: "gemini-pro-latest",
-        secrets: { apiKey: "key-a" },
-      });
-      await ensureHostConfigProvisioned(refreshOrgId);
-      expect(ensureOpenShellProviderMock).toHaveBeenLastCalledWith(
-        expect.objectContaining({ apiKey: "key-a" }),
-      );
-
-      await db()
-        .update(llm_provider_config)
-        .set({ secrets: { apiKey: "key-b" }, updated_at: new Date() })
-        .where(
-          and(
-            eq(llm_provider_config.org_id, refreshOrgId),
-            eq(llm_provider_config.scope, "primary"),
-          ),
-        );
-      await ensureHostConfigProvisioned(refreshOrgId);
-      expect(ensureOpenShellProviderMock).toHaveBeenLastCalledWith(
-        expect.objectContaining({ apiKey: "key-b" }),
-      );
-      const synced = ensureOpenShellProviderMock.mock.calls.map(([opts]) => opts as { providerName: string; family?: string });
-      // A rotated key gets a new provider in the same family; runs in flight keep the old one.
-      expect(synced.at(-1)!.providerName).not.toBe(synced.at(-2)!.providerName);
-      expect(synced.at(-1)!.providerName.startsWith(`${synced.at(-1)!.family}-`)).toBe(true);
-
-      await db()
-        .update(llm_provider_config)
-        .set({
-          provider: "anthropic",
-          model: "claude-opus-4-7",
-          secrets: { apiKey: "key-c" },
-          updated_at: new Date(),
-        })
-        .where(
-          and(
-            eq(llm_provider_config.org_id, refreshOrgId),
-            eq(llm_provider_config.scope, "primary"),
-          ),
-        );
-      const anthropicLaunch = await ensureHostConfigProvisioned(refreshOrgId);
-      expect(ensureOpenShellProviderMock).toHaveBeenLastCalledWith(
-        expect.objectContaining({ apiKey: "key-c" }),
-      );
-      expect(anthropicLaunch).toMatchObject({
-        modelHosts: [
-          { host: "api.anthropic.com" },
-        ],
-        keyAliases: [{ from: "MODEL_API_KEY", to: "ANTHROPIC_API_KEY" }],
-      });
-
-      // Removing the saved key must not leave the previous gateway provider
-      // attached to future sandboxes in this long-lived worker process.
-      await db()
-        .update(llm_provider_config)
-        .set({ secrets: {}, updated_at: new Date() })
-        .where(
-          and(
-            eq(llm_provider_config.org_id, refreshOrgId),
-            eq(llm_provider_config.scope, "primary"),
-          ),
-        );
-      const keylessLaunch = await ensureHostConfigProvisioned(refreshOrgId);
-      expect(keylessLaunch.modelProvider).toBeUndefined();
-
-      await db()
-        .update(llm_provider_config)
-        .set({ enabled: false, updated_at: new Date() })
-        .where(
-          and(
-            eq(llm_provider_config.org_id, refreshOrgId),
-            eq(llm_provider_config.scope, "primary"),
-          ),
-        );
-      await expect(ensureHostConfigProvisioned(refreshOrgId)).resolves.toEqual({
-        modelHosts: [],
-      });
+      await expect(verifyAgentRuntimeReady(orgId)).resolves.toBeUndefined();
+      await new Promise<void>((done) => server.close(() => done()));
+      await expect(verifyAgentRuntimeReady(orgId)).rejects.toThrow(/openneko serve is unavailable/);
     } finally {
-      await deleteTestOrg(refreshOrgId);
+      vi.unstubAllEnvs();
     }
   });
 
-  it("retries memoized provisioning after an OpenShell provider sync failure", async () => {
-    const retryOrgId = uniqueOrgId("provision-retry");
-    await createTestOrg(retryOrgId);
+  it("memoizes provisioning per configuration revision and redoes it after a change", async () => {
+    const refreshOrgId = uniqueOrgId("provision-refresh");
+    await createTestOrg(refreshOrgId);
     try {
-      await seedDataSource(retryOrgId);
-      await seedProvider(retryOrgId, {
-        scope: "agent",
-        provider: "ax",
-        config: {},
-      });
-      await seedProvider(retryOrgId, {
-        scope: "primary",
-        provider: "google-gemini",
-        model: "gemini-pro-latest",
-        secrets: { apiKey: "test-gemini-key" },
-      });
-      // Persistently down first (all 3 in-place retries fail), then back.
-      process.env.OPENNEKO_PROVISION_RETRY_BASE_MS = "10";
-      ensureOpenShellProviderMock.mockRejectedValue(new Error("gateway unavailable"));
+      await seedDataSource(refreshOrgId, { graphqlUrl: "http://first:8080/api/v1/graphql" });
+      await expect(ensureHostConfigProvisioned(refreshOrgId)).resolves.toEqual({});
+      expect(JSON.parse(await readFile(graphjinPath(tempHome), "utf8")).server).toBe("http://first:8080");
 
-      await expect(ensureHostConfigProvisioned(retryOrgId)).rejects.toThrow(
-        "gateway unavailable",
-      );
-      expect(ensureOpenShellProviderMock).toHaveBeenCalledTimes(3);
-
-      ensureOpenShellProviderMock.mockResolvedValue(undefined);
-      await expect(ensureHostConfigProvisioned(retryOrgId)).resolves.toMatchObject({
-        modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}-[a-f0-9]{8}$/),
-        keyAliases: [{ from: "MODEL_API_KEY", to: "GEMINI_API_KEY" }],
-      });
-      expect(ensureOpenShellProviderMock).toHaveBeenCalledTimes(4);
-      delete process.env.OPENNEKO_PROVISION_RETRY_BASE_MS;
+      await db()
+        .update(data_source)
+        .set({ graphql_url: "http://second:8080/api/v1/graphql", updated_at: new Date() })
+        .where(eq(data_source.org_id, refreshOrgId));
+      await ensureHostConfigProvisioned(refreshOrgId);
+      expect(JSON.parse(await readFile(graphjinPath(tempHome), "utf8")).server).toBe("http://second:8080");
     } finally {
-      await deleteTestOrg(retryOrgId);
+      await deleteTestOrg(refreshOrgId);
     }
   });
 });

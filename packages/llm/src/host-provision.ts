@@ -15,7 +15,6 @@ import {
   or,
 } from "@neko/db";
 import { maybeDecryptSecret } from "./secrets";
-import { AX_HARNESS_BINARY } from "./agent-runtime-contract";
 import { isPrimaryProvider } from "./config";
 import { getGoogleToken } from "./llm";
 import {
@@ -23,11 +22,8 @@ import {
   type ProviderRuntime,
   type ProviderEndpoint,
 } from "./provider-runtime";
-import {
-  ensureOpenShellProvider,
-  verifyOpenShellGateway,
-  type AgentRuntimeLaunchConfig,
-} from "./work/sandbox-launcher";
+import { createConnection } from "node:net";
+import type { AgentRuntimeLaunchConfig } from "./work/sandbox-launcher";
 
 
 type StoredRow = {
@@ -291,183 +287,68 @@ function decryptSecrets(secrets: Record<string, unknown> | null): Record<string,
 }
 
 /**
- * Derive the agent-sandbox egress from the org's model config: the API host
- * (explicit base_url, else the provider default) and the env var the backend
- * reads. Egress is scoped to the connecting binary (/proc/<pid>/exe).
+ * The org's model runtime: the provider family and the variable its key
+ * goes in.
  */
-function deriveAgentEgress(
-  row: StoredRow,
-): { endpoints: ProviderEndpoint[]; runtime: ProviderRuntime } {
+function agentModelRuntime(row: StoredRow): ProviderRuntime {
   if (!isPrimaryProvider(row.provider)) {
     throw new Error(`Unsupported primary provider: ${row.provider}`);
   }
-  const runtime = resolveProviderRuntime({
+  return resolveProviderRuntime({
     provider: row.provider,
     model: row.model ?? "",
     config: row.config,
   });
-  return {
-    endpoints: [runtime.endpoint],
-    runtime,
-  };
 }
 
 /**
- * Self-configure the agent sandbox from the org's model config — derive the
- * egress (host/key-env; explicit env overrides win) and sync the
- * model key into a gateway-side provider so the proxy injects it on the
- * wire (the key never enters the box). Replaces the manual `openshell
- * provider create` + hand-set egress env.
+ * The org's model key for one agent run, by variable name: the variable the
+ * provider's route reads, and MODEL_API_KEY. Loaded fresh for every run, so a
+ * key rotation applies at once and no key stays in process state. The keys
+ * reach only the run's runner, which hands them to openneko serve.
  */
-// Operator-supplied provider/host/key values win permanently; empty or
-// unset means "derive from the org's provider config". These values are
-// read-only. Persisted provider settings must never be copied into process.env:
-// Next.js can evaluate route bundles at different times, causing one bundle to
-// mistake another bundle's derived values for operator overrides.
-const OPERATOR_AGENT_ENV = {
-  provider: process.env.OPENNEKO_AGENT_MODEL_PROVIDER || "",
-  host: process.env.OPENNEKO_AGENT_MODEL_HOST || "",
-  keyEnv: process.env.OPENNEKO_AGENT_MODEL_KEY_ENV || "",
-};
-
-function modelHosts(value: string): ProviderEndpoint[] {
-  return value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => {
-      if (entry.includes("://")) {
-        const url = new URL(entry);
-        return {
-          host: url.hostname,
-          ...(url.port
-            ? { port: Number(url.port) }
-            : url.protocol === "http:"
-              ? { port: 80 }
-              : {}),
-        };
-      }
-      const hostPort = /^(.*):(\d+)$/.exec(entry);
-      return hostPort
-        ? { host: hostPort[1]!, port: Number(hostPort[2]) }
-        : { host: entry };
-    });
-}
-
-function serializeModelEndpoint(endpoint: ProviderEndpoint): string {
-  return endpoint.port ? `${endpoint.host}:${endpoint.port}` : endpoint.host;
-}
-
-export function gatewayProviderName(orgId: string): string {
-  return `openneko-agent-${createHash("sha256").update(orgId).digest("hex").slice(0, 16)}`;
-}
-
-function agentRuntimeLaunchConfig(args: {
-  orgId: string;
-  derivedEndpoints?: ProviderEndpoint[];
-  derivedKeyEnv?: string;
-  hasApiKey: boolean;
-  /** Versions the provider by credential, so a new key never changes one in use. */
-  credentialFingerprint?: string;
-}): AgentRuntimeLaunchConfig {
-  const derivedEndpoints = args.derivedEndpoints ?? [];
-  const keyEnv = OPERATOR_AGENT_ENV.keyEnv || args.derivedKeyEnv || "";
-  // OpenShell 0.1.2 addresses profile credentials by their injected env var.
-  const configuredCredential = process.env.OPENNEKO_AGENT_MODEL_CREDENTIAL;
-  const credentialName =
-    !configuredCredential || configuredCredential === "api_key"
-      ? "MODEL_API_KEY"
-      : configuredCredential;
-  const modelProvider =
-    OPERATOR_AGENT_ENV.provider ||
-    (args.hasApiKey
-      ? `${gatewayProviderName(args.orgId)}${args.credentialFingerprint ? `-${args.credentialFingerprint}` : ""}`
-      : "");
-
-  return {
-    ...(modelProvider ? { modelProvider } : {}),
-    modelHosts: OPERATOR_AGENT_ENV.host
-      ? modelHosts(OPERATOR_AGENT_ENV.host)
-      : derivedEndpoints,
-    ...(keyEnv
-      ? { keyAliases: [{ from: credentialName, to: keyEnv }] }
-      : {}),
-  };
-}
-
-async function provisionOpenShellRuntime(
-  orgId: string,
-): Promise<AgentRuntimeLaunchConfig> {
+export async function loadAgentModelKeys(orgId: string): Promise<Record<string, string>> {
   const row = await loadProviderRow(orgId, "primary");
-  if (!row || !row.enabled) {
-    return agentRuntimeLaunchConfig({ orgId, hasApiKey: false });
-  }
-
-  const { endpoints, runtime } = deriveAgentEgress(row);
+  if (!row || !row.enabled) return {};
+  const runtime = agentModelRuntime(row);
   const apiKey =
     runtime.credentialSource === "google-adc"
       ? await getGoogleToken()
       : runtime.credentialSource === "stored-api-key"
         ? decryptSecrets(row.secrets).apiKey
         : undefined;
-  const launchConfig = agentRuntimeLaunchConfig({
-    orgId,
-    derivedEndpoints: endpoints,
-    derivedKeyEnv: runtime.keyEnv,
-    hasApiKey: Boolean(apiKey),
-    ...(apiKey ? { credentialFingerprint: createHash("sha256").update(apiKey).digest("hex").slice(0, 8) } : {}),
-  });
-
-  if (!apiKey) return launchConfig;
-  // The gateway can be restarting exactly while we register the provider
-  // (deploys recreate it alongside the worker). A single failed attempt
-  // used to be swallowed upstream, leaving a healthy worker with no
-  // provider on the gateway and every channel run broken until a restart.
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      await ensureOpenShellProvider({
-        providerName: launchConfig.modelProvider ?? "openneko-agent",
-        apiKey,
-        ...(OPERATOR_AGENT_ENV.provider ? {} : { family: gatewayProviderName(orgId) }),
-        gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
-        gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
-      });
-      lastError = undefined;
-      break;
-    } catch (e) {
-      lastError = e;
-      if (attempt < 3) {
-        console.warn(
-          `[host-provision] OpenShell provider sync attempt ${attempt} failed; retrying: ${e instanceof Error ? e.message : e}`,
-        );
-        const base = Number(process.env.OPENNEKO_PROVISION_RETRY_BASE_MS ?? 2_000);
-        await new Promise((resolve) => setTimeout(resolve, attempt * base));
-      }
-    }
-  }
-  if (lastError !== undefined) throw lastError;
-  console.log(
-    `[host-provision] OpenShell agent runtime self-configured: provider="${launchConfig.modelProvider ?? ""}" egress="${launchConfig.modelHosts?.map(serializeModelEndpoint).join(",") ?? ""}" binary="${AX_HARNESS_BINARY}" keyEnv=${launchConfig.keyAliases?.[0]?.to ?? ""}`,
-  );
-  return launchConfig;
+  if (!apiKey) return {};
+  const keyEnv = process.env.OPENNEKO_AGENT_MODEL_KEY_ENV || runtime.keyEnv;
+  return { MODEL_API_KEY: apiKey, ...(keyEnv ? { [keyEnv]: apiKey } : {}) };
 }
 
 /**
- * Readiness gate for any operation that is about to launch an agent sandbox.
- * This deliberately performs a fresh gateway RPC instead of consulting a
- * process-local flag: the gateway may have failed or been omitted from a
- * Compose invocation after the web/worker process itself became healthy.
- *
- * Once connectivity is proven, re-sync the org's model provider so the exact
- * path onboarding will use is configured before work is enqueued.
+ * Readiness gate for any operation that is about to launch an agent run: the
+ * serve socket must answer, and the org's model key must load. This checks
+ * afresh instead of consulting a process-local flag, because serve may have
+ * stopped after the web/worker process became healthy.
  */
 export async function verifyAgentRuntimeReady(orgId: string): Promise<void> {
-  await verifyOpenShellGateway({
-    gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
-    gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
-  });
-  await provisionOpenShellRuntime(orgId);
+  const socket = process.env.OPENNEKO_SERVE_SOCKET;
+  if (socket) {
+    await new Promise<void>((resolve, reject) => {
+      const conn = createConnection(socket);
+      const timer = setTimeout(() => {
+        conn.destroy();
+        reject(new Error("openneko serve did not answer within 5s"));
+      }, 5_000);
+      conn.once("connect", () => {
+        clearTimeout(timer);
+        conn.destroy();
+        resolve();
+      });
+      conn.once("error", (error) => {
+        clearTimeout(timer);
+        reject(new Error(`openneko serve is unavailable: ${error.message}`));
+      });
+    });
+  }
+  await loadAgentModelKeys(orgId);
 }
 
 type HostProvisionState = {
@@ -478,16 +359,11 @@ type HostProvisionState = {
 
 const provisionedOrgs = new Map<string, HostProvisionState>();
 
-type ProvisionHostConfigOptions = {
-  requireOpenShellSync?: boolean;
-};
-
 /** Build a content revision without retaining provider secrets in process
- * state. Every setting that changes the files or sandbox launch contract is
- * covered, including same-provider key rotation. */
+ * state. Every setting that changes the provisioned files is covered. */
 async function hostConfigRevision(
   orgId: string,
-): Promise<{ revision: string; refreshCredential: boolean }> {
+): Promise<{ revision: string }> {
   const [providers, sources] = await Promise.all([
     db()
       .select({
@@ -527,12 +403,6 @@ async function hostConfigRevision(
     revision: createHash("sha256")
       .update(JSON.stringify({ providers, sources }))
       .digest("hex"),
-    // Vertex access tokens are short-lived. Re-mint and replace the
-    // gateway-side credential for every run instead of memoizing it like a
-    // static API key. The token remains outside the sandbox.
-    refreshCredential: providers.some(
-      (provider) => provider.scope === "primary" && provider.provider === "vertex",
-    ),
   };
 }
 
@@ -553,36 +423,26 @@ export async function ensureHostConfigProvisioned(
   if (!state) {
     state = {
       tail: Promise.resolve(
-        agentRuntimeLaunchConfig({ orgId, hasApiKey: false }),
+        ({} as AgentRuntimeLaunchConfig),
       ),
     };
     provisionedOrgs.set(orgId, state);
   }
-  if (
-    state.appliedRevision === requested.revision &&
-    state.launchConfig &&
-    !requested.refreshCredential
-  ) {
+  if (state.appliedRevision === requested.revision && state.launchConfig) {
     return state.launchConfig;
   }
 
   const provisionState = state;
   const run = provisionState.tail.catch(() =>
-    agentRuntimeLaunchConfig({ orgId, hasApiKey: false }),
+    ({} as AgentRuntimeLaunchConfig),
   ).then(async () => {
     // Re-read after earlier callers finish. A settings save may have landed
     // while this call was queued, and only the newest revision should win.
     const current = await hostConfigRevision(orgId);
-    if (
-      provisionState.appliedRevision === current.revision &&
-      provisionState.launchConfig &&
-      !current.refreshCredential
-    ) {
+    if (provisionState.appliedRevision === current.revision && provisionState.launchConfig) {
       return provisionState.launchConfig;
     }
-    const launchConfig = await provisionHostConfig(orgId, {
-      requireOpenShellSync: true,
-    });
+    const launchConfig = await provisionHostConfig(orgId);
     provisionState.appliedRevision = current.revision;
     provisionState.launchConfig = launchConfig;
     return launchConfig;
@@ -593,7 +453,6 @@ export async function ensureHostConfigProvisioned(
 
 export async function provisionHostConfig(
   orgId: string,
-  options: ProvisionHostConfigOptions = {},
 ): Promise<AgentRuntimeLaunchConfig> {
   try {
     await provisionGraphJin(orgId);
@@ -619,19 +478,7 @@ export async function provisionHostConfig(
     );
   }
 
-  let openShellError: unknown;
-  let launchConfig = agentRuntimeLaunchConfig({ orgId, hasApiKey: false });
-  try {
-    launchConfig = await provisionOpenShellRuntime(orgId);
-  } catch (e) {
-    openShellError = e;
-    console.warn(
-      `[host-provision] OpenShell runtime provision failed: ${e instanceof Error ? e.message : e}`,
-    );
-  }
-
-  if (openShellError && options.requireOpenShellSync) {
-    throw openShellError;
-  }
-  return launchConfig;
+  // Model keys load per run (loadAgentModelKeys), so the launch config
+  // carries none.
+  return {};
 }
