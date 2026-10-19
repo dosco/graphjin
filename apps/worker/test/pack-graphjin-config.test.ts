@@ -49,9 +49,17 @@ describe("GraphJin without config preview", () => {
     expect(message).toContain("GJ_SECRETS_KEYSTORE_KEY");
   });
 
+  it("reads the keystore error code from a GraphQL error", () => {
+    const message = unsupportedGraphjinConfigApi(["secret ref could not be read"], [
+      { extensions: { code: "keystore_key_required" } },
+    ]);
+    expect(message).toContain("has no secrets keystore key");
+  });
+
   it("leaves other GraphJin errors alone", () => {
     expect(unsupportedGraphjinConfigApi(["stale catalog revision", null, undefined])).toBeNull();
     expect(unsupportedGraphjinConfigApi(["field 'customer_name' is not a column or a function"])).toBeNull();
+    expect(unsupportedGraphjinConfigApi(["boom"], [{ extensions: { code: "something_else" } }])).toBeNull();
   });
 });
 

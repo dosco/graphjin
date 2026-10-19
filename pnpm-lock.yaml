@@ -161,6 +161,9 @@ importers:
       '@neko/evals':
         specifier: workspace:*
         version: link:../../packages/evals
+      '@neko/graphjin-contract':
+        specifier: workspace:*
+        version: link:../../packages/graphjin-contract
       '@neko/interaction':
         specifier: workspace:*
         version: link:../../packages/interaction
@@ -301,6 +304,18 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
 
+  packages/graphjin-contract:
+    devDependencies:
+      '@types/node':
+        specifier: ^20
+        version: 20.19.39
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
+
   packages/interaction:
     devDependencies:
       '@types/node':
@@ -324,6 +339,9 @@ importers:
       '@neko/db':
         specifier: workspace:*
         version: link:../db
+      '@neko/graphjin-contract':
+        specifier: workspace:*
+        version: link:../graphjin-contract
       '@neko/interaction':
         specifier: workspace:*
         version: link:../interaction

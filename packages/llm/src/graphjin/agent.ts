@@ -1,67 +1,21 @@
+import type {
+  AgentRefusal,
+  AgentRequest,
+  AgentResponse,
+  AgentStatus,
+  AgentTurn,
+} from "@neko/graphjin-contract";
 import { packUserConnectionHeaders } from "./pack-user-connections";
 /** Steps per GraphJin agent call: the cap OpenNeko writes and the default it asks for. */
 export const GRAPHJIN_AGENT_MAX_STEPS = 12;
 
-export type GraphjinAgentTurn = {
-  role: "user" | "assistant";
-  content: string;
-  status?: string;
-  catalog_ids?: string[];
-};
-
-export type GraphjinAgentRequest = {
-  instruction: string;
-  context?: Record<string, unknown>;
-  namespace?: string;
-  max_steps?: number;
-  return_trace?: boolean;
-  history?: GraphjinAgentTurn[];
-};
-
-export type GraphjinAgentRefusal = {
-  code: string;
-  blocked_action?: string;
-  because?: string[];
-  unblock?: Array<{
-    tool?: string;
-    args?: Record<string, unknown>;
-    reason?: string;
-  }>;
-  lawful_alternative?: string;
-  policy_final?: boolean;
-  retryable?: boolean;
-};
-
-export type GraphjinAgentResponse = {
-  status: string;
-  answer?: string;
-  skill?: string;
-  data?: unknown;
-  evidence?: unknown;
-  actions?: unknown;
-  next?: unknown;
-  refusal?: GraphjinAgentRefusal;
-  notices?: Array<{ kind: string; message: string; count?: number; since?: string }>;
-  errors?: Array<{ message: string; extensions?: Record<string, unknown> }>;
-  usage?: unknown;
-  trace?: unknown;
-  trace_id?: string;
-};
-
-export type GraphjinAgentStatus = {
-  status: string;
-  enabled: boolean;
-  ready: boolean;
-  endpoint: string;
-  provider: string;
-  model?: string;
-  api_key_configured: boolean;
-  max_steps: number;
-  timeout_seconds: number;
-  read_only: boolean;
-  return_trace: boolean;
-  message: string;
-};
+// The agent wire types come from GraphJin's Go types; see
+// @neko/graphjin-contract.
+export type GraphjinAgentTurn = AgentTurn;
+export type GraphjinAgentRequest = AgentRequest;
+export type GraphjinAgentRefusal = AgentRefusal;
+export type GraphjinAgentResponse = AgentResponse;
+export type GraphjinAgentStatus = AgentStatus;
 
 /** Resolve GraphQL, MCP, or server-root URLs to the matching agent route. */
 export function graphjinAgentEndpoint(baseUrl: string, status = false): string {

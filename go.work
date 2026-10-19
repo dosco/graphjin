@@ -24,4 +24,5 @@ use (
 	./graphjin/serv
 	./graphjin/tests
 	./graphjin/wasm
+	./packages/graphjin-contract/generate
 )

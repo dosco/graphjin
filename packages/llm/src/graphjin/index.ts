@@ -1,6 +1,7 @@
 export {
   graphjinQuery,
   graphjinSubscribe,
+  type GraphjinQueryError,
   type GraphjinQueryOptions,
   type GraphjinQueryResult,
   type GraphjinSubscribeOptions,

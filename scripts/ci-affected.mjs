@@ -164,6 +164,10 @@ function classify(path) {
   if (path.startsWith("packs/")) {
     for (const d of ["apps/web", "apps/worker", "packages/packs"]) picked.add(d);
   }
+  // The contract package is generated from graphjin/.
+  if (path.startsWith("graphjin/")) {
+    for (const d of withDependents("packages/graphjin-contract")) picked.add(d);
+  }
   if (path.startsWith("evals/")) {
     for (const d of withDependents("packages/evals")) picked.add(d);
   }

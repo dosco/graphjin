@@ -25,7 +25,14 @@ export type GraphjinQueryOptions = {
 
 export type GraphjinQueryResult<T = unknown> = {
   data: T | null;
-  errors?: Array<{ message: string; path?: (string | number)[] }>;
+  errors?: GraphjinQueryError[];
+};
+
+/** A GraphQL error. extensions.code holds a GraphJin error code when it has one. */
+export type GraphjinQueryError = {
+  message: string;
+  path?: (string | number)[];
+  extensions?: Record<string, unknown>;
 };
 
 const longRunningTimeoutMs = 45 * 60_000;
@@ -72,6 +79,7 @@ export async function graphjinQuery<T = unknown>(
           const error = item as {
             message?: unknown;
             path?: unknown;
+            extensions?: unknown;
           };
           return {
             message:
@@ -80,6 +88,9 @@ export async function graphjinQuery<T = unknown>(
                 : JSON.stringify(item),
             ...(Array.isArray(error.path)
               ? { path: error.path as (string | number)[] }
+              : {}),
+            ...(error.extensions && typeof error.extensions === "object" && !Array.isArray(error.extensions)
+              ? { extensions: error.extensions as Record<string, unknown> }
               : {}),
           };
         }

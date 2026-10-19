@@ -43,6 +43,7 @@
     "@ax-llm/ax": "^20.0.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@neko/db": "workspace:*",
+    "@neko/graphjin-contract": "workspace:*",
     "@neko/interaction": "workspace:*",
     "@neko/packs": "workspace:*",
     "@neko/records": "workspace:*",

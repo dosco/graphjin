@@ -1,0 +1,23 @@
+{
+  "name": "@neko/graphjin-contract",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "TypeScript types for GraphJin's agent, config, error codes and MCP tools, generated from graphjin/.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "generate": "cd generate && GOWORK=off go run . ../../../graphjin/serv/config.schema.json ../src/generated.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5",
+    "vitest": "^2.1.8"
+  }
+}

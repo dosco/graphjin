@@ -41,7 +41,7 @@ func TestAgentSelectionEnvironmentAndValidation(t *testing.T) {
 }
 
 func TestAgentSelectionChangesEvaluationFingerprint(t *testing.T) {
-	base := agentStatusResponse{Provider: "openai", Model: "main"}
+	base := AgentStatusResponse{Provider: "openai", Model: "main"}
 	selected := base
 	selected.Selection = &gjagent.SelectionConfig{Enabled: true, Provider: "typesafe", Mode: "both"}
 	if agentEvalFingerprint(base) == agentEvalFingerprint(selected) {

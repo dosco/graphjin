@@ -20,6 +20,7 @@
     "@neko/channels": "workspace:*",
     "@neko/db": "workspace:*",
     "@neko/evals": "workspace:*",
+    "@neko/graphjin-contract": "workspace:*",
     "@neko/interaction": "workspace:*",
     "@neko/llm": "workspace:*",
     "@neko/packs": "workspace:*",

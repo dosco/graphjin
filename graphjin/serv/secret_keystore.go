@@ -297,12 +297,12 @@ func isSecretRef(value string) bool {
 
 func missingLocalKeystoreKeyError(paths []string) error {
 	sort.Strings(paths)
-	msg := "secrets.keystore.key must be set before setting secret config values or reading encrypted secret refs"
+	msg := KeystoreKeyRequiredMessage + " before setting secret config values or reading encrypted secret refs"
 	if len(paths) > 0 {
 		msg += " (" + strings.Join(paths, ", ") + ")"
 	}
 	msg += "; set secrets.keystore.key, for example with GJ_SECRETS_KEYSTORE_KEY, and retry"
-	return fmt.Errorf("%s", msg)
+	return core.NewCodedError(ErrorCodeKeystoreKeyRequired, msg)
 }
 
 func (s *graphjinService) localKeystore() (*localKeystore, error) {

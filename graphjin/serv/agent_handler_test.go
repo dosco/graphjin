@@ -115,7 +115,7 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected disabled status 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var disabledStatus agentStatusResponse
+	var disabledStatus AgentStatusResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &disabledStatus); err != nil {
 		t.Fatalf("decode disabled status: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected missing-key status 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var missingStatus agentStatusResponse
+	var missingStatus AgentStatusResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &missingStatus); err != nil {
 		t.Fatalf("decode missing-key status: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected ready status 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var readyStatus agentStatusResponse
+	var readyStatus AgentStatusResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &readyStatus); err != nil {
 		t.Fatalf("decode ready status: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 }
 
 func TestAgentEvalFingerprintIncludesRateLimits(t *testing.T) {
-	base := agentStatusResponse{Provider: "openai", Model: "gpt-test", StructuredOutputMode: "auto"}
+	base := AgentStatusResponse{Provider: "openai", Model: "gpt-test", StructuredOutputMode: "auto"}
 	limited := base
 	limited.RateLimit = gjagent.RateLimitConfig{RequestsPerMinute: 20, TokensPerMinute: 50000}
 	if agentEvalFingerprint(base) == agentEvalFingerprint(limited) {
@@ -229,7 +229,7 @@ func TestAgentEvalFingerprintIncludesRateLimits(t *testing.T) {
 }
 
 func TestAgentEvalFingerprintIncludesServiceTier(t *testing.T) {
-	base := agentStatusResponse{Provider: "openai", Model: "gpt-test", StructuredOutputMode: "auto", ServiceTier: gjagent.ServiceTierAuto}
+	base := AgentStatusResponse{Provider: "openai", Model: "gpt-test", StructuredOutputMode: "auto", ServiceTier: gjagent.ServiceTierAuto}
 	priority := base
 	priority.ServiceTier = gjagent.ServiceTierPriority
 	if agentEvalFingerprint(base) == agentEvalFingerprint(priority) {
@@ -244,7 +244,7 @@ func TestAgentEvalFingerprintIncludesServiceTier(t *testing.T) {
 // the toggle and reuse episodes from the other side of it. return_trace, the
 // same class of observability-only flag, is already in the payload.
 func TestAgentEvalFingerprintIncludesShowThoughts(t *testing.T) {
-	base := agentStatusResponse{Provider: "openai", Model: "gpt-test", StructuredOutputMode: "auto"}
+	base := AgentStatusResponse{Provider: "openai", Model: "gpt-test", StructuredOutputMode: "auto"}
 	observed := base
 	observed.ShowThoughts = true
 	if agentEvalFingerprint(base) == agentEvalFingerprint(observed) {

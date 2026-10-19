@@ -14,6 +14,7 @@ import {
   type GraphjinQueryResult,
 } from "@neko/llm/graphjin";
 
+import { GRAPHJIN_ERROR_CODES, GRAPHJIN_KEYSTORE_KEY_REQUIRED_MESSAGE } from "@neko/graphjin-contract";
 import { GRAPHJIN_NO_KEYSTORE_MESSAGE, graphjinAdminHeaders, readLiveGraphjinConfig, type LiveGraphjinConfig } from "./graphjin-target.js";
 
 export type AppliedGraphjinConfig = {
@@ -121,11 +122,22 @@ async function assertGraphjinSupervisor(configFile: string): Promise<void> {
  * durable YAML receives only gjsecret:// references.
  */
 /**
- * GraphJin before 3.18.35 has no config preview: it rejects the fields that
- * OpenNeko asks for. Returns a message an administrator can act on, or null.
+ * A GraphJin that cannot take this config: it has no keystore key, or it is
+ * an external GraphJin too old for the config API. Returns a message an
+ * administrator can act on, or null.
+ *
+ * GraphJin marks a missing keystore key with an error code. errors_json
+ * carries messages only, so the generated message prefix also counts. The
+ * other checks match the errors that old external GraphJins return for
+ * fields they do not have; those versions have no error codes.
  */
-export function unsupportedGraphjinConfigApi(messages: ReadonlyArray<string | null | undefined>): string | null {
-  const noKeystore = messages.find((message) => message && /secrets\.keystore\.key must be set/i.test(message));
+export function unsupportedGraphjinConfigApi(
+  messages: ReadonlyArray<string | null | undefined>,
+  errors: ReadonlyArray<{ extensions?: Record<string, unknown> }> = [],
+): string | null {
+  const noKeystore =
+    errors.some((error) => error.extensions?.code === GRAPHJIN_ERROR_CODES.keystoreKeyRequired) ||
+    messages.some((message) => message?.includes(GRAPHJIN_KEYSTORE_KEY_REQUIRED_MESSAGE));
   if (noKeystore) {
     return GRAPHJIN_NO_KEYSTORE_MESSAGE;
   }
@@ -206,7 +218,7 @@ export async function applyPackGraphjinConfig(input: {
         query: `query ${revisionOperation} { gj_config(id: "current") { catalog_revision sources tables relationships } }`,
       });
       const reportedRevision = current.data?.gj_config?.catalog_revision;
-      const revisionUnsupported = unsupportedGraphjinConfigApi(current.errors?.map((error) => error.message) ?? []);
+      const revisionUnsupported = unsupportedGraphjinConfigApi(current.errors?.map((error) => error.message) ?? [], current.errors);
       if (revisionUnsupported) throw new Error(revisionUnsupported);
       if (!reportedRevision || current.errors?.length) {
         throw new Error(
@@ -300,7 +312,7 @@ export async function applyPackGraphjinConfig(input: {
         ...(preview.errors?.map((error) => error.message) ?? []),
         previewResult?.errors_json,
       ];
-      const previewUnsupported = unsupportedGraphjinConfigApi(previewMessages);
+      const previewUnsupported = unsupportedGraphjinConfigApi(previewMessages, preview.errors);
       if (previewUnsupported) throw new Error(previewUnsupported);
       if (preview.errors?.length || !previewResult?.valid || !previewResult.preview_id) {
         if (attempt < maxRevisionAttempts && isCatalogRevisionConflict(previewMessages)) {
@@ -451,7 +463,7 @@ async function previewThenApplyLive(input: {
       });
       const row = result.data?.gj_config;
       const messages = [...(result.errors?.map((error) => error.message) ?? []), row?.errors_json];
-      const unsupported = unsupportedGraphjinConfigApi(messages);
+      const unsupported = unsupportedGraphjinConfigApi(messages, result.errors);
       if (unsupported) throw new Error(unsupported);
       return { row, messages, failed: Boolean(result.errors?.length) };
     };
