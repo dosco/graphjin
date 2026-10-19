@@ -13,8 +13,6 @@ func sampleSettings() Settings {
 		Mode:           "prod",
 		WebPort:        3100,
 		WebBindAddress: "127.0.0.1",
-		OpenShellPort:  18100,
-		DockerSubnet:   "10.224.1.0/24",
 	}
 }
 
@@ -42,32 +40,41 @@ func TestSettingsRoundTrip(t *testing.T) {
 
 func TestSettingsValidation(t *testing.T) {
 	settings := sampleSettings()
-	settings.WebPort = settings.OpenShellPort
+	settings.WebPort = 0
 	if err := settings.Validate(); err == nil {
-		t.Fatal("expected duplicate port error")
+		t.Fatal("expected invalid port error")
 	}
 	settings = sampleSettings()
-	settings.DockerSubnet = "10.224.1.1/24"
+	settings.WebBindAddress = "::1"
 	if err := settings.Validate(); err == nil {
-		t.Fatal("expected non-canonical subnet error")
+		t.Fatal("expected IPv4 bind address error")
 	}
-	settings = sampleSettings()
-	settings.DockerSubnet = ""
-	if err := settings.Validate(); err == nil {
-		t.Fatal("expected named-instance subnet error")
+}
+
+// Settings written before the agent runtime moved into core.yml carry the
+// OpenShell gateway port and a fixed Docker subnet; they still load.
+func TestSettingsLoadIgnoresRetiredFields(t *testing.T) {
+	dir := t.TempDir()
+	raw := `{"version":1,"instance":"acme","mode":"prod","web_port":3100,"web_bind_address":"127.0.0.1","openshell_port":18100,"docker_subnet":"10.224.1.0/24"}`
+	if err := os.WriteFile(filepath.Join(dir, Filename), []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := Load(dir)
+	if err != nil || !ok || got != sampleSettings() {
+		t.Fatalf("Load = %+v, %v, %v", got, ok, err)
 	}
 }
 
 func TestApplyEnvironmentPreservesExplicitOverrides(t *testing.T) {
 	t.Setenv("OPENNEKO_PORT", "3999")
-	t.Setenv("OPENSHELL_PORT", "")
+	t.Setenv("OPENNEKO_WEB_BIND_ADDRESS", "")
 	if err := ApplyEnvironment(sampleSettings(), false); err != nil {
 		t.Fatal(err)
 	}
 	if got := os.Getenv("OPENNEKO_PORT"); got != "3999" {
 		t.Fatalf("explicit web port replaced with %q", got)
 	}
-	if got := os.Getenv("OPENSHELL_PORT"); got != "18100" {
-		t.Fatalf("persisted OpenShell port not applied: %q", got)
+	if got := os.Getenv("OPENNEKO_WEB_BIND_ADDRESS"); got != "127.0.0.1" {
+		t.Fatalf("persisted bind address not applied: %q", got)
 	}
 }

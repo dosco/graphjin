@@ -18,7 +18,7 @@ import (
 func newDoctorCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
-		Short: "Check whether this host can run the OpenShell sandbox runtime and report state",
+		Short: "Check whether this host can run OpenNeko and report state",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()

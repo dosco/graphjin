@@ -27,9 +27,11 @@ func newSetupCmd() *cobra.Command {
 		verbose        bool
 		skipOnboarding bool
 		webPort        int
-		openShellPort  int
 		webBindAddress string
-		dockerSubnet   string
+
+		// Retired with the OpenShell gateway; accepted and ignored.
+		openShellPort int
+		dockerSubnet  string
 
 		// Headless onboarding overrides. Setting any credential flag opts the
 		// run into headless mode (no prompts), so CI and the demo-install skill
@@ -69,15 +71,11 @@ at the prompt) to finish at the web UI. Credential flags
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
 
-			settings, err := prepareSetupInstallation(ctx, cmd, mode, setupHostOptions{
-				webPort:             webPort,
-				webPortChanged:      cmd.Flags().Changed("port"),
-				openShellPort:       openShellPort,
-				openShellChanged:    cmd.Flags().Changed("openshell-port"),
-				webBindAddress:      webBindAddress,
-				webBindChanged:      cmd.Flags().Changed("bind-address"),
-				dockerSubnet:        dockerSubnet,
-				dockerSubnetChanged: cmd.Flags().Changed("docker-subnet"),
+			settings, err := prepareSetupInstallation(cmd, mode, setupHostOptions{
+				webPort:        webPort,
+				webPortChanged: cmd.Flags().Changed("port"),
+				webBindAddress: webBindAddress,
+				webBindChanged: cmd.Flags().Changed("bind-address"),
 			})
 			if err != nil {
 				return err
@@ -176,9 +174,6 @@ at the prompt) to finish at the web UI. Credential flags
 			// fall back to the stale bootstrap default. This must happen even
 			// when a LATER wizard step failed — the remote rotation has already
 			// committed by then, and dropping it here locked the host CLI out.
-			// The gateway itself is unaffected by the rotation — it runs on its
-			// dedicated `openshell` role (see ensureOpenShellGatewayRole), so no
-			// gateway restart is needed.
 			if outcome.PasswordSet != "" {
 				if err := config.WriteLocalDatabasePasswords("", outcome.PasswordSet, outcome.PasswordSet); err != nil {
 					ui.Info(out, "warning: couldn't persist the DB password to the host config: %v", err)
@@ -202,9 +197,13 @@ at the prompt) to finish at the web UI. Credential flags
 
 	cmd.Flags().StringVar(&mode, "mode", "prod", "Stack mode: prod|dev|demo")
 	cmd.Flags().IntVar(&webPort, "port", 0, "Host port for the web app (named instances auto-select when omitted)")
-	cmd.Flags().IntVar(&openShellPort, "openshell-port", 0, "Loopback host port for the OpenShell gateway (named instances auto-select when omitted)")
 	cmd.Flags().StringVar(&webBindAddress, "bind-address", "", "IPv4 address for the web listener (default 0.0.0.0; use 127.0.0.1 behind a reverse proxy)")
-	cmd.Flags().StringVar(&dockerSubnet, "docker-subnet", "", "Private IPv4 /24 for this instance (named instances auto-select when omitted)")
+	// The agent runtime no longer has a gateway port or a fixed subnet. Keep
+	// the old flags as no-ops so existing automation that passes them works.
+	cmd.Flags().IntVar(&openShellPort, "openshell-port", 0, "Deprecated: the agent runtime has no host port")
+	_ = cmd.Flags().MarkDeprecated("openshell-port", "the agent runtime has no host port; the flag is ignored")
+	cmd.Flags().StringVar(&dockerSubnet, "docker-subnet", "", "Deprecated: Docker assigns each instance's network")
+	_ = cmd.Flags().MarkDeprecated("docker-subnet", "Docker assigns each instance's network; the flag is ignored")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "Stream full image-pull output during bring-up")
 	cmd.Flags().BoolVar(&skipOnboarding, "skip-onboarding", false, "Bring up the stack only; finish configuration in the browser")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "", "Headless: admin database password")

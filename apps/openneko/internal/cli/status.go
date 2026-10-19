@@ -40,7 +40,7 @@ const (
 // failed setup step — degraded, not a downed stack. A genuinely fatal one (e.g.
 // neko-migrate) still surfaces as down: its dependents never start, and those
 // missing long-running services drive the verdict. Keep in sync with the
-// `restart: "no"` services in assets/compose/{core,demo,openshell}.yml.
+// `restart: "no"` services in assets/compose/{core,demo}.yml.
 var oneShotJobs = map[string]bool{
 	"neko-migrate":                 true,
 	"storage-reconcile":            true,
@@ -48,9 +48,6 @@ var oneShotJobs = map[string]bool{
 	"graphjin-config-init":         true,
 	"records-graphjin-config-init": true,
 	"neko-adventureworks-seed":     true,
-	"openshell-certgen":            true,
-	"openshell-reg":                true,
-	"openshell-ready":              true,
 }
 
 func newStatusCmd() *cobra.Command {

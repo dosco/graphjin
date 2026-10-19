@@ -72,7 +72,7 @@ func ReadLocal(override string) (Local, string) {
 
 // WriteLocalPgPassword persists the rotated DB password into the host config
 // (~/.config/openneko/config.json), encrypted at rest (enc:v1) with the host
-// secret-key — the single source ReadLocal and configureOpenShellDBURL read.
+// secret-key — the single source ReadLocal reads.
 //
 // The web /setup wizard writes the same field, but it runs in a container and
 // can only reach the in-container config volume, never the host file. The CLI

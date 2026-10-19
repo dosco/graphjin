@@ -109,9 +109,6 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 	if err := configureBackupEnvironment(project); err != nil {
 		return fmt.Errorf("configure backup repository: %w", err)
 	}
-	if err := configureOpenShellNetwork(m); err != nil {
-		return err
-	}
 
 	previous, hadPrevious := os.LookupEnv("OPENNEKO_VERSION")
 	if err := os.Setenv("OPENNEKO_VERSION", target); err != nil {
@@ -136,19 +133,11 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 		return err
 	}
 	fmt.Fprintf(out, "Upgrading OpenNeko %s stack to image tag %s\n", m, target)
-	reapBeforePull(ctx)
 	fmt.Fprintln(out, "Pulling stack images...")
 	if code, err := sup.Run(ctx, project, files, []string{"pull"}, os.Stdout, os.Stderr); err != nil {
 		return err
 	} else if code != 0 {
 		return WithExit(code, nil)
-	}
-
-	for _, image := range extraUpgradeImageRefs(target) {
-		fmt.Fprintf(out, "Pulling %s...\n", image)
-		if err := sup.PullImage(ctx, image, os.Stdout, os.Stderr); err != nil {
-			return err
-		}
 	}
 
 	fmt.Fprintln(out, "Restarting stack with upgraded images...")
@@ -184,10 +173,6 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 }
 
 func restartUpgradedStack(ctx context.Context, sup *compose.Supervisor, project string, files []string) error {
-	if err := configureOpenShellStateDir(); err != nil {
-		return err
-	}
-	configureOpenShellDBURL()
 	// Enter a real maintenance boundary before replacing either database image.
 	// Without this, old worker/GraphJin containers can reconnect in the window
 	// between Postgres becoming healthy and the new storage-reconcile one-shot
@@ -355,20 +340,6 @@ func normalizeUpgradeImageVersion(raw string) string {
 	return v
 }
 
-func extraUpgradeImageRefs(version string) []string {
-	return uniqueStrings([]string{
-		agentImageRef(os.Getenv("OPENNEKO_AGENT_IMAGE"), version),
-		supervisorImageRef(os.Getenv("OPENNEKO_SUPERVISOR_IMAGE"), version),
-	})
-}
-
-func supervisorImageRef(override, version string) string {
-	if override != "" {
-		return override
-	}
-	return "ghcr.io/open-neko/openshell-supervisor:" + version
-}
-
 func pruneOldOpenNekoImages(ctx context.Context, targetTag string, stdout, stderr *os.File) error {
 	cmd := exec.CommandContext(ctx, "docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}")
 	out, err := cmd.Output()
@@ -430,8 +401,8 @@ func openNekoImageRepos() map[string]bool {
 		"ghcr.io/open-neko/neko-embedding":      true,
 		"ghcr.io/open-neko/neko-librarian":      true,
 		"ghcr.io/open-neko/agent":               true,
-		// Legacy plugin sandbox image (plugins were removed); kept so
-		// upgrades prune old copies left on the host.
+		// Legacy images (plugins and the OpenShell sandbox supervisor were
+		// removed); kept so upgrades prune old copies left on the host.
 		"ghcr.io/open-neko/plugin-base":          true,
 		"ghcr.io/open-neko/openshell-supervisor": true,
 	}

@@ -190,8 +190,6 @@ func TestSeedRefusesNamedProductionInstance(t *testing.T) {
 		Mode:           "prod",
 		WebPort:        3101,
 		WebBindAddress: "127.0.0.1",
-		OpenShellPort:  18101,
-		DockerSubnet:   "10.224.1.0/24",
 	}
 	if err := os.MkdirAll(filepath.Dir(installation.Path(config.Dir(""))), 0o700); err != nil {
 		t.Fatal(err)
@@ -236,16 +234,6 @@ ghcr.io/open-neko/plugin-base:v0.9.0
 	}
 	if got := oldOpenNekoImageRefs(in, "v2.0.0"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("oldOpenNekoImageRefs = %#v, want %#v", got, want)
-	}
-}
-
-func TestExtraUpgradeImageRefsDedupesOverrides(t *testing.T) {
-	t.Setenv("OPENNEKO_AGENT_IMAGE", "custom/agent:v1")
-	t.Setenv("OPENNEKO_SUPERVISOR_IMAGE", "custom/agent:v1")
-	got := extraUpgradeImageRefs("v2.0.0")
-	want := []string{"custom/agent:v1"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("extraUpgradeImageRefs = %#v, want %#v", got, want)
 	}
 }
 
