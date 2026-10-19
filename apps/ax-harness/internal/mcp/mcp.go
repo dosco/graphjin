@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -37,6 +38,23 @@ func Connect(ctx context.Context, cmd *exec.Cmd, prefix string, effects map[stri
 	client := protocol.NewClient(&protocol.Implementation{Name: "ax-harness", Version: "1"}, nil)
 	session, err := client.Connect(ctx, &protocol.CommandTransport{Command: cmd}, nil)
 	if err != nil {
+		return nil, nil, fmt.Errorf("MCP connection failed: %w", err)
+	}
+	capabilities, err := Capabilities(ctx, session, prefix, effects)
+	if err != nil {
+		_ = session.Close()
+		return nil, nil, err
+	}
+	return capabilities, session.Close, nil
+}
+
+// ConnectStream is Connect for an MCP server reached over stream, which it
+// closes with the session.
+func ConnectStream(ctx context.Context, stream io.ReadWriteCloser, prefix string, effects map[string]string) ([]agent.Capability, func() error, error) {
+	client := protocol.NewClient(&protocol.Implementation{Name: "ax-harness", Version: "1"}, nil)
+	session, err := client.Connect(ctx, &protocol.IOTransport{Reader: stream, Writer: stream}, nil)
+	if err != nil {
+		_ = stream.Close()
 		return nil, nil, fmt.Errorf("MCP connection failed: %w", err)
 	}
 	capabilities, err := Capabilities(ctx, session, prefix, effects)

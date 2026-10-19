@@ -50,6 +50,31 @@ func Main() {
 // writes NDJSON events to out and returns the exit code the binary would.
 // It reads no process state, so a host can run many turns at once.
 func Run(ctx context.Context, environ []string, in io.Reader, out io.Writer) (int, error) {
+	return RunTurn(ctx, Turn{Environ: environ, In: in, Out: out})
+}
+
+// Turn is one agent turn run in-process.
+type Turn struct {
+	// Environ binds the run's scope, tools and model routes. Model
+	// credentials in it are ignored when Secrets is set.
+	Environ []string
+	// Secrets returns the model credential a variable names, from the host.
+	// The run's tools and terminal never see these values in Environ.
+	Secrets func(name string) string
+	// Bridge carries the OpenNeko tools as MCP over a stream, in place of
+	// the bridge process that OPENNEKO_MCP_BRIDGE names.
+	Bridge io.ReadWriteCloser
+	In     io.Reader
+	Out    io.Writer
+}
+
+// RunTurn runs turn; see Run.
+func RunTurn(ctx context.Context, turn Turn) (int, error) {
+	environ := turn.Environ
+	if turn.Secrets != nil {
+		environ = withSecrets(environ, turn.Secrets)
+	}
+	in, out := turn.In, turn.Out
 	getenv := func(name string) string { return envValue(environ, name) }
 	if err := validateScope(getenv("OPENNEKO_MCP_ORG_ID"), getenv("OPENNEKO_MCP_THREAD_ID")); err != nil {
 		return 2, err
@@ -69,7 +94,14 @@ func Run(ctx context.Context, environ []string, in io.Reader, out io.Writer) (in
 		_ = closeAll()
 		return 2, err
 	}
-	if bridge := getenv("OPENNEKO_MCP_BRIDGE"); bridge != "" {
+	if turn.Bridge != nil {
+		caps, closeBridge, err := mcp.ConnectStream(ctx, turn.Bridge, "mcp_neko_", bridgeEffects)
+		if err != nil {
+			return failed(fmt.Errorf("OpenNeko bridge unavailable: %w", err))
+		}
+		tools.Capabilities = append(tools.Capabilities, caps...)
+		closers = append(closers, closeBridge)
+	} else if bridge := getenv("OPENNEKO_MCP_BRIDGE"); bridge != "" {
 		caps, closeBridge, err := mcp.Connect(ctx, bridgeCommand(bridge, getenv("OPENNEKO_MCP_SERVERS"), environ), "mcp_neko_", bridgeEffects)
 		if err != nil {
 			return failed(fmt.Errorf("OpenNeko bridge unavailable: %w", err))
@@ -141,6 +173,34 @@ func Run(ctx context.Context, environ []string, in io.Reader, out io.Writer) (in
 		tools.ChildTools = strings.Split(child, ",")
 	}
 	return command.Execute(ctx, getenv, in, out, tools, closeAll)
+}
+
+// withSecrets replaces every model credential variable in environ with the
+// host's value, so a credential can come only from the host.
+func withSecrets(environ []string, secrets func(string) string) []string {
+	names := command.KeyEnvNames(func(name string) string { return envValue(environ, name) })
+	held := map[string]bool{}
+	for _, name := range names {
+		if name != "HARNESS_MODEL_ROUTES" {
+			held[name] = true
+		}
+	}
+	out := make([]string, 0, len(environ)+len(held))
+	for _, entry := range environ {
+		name, _, _ := strings.Cut(entry, "=")
+		if !held[name] {
+			out = append(out, entry)
+		}
+	}
+	for _, name := range names {
+		if held[name] {
+			if value := secrets(name); value != "" {
+				out = append(out, name+"="+value)
+			}
+			delete(held, name)
+		}
+	}
+	return out
 }
 
 func envValue(environ []string, name string) string {
