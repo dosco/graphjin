@@ -1,9 +1,9 @@
-# OpenShell sandbox OS base for the Hermes agent runtime. Agent turns reach the
+# OpenShell sandbox OS base for the Ax agent runtime. Agent turns reach the
 # trusted control plane only through the broker.
 #
 # This file is the OS base layer (the OpenShell-required shape: glibc +
 # iproute2/nftables + a `sandbox` user @ /sandbox, same as plugin-base). The
-# runnable agent image in the main Dockerfile adds Hermes, GraphJin, document
+# runnable agent image in the main Dockerfile adds the Ax Harness, document
 # tooling, two standalone JavaScript bundles, and built-in skill assets. It does
 # not inherit the worker source or production dependency closure.
 # See docs/OPENSHELL_MIGRATION_PLAN.md (Phase 2c) for the full image + launcher.

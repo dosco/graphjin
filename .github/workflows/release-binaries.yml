@@ -116,7 +116,7 @@ jobs:
             target: neko-backup
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-          # Hermes sandbox image: standalone entry/bridge bundles and skills
+          # Agent sandbox image: Ax Harness, entry/bridge bundles and skills
           # plus the document toolchain, pulled by the OpenShell runtime.
           - image: agent
             target: agent
