@@ -1,7 +1,11 @@
-import { action_target_spec, and, db, eq, notInArray } from "@neko/db";
+import { action_target_spec, and, db, eq, notInArray, pack_action_definition } from "@neko/db";
 import type { PolicyRequestSubject } from "./policy-engine";
 
-/** Mirrors ActionTargetSpec in @open-neko/plugin-types. */
+/**
+ * Payload fields that hold an action's targets. A field may be a dot path into
+ * the payload, such as body.to. Mirrors ActionTargetSpec in
+ * @open-neko/plugin-types and the targets of a pack action.
+ */
 export type ActionTargetSpec = {
   fields: string[];
   as?: "value" | "email_domain";
@@ -34,7 +38,7 @@ export function deriveActionTargets(
 ): string[] {
   const values: string[] = [];
   for (const field of spec.fields) {
-    const raw = payload?.[field];
+    const raw = payloadField(payload, field);
     const list = Array.isArray(raw) ? raw : raw === undefined || raw === null ? [] : [raw];
     for (const item of list) {
       const text = typeof item === "string" ? item : JSON.stringify(item);
@@ -48,9 +52,26 @@ export function deriveActionTargets(
   return [...new Set(values)].sort();
 }
 
+function payloadField(payload: Record<string, unknown> | null | undefined, field: string): unknown {
+  let current: unknown = payload;
+  for (const key of field.split(".")) {
+    if (!current || typeof current !== "object" || Array.isArray(current) || !Object.hasOwn(current, key)) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
+}
+
 export async function getActionTargetSpec(orgId: string, kind: string): Promise<ActionTargetSpec | null> {
   const builtin = BUILTIN_TARGET_SPECS[kind];
   if (builtin) return builtin;
+  const [pack] = await db()
+    .select({ definition: pack_action_definition.definition })
+    .from(pack_action_definition)
+    .where(and(eq(pack_action_definition.org_id, orgId), eq(pack_action_definition.kind, kind)))
+    .limit(1);
+  if (pack) return parseSpec(pack.definition.targets);
   const [row] = await db()
     .select({ spec: action_target_spec.spec })
     .from(action_target_spec)

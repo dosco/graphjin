@@ -97,4 +97,32 @@ describe("declarative pack action runtime", () => {
     })).rejects.toThrow("unsupported operation");
     expect(graphjinQuery).not.toHaveBeenCalled();
   });
+
+  it("locks body fields to pack inputs and sends the request id as the idempotency header", async () => {
+    const row = (await query()).rows[0];
+    row.config = { from_address: "Billing <billing@acme.com>" };
+    row.definition.adapter.lockedBody = { from: { input: "from_address" } };
+    row.definition.adapter.operations.update_values.idempotencyHeader = "Idempotency-Key";
+    query.mockResolvedValue({ rows: [row] });
+    vi.mocked(graphjinQuery).mockResolvedValue({ data: { gws_sheets_update_values: { ok: true, status_code: 200 } } });
+    const sent = { ...request, payload: { ...request.payload, body: { from: "attacker@evil.test", values: [] } } };
+    await declarativePackActionAdapter({ request: sent });
+    expect(vi.mocked(graphjinQuery).mock.calls[0]![0].variables).toEqual({
+      call: {
+        path: request.payload.path,
+        query: request.payload.query,
+        headers: { "Idempotency-Key": "request-1" },
+        body: { from: "Billing <billing@acme.com>", values: [] },
+      },
+    });
+  });
+
+  it("refuses a locked field whose pack input is not set", async () => {
+    const row = (await query()).rows[0];
+    row.config = {};
+    row.definition.adapter.lockedBody = { from: { input: "from_address" } };
+    query.mockResolvedValue({ rows: [row] });
+    await expect(declarativePackActionAdapter({ request })).rejects.toThrow("needs the pack input from_address");
+    expect(graphjinQuery).not.toHaveBeenCalled();
+  });
 });

@@ -150,6 +150,20 @@ const graphjinApiOperationSchema = z
     operationId: z.string().min(1),
     mutationRoot: z.string().regex(/^[_A-Za-z][_0-9A-Za-z]*$/),
     reversible: z.boolean().default(false),
+    // A header that the API spec declares for this operation, such as
+    // Idempotency-Key. The runtime sends the action request id in it, so a
+    // retried request cannot act twice.
+    idempotencyHeader: z.string().regex(/^[A-Za-z0-9-]+$/).optional(),
+  })
+  .strict();
+
+// Payload fields the policy engine reads as the action's targets. A field is a
+// dot path into the payload, such as body.to. email_domain reads the domain of
+// each address, so policies can allow or deny recipient domains.
+const actionTargetsSchema = z
+  .object({
+    fields: z.array(z.string().regex(/^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$/)).min(1),
+    as: z.enum(["value", "email_domain"]).optional(),
   })
   .strict();
 
@@ -166,12 +180,19 @@ const graphjinApiActionSchema = z
       .strict(),
     inputSchema: z.record(z.string(), z.unknown()),
     example: z.record(z.string(), z.unknown()).optional(),
+    targets: actionTargetsSchema.optional(),
     adapter: z
       .object({
         kind: z.literal("graphjin_api_operation"),
         source: z.string().min(1),
         spec: z.string().min(1),
         operations: z.record(z.string().min(1), graphjinApiOperationSchema),
+        // Body fields the agent cannot choose. Each one is set from a pack
+        // input, such as the sender address, and replaces any value in the
+        // payload.
+        lockedBody: z
+          .record(z.string().regex(/^[A-Za-z0-9_]+$/), z.object({ input: z.string().min(1) }).strict())
+          .optional(),
         ambiguousOutcome: z.literal("reconcile_required"),
         retry: z.literal("never"),
       })

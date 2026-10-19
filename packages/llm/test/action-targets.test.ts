@@ -52,6 +52,16 @@ describe("deriveActionTargets", () => {
     expect(deriveActionTargets(emailSpec, { to: "acme.com" })).toEqual(["invalid:acme.com"]);
   });
 
+  it("reads targets nested in the payload, as a pack action's body.to", () => {
+    expect(
+      deriveActionTargets(
+        { fields: ["body.to", "body.cc", "body.bcc"], as: "email_domain" },
+        { body: { to: ["a@acme.com"], cc: "b@partner.com" }, to: "ignored@other.com" },
+      ),
+    ).toEqual(["acme.com", "partner.com"]);
+    expect(deriveActionTargets({ fields: ["body.to"], as: "value" }, { body: "x" })).toEqual([]);
+  });
+
   it("returns no targets when the fields are missing", () => {
     expect(deriveActionTargets(emailSpec, {})).toEqual([]);
   });

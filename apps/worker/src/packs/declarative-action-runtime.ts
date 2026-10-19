@@ -13,6 +13,7 @@ type ApiOperation = {
   operationId: string;
   mutationRoot: string;
   reversible?: boolean;
+  idempotencyHeader?: string;
 };
 
 type InstalledAction = {
@@ -25,6 +26,7 @@ type InstalledAction = {
       source?: string;
       spec?: string;
       operations?: Record<string, ApiOperation>;
+      lockedBody?: Record<string, { input: string }>;
     };
   };
   enabled: boolean;
@@ -116,6 +118,8 @@ export const declarativePackActionAdapter: ActionAdapter = async ({ request }) =
   }
   const path = request.payload.path === undefined ? {} : object(request.payload.path, "pack action path");
   const query = request.payload.query === undefined ? {} : object(request.payload.query, "pack action query");
+  const body = lockBody(request.kind, request.payload.body, adapter.lockedBody, action.config);
+  const headers = operation.idempotencyHeader ? { [operation.idempotencyHeader]: request.id } : {};
   const selectedSource = action.source;
   if (!selectedSource) throw new Error(`pack action ${request.kind} has no reviewed data source binding`);
   const source = await resolvePackSource(request.orgId, selectedSource);
@@ -142,7 +146,8 @@ export const declarativePackActionAdapter: ActionAdapter = async ({ request }) =
       call: {
         ...(Object.keys(path).length > 0 ? { path } : {}),
         ...(Object.keys(query).length > 0 ? { query } : {}),
-        ...(request.payload.body !== undefined ? { body: request.payload.body } : {}),
+        ...(Object.keys(headers).length > 0 ? { headers } : {}),
+        ...(body !== undefined ? { body } : {}),
       },
     },
     signal: AbortSignal.timeout(30_000),
@@ -164,6 +169,28 @@ export const declarativePackActionAdapter: ActionAdapter = async ({ request }) =
     },
   };
 };
+
+/**
+ * Sets each locked body field from its pack input, replacing any value the
+ * payload has. A locked field needs a body object and a configured input.
+ */
+export function lockBody(
+  kind: string,
+  body: unknown,
+  locked: Record<string, { input: string }> | undefined,
+  config: Record<string, unknown>,
+): unknown {
+  if (!locked || Object.keys(locked).length === 0) return body;
+  const out = body === undefined ? {} : { ...object(body, "pack action body") };
+  for (const [field, { input }] of Object.entries(locked)) {
+    const value = config[input];
+    if (value === undefined || value === null || value === "") {
+      throw new Error(`pack action ${kind} needs the pack input ${input} for body field ${field}`);
+    }
+    out[field] = value;
+  }
+  return out;
+}
 
 export const resolveDeclarativePackActionAdapter: ActionAdapterResolver = async (request) => {
   const result = await pool().query<{ owned: boolean }>(

@@ -107,7 +107,36 @@ collisions with other packs or operator-created artifacts.
 | Workflows | Define a goal, output contract, and optional schedule with a timezone input. A workflow may declare `networkHosts` for read-only external requests; OpenShell scopes those hosts to that workflow sandbox. See the [example workflow](apps/worker/test/fixtures/service-health/workflows/health.yaml). |
 | Watchers | Reference a workflow artifact key and define a query, value path, threshold, cadence, debounce, cooldown, and severity. |
 | Skills | Write Markdown instructions with `name` and `description` frontmatter. Explain data sources, expected outputs, and permitted actions. |
-| Actions and policies | Use `graphjin_api_operation` for reviewed REST writes. Group named operations by action kind and add a matching policy. Write policies install disabled. |
+| Actions and policies | Use `graphjin_api_operation` for reviewed REST writes. Group named operations by action kind and add a matching policy. Write policies install disabled. See [Action safety fields](#action-safety-fields). |
+
+### Action safety fields
+
+A `graphjin_api_operation` action can declare three checks:
+
+- `targets`: payload fields that hold the action's targets, as dot paths such
+  as `body.to`. With `as: email_domain` the policy engine reads each
+  address's domain, so a policy's `allowed_targets` can limit recipients.
+- `adapter.lockedBody`: body fields the agent cannot choose. Each one is set
+  from a pack input and replaces any value in the payload, for example
+  `from: { input: from_address }`.
+- `idempotencyHeader` on an operation: a header that the API spec declares,
+  such as `Idempotency-Key`. The runtime sends the action request id in it,
+  so a retried request cannot act twice.
+
+```yaml
+targets:
+  fields: [body.to, body.cc, body.bcc]
+  as: email_domain
+adapter:
+  kind: graphjin_api_operation
+  lockedBody:
+    from: { input: from_address }
+  operations:
+    send:
+      operationId: sendEmail
+      mutationRoot: resend_send_email
+      idempotencyHeader: Idempotency-Key
+```
 
 See the [artifact schemas](packages/packs/src/artifact-schema.ts) for exact fields
 and the [bundle loader](packages/packs/src/bundle.ts) for identity and reference
