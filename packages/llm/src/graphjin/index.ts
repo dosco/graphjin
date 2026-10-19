@@ -24,3 +24,8 @@ export * from "./group-grants";
 export * from "./row-filter";
 export * from "./restart";
 export * from "./agent-settings";
+export {
+  applyGraphjinConfigUpdate,
+  currentRevisionFromConflict,
+  isCatalogRevisionConflict,
+} from "./config-apply";

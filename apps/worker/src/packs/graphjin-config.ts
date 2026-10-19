@@ -4,7 +4,9 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parse, parseDocument } from "yaml";
 import {
   acquireGraphjinConfigLock,
+  currentRevisionFromConflict,
   graphjinInputWithJsonVariables,
+  isCatalogRevisionConflict,
   persistGraphjinSourceConfigUpdate,
   requestGraphjinRestart,
 } from "@neko/llm/graphjin";
@@ -56,19 +58,6 @@ function mergeByKey(
   return [...merged.values()];
 }
 
-function isCatalogRevisionConflict(messages: Array<string | null | undefined>): boolean {
-  return messages.some((message) =>
-    Boolean(message?.includes("expected_catalog_revision") && message.includes("does not match")),
-  );
-}
-
-function currentRevisionFromConflict(messages: Array<string | null | undefined>): string | null {
-  for (const message of messages) {
-    const match = /current catalog_revision[^a-f0-9]*([a-f0-9]{64})/i.exec(message ?? "");
-    if (match?.[1]) return match[1];
-  }
-  return null;
-}
 
 async function persistPackSections(
   configFile: string,

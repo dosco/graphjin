@@ -28,6 +28,7 @@ type SelectionConfig struct {
 	Provider        string `mapstructure:"provider" json:"provider"`
 	Model           string `mapstructure:"model" json:"model"`
 	APIKeyEnv       string `mapstructure:"api_key_env" json:"api_key_env"`
+	APIKeyFile      string `mapstructure:"api_key_file" json:"api_key_file,omitempty"`
 	BaseURL         string `mapstructure:"base_url" json:"base_url"`
 	StartupBudgetMS int    `mapstructure:"startup_budget_ms" json:"startup_budget_ms" jsonschema:"default=2000,minimum=1"`
 	Concurrency     int    `mapstructure:"concurrency" json:"concurrency" jsonschema:"default=4,minimum=1,maximum=16"`
@@ -236,7 +237,7 @@ func (p *preparation) decide(job preparationJob) ([]map[string]any, any, error) 
 		instruction = rootScopeInstruction
 	}
 	signature := instruction + ` instruction:string, history:string, candidates:string, parent_ids:string -> ` + strings.Join(fields, ", ")
-	config := Config{Provider: p.config.Provider, Model: p.config.Model, APIKeyEnv: p.config.APIKeyEnv, BaseURL: p.config.BaseURL}
+	config := Config{Provider: p.config.Provider, Model: p.config.Model, APIKeyEnv: p.config.APIKeyEnv, APIKeyFile: p.config.APIKeyFile, BaseURL: p.config.BaseURL}
 	client, err := p.agent.newClient(config.withDefaults())
 	if err != nil {
 		return nil, nil, err

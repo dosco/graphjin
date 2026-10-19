@@ -20,10 +20,15 @@ import { resolveAxModelRoute, type AxModelRoute } from "../provider-runtime";
 import { maybeDecryptSecret } from "../secrets";
 import { acquireGraphjinConfigLock } from "./persist-source-config";
 import { GRAPHJIN_AGENT_MAX_STEPS } from "./agent";
+import { applyGraphjinConfigUpdate } from "./config-apply";
 import { requestGraphjinRestart } from "./restart";
+import { mintGraphjinToken } from "./token";
 
-/** GraphJin reads the key from this variable; the supervisor fills it from the key file. */
-export const GRAPHJIN_AGENT_KEY_ENV = "OPENNEKO_GRAPHJIN_AGENT_API_KEY";
+/**
+ * The key file next to GraphJin's config. GraphJin reads it for each agent
+ * run (agent.api_key_file, relative to its config directory), so a new key
+ * needs no restart.
+ */
 export const GRAPHJIN_AGENT_KEY_FILE = ".openneko-graphjin-agent-key";
 /** Under the 180s OpenNeko waits for an answer, so GraphJin reports its own timeout. */
 export const GRAPHJIN_AGENT_TIMEOUT_SECONDS = 170;
@@ -91,33 +96,44 @@ export async function resolveGraphjinAgentModel(orgId: string): Promise<Graphjin
 }
 
 /**
- * Write the agent block. Returns the new text and whether GraphJin must
- * restart: GraphJin reads its config file only at start.
+ * The agent settings OpenNeko owns while the opt-in is on. gj_config applies
+ * all of them live (graphjin#655).
  */
-export function patchGraphjinAgentBlock(
-  yamlText: string,
-  model: Omit<GraphjinAgentModel, "apiKey">,
-): { content: string; changed: boolean; restart: boolean } {
-  const document = parseDocument(yamlText);
-  const before = document.get("agent");
-  const current = isMap(before) ? (before.toJSON() as Record<string, unknown>) : {};
-  const next: Record<string, unknown> = {
-    ...current,
+export function graphjinAgentSettings(model: Omit<GraphjinAgentModel, "apiKey">): Record<string, unknown> {
+  return {
     enabled: true,
     provider: model.provider,
     model: model.model,
-    api_key_env: GRAPHJIN_AGENT_KEY_ENV,
+    base_url: model.baseUrl ?? "",
+    api_key_file: GRAPHJIN_AGENT_KEY_FILE,
     read_only: true,
     max_steps: GRAPHJIN_AGENT_MAX_STEPS,
     timeout_seconds: GRAPHJIN_AGENT_TIMEOUT_SECONDS,
     reasoning: GRAPHJIN_AGENT_REASONING,
   };
-  if (model.baseUrl) next.base_url = model.baseUrl;
-  else delete next.base_url;
-  const changed = ["enabled", "provider", "model", "base_url", "api_key_env", "read_only", "max_steps", "timeout_seconds", "reasoning"].some((key) => current[key] !== next[key]);
-  if (!changed) return { content: yamlText, changed: false, restart: false };
+}
+
+/**
+ * Write the agent block to GraphJin's config file, which GraphJin reads at its
+ * next start. The running GraphJin gets the same settings through gj_config.
+ */
+export function patchGraphjinAgentBlock(
+  yamlText: string,
+  model: Omit<GraphjinAgentModel, "apiKey">,
+): { content: string; changed: boolean } {
+  const document = parseDocument(yamlText);
+  const before = document.get("agent");
+  const current = isMap(before) ? (before.toJSON() as Record<string, unknown>) : {};
+  const next: Record<string, unknown> = { ...current, ...graphjinAgentSettings(model) };
+  if (!model.baseUrl) delete next.base_url;
+  // The key comes from the file; an api_key_env from an older OpenNeko is dropped.
+  delete next.api_key_env;
+  const changed =
+    "api_key_env" in current ||
+    ["enabled", "provider", "model", "base_url", "api_key_file", "read_only", "max_steps", "timeout_seconds", "reasoning"].some((key) => current[key] !== next[key]);
+  if (!changed) return { content: yamlText, changed: false };
   document.set("agent", document.createNode(next));
-  return { content: document.toString(), changed: true, restart: true };
+  return { content: document.toString(), changed: true };
 }
 
 async function writePrivate(path: string, content: string, mode: number): Promise<void> {
@@ -142,27 +158,44 @@ async function graphjinEndpoint(orgId: string): Promise<string | null> {
 }
 
 /**
- * Apply the opt-in to GraphJin's config and key file. Any change restarts
- * GraphJin, which reads both only at start.
- * TODO(dosco/graphjin#655): use agent.api_key_file and gj_config so no change needs a restart.
+ * Apply the opt-in: write the key file, which GraphJin reads for each agent
+ * run, write the agent block to the config file for GraphJin's next start, and
+ * apply the same block to the running GraphJin through gj_config. Nothing
+ * restarts. A GraphJin too old to apply the block live (before graphjin#655)
+ * is restarted instead.
  */
-export async function provisionGraphjinAgent(orgId: string, configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim()): Promise<void> {
+export async function provisionGraphjinAgent(
+  orgId: string,
+  configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim(),
+  apply: (endpoint: string, update: Record<string, unknown>) => Promise<unknown> = (endpoint, update) =>
+    applyGraphjinConfigUpdate({
+      endpoint,
+      headers: { authorization: `Bearer ${mintGraphjinToken({ orgId, userId: "graphjin-agent-settings", role: "admin", ttlSeconds: 120 })}` },
+      update,
+    }),
+): Promise<void> {
   if (!configFile) return;
   const model = await resolveGraphjinAgentModel(orgId);
   if (!model) return;
   const release = await acquireGraphjinConfigLock({ configFile });
-  let restart = false;
+  let changed = false;
   try {
-    const patch = patchGraphjinAgentBlock(await readFile(configFile, "utf8"), model);
-    if (patch.changed) await writePrivate(configFile, patch.content, 0o664);
     const keyFile = join(dirname(configFile), GRAPHJIN_AGENT_KEY_FILE);
     const currentKey = await readFile(keyFile, "utf8").catch(() => null);
     if (currentKey !== model.apiKey) await writePrivate(keyFile, model.apiKey, 0o600);
-    restart = patch.restart || currentKey !== model.apiKey;
+    const patch = patchGraphjinAgentBlock(await readFile(configFile, "utf8"), model);
+    if (patch.changed) await writePrivate(configFile, patch.content, 0o664);
+    changed = patch.changed;
   } finally {
     await release();
   }
-  if (!restart) return;
+  if (!changed) return;
   const endpoint = await graphjinEndpoint(orgId);
-  if (endpoint) await requestGraphjinRestart(configFile, endpoint);
+  if (!endpoint) return;
+  try {
+    await apply(endpoint, { serv: { agent: graphjinAgentSettings(model) } });
+  } catch (error) {
+    if (!/serv\.agent\.\S+ is not writable/.test(error instanceof Error ? error.message : String(error))) throw error;
+    await requestGraphjinRestart(configFile, endpoint);
+  }
 }

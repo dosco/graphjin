@@ -158,6 +158,7 @@ export type AgentSelectionConfig = {
   provider: string;
   model: string;
   api_key_env: string;
+  api_key_file?: string;
   base_url: string;
   startup_budget_ms: number;
   concurrency: number;
@@ -196,6 +197,8 @@ export type GraphjinMcpToolName = (typeof GRAPHJIN_MCP_TOOL_NAMES)[number];
 export type GraphjinConfigAgentConfig = {
   /** Agent API Key Environment Variable */
   api_key_env?: string;
+  /** Agent API Key File: File that holds the provider key; read for each run and preferred over api_key_env */
+  api_key_file?: string;
   /** Agent Provider Base URL */
   base_url?: string;
   /** Agent Catalog Default Limit */
@@ -793,6 +796,7 @@ export type GraphjinConfigSecretsConfig = {
 
 export type GraphjinConfigSelectionConfig = {
   api_key_env?: string;
+  api_key_file?: string;
   base_url?: string;
   concurrency?: number;
   context_bytes?: number;

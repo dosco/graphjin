@@ -71,8 +71,21 @@ func TestValidateServConfigPatch_ClassifiesReloadAndRejectsUnknown(t *testing.T)
 		t.Fatal("expected host_port to be rejected (not in v1 writable allowlist)")
 	}
 	// non-writable agent field is rejected
-	if _, _, err := validateServConfigPatch(map[string]any{"agent": map[string]any{"api_key_env": "X"}}); err == nil {
-		t.Fatal("expected agent.api_key_env to be rejected")
+	// Structural agent fields are hot since the agent route is always mounted
+	// and each run reads the provider key then (issue 655).
+	if _, reload, err := validateServConfigPatch(map[string]any{"agent": map[string]any{
+		"enabled": true, "provider": "anthropic", "api_key_env": "X", "api_key_file": "/run/key", "base_url": "https://gw", "reasoning": "low",
+	}}); err != nil || reload != servReloadHot {
+		t.Fatalf("structural agent fields: reload=%q err=%v", reload, err)
+	}
+	if _, _, err := validateServConfigPatch(map[string]any{"agent": map[string]any{"enabled": "yes"}}); err == nil {
+		t.Fatal("expected a non-boolean agent.enabled to be rejected")
+	}
+	if _, _, err := validateServConfigPatch(map[string]any{"agent": map[string]any{"api_key_file": 7}}); err == nil {
+		t.Fatal("expected a non-string agent.api_key_file to be rejected")
+	}
+	if _, _, err := validateServConfigPatch(map[string]any{"agent": map[string]any{"sampling": map[string]any{}}}); err == nil {
+		t.Fatal("expected agent.sampling to be rejected")
 	}
 	// bad enum value is rejected
 	if _, _, err := validateServConfigPatch(map[string]any{"log_level": "loud"}); err == nil {
@@ -329,4 +342,15 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+func TestApplyAgentConfigPatchSetsStructuralFields(t *testing.T) {
+	var a AgentConfig
+	applyAgentConfigPatch(&a, map[string]any{
+		"enabled": true, "provider": " anthropic ", "base_url": "https://gw", "reasoning": "low",
+		"api_key_env": "K", "api_key_file": "/run/key",
+	})
+	if !a.Enabled || a.Provider != "anthropic" || a.BaseURL != "https://gw" || a.Reasoning != "low" || a.APIKeyEnv != "K" || a.APIKeyFile != "/run/key" {
+		t.Fatalf("patched agent config = %+v", a)
+	}
 }
