@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dosco/graphjin/core/v3"
 	"strings"
 	"time"
 )
@@ -136,7 +137,7 @@ func (s *graphjinService) pollWatchOnce(ctx context.Context, current *watchRunti
 	if gj == nil {
 		return fmt.Errorf("graphjin core is not initialized")
 	}
-	res, err := gj.GraphQL(ownerCtx, current.Query, vars, nil)
+	res, err := gj.GraphQL(ownerCtx, current.Query, vars, &core.RequestConfig{NoCache: true})
 	if err != nil {
 		return err
 	}

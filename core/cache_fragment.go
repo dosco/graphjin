@@ -26,7 +26,7 @@ func (s *gstate) fragmentCacheEnabled(qc *qcode.QCode) bool {
 	if s.gj == nil || s.gj.responseCache == nil || s.gj.cacheKeyBuilder == nil {
 		return false
 	}
-	if s.r.operation != qcode.QTQuery || s.tx() != nil || s.skipCache {
+	if s.r.operation != qcode.QTQuery || s.tx() != nil || s.skipCache || s.r.noCache() {
 		return false
 	}
 	if !s.gj.cacheKeyBuilder.ShouldCache(s.r.name, s.getAPQKey()) {

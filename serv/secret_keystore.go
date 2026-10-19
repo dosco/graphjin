@@ -440,7 +440,8 @@ func sealCoreConfigSecrets(conf *core.Config, ks *localKeystore) (map[string]str
 	// and the next patch does not see every source as changed.
 	if conf.IsSourcesUsed() {
 		derived := cloneCoreConfig(*conf)
-		if err := derived.RenormalizeSources(); err != nil {
+		// Only the source-derived databases are used, so artifacts may stay off.
+		if err := withManagedArtifactsHidden(&derived, true, derived.RenormalizeSources); err != nil {
 			return nil, err
 		}
 		sources := sourceConfigByCatalogName(conf.Sources)

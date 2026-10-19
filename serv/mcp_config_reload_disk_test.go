@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHandleUpdateCurrentConfig_ReloadFromDisk(t *testing.T) {
@@ -56,5 +57,55 @@ func TestHandleUpdateCurrentConfig_ReloadFromDisk(t *testing.T) {
 	})
 	if combined.Success && combined.Valid {
 		t.Fatalf("reload_from_disk combined with other changes should be rejected, got %+v", combined)
+	}
+}
+
+func TestManagedStoreWatchAfterLiveConfigChange(t *testing.T) {
+	mainPath := createSQLiteDBFile(t, "main.sqlite3", true)
+	confPath := filepath.Join(t.TempDir(), "agentic.yml")
+	body := fmt.Sprintf("disable_allow_list: true\nmcp:\n  allow_config_updates: true\nroles:\n  - name: analyst\nsources:\n  - name: main\n    kind: database\n    type: sqlite\n    path: %s\n    default: true\n    read_only: true\n    access:\n      read: authenticated\n", mainPath)
+	if err := os.WriteFile(confPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	conf, err := readInConfig(confPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, err := newGraphJinService(conf, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { closeTestService(svc) })
+	if !svc.conf.managedArtifactStore {
+		t.Fatal("expected the managed artifact store")
+	}
+	ms := &mcpServer{service: svc, ctx: context.Background(), readOnlyDBs: map[string]bool{}}
+
+	// A live change beside the read-only source must keep the managed store usable.
+	out := applySourceModeConfigUpdate(t, ms, map[string]any{
+		"source_patches": []any{map[string]any{"name": "main", "access": map[string]any{"read": "account", "namespace_column": "id"}}},
+	})
+	if !out.Success || !out.Applied {
+		t.Fatalf("live change = %+v", out)
+	}
+	ctx := contextWithUserRole(artifactUserCtx("user_1"), "analyst")
+	res, err := svc.gj.GraphQL(ctx, `mutation { gj_watch(insert: { name: "after_change", query: "query q { users { id } }", poll_json: { interval_seconds: 60 } }) { id status } }`, nil, nil)
+	if err != nil {
+		t.Fatalf("insert watch after a live config change: %v", err)
+	}
+	if !strings.Contains(string(res.Data), "watch:") {
+		t.Fatalf("watch insert returned %s", res.Data)
+	}
+	// The runner, started before the change, still picks the new watch up.
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		rows, err := svc.internalStoreAllRows(context.Background(), "watch_events", "", "id", nil)
+		if err == nil && len(rows) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no watch event after a live config change (err=%v)", err)
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
 }

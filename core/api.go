@@ -768,6 +768,10 @@ type RequestConfig struct {
 
 	// Execute this query as part of a transaction
 	Tx *sql.Tx
+
+	// NoCache skips the response cache for this request, for callers such as
+	// polled watches that must see data written outside GraphJin.
+	NoCache bool
 }
 
 // SubscriptionRootInfo describes a root selected by a subscription member.
@@ -779,6 +783,10 @@ type SubscriptionRootInfo struct {
 	Database  string
 	CursorVar string
 	Filter    map[string]any
+}
+
+func (r GraphqlReq) noCache() bool {
+	return r.requestconfig != nil && r.requestconfig.NoCache
 }
 
 // SetNamespace is used to set namespace requests within a single instance of GraphJin. For example queries with the same name

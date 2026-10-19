@@ -1241,7 +1241,7 @@ func (s *gstate) key() (key string) {
 // tryCacheGet attempts to retrieve the response from cache.
 // Returns true if cache hit (s.data is populated), false otherwise.
 func (s *gstate) tryCacheGet(c context.Context) bool {
-	if s.gj.responseCache == nil || s.gj.cacheKeyBuilder == nil {
+	if s.gj.responseCache == nil || s.gj.cacheKeyBuilder == nil || s.r.noCache() {
 		return false
 	}
 

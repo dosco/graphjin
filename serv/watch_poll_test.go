@@ -159,3 +159,17 @@ func TestWatchWebhookKeystoreSecret(t *testing.T) {
 		}
 	}
 }
+
+func TestManagedStoreIsWritableBesideReadOnlySources(t *testing.T) {
+	conf := &Config{Core: core.Config{
+		Sources:   []core.SourceConfig{{Name: "shop", Kind: "database", Type: "sqlite", Default: true, ReadOnly: true}},
+		Artifacts: core.ArtifactsConfig{Enabled: true},
+	}}
+	if !conf.artifactSourceReadOnly() {
+		t.Fatal("artifacts on a read-only source should be read-only")
+	}
+	conf.managedArtifactStore = true
+	if conf.artifactSourceReadOnly() {
+		t.Fatal("the managed store is GraphJin's own file and stays writable")
+	}
+}

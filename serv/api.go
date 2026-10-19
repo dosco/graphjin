@@ -77,6 +77,8 @@ const (
 type HookFn func(*core.Result)
 
 type graphjinService struct {
+	// reloads tells long-lived subscriptions that gj_config swapped the engine.
+	reloads                     *runtimeReloads
 	artifactProjectionRefreshes atomic.Int64
 
 	log                    *zap.SugaredLogger // logger
@@ -649,6 +651,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	prod := conf.Serv.Production
 
 	s := &graphjinService{
+		reloads:        newRuntimeReloads(),
 		conf:           conf,
 		zlog:           zlog,
 		log:            zlog.Sugar(),
