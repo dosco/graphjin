@@ -452,7 +452,7 @@ CMD ["node", "--import", "tsx/esm", "src/index.ts"]
 # ─── 5d. agent runtime: openneko serve and openneko sandbox ───────────
 # One image for both services. `openneko serve` runs each agent turn and holds
 # model keys only for that turn; `openneko sandbox` runs the agent's terminal
-# commands as a per-run user and holds no secrets. The document toolchain from
+# commands as a per-turn user and holds no secrets. The document toolchain from
 # `cli` is here because terminal commands run in this image. The openneko
 # binary carries GraphJin's code but no GraphJin config or credentials.
 FROM cli AS agent
@@ -471,7 +471,7 @@ RUN install -d -o 1001 -g 1001 -m 2770 /var/lib/openneko/agent-runs \
     && install -d -o root -g root -m 0711 /var/lib/openneko/sandbox-homes \
     && install -d -o 1001 -g 1001 -m 0770 /run/openneko
 # Compose runs serve as neko (user 1001:1001) and the sandbox as root, so the
-# sandbox can give each run its own user.
+# sandbox can give each turn's commands their own user.
 CMD ["openneko", "serve"]
 
 # ─── 5c. neko-cli runtime ──────────────────────────────────────────────

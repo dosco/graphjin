@@ -575,7 +575,7 @@ services:
       timeout: 3s
       retries: 20
 
-  # Runs terminal commands as a per-run user (uid 20000 and up, group 1001)
+  # Runs terminal commands as a per-turn user (uid 20000 and up, group 1001)
   # in the run's staged workspace. It needs root to switch users, so every
   # other capability is dropped. It sits only on the agent-sandbox network:
   # commands can reach the internet but not neko-db, records-db, GraphJin,

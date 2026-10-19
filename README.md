@@ -77,7 +77,7 @@ Integrations ship as **solution packs** — sources, API specs, actions, workflo
 
 - **Self-hosted via Docker.** One binary, one `start` command. Data lives on your Postgres.
 - **Bring your own LLM.** The Ax agent runs against Anthropic, OpenAI, Google, Ollama, and other compatible providers. Change providers without changing the sandboxed agent runtime.
-- **Agent in a sandbox by default.** The agent loop itself runs inside an OpenShell policy sandbox — default-deny egress, and the model API key never enters the box (the gateway proxy injects it on the wire). See [OPENSHELL.md](OPENSHELL.md).
+- **Agent kept away from your secrets.** Each run's agent loop runs in its own runner process; turns run in `openneko serve`, which holds the model key only for the turn, and the agent's terminal runs in a separate sandbox container as a user of its own, with no secrets and no route to the stack's databases or services. See [AGENT_RUNTIME.md](AGENT_RUNTIME.md).
 - **Apache-2.0.** Read the source, self-host, fork, and build on it. OpenNeko trademarks are separately controlled — see [LICENSING.md](LICENSING.md) and [TRADEMARKS.md](TRADEMARKS.md).
 
 ## Evaluations
@@ -92,9 +92,8 @@ frozen AdventureWorks snapshot, each graded against a GraphQL oracle. See
 CLI deploys. Every mode shares the same core: app + records Postgres, migrations,
 backup/restore, web, worker, three internal GraphJin instances (app
 subscriptions, records, records-watch), plus the customer-facing GraphJin in
-sources (agentic) mode. The OpenShell sandbox runtime (gateway, registry,
-certgen) is always layered on top — it is the only way agents run, in every
-mode.
+sources (agentic) mode. The agent runtime (`agent-serve` and `agent-sandbox`)
+is part of the core — it is the only way agents run, in every mode.
 
 | Mode | Layers on top of core | What's different |
 |------|----------------------|------------------|
@@ -112,7 +111,7 @@ to the customer GraphJin config at runtime.
 - [PACKS.md](PACKS.md) — authoring solution packs, directory layout, connectors, validation, and contributions
 - [CONTEXT_REPOSITORY.md](CONTEXT_REPOSITORY.md) — version history of skills and workflows, and an optional GitHub, GitLab or other git remote
 - [INSTALL.md](INSTALL.md) — install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data, full demo trial
-- [OPENSHELL.md](OPENSHELL.md) — preview: running the agent itself in an OpenShell policy sandbox (architecture, security, how to enable)
+- [AGENT_RUNTIME.md](AGENT_RUNTIME.md) — how agent runs execute: the runner, `openneko serve` and the terminal sandbox, and what each holds
 - [SECRETS.md](SECRETS.md) — secrets at rest and the optional Infisical vault (enterprise)
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, repo layout, pre-PR checks
 - [evals/adventureworks/README.md](evals/adventureworks/README.md) — the AdventureWorks data eval on GraphJin's eval engine

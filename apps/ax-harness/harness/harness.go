@@ -123,7 +123,7 @@ func RunTurn(ctx context.Context, turn Turn) (int, error) {
 		if enabled != "1" || workspace == "" {
 			return failed(fmt.Errorf("the terminal needs OPENNEKO_HARNESS_SHELL=1 and OPENNEKO_HARNESS_WORKSPACE_DIR"))
 		}
-		shell, err := localtool.OpenShell(workspace, shellStripList(getenv))
+		shell, err := localtool.NewShell(workspace, shellStripList(getenv))
 		if err != nil {
 			return failed(fmt.Errorf("terminal unavailable: %w", err))
 		}

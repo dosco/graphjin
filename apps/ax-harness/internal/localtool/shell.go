@@ -37,9 +37,9 @@ type Shell struct {
 	maxOutput int
 }
 
-// OpenShell checks the workspace and records the variables to remove from
+// NewShell checks the workspace and records the variables to remove from
 // every command's environment.
-func OpenShell(dir string, strip []string) (*Shell, error) {
+func NewShell(dir string, strip []string) (*Shell, error) {
 	if !filepath.IsAbs(dir) {
 		return nil, fmt.Errorf("workspace path must be absolute")
 	}

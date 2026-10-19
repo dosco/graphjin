@@ -8,9 +8,9 @@ have stale implementation status; verify them against current source.
 
 **Pending — required for fine-grained or multi-user access.**
 Updated 19 October 2026: the warm sandbox pool and its per-user sandbox reuse
-were removed together with the retired pre-Ax backend. Every Ax turn runs in a fresh
-OpenShell sandbox with current staged context and a fresh broker token, so no
-access revision is needed to decide sandbox reuse.
+were removed together with the retired pre-Ax backend. Every Ax run starts a fresh
+runner with current staged context and a fresh broker token, so no access
+revision is needed to decide sandbox reuse.
 
 ### Work required
 
