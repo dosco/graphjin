@@ -4,11 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  '@open-neko/plugin-parallel-search@0.3.1':
-    hash: f42asks2sqtkdxgfhkgnewsofi
-    path: patches/@open-neko__plugin-parallel-search@0.3.1.patch
-
 importers:
 
   .:
@@ -182,9 +177,6 @@ importers:
       '@open-neko/plugin-install':
         specifier: workspace:*
         version: link:../../packages/plugin-install
-      '@open-neko/plugin-parallel-search':
-        specifier: 0.3.1
-        version: 0.3.1(patch_hash=f42asks2sqtkdxgfhkgnewsofi)(zod@4.3.6)
       '@open-neko/plugin-types':
         specifier: workspace:*
         version: link:../../packages/plugin-types
@@ -1264,12 +1256,6 @@ packages:
   '@nolyfill/is-core-module@1.0.39':
     resolution: {integrity: sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==}
     engines: {node: '>=12.4.0'}
-
-  '@open-neko/plugin-parallel-search@0.3.1':
-    resolution: {integrity: sha512-n5yLgTAVBqoGyhZjn9KJB1Z2m6kf8lurgnpQ2Z4Qk2FpiHSae29QPwv1xy/HFgmSqnhjXxFyU/l3l+lReWnaGA==}
-
-  '@open-neko/plugin-types@0.4.0':
-    resolution: {integrity: sha512-rRgUUUtTf5lJp+ZYT6Dji+cVt7bqrhZd2LI+cY2Q23Y7kcEC1On99lOLWmFT+V5/5IB1MY+QghkUKZWprzksvA==}
 
   '@opentelemetry/api-logs@0.221.0':
     resolution: {integrity: sha512-OlanaW1vv7ufTqQ3/fPLI4arGt5ZoM+P8abOMki6uEYnpRazepSWDwDnnw+la7kE26SHVC18//SMccrDvLKOXQ==}
@@ -5778,19 +5764,6 @@ snapshots:
       fastq: 1.20.1
 
   '@nolyfill/is-core-module@1.0.39': {}
-
-  '@open-neko/plugin-parallel-search@0.3.1(patch_hash=f42asks2sqtkdxgfhkgnewsofi)(zod@4.3.6)':
-    dependencies:
-      '@modelcontextprotocol/sdk': 1.29.0(zod@4.3.6)
-      '@open-neko/plugin-types': 0.4.0
-    transitivePeerDependencies:
-      - '@cfworker/json-schema'
-      - supports-color
-      - zod
-
-  '@open-neko/plugin-types@0.4.0':
-    dependencies:
-      zod: 4.3.6
 
   '@opentelemetry/api-logs@0.221.0':
     dependencies:

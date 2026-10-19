@@ -1,0 +1,63 @@
+openapi: 3.0.3
+info:
+  title: Parallel Search API
+  version: v1beta
+  description: Parallel's web search. It reads the open web and changes nothing, but the API takes POST, so it is a reviewed action.
+servers:
+  - url: https://api.parallel.ai
+security:
+  - apiKey: []
+paths:
+  /v1beta/search:
+    post:
+      operationId: webSearch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SearchRequest" }
+      responses:
+        "200":
+          description: Ranked results with excerpts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  search_id: { type: string }
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        url: { type: string }
+                        title: { type: string, nullable: true }
+                        publish_date: { type: string, nullable: true }
+                        excerpts: { type: array, items: { type: string } }
+                  warnings: { type: array, nullable: true, items: { type: object, additionalProperties: true } }
+components:
+  securitySchemes:
+    apiKey: { type: apiKey, in: header, name: x-api-key }
+  schemas:
+    SearchRequest:
+      type: object
+      additionalProperties: false
+      anyOf:
+        - required: [objective]
+        - required: [search_queries]
+      properties:
+        objective: { type: string, minLength: 1, maxLength: 5000, description: The goal of the search in plain language }
+        search_queries:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { type: string, minLength: 1, maxLength: 200 }
+        processor: { type: string, enum: [base, pro] }
+        max_results: { type: integer, minimum: 1, maximum: 20 }
+        max_chars_per_result: { type: integer, minimum: 100, maximum: 30000 }
+        source_policy:
+          type: object
+          additionalProperties: false
+          properties:
+            include_domains: { type: array, maxItems: 10, items: { type: string } }
+            exclude_domains: { type: array, maxItems: 10, items: { type: string } }

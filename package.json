@@ -36,10 +36,5 @@
   "devDependencies": {
     "concurrently": "^9.1.0"
   },
-  "packageManager": "pnpm@9.14.1",
-  "pnpm": {
-    "patchedDependencies": {
-      "@open-neko/plugin-parallel-search@0.3.1": "patches/@open-neko__plugin-parallel-search@0.3.1.patch"
-    }
-  }
+  "packageManager": "pnpm@9.14.1"
 }

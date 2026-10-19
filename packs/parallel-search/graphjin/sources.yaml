@@ -1,0 +1,13 @@
+sources:
+  - key: source.parallel
+    name: parallel
+    kind: api
+    base_url: https://api.parallel.ai
+    openapi: graphjin/specs/parallel.yaml
+    auth:
+      type: api_key
+      key_name: x-api-key
+      key_in: header
+      key_value: "{{secret.parallel-search.api_key}}"
+    read_only: false
+    capabilities: { api.read: true, api.write: true, api.delete: false }

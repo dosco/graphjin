@@ -1,0 +1,13 @@
+key: policy.parallel_web_search
+targetRef: parallel_search.policy.web_search
+name: Parallel web search
+description: Web searches run without approval. They read the open web and change nothing; each search is a billed Parallel call.
+appliesToKinds: [parallel_search.web_search]
+appliesToScopes: [external]
+mode: auto
+priority: 10
+enabled: true
+allowedTargets: {}
+limits:
+  retry: never
+  requireCompletePayload: true

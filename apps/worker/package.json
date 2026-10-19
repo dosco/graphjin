@@ -27,7 +27,6 @@
     "@neko/records": "workspace:*",
     "@neko/telemetry": "workspace:*",
     "@open-neko/plugin-install": "workspace:*",
-    "@open-neko/plugin-parallel-search": "0.3.1",
     "@open-neko/plugin-types": "workspace:*",
     "dotenv": "^17.4.1",
     "graphql": "^16",
