@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -140,6 +141,7 @@ func (s *graphjinService) runRevisionSignals(
 	var lastRevision int64
 	initialized := false
 	for {
+		reloaded := s.reloads.signal()
 		member, err := s.subscribeRevisionSignal(ctx, domain)
 		if err != nil {
 			s.logRevisionSignalError(domain, "subscribe", err)
@@ -168,6 +170,9 @@ func (s *graphjinService) runRevisionSignals(
 				member.Unsubscribe()
 				return
 			case <-member.Done():
+				closed = true
+			case <-reloaded:
+				// The member belongs to the engine gj_config replaced.
 				closed = true
 			case result, ok := <-member.Result:
 				// Result is not closed today, but retain this guard so a future
@@ -285,4 +290,35 @@ func (s *graphjinService) logRevisionSignalError(domain, action string, err erro
 		return
 	}
 	s.log.Warnf("revision signal %s: %s failed: %v", domain, action, err)
+}
+
+// runtimeReloads is a broadcast that fires each time gj_config commits a new
+// engine. A subscription made on the old engine never ends on its own.
+type runtimeReloads struct {
+	mu sync.Mutex
+	ch chan struct{}
+}
+
+func newRuntimeReloads() *runtimeReloads {
+	return &runtimeReloads{ch: make(chan struct{})}
+}
+
+// signal returns a channel that closes at the next reload.
+func (r *runtimeReloads) signal() <-chan struct{} {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.ch
+}
+
+func (r *runtimeReloads) notify() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	close(r.ch)
+	r.ch = make(chan struct{})
 }

@@ -1,6 +1,7 @@
 import { listUploadedPacks, loadUploadedPack, storePackUpload, snapshotUploadedPack, type AvailablePack } from "./uploads.js";
 import { parse as parseYaml } from "yaml";
 import { extractValueAtPath, resolveWatcherVariables } from "@neko/llm/workflows";
+import { gjConfigRow } from "@neko/llm/graphjin";
 import { mapSavedQueryMetric } from "../jobs/deterministic-metric.js";
 import { bindPackQueries, declarativeGraphjinUpdate, declarativePackPermissions, installedPackPolicyEnabled, packPolicyControlsWrite, packVariables } from "./declarative.js";
 import { createHmac, randomUUID } from "node:crypto";
@@ -411,11 +412,11 @@ export class PackService {
         baseUrl: graphjinEndpoint(source.graphqlUrl), configurationOnly: true, headers: { authorization: `Bearer ${mintGraphjinToken({ orgId: this.orgId, userId: "pack-binding", role: "admin", ttlSeconds: 60 })}` },
         query: "query { gj_config(id: \"current\") { sources } }", signal: AbortSignal.timeout(30_000),
       });
-      if (live.errors?.length || !Array.isArray(live.data?.gj_config?.sources)) throw new Error("cannot verify selected GraphJin sources");
+      if (live.errors?.length || !Array.isArray(gjConfigRow(live.data?.gj_config)?.sources)) throw new Error("cannot verify selected GraphJin sources");
       for (const artifact of references) {
         const name = bindings[artifact.key];
         const current = config.sources?.find(value => value.name === name);
-        const running = live.data!.gj_config!.sources!.find(value => value.name === name);
+        const running = gjConfigRow(live.data!.gj_config)!.sources!.find(value => value.name === name);
         if (!name || !current || !running || current.kind !== "database" || current.read_only !== true || running.kind !== "database" || running.read_only !== true) throw new Error(`binding ${artifact.key} requires an existing read-only database source`);
         for (const key of ["name", "kind", "type", "host", "port", "dbname"]) {
           if (String(current[key] ?? "") !== String(running[key] ?? "")) throw new Error(`binding ${artifact.key} differs from the selected live source`);
@@ -744,14 +745,14 @@ export class PackService {
           },
           query: 'query { gj_config(id: "current") { catalog_revision } }',
         });
-        if (result.errors?.length || !result.data?.gj_config?.catalog_revision) {
+        if (result.errors?.length || !gjConfigRow(result.data?.gj_config)?.catalog_revision) {
           throw new Error(result.errors?.map((value) => value.message).join("; ") || "catalog revision unavailable");
         }
         await runMagentoAnalyticsSmoke(graphjinEndpoint(source.graphqlUrl), this.orgId);
         checks.push({
           id: "graphjin",
           status: "ready",
-          detail: `catalog ${result.data.gj_config.catalog_revision}`,
+          detail: `catalog ${gjConfigRow(result.data?.gj_config)!.catalog_revision}`,
         });
         checks.push({
           id: "analytics-query",

@@ -1,7 +1,4 @@
-import { and, data_source, db, desc, eq, watcher } from "@neko/db";
-import { packArtifactSource } from "../graphjin/pack-source";
-import { graphjinQuery } from "../graphjin/client";
-import { mintGraphjinToken } from "../graphjin/token";
+import { and, db, eq, watcher } from "@neko/db";
 
 /**
  * OL4 — watchers, polling v1. A watcher runs a GraphJin query on its
@@ -257,13 +254,7 @@ export function resolveWatcherVariables(
   return resolved;
 }
 
-function graphjinEndpoint(url: string): string {
-  const clean = url.replace(/\/+$/, "");
-  return clean.endsWith("/api/v1/graphql") ? clean : `${clean}/api/v1/graphql`;
-}
-
-export type WatcherSweepDeps = {
-  query?: typeof graphjinQuery;
+export type WatcherFireDeps = {
   enqueueFire?: (payload: {
     orgId: string;
     workflowId: string;
@@ -290,116 +281,66 @@ async function defaultEnqueueFire(payload: {
   });
 }
 
-export type WatcherSweepResult = {
-  checked: number;
-  fired: Array<{ watcherId: string; name: string; value: unknown }>;
-};
+export type WatcherRow = typeof watcher.$inferSelect;
 
-export async function sweepWatchers(
-  orgId: string,
-  deps: WatcherSweepDeps = {},
-): Promise<WatcherSweepResult> {
-  const query = deps.query ?? graphjinQuery;
+/**
+ * Applies one observation of a watcher's query: records it, and fires the
+ * workflow when the condition holds outside the quiet period. The value
+ * arrives from a GraphJin watch event; see watcher-native.ts.
+ */
+export async function applyWatcherObservation(
+  row: WatcherRow,
+  observation: { value?: unknown; error?: string | null },
+  deps: WatcherFireDeps = {},
+): Promise<{ fired: boolean }> {
   const enqueueFire = deps.enqueueFire ?? defaultEnqueueFire;
   const now = deps.now?.() ?? new Date();
+  const error = observation.error ? observation.error.slice(0, 500) : null;
+  const value = observation.value;
 
-  const rows = await db()
-    .select()
-    .from(watcher)
-    .where(and(eq(watcher.org_id, orgId), eq(watcher.enabled, true)));
-  const due = rows.filter(
-    (w) =>
-      !w.last_checked_at ||
-      w.last_checked_at.getTime() + w.cadence_seconds * 1000 <= now.getTime(),
-  );
-  if (due.length === 0) return { checked: 0, fired: [] };
+  const met =
+    error === null &&
+    watcherConditionMet(row.op as WatcherOp, value, row.threshold, row.last_value);
+  const suppressionSeconds = Math.max(row.debounce_seconds, row.cooldown_seconds);
+  const outsideDebounce =
+    !row.last_fired_at ||
+    row.last_fired_at.getTime() + suppressionSeconds * 1000 <= now.getTime();
+  // The same number as the last check, with the condition already holding, is old news.
+  const unchanged =
+    row.op !== "changed" &&
+    JSON.stringify(value) === JSON.stringify(row.last_value) &&
+    watcherConditionMet(row.op as WatcherOp, row.last_value, row.threshold, null);
+  const fires = met && outsideDebounce && !unchanged;
 
-  const [fallbackSource] = await db()
-    .select({ graphqlUrl: data_source.graphql_url, authMode: data_source.auth_mode })
-    .from(data_source)
-    .where(and(eq(data_source.org_id, orgId), eq(data_source.enabled, true)))
-    .orderBy(desc(data_source.is_default), data_source.created_at)
-    .limit(1);
+  await db()
+    .update(watcher)
+    .set({
+      last_checked_at: now,
+      last_error: error,
+      ...(error === null ? { last_value: value === undefined ? null : value } : {}),
+      ...(fires ? { last_fired_at: now } : {}),
+      updated_at: now,
+    })
+    .where(eq(watcher.id, row.id));
 
-  const fired: WatcherSweepResult["fired"] = [];
-  for (const row of due) {
-    let value: unknown;
-    let error: string | null = null;
-    try {
-      const src = await packArtifactSource(orgId, "watcher", row.id) ?? fallbackSource;
-      if (!src?.graphqlUrl) throw new Error("watcher has no enabled GraphJin source");
-      const result = await query({
-        baseUrl: graphjinEndpoint(src.graphqlUrl),
-        query: row.query,
-        variables: resolveWatcherVariables(row.variables_json, now),
-        role: "service",
-        ...(src.authMode === "jwt"
-          ? {
-              headers: {
-                authorization: `Bearer ${mintGraphjinToken({
-                  orgId,
-                  userId: null,
-                  role: "service",
-                })}`,
-              },
-            }
-          : {}),
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (result.errors?.length) {
-        error = result.errors.map((e) => e.message).join("; ").slice(0, 500);
-      } else {
-        value = extractValueAtPath(result.data, row.value_path);
-      }
-    } catch (err) {
-      error = (err instanceof Error ? err.message : String(err)).slice(0, 500);
-    }
-
-    const met =
-      error === null &&
-      watcherConditionMet(row.op as WatcherOp, value, row.threshold, row.last_value);
-    const suppressionSeconds = Math.max(row.debounce_seconds, row.cooldown_seconds);
-    const outsideDebounce =
-      !row.last_fired_at ||
-      row.last_fired_at.getTime() + suppressionSeconds * 1000 <= now.getTime();
-    // The same number as the last check, with the condition already holding, is old news.
-    const unchanged =
-      row.op !== "changed" &&
-      JSON.stringify(value) === JSON.stringify(row.last_value) &&
-      watcherConditionMet(row.op as WatcherOp, row.last_value, row.threshold, null);
-    const fires = met && outsideDebounce && !unchanged;
-
-    await db()
-      .update(watcher)
-      .set({
-        last_checked_at: now,
-        last_error: error,
-        ...(error === null ? { last_value: value === undefined ? null : value } : {}),
-        ...(fires ? { last_fired_at: now } : {}),
-        updated_at: now,
-      })
-      .where(eq(watcher.id, row.id));
-
-    if (fires) {
-      await enqueueFire({
-        orgId,
-        workflowId: row.workflow_id,
-        triggerKind: "watcher",
-        windowSeconds: Math.max(row.cadence_seconds, suppressionSeconds),
-        triggerPayload: {
-          watcherId: row.id,
-          watcherName: row.name,
-          value: value === undefined ? null : value,
-          threshold: row.threshold,
-          op: row.op,
-          severity: row.severity,
-        },
-      });
-      fired.push({ watcherId: row.id, name: row.name, value });
-      console.log(
-        `[watcher] FIRED org=${orgId} "${row.name}" (${row.op} ${JSON.stringify(row.threshold)}; value=${JSON.stringify(value)})`,
-      );
-    }
+  if (fires) {
+    await enqueueFire({
+      orgId: row.org_id,
+      workflowId: row.workflow_id,
+      triggerKind: "watcher",
+      windowSeconds: Math.max(row.cadence_seconds, suppressionSeconds),
+      triggerPayload: {
+        watcherId: row.id,
+        watcherName: row.name,
+        value: value === undefined ? null : value,
+        threshold: row.threshold,
+        op: row.op,
+        severity: row.severity,
+      },
+    });
+    console.log(
+      `[watcher] FIRED org=${row.org_id} "${row.name}" (${row.op} ${JSON.stringify(row.threshold)}; value=${JSON.stringify(value)})`,
+    );
   }
-  return { checked: due.length, fired };
+  return { fired: fires };
 }

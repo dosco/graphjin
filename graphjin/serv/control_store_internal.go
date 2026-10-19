@@ -76,11 +76,21 @@ func (s *graphjinService) injectInternalStoreRole() {
 	if _, resolvedType, _, ok := s.artifactDB(); ok {
 		dbType = resolvedType
 	}
-	cfg := s.conf.Core.EffectiveArtifactsConfig()
-	dbName := cfg.Source
+	dbName := s.conf.Core.EffectiveArtifactsConfig().Source
 	if s.managedArtifactDB != "" {
 		dbName = s.managedArtifactDB
 	}
+	injectInternalStoreRoleInto(coreConf, s.conf, dbName, dbType, s.metadataDB)
+}
+
+// injectInternalStoreRoleInto grants the internal store role the raw store
+// tables in coreConf and blocks them for every other role. A staged runtime
+// built by gj_config gets the same rules as the one built at start.
+func injectInternalStoreRoleInto(coreConf *core.Config, conf *Config, dbName, dbType, metadataDB string) {
+	if coreConf == nil || conf == nil || !conf.Core.Artifacts.Enabled {
+		return
+	}
+	cfg := conf.Core.EffectiveArtifactsConfig()
 	if dbName == "" {
 		dbName = core.DefaultDBName
 	}
@@ -90,13 +100,13 @@ func (s *graphjinService) injectInternalStoreRole() {
 	// block — otherwise a public/authenticated source access mode would let
 	// callers read the raw rows and bypass owner scoping.
 	blockRoles := []string{"anon", "user"}
-	if s.conf.Core.IsSourcesUsed() {
-		blockRoles = sourceModeSystemRoleNames(s.conf)
+	if conf.Core.IsSourcesUsed() {
+		blockRoles = sourceModeSystemRoleNames(conf)
 	}
 	for _, role := range coreConf.Roles {
 		blockRoles = append(blockRoles, role.Name)
 	}
-	blockRoles = append(blockRoles, s.conf.Core.EffectiveIdentityConfig().AdminRoles...)
+	blockRoles = append(blockRoles, conf.Core.EffectiveIdentityConfig().AdminRoles...)
 	blockRoles = uniqueInternalStoreRoles(blockRoles)
 	add := func(table, schema string) {
 		rt := core.RoleTable{
@@ -127,7 +137,7 @@ func (s *graphjinService) injectInternalStoreRole() {
 		}
 	}
 	addRevisionSignal := func() {
-		database := s.metadataDB
+		database := metadataDB
 		if database == "" {
 			database = core.DefaultDBName
 		}
@@ -152,11 +162,11 @@ func (s *graphjinService) injectInternalStoreRole() {
 	if dbType == "postgres" || dbType == "" {
 		add("artifacts", cfg.Schema)
 		add("revisions", cfg.Schema)
-		if s.watchesEnabled() {
+		if configWatchesEnabled(conf) {
 			add("watches", cfg.Schema)
 			add("watch_events", cfg.Schema)
 		}
-		if s.tasksEnabled() {
+		if configTasksEnabled(conf) {
 			add("tasks", cfg.Schema)
 			add("task_entries", cfg.Schema)
 		}
@@ -168,11 +178,11 @@ func (s *graphjinService) injectInternalStoreRole() {
 	}
 	add(prefix+"_artifacts", "")
 	add(prefix+"_revisions", "")
-	if s.watchesEnabled() {
+	if configWatchesEnabled(conf) {
 		add(prefix+"_watches", "")
 		add(prefix+"_watch_events", "")
 	}
-	if s.tasksEnabled() {
+	if configTasksEnabled(conf) {
 		add(prefix+"_tasks", "")
 		add(prefix+"_task_entries", "")
 	}

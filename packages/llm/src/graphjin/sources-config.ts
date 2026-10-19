@@ -233,6 +233,50 @@ export function migrateGraphjinSystemSource(
   return { content: document.toString(), changed: true };
 }
 
+/** Where GraphJin sends watcher events: the worker's admin server. */
+export function watcherWebhookUrl(): string {
+  return (process.env.OPENNEKO_WATCHER_WEBHOOK_URL ?? "http://worker:4100/admin/events/watcher").trim();
+}
+
+/**
+ * Turns on GraphJin watches for OpenNeko watchers: GraphJin's managed artifact
+ * store that holds them, the runner, a per-owner limit that fits every watcher of
+ * the org (they share the service identity), the worker's webhook in the
+ * allowlist, and gj_watch for authenticated callers. Values an operator set
+ * stay, apart from adding the webhook to the allowlist.
+ */
+export function patchGraphjinWatches(
+  raw: string,
+  webhookUrl: string,
+): { content: string; changed: boolean } {
+  const document = parseDocument(raw);
+  if (document.errors.length > 0 || !isMap(document.contents)) {
+    throw new Error("GraphJin config is not valid YAML");
+  }
+  const before = document.toString();
+  // GraphJin keeps watches in its managed store only when artifacts.enabled
+  // and artifacts.source are both unset; an explicit enable picks a customer
+  // source instead, and customer sources are read-only.
+  if (document.getIn(["artifacts", "source"]) == null && document.hasIn(["artifacts", "enabled"])) {
+    document.deleteIn(["artifacts", "enabled"]);
+    const artifacts = document.get("artifacts", true);
+    if (isMap(artifacts) && artifacts.items.length === 0) document.delete("artifacts");
+  }
+  if (document.getIn(["watches", "enabled"]) !== true) document.setIn(["watches", "enabled"], true);
+  const runner = document.getIn(["watches", "runner"]);
+  if (runner == null || runner === "off") document.setIn(["watches", "runner"], "all");
+  const limit = Number(document.getIn(["watches", "max_per_owner"]) ?? 0);
+  if (!(limit >= 1000)) document.setIn(["watches", "max_per_owner"], 1000);
+  const allow = document.getIn(["watches", "webhook_allow"]);
+  const entries = isSeq(allow) ? allow.items.map((item) => String((item as { value?: unknown }).value ?? item)) : [];
+  if (!entries.includes(webhookUrl)) document.setIn(["watches", "webhook_allow"], [...entries, webhookUrl]);
+  if (document.getIn(["system", "root_access", "gj_watch"]) == null) {
+    document.setIn(["system", "root_access", "gj_watch"], "authenticated");
+  }
+  const content = document.toString();
+  return content === before ? { content: raw, changed: false } : { content, changed: true };
+}
+
 export const KEYSTORE_KEY_PLACEHOLDER = "REPLACE_WITH_BASE64_32_BYTE_KEY";
 
 /**

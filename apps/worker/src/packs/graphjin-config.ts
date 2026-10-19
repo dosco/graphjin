@@ -6,6 +6,7 @@ import {
   acquireGraphjinConfigLock,
   applyGraphjinConfigUpdate,
   currentRevisionFromConflict,
+  gjConfigRow,
   graphjinInputWithJsonVariables,
   isCatalogRevisionConflict,
   persistGraphjinSourceConfigUpdate,
@@ -182,7 +183,7 @@ export async function applyPackGraphjinConfig(input: {
         headers,
         query: `query ${revisionOperation} { gj_config(id: "current") { catalog_revision sources tables relationships } }`,
       });
-      const reportedRevision = current.data?.gj_config?.catalog_revision;
+      const reportedRevision = gjConfigRow(current.data?.gj_config)?.catalog_revision;
       const revisionUnsupported = unsupportedGraphjinConfigApi(current.errors?.map((error) => error.message) ?? [], current.errors);
       if (revisionUnsupported) throw new Error(revisionUnsupported);
       if (!reportedRevision || current.errors?.length) {
@@ -197,7 +198,7 @@ export async function applyPackGraphjinConfig(input: {
       const revision = conflictRevision ?? reportedRevision;
 
       const currentSourceNames = new Set(
-        configArray(current.data?.gj_config?.sources).map((source) => String(source.name ?? "")),
+        configArray(gjConfigRow(current.data?.gj_config)?.sources).map((source) => String(source.name ?? "")),
       );
       for (const source of requestedSources) {
         const name = String(source.name ?? "");
@@ -206,7 +207,7 @@ export async function applyPackGraphjinConfig(input: {
         }
       }
       if (input.ownedTableNames) {
-        const existingNames = new Set([...configArray(durableConfig.tables), ...configArray(current.data?.gj_config?.tables)].map(table => String(table.name)));
+        const existingNames = new Set([...configArray(durableConfig.tables), ...configArray(gjConfigRow(current.data?.gj_config)?.tables)].map(table => String(table.name)));
         for (const table of requestedTables) {
           if (existingNames.has(String(table.name)) && !input.ownedTableNames.has(String(table.name))) throw new Error(`GraphJin table ${table.name} already exists and is not owned by this pack`);
         }
@@ -272,7 +273,7 @@ export async function applyPackGraphjinConfig(input: {
         }
         throw error;
       }
-      const previewResult = preview.data?.gj_config;
+      const previewResult = gjConfigRow(preview.data?.gj_config);
       const previewMessages = [
         ...(preview.errors?.map((error) => error.message) ?? []),
         previewResult?.errors_json,
@@ -317,7 +318,7 @@ export async function applyPackGraphjinConfig(input: {
         }
         throw error;
       }
-      const result = applied.data?.gj_config;
+      const result = gjConfigRow(applied.data?.gj_config);
       const applyMessages = [
         ...(applied.errors?.map((error) => error.message) ?? []),
         result?.errors_json,
@@ -428,7 +429,7 @@ async function previewThenApplyLive(input: {
         query: `mutation${request.variableDefinitions} { gj_config(id: "current", update: ${request.literal}) { valid applied preview_id catalog_revision errors_json } }`,
         variables: request.variables,
       });
-      const row = result.data?.gj_config;
+      const row = gjConfigRow(result.data?.gj_config);
       const messages = [...(result.errors?.map((error) => error.message) ?? []), row?.errors_json];
       const unsupported = unsupportedGraphjinConfigApi(messages, result.errors);
       if (unsupported) throw new Error(unsupported);

@@ -9,6 +9,8 @@ import {
   graphjinKeystoreHasValues,
   migrateGraphjinSystemSource,
   patchGraphjinKeystoreKey,
+  patchGraphjinWatches,
+  watcherWebhookUrl,
   patchGraphjinSourcesJwtSecret,
   reconcileGraphjinWritePolicy,
 } from "./sources-config.ts";
@@ -138,8 +140,13 @@ const keystore = patchGraphjinKeystoreKey(
   graphjinKeystoreKeyB64(),
   await graphjinKeystoreHasValues(CONFIG_PATH, policy.content),
 );
-if (migrated.changed || patched.changed || policy.changed || keystore.changed) {
-  await atomicWriteFile(CONFIG_PATH, keystore.content);
+// OpenNeko watchers run as GraphJin watches that call the worker back.
+const watches = patchGraphjinWatches(keystore.content, watcherWebhookUrl());
+if (migrated.changed || patched.changed || policy.changed || keystore.changed || watches.changed) {
+  await atomicWriteFile(CONFIG_PATH, watches.content);
+}
+if (watches.changed) {
+  console.log(`[graphjin-secret-init] turned on GraphJin watches for OpenNeko watchers in ${CONFIG_PATH}`);
 }
 if (keystore.changed) {
   console.log(

@@ -48,6 +48,7 @@ export {
   type WorkflowTriggerError,
 } from "./save-workflow-with-trigger";
 export * from "./watchers";
+export * from "./watcher-native";
 export * from "./audit-chain";
 export * from "./api-contract";
 export * from "./api-access";

@@ -106,11 +106,14 @@ import {
   getActionRequest,
   handleSourceChangeMatch,
   handleSubscriptionMatch,
+  receiveWatcherEvent,
   registerActionRequestCreatedHook,
   registerBuiltinAdapters,
   registerFallbackActionAdapterResolver,
   seedDefaultActionPolicies,
   startSubscriptionManager,
+  watcherForGraphjinWatch,
+  watcherWebhookSignatureValid,
   type DataSourceContext,
 } from "@neko/llm/workflows";
 import { resolveDeclarativePackActionAdapter, registerPackConnectionPreflight } from "./packs/declarative-action-runtime.js";
@@ -569,6 +572,17 @@ const server = createServer(
     recordsWatches: {
       secret: recordsWatchWebhookSecret(ADMIN_ORG_ID),
       dispatch: receiveRecordsNativeWatchEvent,
+    },
+    watcherEvents: {
+      verify: (rawBody, signature, watchId) =>
+        watcherWebhookSignatureValid(rawBody, signature, watchId),
+      receive: async ({ watchId, event }) => {
+        const row = await watcherForGraphjinWatch(watchId);
+        // A retried or late event for a removed watcher is accepted and dropped.
+        if (!row) return { accepted: false };
+        const { fired } = await receiveWatcherEvent(row, event);
+        return { accepted: true, fired };
+      },
     },
     recordsImports: {
       staging: () => recordsImportSurface().staging(),
@@ -1093,14 +1107,14 @@ await b.work(QUEUE.WORKFLOW_CRON_SWEEP, async () => {
       `[worker] behavior sweep failed: ${e instanceof Error ? e.message : e}`,
     );
   }
-  // OL4: condition watchers poll on the same tick (each watcher's own
-  // cadence gates how often its query actually runs).
+  // Watchers run as GraphJin watches; keep those in step with the watcher
+  // rows. GraphJin polls each one and sends its events to /admin/events/watcher.
   try {
-    const { sweepWatchers } = await import("@neko/llm/workflows");
-    await sweepWatchers(ADMIN_ORG_ID);
+    const { reconcileWatcherWatches } = await import("@neko/llm/workflows");
+    await reconcileWatcherWatches(ADMIN_ORG_ID);
   } catch (e) {
     console.warn(
-      `[worker] watcher sweep failed: ${e instanceof Error ? e.message : e}`,
+      `[worker] watcher reconcile failed: ${e instanceof Error ? e.message : e}`,
     );
   }
 });

@@ -351,6 +351,7 @@ export type AdminHandlerOptions = {
   events?: ExternalEventHandlerSurface | null;
   /** HMAC-authenticated native GraphJin watch delivery ingress. */
   recordsWatches?: RecordsWatchHandlerSurface | null;
+  watcherEvents?: WatcherEventsHandlerSurface | null;
   /** Governed CSV/artifact import preparation for the host CLI. */
   recordsImports?: RecordsImportHandlerSurface | null;
   /** Trusted web→worker action creation so worker-owned preflight hooks run. */
@@ -389,6 +390,16 @@ export interface ExternalEventHandlerSurface {
     payload: Record<string, unknown>;
     dedupeKey?: string;
   }): Promise<{ matched: number; enqueued: number }>;
+}
+
+export interface WatcherEventsHandlerSurface {
+  /** True when rawBody carries a valid signature for this GraphJin watch. */
+  verify(rawBody: string, signature: string | undefined, watchId: string): boolean;
+  receive(input: {
+    watchId: string;
+    eventId: string;
+    event: Record<string, unknown>;
+  }): Promise<{ accepted: boolean; fired?: boolean }>;
 }
 
 export interface RecordsWatchHandlerSurface {
@@ -432,6 +443,7 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const installPolicy = opts.installPolicy ?? null;
   const events = opts.events ?? null;
   const recordsWatches = opts.recordsWatches ?? null;
+  const watcherEvents = opts.watcherEvents ?? null;
   const recordsImports = opts.recordsImports ?? null;
   const actionRequests = opts.actionRequests ?? null;
   const packs = opts.packs ?? null;
@@ -605,6 +617,10 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
     }
     if (req.method === "POST" && req.url === "/admin/events/external") {
       void handleExternalEvent(req, res, events);
+      return;
+    }
+    if (req.method === "POST" && req.url === "/admin/events/watcher") {
+      void handleWatcherEvent(req, res, watcherEvents);
       return;
     }
     if (
@@ -1238,6 +1254,65 @@ function recordsWatchSignatureValid(
   const expected = createHmac("sha256", secret).update(rawBody).digest();
   const actual = Buffer.from(match[1]!, "hex");
   return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+async function handleWatcherEvent(
+  req: IncomingMessage,
+  res: ServerResponse,
+  watcherEvents: WatcherEventsHandlerSurface | null,
+) {
+  if (!watcherEvents) {
+    json(res, 503, { error: "watcher event ingress unavailable" });
+    return;
+  }
+  const rawBody = await readText(req).catch(() => null);
+  let payload: Record<string, unknown> | null = null;
+  try {
+    const parsed = rawBody === null ? null : (JSON.parse(rawBody) as unknown);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      payload = parsed as Record<string, unknown>;
+    }
+  } catch {
+    payload = null;
+  }
+  const watch = payload?.watch as Record<string, unknown> | undefined;
+  const event = payload?.event as Record<string, unknown> | undefined;
+  const watchId = watch && typeof watch === "object" ? watch.id : undefined;
+  // The signing secret is per watch, so the watch id comes first; nothing
+  // acts on the body until the signature checks out.
+  if (
+    rawBody === null ||
+    typeof watchId !== "string" ||
+    !watchId ||
+    !watcherEvents.verify(
+      rawBody,
+      typeof req.headers["x-graphjin-signature"] === "string"
+        ? req.headers["x-graphjin-signature"]
+        : undefined,
+      watchId,
+    )
+  ) {
+    json(res, 401, { error: "invalid watcher event signature" });
+    return;
+  }
+  const eventId = event && typeof event === "object" ? event.id : undefined;
+  if (
+    !event ||
+    typeof eventId !== "string" ||
+    !eventId ||
+    event.watch_id !== watchId ||
+    req.headers["idempotency-key"] !== eventId
+  ) {
+    json(res, 400, { error: "watcher event identity is invalid" });
+    return;
+  }
+  try {
+    json(res, 202, await watcherEvents.receive({ watchId, eventId, event }));
+  } catch (error) {
+    json(res, 500, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 async function handleRecordsWatch(

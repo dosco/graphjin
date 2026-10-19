@@ -999,7 +999,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		} else {
 			preserved := preserveProtectedReadOnlySources(parsed, ms.readOnlySources)
 			conf.Sources = parsed
-			if err := conf.RenormalizeSources(); err != nil {
+			if err := withManagedArtifactsHidden(conf, ms.service.conf.managedArtifactStore, conf.RenormalizeSources); err != nil {
 				errors = append(errors, fmt.Sprintf("sources: %v", err))
 			} else {
 				changes = append(changes, "updated sources")
@@ -1015,7 +1015,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		} else {
 			preserved := preserveProtectedReadOnlySources(updated, ms.readOnlySources)
 			conf.Sources = updated
-			if err := conf.RenormalizeSources(); err != nil {
+			if err := withManagedArtifactsHidden(conf, ms.service.conf.managedArtifactStore, conf.RenormalizeSources); err != nil {
 				errors = append(errors, fmt.Sprintf("update_sources: %v", err))
 			} else {
 				changes = append(changes, patchChanges...)
@@ -1030,7 +1030,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			errors = append(errors, fmt.Sprintf("remove_sources: %v", err))
 		} else if len(removeChanges) != 0 {
 			conf.Sources = updated
-			if err := conf.RenormalizeSources(); err != nil {
+			if err := withManagedArtifactsHidden(conf, ms.service.conf.managedArtifactStore, conf.RenormalizeSources); err != nil {
 				errors = append(errors, fmt.Sprintf("remove_sources: %v", err))
 			} else {
 				changes = append(changes, removeChanges...)
@@ -1377,7 +1377,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	// Source patches run after roles so that a grant can name a role added
 	// in the same update.
 	if sourcePatches, ok := args["source_patches"].([]any); ok {
-		patchChanges, err := applySourceAccessConfigPatches(conf, sourcePatches)
+		patchChanges, err := applySourceAccessConfigPatches(conf, sourcePatches, ms.service.conf.managedArtifactStore)
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("source_patches: %v", err))
 		} else {
@@ -1481,6 +1481,12 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	if coreChanged {
 		reloadPlan = classifyConfigRuntimeReload(oldCore, stagedCore)
 		if reloadPlan.mode == "source_scoped" && ms.service.systemNanoDB == nil && ms.service.metadataGraphEnabledForCore(&stagedCore) {
+			reloadPlan.mode = "full"
+			reloadPlan.fallback = true
+		}
+		// A source-scoped reload rebuilds only the changed sources and loses the
+		// managed store's tables, so a managed store reloads in full.
+		if reloadPlan.mode == "source_scoped" && ms.service.conf.managedArtifactStore && stagedCore.Artifacts.Enabled {
 			reloadPlan.mode = "full"
 			reloadPlan.fallback = true
 		}
@@ -1705,6 +1711,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		} else if err := ms.service.refreshCatalogAfterCoreConfigChange(oldCore, persistedCore, "config mutation"); err != nil {
 			errors = append(errors, fmt.Sprintf("catalog refresh error: %s", redactRuntimeError(err)))
 		}
+		ms.service.reloads.notify()
 		// Cached responses were built under the previous config.
 		if ms.service.cache != nil {
 			if err := ms.service.cache.Reset(ctx); err != nil {
@@ -2167,7 +2174,7 @@ type sourceAccessConfigPatch struct {
 	Grants json.RawMessage `json:"grants,omitempty"`
 }
 
-func applySourceAccessConfigPatches(conf *core.Config, items []any) ([]string, error) {
+func applySourceAccessConfigPatches(conf *core.Config, items []any, managedArtifacts bool) ([]string, error) {
 	if conf == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -2236,7 +2243,7 @@ func applySourceAccessConfigPatches(conf *core.Config, items []any) ([]string, e
 		}
 		changes = append(changes, patchChanges...)
 	}
-	if err := conf.ValidateIsSourcesUsed(); err != nil {
+	if err := withManagedArtifactsHidden(conf, managedArtifacts, conf.ValidateIsSourcesUsed); err != nil {
 		return changes, err
 	}
 	sort.Strings(changes)
@@ -3383,6 +3390,21 @@ func (ms *mcpServer) attachStagedManagedArtifactStore(stagedCore *core.Config, s
 	stage.managedArtifactDB = name
 }
 
+// injectStagedInternalStoreRole gives the staged runtime the internal store
+// role, as injectInternalStoreRole does for the runtime built at start.
+func (ms *mcpServer) injectStagedInternalStoreRole(stagedCore *core.Config, stage *stagedRuntimeState) {
+	if ms == nil || ms.service == nil || stagedCore == nil || stage == nil || stage.runtimeCore == nil {
+		return
+	}
+	scopedConf := *ms.service.conf
+	scopedConf.Core = *stagedCore
+	dbName := stagedCore.EffectiveArtifactsConfig().Source
+	if stage.managedArtifactDB != "" {
+		dbName = stage.managedArtifactDB
+	}
+	injectInternalStoreRoleInto(stage.runtimeCore, &scopedConf, dbName, stage.runtimeCore.Databases[dbName].Type, stage.metadataDB)
+}
+
 func (ms *mcpServer) stagedCoreOptions(stagedCore *core.Config, stage *stagedRuntimeState) []core.Option {
 	scopedConf := *ms.service.conf
 	scopedConf.Core = *stagedCore
@@ -3818,6 +3840,7 @@ func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotEx
 	if err := ms.initStagedSystemNano(stagedCore, stage); err != nil {
 		return stage, err
 	}
+	ms.injectStagedInternalStoreRole(stagedCore, stage)
 
 	gj, err := core.NewGraphJin(stage.runtimeCore, anyDBFromMap(stage.runtimeCore, stage.dbs), ms.stagedCoreOptions(stagedCore, stage)...)
 	if err != nil {
@@ -3957,6 +3980,7 @@ func (ms *mcpServer) prepareSourceScopedRuntime(stagedCore *core.Config, changed
 	if err := ms.initStagedSystemNano(stagedCore, stage); err != nil {
 		return stage, err
 	}
+	ms.injectStagedInternalStoreRole(stagedCore, stage)
 
 	if db := anyDBFromMap(stage.runtimeCore, stage.dbs); db != nil {
 		stage.availableDBs, _ = listDatabaseNames(db, primaryDBTypeFromCore(stage.runtimeCore))

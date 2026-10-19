@@ -58,7 +58,22 @@ vi.mock("../src/packs/magento-preflight.js", async importOriginal => {
 });
 import { runMagentoPreflight } from "../src/packs/magento-preflight.js";
 import { packArtifactSource } from "@neko/llm/graphjin";
-import { sweepWatchers } from "@neko/llm/workflows";
+import { reconcileWatcherWatches, type WatcherWatchClient } from "@neko/llm/workflows";
+
+/** A GraphJin watch client that records each watch it is asked to create. */
+function watchClient() {
+  const sent: Array<{ endpoint: string; definition: Record<string, unknown> }> = [];
+  const client: WatcherWatchClient = {
+    upsert: async ({ endpoint, definition }) => {
+      sent.push({ endpoint, definition });
+      return { id: `watch:${sent.length}`, action_approval: "approved" };
+    },
+    approve: async ({ watchId }) => ({ id: watchId, action_approval: "approved" }),
+    remove: async () => {},
+    status: async () => null,
+  };
+  return { sent, client };
+}
 import { runMetricRefresh } from "../src/jobs/metric-refresh.js";
 import { buildSavedQueryVariables } from "../src/jobs/deterministic-metric.js";
 import { pool } from "@neko/db";
@@ -211,9 +226,10 @@ describe.skipIf(!enabled)("shared pack lifecycle with Postgres", () => {
     await runMetricRefresh(job, org);
     expect(state.queries.at(-1)).toMatchObject({ baseUrl: "http://fixture.invalid/api/v1/graphql", variables: { timezone: "Asia/Kolkata" } });
     expect((await pool().query("select value from metric_snapshot where metric_id=$1", [card.id])).rows[0].value).toBe("1");
-    const query = vi.fn(async () => ({ data: { health: { healthy: 1 } } }));
-    await sweepWatchers(org, { query, enqueueFire: async () => {} });
-    expect(query).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: "http://fixture.invalid/api/v1/graphql", variables: { timezone: "Asia/Kolkata" } }));
+    // The watcher's GraphJin watch goes to the pinned source with the pack's variables.
+    const watches = watchClient();
+    await reconcileWatcherWatches(org, { client: watches.client, webhookUrl: "http://worker.test/admin/events/watcher" });
+    expect(watches.sent).toContainEqual(expect.objectContaining({ endpoint: "http://fixture.invalid/api/v1/graphql", definition: expect.objectContaining({ variables_json: { timezone: "Asia/Kolkata" } }) }));
     await pool().query("update data_source set enabled=false where id=$1", [dataSourceId]);
     await expect(packArtifactSource(org, "metric", card.id)).rejects.toThrow(/unavailable/);
     const count = state.queries.length;
@@ -264,9 +280,9 @@ describe.skipIf(!enabled)("shared pack lifecycle with Postgres", () => {
     const job = (await pool().query("insert into processing_job (org_id,kind,status,trigger,trigger_payload) values ($1,'metric_refresh','running','test',$2) returning id", [org, JSON.stringify({ metricId: card.id })])).rows[0].id;
     await runMetricRefresh(job, org);
     expect(state.queries.at(-1)?.query).toContain('@database(name: "customer_db")');
-    const query = vi.fn(async () => ({ data: { health: { healthy: 1 } } }));
-    await sweepWatchers(org, { query, enqueueFire: async () => {} });
-    expect(query).toHaveBeenCalledWith(expect.objectContaining({ query: expect.stringContaining('@database(name: "customer_db")') }));
+    const watches = watchClient();
+    await reconcileWatcherWatches(org, { client: watches.client, webhookUrl: "http://worker.test/admin/events/watcher" });
+    expect(watches.sent).toContainEqual(expect.objectContaining({ definition: expect.objectContaining({ query: expect.stringContaining('@database(name: "customer_db")') }) }));
     const routingBefore = await readFile(join(root, "graphjin.yml"), "utf8");
     const routingChanged = parse(routingBefore);
     routingChanged.tables.find((table: any) => table.source === "customer_db").source = "wrong_database";

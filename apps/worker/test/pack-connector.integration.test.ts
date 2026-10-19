@@ -13,7 +13,7 @@ import { packZipEntries, zipFixture } from "../../../packages/packs/test/zip-fix
 import { graphjinQuery, graphjinSigningSecretB64, mintGraphjinToken } from "@neko/llm/graphjin";
 import { applyPackGraphjinConfig } from "../src/packs/graphjin-config.js";
 import { PackService } from "../src/packs/service.js";
-import { sweepWatchers } from "@neko/llm/workflows";
+import { reconcileWatcherWatches } from "@neko/llm/workflows";
 import { runMetricRefresh } from "../src/jobs/metric-refresh.js";
 import { createAdminHandler } from "../src/admin-server.js";
 
@@ -139,8 +139,23 @@ describe.skipIf(!enabled)("pack-owned connector on packaged GraphJin", () => {
     const job = (await pool().query("insert into processing_job(org_id,kind,status,trigger,trigger_payload) values ($1,'metric_refresh','running','fixture',$2) returning id", [org, JSON.stringify({ metricId: metric.id })])).rows[0].id;
     await runMetricRefresh(job, org);
     expect((await pool().query("select value from metric_snapshot where metric_id=$1", [metric.id])).rows[0].value).toBe("1");
-    expect((await sweepWatchers(org, { enqueueFire: async () => {} })).checked).toBe(1);
-    expect((await pool().query("select last_value,last_error from watcher where org_id=$1", [org])).rows[0]).toEqual({ last_value: 1, last_error: null });
+    // The pack's watcher runs as a polled GraphJin watch over the API source.
+    expect(await reconcileWatcherWatches(org)).toEqual({ synced: 1, removed: 0, failed: 0 });
+    const watchId = (await pool().query("select graphjin_watch_id from watcher where org_id=$1", [org])).rows[0].graphjin_watch_id;
+    const deadline = Date.now() + 60_000;
+    let events: Array<{ data_json: unknown }> = [];
+    while (events.length === 0 && Date.now() < deadline) {
+      // Watch events belong to the watch's owner: the org's service identity.
+      const result = await graphjinQuery({
+        baseUrl: endpoint,
+        query: `query WatcherEvents_${Date.now()} { gj_watch_event(where: { watch_id: { eq: ${JSON.stringify(watchId)} } }) { data_json } }`,
+        headers: { authorization: `Bearer ${mintGraphjinToken({ orgId: org, userId: null, role: "service" })}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      events = (result.data as { gj_watch_event?: Array<{ data_json: unknown }> } | undefined)?.gj_watch_event ?? [];
+      if (events.length === 0) await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    expect(JSON.stringify(events[0]?.data_json)).toContain("healthy");
     await docker("restart", graphjin);
     await ready();
     expect((await service.doctor("service-health")).status).toBe("ready");

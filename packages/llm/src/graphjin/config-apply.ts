@@ -19,7 +19,11 @@ export function currentRevisionFromConflict(messages: Array<string | null | unde
 }
 
 /** gj_config answers with a list of rows; older GraphJins answered with one row. */
-function firstRow<T>(value: T | T[] | undefined | null): T | undefined {
+/**
+ * The row of a gj_config(id: "current") result. GraphJin returns it as an
+ * object or as a one-row list depending on where its system tables live.
+ */
+export function gjConfigRow<T>(value: T | T[] | undefined | null): T | undefined {
   return Array.isArray(value) ? value[0] : (value ?? undefined);
 }
 
@@ -55,7 +59,7 @@ export async function applyGraphjinConfigUpdate(input: {
         headers: input.headers,
         query: `query ${name} { gj_config(id: "current") { catalog_revision } }`,
       });
-      revision = firstRow(current.data?.gj_config)?.catalog_revision ?? null;
+      revision = gjConfigRow(current.data?.gj_config)?.catalog_revision ?? null;
       if (!revision) {
         throw new Error(`GraphJin config revision unavailable: ${current.errors?.map((e) => e.message).join("; ") ?? "no revision"}`);
       }
@@ -75,7 +79,7 @@ export async function applyGraphjinConfigUpdate(input: {
         query: `mutation${request.variableDefinitions} { gj_config(id: "current", update: ${request.literal}) { valid applied preview_id catalog_revision errors_json } }`,
         variables: request.variables,
       });
-      const row = firstRow(result.data?.gj_config);
+      const row = gjConfigRow(result.data?.gj_config);
       const messages = [...(result.errors?.map((error) => error.message) ?? []), row?.errors_json];
       return { row, messages, failed: Boolean(result.errors?.length) };
     };

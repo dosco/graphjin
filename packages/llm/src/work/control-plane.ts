@@ -1,3 +1,4 @@
+import { gjConfigRow } from "../graphjin/config-apply";
 import { enqueue, QUEUE } from "@neko/db/jobs";
 import { holds } from "@neko/db";
 import { actionKindIsGranted, entitlementActorForRun, runWorkflowFilter } from "./entitlement-scope";
@@ -1961,7 +1962,7 @@ export class InProcessControlPlane implements AgentControlPlane {
         headers,
         query: 'query { gj_config(id: "current") { catalog_revision sources } }',
       });
-      const revision = revisionResponse.data?.gj_config?.catalog_revision;
+      const revision = gjConfigRow(revisionResponse.data?.gj_config)?.catalog_revision;
       if (!revision || revisionResponse.errors?.length) {
         return {
           source,
@@ -1970,7 +1971,7 @@ export class InProcessControlPlane implements AgentControlPlane {
             "GraphJin did not return catalog_revision",
         };
       }
-      let currentSources = revisionResponse.data?.gj_config?.sources;
+      let currentSources = gjConfigRow(revisionResponse.data?.gj_config)?.sources;
       if (typeof currentSources === "string") {
         try {
           currentSources = JSON.parse(currentSources);
@@ -2078,7 +2079,7 @@ export class InProcessControlPlane implements AgentControlPlane {
           error: response.errors.map((item) => item.message).join("; "),
         };
       }
-      const row = response.data?.gj_config;
+      const row = gjConfigRow(response.data?.gj_config);
       const scrub = (value: string | undefined): string =>
         secretValue && secretValue.length >= 8
           ? (value ?? "").split(secretValue).join("[REDACTED]")

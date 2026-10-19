@@ -2,6 +2,7 @@ package serv
 
 import (
 	"fmt"
+	"github.com/dosco/graphjin/core/v3"
 	"os"
 	"strings"
 
@@ -92,7 +93,8 @@ func (c *Config) runtimeRootRegistered() bool {
 }
 
 func (c *Config) artifactSourceReadOnly() bool {
-	if c == nil || !c.Core.Artifacts.Enabled {
+	// The managed store is GraphJin's own file, not a configured source.
+	if c == nil || !c.Core.Artifacts.Enabled || c.managedArtifactStore {
 		return false
 	}
 	source, ok := c.Core.SourceByName(c.Core.EffectiveArtifactsConfig().Source)
@@ -168,16 +170,27 @@ func validateServiceTasksConfig(conf *Config) error {
 }
 
 func validateCoreSourcesWithManagedArtifacts(conf *Config) error {
-	if conf == nil || !conf.managedArtifactStore {
-		return conf.Core.ValidateIsSourcesUsed()
+	if conf == nil {
+		return nil
 	}
-	artifacts, watches, tasks := conf.Core.Artifacts, conf.Core.Watches, conf.Core.Tasks
-	conf.Core.Artifacts.Enabled = false
-	conf.Core.Artifacts.Source = ""
-	conf.Core.Watches.Enabled = false
-	conf.Core.Tasks.Enabled = false
-	err := conf.Core.ValidateIsSourcesUsed()
-	conf.Core.Artifacts, conf.Core.Watches, conf.Core.Tasks = artifacts, watches, tasks
+	return withManagedArtifactsHidden(&conf.Core, conf.managedArtifactStore, conf.Core.ValidateIsSourcesUsed)
+}
+
+// withManagedArtifactsHidden runs a source check with artifacts, watches and
+// tasks off when they live in the managed store. That store is GraphJin's own
+// file, so a check must not resolve the empty artifacts.source to a customer
+// source.
+func withManagedArtifactsHidden(conf *core.Config, managed bool, check func() error) error {
+	if !managed {
+		return check()
+	}
+	artifacts, watches, tasks := conf.Artifacts, conf.Watches, conf.Tasks
+	conf.Artifacts.Enabled = false
+	conf.Artifacts.Source = ""
+	conf.Watches.Enabled = false
+	conf.Tasks.Enabled = false
+	err := check()
+	conf.Artifacts, conf.Watches, conf.Tasks = artifacts, watches, tasks
 	return err
 }
 
@@ -209,15 +222,5 @@ func normalizeServiceSources(conf *Config) error {
 	if conf == nil {
 		return nil
 	}
-	if !conf.managedArtifactStore {
-		return conf.Core.NormalizeSources()
-	}
-	artifacts, watches, tasks := conf.Core.Artifacts, conf.Core.Watches, conf.Core.Tasks
-	conf.Core.Artifacts.Enabled = false
-	conf.Core.Artifacts.Source = ""
-	conf.Core.Watches.Enabled = false
-	conf.Core.Tasks.Enabled = false
-	err := conf.Core.NormalizeSources()
-	conf.Core.Artifacts, conf.Core.Watches, conf.Core.Tasks = artifacts, watches, tasks
-	return err
+	return withManagedArtifactsHidden(&conf.Core, conf.managedArtifactStore, conf.Core.NormalizeSources)
 }

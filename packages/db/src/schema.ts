@@ -886,6 +886,11 @@ export const watcher = pgTable(
     last_fired_at: ts("last_fired_at"),
     last_value: jsonb("last_value"),
     last_error: text("last_error"),
+    // The GraphJin watch that runs this watcher, on the GraphJin at
+    // graphjin_endpoint, and the hash of the definition it was given.
+    graphjin_watch_id: text("graphjin_watch_id"),
+    graphjin_endpoint: text("graphjin_endpoint"),
+    graphjin_watch_hash: text("graphjin_watch_hash"),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },

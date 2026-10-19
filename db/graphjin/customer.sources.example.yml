@@ -79,13 +79,16 @@ agent:
 analytics_mode: true
 
 # Customer sources are read-only by default and may be absent on first boot.
-# Durable GraphJin artifacts and watches live in OpenNeko's dedicated Records
-# GraphJin plane, never in a customer database.
-artifacts:
-  enabled: false
+# OpenNeko watchers run as GraphJin watches. Their store is GraphJin's managed
+# SQLite file in this config directory, never a customer database.
+# graphjin-secret-init keeps these values current on existing installs.
+# artifacts is left unset: GraphJin then uses its managed store.
 watches:
-  enabled: false
-  runner: off
+  enabled: true
+  runner: all
+  max_per_owner: 1000
+  webhook_allow:
+    - http://worker:4100/admin/events/watcher
 tasks:
   enabled: false
 
@@ -133,6 +136,7 @@ system:
     gj_config: admin
     gj_security: admin
     gj_runtime: admin
+    gj_watch: authenticated
 
 # Keep source mode explicit on a fresh install; admins add external database,
 # API, code, or file sources through OpenNeko's approved config workflow.

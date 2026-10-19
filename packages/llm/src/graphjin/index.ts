@@ -26,5 +26,6 @@ export * from "./agent-settings";
 export {
   applyGraphjinConfigUpdate,
   currentRevisionFromConflict,
+  gjConfigRow,
   isCatalogRevisionConflict,
 } from "./config-apply";

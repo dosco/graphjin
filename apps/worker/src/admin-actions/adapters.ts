@@ -18,6 +18,7 @@ import {
   parseManagedFileSourceManifest,
   persistGraphjinSourceConfigUpdate,
   verifyManagedFileSourceManifest,
+  gjConfigRow,
 } from "@neko/llm/graphjin";
 
 /**
@@ -679,7 +680,7 @@ export function registerSourceConfigAdminAdapter(): void {
         headers,
         query: 'query { gj_config(id: "current") { catalog_revision sources } }',
       });
-      const rev = revRes.data?.gj_config?.catalog_revision;
+      const rev = gjConfigRow(revRes.data?.gj_config)?.catalog_revision;
       if (!rev) {
         throw new Error(
           `source_config_admin: could not read catalog_revision: ${revRes.errors?.map((e) => e.message).join("; ") ?? "no revision"}`,
@@ -690,7 +691,7 @@ export function registerSourceConfigAdminAdapter(): void {
           "source_config_admin: GraphJin configuration changed after approval; create and approve a fresh preview",
         );
       }
-      let currentSources = revRes.data?.gj_config?.sources;
+      let currentSources = gjConfigRow(revRes.data?.gj_config)?.sources;
       if (typeof currentSources === "string") {
         try {
           currentSources = JSON.parse(currentSources);
@@ -740,7 +741,7 @@ export function registerSourceConfigAdminAdapter(): void {
           `source_config_admin preview failed: ${preview.errors.map((e) => e.message).join("; ")}`,
         );
       }
-      const pv = preview.data?.gj_config;
+      const pv = gjConfigRow(preview.data?.gj_config);
       if (!pv?.valid || !pv.preview_id) {
         throw new Error(
           `source_config_admin preview invalid: ${pv?.errors_json ?? "no preview_id returned"}`,
@@ -771,7 +772,7 @@ export function registerSourceConfigAdminAdapter(): void {
           `source_config_admin apply failed: ${applied.errors.map((e) => e.message).join("; ")}`,
         );
       }
-      const av = applied.data?.gj_config;
+      const av = gjConfigRow(applied.data?.gj_config);
       if (!av?.applied) {
         throw new Error(
           `source_config_admin apply rejected: ${av?.errors_json ?? "unknown"}`,
@@ -953,7 +954,7 @@ export function registerSourceConfigAdminAdapter(): void {
             headers,
             query: `mutation { gj_config(id: "current", update: ${rollbackPreviewInline}) { valid preview_id errors_json } }`,
           });
-          const rollbackRow = rollbackPreview.data?.gj_config;
+          const rollbackRow = gjConfigRow(rollbackPreview.data?.gj_config);
           if (
             rollbackPreview.errors?.length ||
             !rollbackRow?.valid ||
@@ -980,11 +981,11 @@ export function registerSourceConfigAdminAdapter(): void {
           });
           if (
             rollbackApply.errors?.length ||
-            rollbackApply.data?.gj_config?.applied !== true
+            gjConfigRow(rollbackApply.data?.gj_config)?.applied !== true
           ) {
             throw new Error(
               rollbackApply.errors?.map((item) => item.message).join("; ") ||
-                rollbackApply.data?.gj_config?.errors_json ||
+                gjConfigRow(rollbackApply.data?.gj_config)?.errors_json ||
                 "rollback apply was rejected",
             );
           }

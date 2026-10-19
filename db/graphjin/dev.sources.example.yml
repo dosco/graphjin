@@ -118,13 +118,15 @@ agent:
 
 analytics_mode: true
 
-# The AdventureWorks source is read-only. Durable GraphJin artifacts and
-# watches live in OpenNeko's dedicated Records GraphJin plane instead.
-artifacts:
-  enabled: false
+# The AdventureWorks source is read-only. OpenNeko watchers run as GraphJin
+# watches, stored in GraphJin's managed SQLite file in this config directory.
+# artifacts is left unset: GraphJin then uses its managed store.
 watches:
-  enabled: false
-  runner: off
+  enabled: true
+  runner: all
+  max_per_owner: 1000
+  webhook_allow:
+    - http://worker:4100/admin/events/watcher
 tasks:
   enabled: false
 
@@ -182,6 +184,7 @@ system:
     gj_config: admin
     gj_security: admin
     gj_runtime: admin
+    gj_watch: authenticated
 
 sources:
   - name: adventureworks
