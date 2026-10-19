@@ -25,7 +25,7 @@ import {
   maybeDecryptSecret,
   maybeEncryptSecret,
 } from "@neko/llm/secrets";
-import { resolveHermesProviderRuntime } from "@neko/llm/provider-runtime";
+import { resolveProviderRuntime } from "@neko/llm/provider-runtime";
 
 export type PublicProviderConfig =
   | {
@@ -213,7 +213,7 @@ function validateConfig(config: EditableProviderConfig): string[] {
 
   if (errors.length === 0 && config.scope === "primary") {
     try {
-      resolveHermesProviderRuntime({
+      resolveProviderRuntime({
         provider: config.provider,
         model: config.model,
         config: config.config,

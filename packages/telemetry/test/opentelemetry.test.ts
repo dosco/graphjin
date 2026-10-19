@@ -33,7 +33,7 @@ describe("OpenTelemetryObservationSink", () => {
       operationId: "run-1",
       timestamp: "2026-08-10T00:00:00.000Z",
       attributes: {
-        "openneko.backend": "hermes",
+        "openneko.backend": "ax",
         prompt: "must not be exported",
       },
     });

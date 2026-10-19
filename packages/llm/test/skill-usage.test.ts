@@ -26,33 +26,14 @@ describe("detectSkillUse", () => {
     expect(detectSkillUse(event)).toBeNull();
   });
 
-  it("reads a Hermes skill tool name", () => {
+  it("ignores a skill tool name without a SKILL.md path", () => {
     const event: AgentEvent = {
       type: "tool_start",
       id: "tc-3",
       name: "Skill",
       input: { title: "Skill: magento-triage-fulfillment" },
     };
-    expect(detectSkillUse(event)).toEqual({
-      name: "magento-triage-fulfillment",
-      source: "hermes",
-    });
-  });
-
-  it("reads a Hermes skill view title from a Magento run", () => {
-    const event: AgentEvent = {
-      type: "tool_start",
-      id: "tc-live",
-      name: "read",
-      input: {
-        title: "skill view (magento-investigate-refunds)",
-        locations: [],
-      },
-    };
-    expect(detectSkillUse(event)).toEqual({
-      name: "magento-investigate-refunds",
-      source: "hermes",
-    });
+    expect(detectSkillUse(event)).toBeNull();
   });
 
   it("ignores other tool starts", () => {

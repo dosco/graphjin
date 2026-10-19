@@ -296,9 +296,7 @@ function runtimeBudgets(loaded: LoadedEval): EvalManifest["runtimeBudgets"] {
         Number.isSafeInteger(variant.settings?.backend_retry_attempts) &&
         Number(variant.settings?.backend_retry_attempts) >= 0
           ? Number(variant.settings?.backend_retry_attempts)
-          : variant.backend === "hermes"
-            ? 1
-            : 0,
+          : 0,
       ]),
     ),
     concurrency: loaded.config.defaults.concurrency,

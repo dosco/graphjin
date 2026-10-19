@@ -66,7 +66,7 @@ func openAIClient(server *httptest.Server) ax.AIClient {
 	return ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture", "retry", ax.Object("max_retries", 0)))
 }
 
-func TestSpecLimitsMatchHermes(t *testing.T) {
+func TestSpecLimitDefaults(t *testing.T) {
 	base := Spec{Version: 1, RunID: "r", InputID: "i", Prompt: "p"}
 	if !base.valid() || base.ActorSteps() != 25 || base.ChildSteps() != 50 || base.Timeout() != 9*time.Minute ||
 		base.OperationLimit() != 0 || base.ModelCallLimit() != 0 {
@@ -179,7 +179,7 @@ func TestBudgetExitWritesOneSummary(t *testing.T) {
 	}
 }
 
-func TestLargeToolResultsFollowHermesSizes(t *testing.T) {
+func TestLargeToolResultsFollowResultSizes(t *testing.T) {
 	model := &scripted{replies: []string{
 		`{"javascriptCode":"final('Read',{})"}`,
 		`{"javascriptCode":"const big=lookup_data({}); if (!big.reference || big.result_preview.length !== 1500) throw new Error('large result was inline'); final('Done',{ok:true});"}`,

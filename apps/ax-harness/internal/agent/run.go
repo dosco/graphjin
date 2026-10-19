@@ -36,15 +36,15 @@ type Spec struct {
 	MaxModelTokens  int64  `json:"max_model_tokens,omitempty"`
 	MaxCostMicros   int64  `json:"max_cost_micros,omitempty"` // Host ceiling at Ax catalog rates.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-	// Mirror Hermes model.context_length and model.max_tokens.
+	// The model's context window and per-call output cap, from the host.
 	ContextWindowTokens int64 `json:"context_window_tokens,omitempty"`
 	MaxOutputTokens     int64 `json:"max_output_tokens,omitempty"`
 	// Debug emits actor.code events, which carry generated code.
 	Debug bool `json:"debug,omitempty"`
 }
 
-// MaxInputBytes is a sanity limit on stdin. As in Hermes, only the model
-// context window bounds the prompt.
+// MaxInputBytes is a sanity limit on stdin. Only the model context window
+// bounds the prompt.
 const MaxInputBytes = 16 << 20
 
 func orDefault(value, fallback int) int {
@@ -54,7 +54,7 @@ func orDefault(value, fallback int) int {
 	return value
 }
 
-// OperationLimit and ModelCallLimit return 0 for no cap, as in Hermes.
+// OperationLimit and ModelCallLimit return 0 for no cap.
 func (s Spec) OperationLimit() int { return s.MaxOperations }
 func (s Spec) ModelCallLimit() int { return s.MaxModelCalls }
 func (s Spec) ActorSteps() int     { return orDefault(s.MaxActorSteps, 25) }
@@ -80,7 +80,7 @@ func (s Spec) valid() bool {
 		(s.SkillRerank == "" || s.SkillRerank == "off")
 }
 
-// promptTooLarge estimates prompt tokens at 4 bytes each, like Hermes' preflight.
+// promptTooLarge estimates prompt tokens at 4 bytes each before the first call.
 func (s Spec) promptTooLarge() bool {
 	return s.ContextWindowTokens > 0 && int64(len(s.Instructions)+len(s.Prompt))/4+s.MaxOutputTokens > s.ContextWindowTokens
 }
@@ -141,7 +141,7 @@ type Event struct {
 // maxStartedInput bounds the tool input copied onto a start event.
 const maxStartedInput = 16384
 
-// startedInput keeps the input object, as Hermes reports it. Only an input
+// startedInput keeps the input object as the tool received it. Only an input
 // too large for telemetry becomes a shortened string.
 func startedInput(instruction string) json.RawMessage {
 	if len(instruction) <= maxStartedInput && json.Valid([]byte(instruction)) {

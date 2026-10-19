@@ -72,7 +72,7 @@ body`);
   });
 });
 
-describe("parseSkillFrontmatter — prerequisites (Hermes/community extension)", () => {
+describe("parseSkillFrontmatter — prerequisites (community extension)", () => {
   it("parses inline-list commands", () => {
     const out = parseSkillFrontmatter(`---
 name: airtable
@@ -124,12 +124,12 @@ body`);
 });
 
 describe("parseSkillFrontmatter — agent skill compatibility", () => {
-  it("tolerates Hermes top-level fields (version, author, platforms)", () => {
+  it("tolerates community top-level fields (version, author, platforms)", () => {
     const out = parseSkillFrontmatter(`---
 name: watchers
 description: Poll RSS feeds
 version: 1.0.0
-author: Hermes Agent
+author: Example Author
 license: MIT
 platforms: [linux, macos]
 ---
@@ -142,12 +142,12 @@ body`);
     expect(out.unparsed).toContain("platforms");
   });
 
-  it("captures metadata.hermes.* fields under metadata", () => {
+  it("captures nested metadata fields under metadata", () => {
     const out = parseSkillFrontmatter(`---
 name: airtable
 description: x
 metadata:
-  hermes:
+  openneko:
     tags: [Airtable, API]
     homepage: https://airtable.com/developers
 ---
@@ -156,7 +156,7 @@ body`);
     // Nested keys flatten with dot notation in this minimal parser.
     expect(Object.keys(out.metadata ?? {})).toEqual(
       expect.arrayContaining([
-        expect.stringContaining("hermes"),
+        expect.stringContaining("openneko"),
       ]),
     );
   });

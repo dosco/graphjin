@@ -37,7 +37,6 @@ import {
   type MetricAgentDiagnostics,
   type MetricAgentResult,
   type QuestionClassificationDiagnostics,
-  type AgentBackendId,
 } from "@neko/llm";
 import { maybeEncryptSecret } from "@neko/llm/secrets";
 import pg from "pg";
@@ -130,8 +129,6 @@ function costMeasurements(input: {
 const HEADLINE_PATTERN = /^([+-]?\d+(?:\.\d+)?)\s*(?:(thousand|million|billion)\b|([kmb])\b)?\s*(?:[%x]|[a-z][a-z\s]*)?$/iu;
 const RUNTIME_ENVIRONMENT_NAMES = [
   "XDG_CONFIG_HOME",
-  "HERMES_HOME",
-  "OPENNEKO_AGENT_HERMES_HOME",
   "OPENNEKO_AGENT_MODEL_PROVIDER",
   "OPENNEKO_AGENT_MODEL_HOST",
   "OPENNEKO_AGENT_MODEL_KEY_ENV",
@@ -604,7 +601,6 @@ export function createAdventureWorksMetricDriver(context: {
         jobId,
         graphjinPath:
           slot.variant.data_path === "graphjin-agent" ? "agent" : "direct",
-        backendId: slot.variant.backend as AgentBackendId,
         onDiagnostics(value) {
           diagnostics = value;
         },

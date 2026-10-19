@@ -42,7 +42,6 @@ import {
   buildOperatorProfileSection,
   getOperatorProfile,
   getWorkRunActor,
-  getSoloSandboxUser,
 } from "./personas";
 import { buildWorkPrompt } from "./prompt";
 import { getThreadBot } from "./bot";
@@ -105,7 +104,7 @@ export type RunChatTurnOptions = {
    * Plugin action kinds to surface to the agent as MCP tools, one
    * per kind. The worker passes its plugin registry snapshot here;
    * tests pass an empty array to keep the agent's surface stable.
-   * Mounted for Hermes through the sandbox MCP bridge.
+   * Mounted for the agent through the sandbox MCP bridge.
    */
   pluginActions?: readonly PluginActionDescriptor[];
   /** Installed pack actions. Kept separate from the plugin registry. */
@@ -130,11 +129,6 @@ export type RunChatTurnOptions = {
 // Tests can substitute any of these without touching the call site. Production
 // callers pass nothing and get the real implementations.
 export type RunChatTurnDeps = {
-  /** Trusted authorization service hook. Without it, only solo admins reuse sandboxes.
-   * Revision must cover sources, packs/plugins, memories and library grants. */
-  sandboxAuthorizationRevision?: (input: {
-    orgId: string; threadId: string; userId: string; role: string | null;
-  }) => Promise<string | null>;
   resolveAgentBackend: typeof defaultResolveAgentBackend;
   ensureWorkWorkspace: typeof defaultEnsureWorkWorkspace;
   formatWorkMemoryPromptContext: typeof defaultFormatWorkMemoryPromptContext;
@@ -184,12 +178,8 @@ function needsInputText(
   return lines.join("\n").trim();
 }
 
-function backendLabel(id: string): string {
-  return id === "ax" ? "Ax" : "Hermes";
-}
-
 /**
- * Strip any unexecuted ACP/hermes tool-call left in display text — e.g.
+ * Strip any unexecuted tool-call text left in display text — e.g.
  * `call:default_api:read_file{limit:100,path:analyze.py}`. A turn cut short
  * mid-step (step budget, loop) can leave one dangling in finalText; it must
  * never reach a user on any channel. Matches `call:<ns>:<tool>{…}` (closed or
@@ -403,7 +393,7 @@ async function runChatTurnTraced(
     }
     await wrappedEmit({
       type: "status",
-      message: `Starting ${backendLabel(backend.id)}…`,
+      message: "Starting Ax…",
     });
 
     // Rendering is a per-channel capability: a channel that can render the
@@ -477,7 +467,7 @@ async function runChatTurnTraced(
         filterHeldActions(runActor, opts.pluginActions ?? []),
         filterHeldActions(runActor, opts.packActions ?? []),
       ]));
-    const [memoryContext, installedSkills, profile] = await Promise.all([
+    const [memoryContext, , profile] = await Promise.all([
       customerSurface
         ? startupPhase("context.memory", () => formatWorkMemoryPromptContext(
             {
@@ -492,17 +482,14 @@ async function runChatTurnTraced(
             { contextQuery: message, contextLimit: 5 },
           ))
         : Promise.resolve(""),
-      startupPhase("context.skills", () => listInstalledSkills(workspace.skillsRoot)).then(async (skills) => {
-        // Ax finds skills by meaning, so its index holds every installed skill;
-        // search filters to what the actor holds.
-        if (customerSurface && backend.id === "ax") {
+      // The agent finds skills by meaning, so its index holds every installed
+      // skill; search filters to what the actor holds.
+      customerSurface
+        ? startupPhase("context.skills", () => listInstalledSkills(workspace.skillsRoot)).then(async (skills) => {
           await startupPhase("context.skill_index", () => (deps.syncSkillIndex ?? syncSkillIndex)(orgId, skills))
             .catch((error) => console.warn("[work-run] skill index sync failed:", error instanceof Error ? error.message : error));
-        }
-        return customerSurface
-          ? skills.filter((skill) => !allowedSkills || allowedSkills.includes(skill.name))
-          : skills.filter((skill) => skill.name === "records");
-      }),
+        })
+        : Promise.resolve(),
       startupPhase("context.persona", () => getOperatorProfile(orgId, actor.userId)),
     ]);
     const operatorProfile = buildOperatorProfileSection(profile);
@@ -534,7 +521,6 @@ async function runChatTurnTraced(
       priorSummary,
       memoryContext,
       operatorProfile,
-      installedSkills,
       wantsCards,
       includeUxMetadata: opts.includeUxMetadata,
       supportsCardTool,
@@ -564,16 +550,7 @@ async function runChatTurnTraced(
       ...(backend.model ? { model: backend.model } : {}),
       inputBytes: Buffer.byteLength(`${prompt}\n\n${message}`, "utf8"),
     });
-    const authorizationRevision = actor.userId && deps.sandboxAuthorizationRevision
-      ? await startupPhase("identity.authorization_revision", () => deps.sandboxAuthorizationRevision!({ orgId, threadId, userId: actor.userId!, role: actor.role }))
-      : null;
-    const sandboxUser = deps.sandboxAuthorizationRevision
-      ? actor.userId && authorizationRevision
-        ? { principalId: actor.userId, authorizationRevision }
-        : null
-      : await startupPhase("identity.sandbox", () => getSoloSandboxUser(orgId, actor));
     const coreResult = await runCore({
-      ...(sandboxUser ? { sandboxUser } : {}),
       ...(allowedSkills && customerSurface ? { allowedSkills } : {}),
       ...(allowedLibrary ? { allowedLibrary } : {}),
       backend,
@@ -679,13 +656,13 @@ async function runChatTurnTraced(
       }
     }
 
-    // Hermes /work emits plugin action calls as `neko_action_request`
-    // fences (no MCP tool registry to use). Parse them out and route
+    // The agent may emit plugin action calls as `neko_action_request`
+    // fences instead of MCP tool calls. Parse them out and route
     // each through the same policy + DB + emit path the MCP tools
     // use, so the agent's tool surface is identical across backends
     // from the user's perspective.
     // Side-effect fences are parsed from the RAW agent output, not finalText:
-    // Hermes hides builder fences from finalText (it collapses to the a2ui
+    // the backend hides builder fences from finalText (it collapses to the a2ui
     // markdown) and from the message stream, so only rawText still carries
     // them. This falls back to finalText when rawText is absent. Each fence type is parsed independently
     // off the same source — they're distinct delimited blocks.
@@ -848,7 +825,7 @@ async function runChatTurnTraced(
     }
 
     // Pull any neko_memory fences out of the raw agent response and persist
-    // them. This is harmless when Hermes used the MCP save tool.
+    // them. This is harmless when the agent used the MCP save tool.
     const { ops: memoryOps } = extractMemoryFences(fenceSource);
     for (const op of memoryOps) {
       try {
@@ -894,11 +871,10 @@ async function runChatTurnTraced(
       const streamed = stripDanglingToolCalls(stored
         .map(event => event.type === "message" && event.role === "assistant" ? event.content : "")
         .join(""));
-      const interim = stored.flatMap(event => event.type === "interim" ? [stripDanglingToolCalls(event.content)] : []);
       persistedText = structuredTurnSummary(
         vitals.payload,
         [...surfaceMessages, ...stored.flatMap(event => event.type === "surface" ? event.messages : [])],
-        [...interim, streamed],
+        [streamed],
       );
     }
     if (persistedText) {

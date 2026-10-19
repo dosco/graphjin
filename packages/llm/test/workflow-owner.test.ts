@@ -5,19 +5,19 @@ vi.mock("../src/work/bot", async original => ({ ...await original<typeof import(
 vi.mock("../src/workflows/store", async original => ({ ...await original<typeof import("../src/workflows/store")>(), getWorkflow: mocks.workflow, createWorkflowRun: vi.fn(async () => ({ id: "workflow-run" })) }));
 vi.mock("../src/work/store", async original => ({ ...await original<typeof import("../src/work/store")>(), createWorkThread: vi.fn(async () => ({ id: "thread" })), createWorkRun: mocks.createRun }));
 import { prepareWorkflowRun } from "../src/workflows/run-workflow-turn";
-const backend = { id: "hermes" } as Awaited<ReturnType<NonNullable<Parameters<typeof prepareWorkflowRun>[1]>["resolveAgentBackend"]>>;
+const backend = { id: "ax" } as Awaited<ReturnType<NonNullable<Parameters<typeof prepareWorkflowRun>[1]>["resolveAgentBackend"]>>;
 beforeEach(() => { vi.clearAllMocks(); mocks.groups.mockResolvedValue({ administrator: false }); mocks.botThread.mockResolvedValue(null); mocks.createRun.mockResolvedValue({ id: "run" }); mocks.workflow.mockResolvedValue({ id: "wf", orgId: "org", enabled: true, ownerUserId: "alice", name: "Personal" }); });
 it("runs as the active owner, rejects a disabled owner, and leaves ownerless runs as service", async () => {
   const input = { orgId: "org", workflowId: "wf", triggerKind: "schedule" as const };
   mocks.query.mockResolvedValue({ rows: [{ role: "member" }] });
   await prepareWorkflowRun(input, { resolveAgentBackend: async () => backend });
-  expect(mocks.createRun).toHaveBeenLastCalledWith("org", "thread", "hermes", { userId: "alice", role: "member" }, { source: "trigger", workflowId: "wf" });
+  expect(mocks.createRun).toHaveBeenLastCalledWith("org", "thread", "ax", { userId: "alice", role: "member" }, { source: "trigger", workflowId: "wf" });
   mocks.query.mockResolvedValue({ rows: [] }); mocks.createRun.mockClear();
   await expect(prepareWorkflowRun(input, { resolveAgentBackend: async () => backend })).rejects.toThrow("no longer active");
   expect(mocks.createRun).not.toHaveBeenCalled();
   mocks.workflow.mockResolvedValue({ id: "wf", enabled: true, ownerUserId: "", name: "Shared" });
   await prepareWorkflowRun(input, { resolveAgentBackend: async () => backend });
-  expect(mocks.createRun).toHaveBeenLastCalledWith("org", "thread", "hermes", { userId: null, role: "service" }, { source: "trigger", workflowId: "wf" });
+  expect(mocks.createRun).toHaveBeenLastCalledWith("org", "thread", "ax", { userId: null, role: "service" }, { source: "trigger", workflowId: "wf" });
 });
 it("runs a bot's routine in the bot's chat", async () => {
   mocks.query.mockResolvedValue({ rows: [{ id: "alice" }] });
@@ -26,5 +26,5 @@ it("runs a bot's routine in the bot's chat", async () => {
   const prepared = await prepareWorkflowRun({ orgId: "org", workflowId: "wf", triggerKind: "schedule" as const }, { resolveAgentBackend: async () => backend });
   expect(mocks.botThread).toHaveBeenCalledWith({ orgId: "org", createdByThreadId: "bot-thread", ownerUserId: "alice" });
   expect(prepared.threadId).toBe("bot-thread");
-  expect(mocks.createRun).toHaveBeenLastCalledWith("org", "bot-thread", "hermes", { userId: "alice", role: "member" }, { source: "trigger", workflowId: "wf" });
+  expect(mocks.createRun).toHaveBeenLastCalledWith("org", "bot-thread", "ax", { userId: "alice", role: "member" }, { source: "trigger", workflowId: "wf" });
 });

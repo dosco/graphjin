@@ -30,10 +30,10 @@ describeIfDb("ADM4 audit viewer", () => {
     await createTestOrg(orgId);
     const thread = await createWorkThread(orgId, "t", "web");
     adminRunId = (
-      await createWorkRun(orgId, thread.id, "hermes", { userId: null, role: "admin" })
+      await createWorkRun(orgId, thread.id, "ax", { userId: null, role: "admin" })
     ).id;
     memberRunId = (
-      await createWorkRun(orgId, thread.id, "hermes", { userId: null, role: "member" })
+      await createWorkRun(orgId, thread.id, "ax", { userId: null, role: "member" })
     ).id;
     await createActionRequest({
       orgId,
@@ -77,7 +77,7 @@ describeIfDb("ADM4 audit viewer", () => {
     const request = result.requests?.find((r) => r.kind === "user_admin");
     expect(request).toMatchObject({
       actorRole: "admin",
-      actorBackend: "hermes",
+      actorBackend: "ax",
       status: "pending_approval",
     });
     expect(result.alerts?.some((a) => a.kind === "memory_write_volume")).toBe(true);

@@ -1,7 +1,7 @@
 /**
  * Per-org agent backend resolution.
  *
- * The agent row holds the org-wide backend choice (Hermes or Ax) and the
+ * Ax Harness is the only agent backend. The agent row holds the org-wide
  * concurrency settings. Provider credentials are provisioned independently.
  * The non-secret primary provider/model selection is retained so callers can
  * attest it against the identity the live backend reports.
@@ -11,16 +11,12 @@ import { and, db, eq, llm_provider_config } from "@neko/db";
 import {
   AGENT_DEFAULT_GLOBAL_CAP,
   type AgentBackend,
-  type AgentBackendId,
-  type AgentModelIdentity,
-  DEFAULT_AGENT_BACKEND,
-  isAgentBackendId,
 } from "./agent-backend";
 import type { AxBackendConfig } from "./agent-backends/ax";
 import { isReasoningEffort } from "./agent-limits";
 import { makeAgentBackend } from "./agent-runtime";
 import { isPrimaryProvider } from "./config";
-import { resolveAxModelRoute, resolveHermesProviderRuntime } from "./provider-runtime";
+import { resolveAxModelRoute } from "./provider-runtime";
 
 type StoredRow = {
   provider: string;
@@ -50,14 +46,6 @@ async function loadRow(orgId: string, scope: string): Promise<StoredRow | null> 
   } catch {
     return null;
   }
-}
-
-export async function resolveAgentBackendId(orgId: string): Promise<AgentBackendId> {
-  const row = await loadRow(orgId, "agent");
-  const backend = (row?.config ?? {}).backend;
-  if (typeof backend === "string" && isAgentBackendId(backend)) return backend;
-  if (DEFAULT_AGENT_BACKEND === "ax" && !axBackendConfig(await loadRow(orgId, "primary"))) return "hermes";
-  return DEFAULT_AGENT_BACKEND;
 }
 
 export type AgentConcurrency = {
@@ -92,21 +80,6 @@ export async function resolveAgentConcurrency(orgId: string): Promise<AgentConcu
   };
 }
 
-function configuredHermesModelIdentity(
-  row: StoredRow | null,
-): AgentModelIdentity | undefined {
-  const model = row?.model?.trim();
-  if (!row?.enabled || !model || !isPrimaryProvider(row.provider)) {
-    return undefined;
-  }
-  const runtime = resolveHermesProviderRuntime({
-    provider: row.provider,
-    model,
-    config: row.config,
-  });
-  return { provider: runtime.provider, model: runtime.model };
-}
-
 function positiveInt(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
@@ -125,30 +98,12 @@ export function axBackendConfig(row: StoredRow | null): AxBackendConfig | undefi
   };
 }
 
-/** Refuses the Ax switch when the primary provider has no Ax route. */
-export async function assertAxSupported(orgId: string): Promise<void> {
-  const primary = await loadRow(orgId, "primary");
-  if (!axBackendConfig(primary)) {
-    throw new Error("Configure and enable a primary model provider before switching to Ax.");
-  }
-}
-
 /**
- * Resolve the org's backend and its non-secret configured model identity. The
- * real provider key remains independently provisioned through OpenShell and is
- * never returned with the backend.
+ * Resolve the org's agent backend with its non-secret model route. The real
+ * provider key remains independently provisioned through OpenShell and is
+ * never returned with the backend. `model` overrides the primary model.
  */
-/** `model` overrides the primary model for Ax runs; Hermes reads its model from its provisioned config. */
-export async function resolveAgentBackend(orgId: string, backendId?: AgentBackendId, model?: string): Promise<AgentBackend> {
-  const [id, primary] = await Promise.all([
-    backendId ?? resolveAgentBackendId(orgId),
-    loadRow(orgId, "primary"),
-  ]);
-  if (id === "ax") return makeAgentBackend({ id, ax: axBackendConfig(model && primary ? { ...primary, model } : primary) });
-  return makeAgentBackend({
-    id,
-    ...(primary
-      ? { configuredIdentity: configuredHermesModelIdentity(primary) }
-      : {}),
-  });
+export async function resolveAgentBackend(orgId: string, model?: string): Promise<AgentBackend> {
+  const primary = await loadRow(orgId, "primary");
+  return makeAgentBackend({ id: "ax", ax: axBackendConfig(model && primary ? { ...primary, model } : primary) });
 }

@@ -62,10 +62,10 @@ const FAKE_WORKSPACE = {
   binRoot: "/tmp/wrf/runs/r1/bin",
 };
 
-const HERMES_CAPABILITIES = {
+const AX_CAPABILITIES = {
   mcpTools: true,
   sessionResume: false,
-  nativeDelegation: "hermes-delegate-task",
+  nativeDelegation: "ax-worker",
 } as const;
 
 async function insertThread(orgId: string) {
@@ -79,7 +79,7 @@ async function insertThread(orgId: string) {
 async function insertRun(orgId: string, threadId: string) {
   const ins = await db()
     .insert(work_run)
-    .values({ org_id: orgId, thread_id: threadId, backend: "hermes", status: "queued" })
+    .values({ org_id: orgId, thread_id: threadId, backend: "ax", status: "queued" })
     .returning();
   return ins[0]!;
 }
@@ -91,8 +91,8 @@ describeIfDb("runChatTurn — answers without final text", () => {
   function makeDeps(): Partial<RunChatTurnDeps> {
     return {
       resolveAgentBackend: vi.fn(async () => ({
-        id: "hermes" as const,
-        capabilities: HERMES_CAPABILITIES,
+        id: "ax" as const,
+        capabilities: AX_CAPABILITIES,
         run: mockBackendRun,
       })),
       ensureWorkWorkspace: vi.fn(async () => FAKE_WORKSPACE),
@@ -124,7 +124,7 @@ describeIfDb("runChatTurn — answers without final text", () => {
       .where(and(eq(work_message.run_id, runId), eq(work_message.role, "assistant")));
   }
 
-  it("saves cards posted through the broker and interim text for the next turn", async () => {
+  it("saves cards posted through the broker and streamed text for the next turn", async () => {
     const thread = await insertThread(orgId);
     const run = await insertRun(orgId, thread.id);
     mockBackendRun.mockImplementation(async () => {
@@ -142,7 +142,7 @@ describeIfDb("runChatTurn — answers without final text", () => {
           },
         }],
       });
-      await event({ type: "interim", id: "i1", content: "That is confirmed above.", source: "hermes_interim_assistant" });
+      await event({ type: "message", role: "assistant", content: "That is confirmed above." });
       return { finalText: "", status: "completed", backendState: {} };
     });
 

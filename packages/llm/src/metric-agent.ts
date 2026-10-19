@@ -4,13 +4,12 @@ import { errorCodeOf, observeSafely, type HarnessObserver } from "@neko/telemetr
 import {
   shellToolName,
   type AgentBackend,
-  type AgentBackendId,
   type AgentEvent,
   type AgentRunResult,
   type AgentTokenUsage,
 } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
-import { parseJsonFromOutput } from "./agent-backends/hermes";
+import { parseJsonFromOutput } from "./agent-backends/output";
 import { runValidatedAgentTurn } from "./agent-validate-loop";
 import {
   buildDiscoveryPathwaysSection,
@@ -65,8 +64,6 @@ export type MetricAgentInput = {
   graphjinPath?: GraphjinDataPath;
   /** Host-only diagnostics hook; never serialized into an agent sandbox. */
   onDiagnostics?: (diagnostics: MetricAgentDiagnostics) => void;
-  /** Host-only backend choice; the org's setting applies when absent. */
-  backendId?: AgentBackendId;
   /** Host-only Ax model override, for evals. */
   model?: string;
   /** Host-only view of every agent event, for tracing. */
@@ -162,7 +159,7 @@ async function runMetricAgentTraced(
   ));
   const knowledge = await loadMetricKnowledge(input, knowledgeWorkspace.knowledgeRoot);
 
-  const backend = await startupPhase("config.backend", async () => resolveAgentBackend(input.orgId, input.backendId, input.model));
+  const backend = await startupPhase("config.backend", async () => resolveAgentBackend(input.orgId, input.model));
   const debug = input.debug === true;
   const isolated = await startupPhase("workspace.isolate", async () => ensureIsolatedJobWorkspace(
     `metric-${input.jobId ?? input.slug}`,

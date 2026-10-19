@@ -1,7 +1,7 @@
 import { ax } from "@ax-llm/ax";
 import { buildLlm } from "../llm";
 
-// Inline-transcript backends (Hermes) carry the whole thread in the prompt, so a
+// Inline-transcript backends carry the whole thread in the prompt, so a
 // long-running channel/DM thread grows unbounded. Past COMPACT_AFTER messages we
 // fold everything older than the last KEEP_LAST into a rolling summary and keep
 // the recent tail verbatim — automatic transcript compaction, message-count

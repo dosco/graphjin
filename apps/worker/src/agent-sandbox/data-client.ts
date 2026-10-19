@@ -21,7 +21,7 @@ __all__ = ["NekoDataError", "call_tool", "query"]
 _ids = itertools.count(1)
 
 # Written by the run at install time. Tools that scrub the environment, such
-# as Hermes execute_code, still reach the run's socket through this default.
+# as sandboxed code runners, still reach the run's socket through this default.
 _DEFAULT_SOCKET = __NEKO_DATA_SOCKET__
 
 

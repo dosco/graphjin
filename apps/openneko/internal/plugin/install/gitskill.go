@@ -21,8 +21,8 @@ import (
 //   - https://codeberg.org/owner/repo[#sub/path]
 //
 // The fragment after `#` is an optional sub-path inside the repo —
-// useful when a single repo carries many skills (e.g. Hermes ships
-// dozens under `skills/`). The skill root (the directory containing
+// useful when a single repo carries many skills (e.g. a catalog that
+// ships dozens under `skills/`). The skill root (the directory containing
 // SKILL.md) must live at that sub-path; the loader doesn't search.
 type GitSkillOptions struct {
 	Spec             string
@@ -93,7 +93,7 @@ func RunGitSkill(ctx context.Context, opts GitSkillOptions) (*GitSkillResult, er
 		if subPath != "" {
 			// Use the last segment of the sub-path; far more
 			// recognizable than the repo name for skills inside a
-			// monorepo like Hermes.
+			// multi-skill monorepo.
 			parts := strings.Split(strings.Trim(subPath, "/"), "/")
 			if len(parts) > 0 && parts[len(parts)-1] != "" {
 				skillName = parts[len(parts)-1]

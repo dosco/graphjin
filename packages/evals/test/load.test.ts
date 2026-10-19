@@ -263,7 +263,7 @@ defaults:
   max_attempts: 1
 variants:
   - id: deterministic
-    backend: hermes
+    backend: ax
     outer_model: { provider: deterministic, model: no-model-calls }
     data_path: none
 artifacts:

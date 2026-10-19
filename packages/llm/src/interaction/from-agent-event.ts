@@ -58,8 +58,6 @@ const mapOne = (event: AgentEvent, gen: IdGen): InteractionEvent[] => {
   switch (event.type) {
     case "message":
       return event.role === "assistant" ? [{ kind: "converse", id: gen(), role: "assistant", text: event.content }] : [];
-    case "interim":
-      return [{ kind: "converse", id: event.id, role: "assistant", text: event.content }];
     case "tool_start":
       return [{ kind: "progress", id: event.id, label: event.name, phase: "start" }];
     case "tool_end":

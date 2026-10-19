@@ -161,8 +161,6 @@ const SCORER = {
 
 const RUNTIME_ENVIRONMENT_NAMES = [
   "XDG_CONFIG_HOME",
-  "HERMES_HOME",
-  "OPENNEKO_AGENT_HERMES_HOME",
   "OPENNEKO_AGENT_MODEL_PROVIDER",
   "OPENNEKO_AGENT_MODEL_HOST",
   "OPENNEKO_AGENT_MODEL_KEY_ENV",
@@ -1438,7 +1436,7 @@ export function backendAgentFailureType(
   }
   return error
     ?.toLocaleLowerCase("en-US")
-    .includes("response truncated due to output length limit")
+    .includes("model_output_truncated")
     ? "agent_response_truncated"
     : `agent_${status}`;
 }
@@ -2473,7 +2471,7 @@ export function createOpenNekoBackendDriver(context: {
       };
     }
 
-    if (variant.backend !== "hermes" && variant.backend !== "ax") {
+    if (variant.backend !== "ax") {
       throw new EvalEnvironmentError(
         `no runtime adapter is installed for backend ${variant.backend}`,
         "backend_adapter_missing",
@@ -2497,14 +2495,13 @@ export function createOpenNekoBackendDriver(context: {
     });
     await seedProvider(fixture.orgId, {
       scope: "agent",
-      provider: variant.backend,
+      provider: "ax",
       enabled: true,
-      config: { backend: variant.backend },
+      config: {},
     });
     evalProviderNames.add(gatewayProviderName(fixture.orgId));
     const launchConfig = await provisionHostConfig(fixture.orgId, {
       requireOpenShellSync: true,
-      requireHermesSync: variant.backend === "hermes",
     });
     const broker = await ensureAgentBroker();
     if (!broker) {
@@ -2594,7 +2591,6 @@ export function createOpenNekoBackendDriver(context: {
       for (const variant of loaded.config.variants) {
         if (
           !variant.backend.startsWith("scripted-") &&
-          variant.backend !== "hermes" &&
           variant.backend !== "ax"
         ) {
           throw new EvalEnvironmentError(

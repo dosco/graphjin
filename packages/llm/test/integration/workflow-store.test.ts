@@ -272,7 +272,7 @@ describeIfDb("workflow store", () => {
         steps: [{ id: "s1", description: "x" }],
       });
       const thread = await createWorkThread(orgId, workflow.name);
-      const workRun = await createWorkRun(orgId, thread.id, "hermes");
+      const workRun = await createWorkRun(orgId, thread.id, "ax");
 
       const wfRun = await createWorkflowRun({
         orgId,
@@ -302,7 +302,7 @@ describeIfDb("workflow store", () => {
         steps: [{ id: "s1", description: "x" }],
       });
       const thread = await createWorkThread(orgId, workflow.name);
-      const workRun = await createWorkRun(orgId, thread.id, "hermes");
+      const workRun = await createWorkRun(orgId, thread.id, "ax");
       const wfRun = await createWorkflowRun({
         orgId,
         workflowId: workflow.id,

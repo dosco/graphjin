@@ -136,7 +136,7 @@ describeIfDb("reconcileStaleRuns — queued runs with a dead launcher", () => {
         org_id: orgId,
         thread_id: thread.id,
         status: args.status,
-        backend: "hermes",
+        backend: "ax",
         created_at: args.createdAt,
         updated_at: args.createdAt,
       })
@@ -407,7 +407,7 @@ describeIfDb("reconcileStaleRuns", () => {
       .values({
         org_id: orgId,
         thread_id: thread!.id,
-        backend: "hermes",
+        backend: "ax",
         status: "running",
         created_at: updatedAt,
         updated_at: updatedAt,

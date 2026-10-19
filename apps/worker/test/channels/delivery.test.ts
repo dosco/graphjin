@@ -47,7 +47,7 @@ vi.mock("@neko/db", () => ({
   processing_job: { id: {} },
 }));
 vi.mock("../../src/channels/audience", () => ({ audienceReceivesOutput: h.audience }));
-vi.mock("@neko/llm", () => ({ resolveAgentBackend: vi.fn(async () => ({ id: "hermes" })) }));
+vi.mock("@neko/llm", () => ({ resolveAgentBackend: vi.fn(async () => ({ id: "ax" })) }));
 vi.mock("@neko/llm/work", () => ({
   createWorkThread: vi.fn(async () => ({ id: "thread-1" })),
   getOrCreateChannelThread: vi.fn(async () => ({ id: "thread-1" })),

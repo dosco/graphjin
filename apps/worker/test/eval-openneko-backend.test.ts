@@ -165,11 +165,11 @@ describe("OpenNeko backend scorer", () => {
     )!;
   });
 
-  it("classifies the Hermes truncation sentinel as an explicit task failure", () => {
+  it("classifies a truncated model response as an explicit task failure", () => {
     expect(
       backendAgentFailureType(
         "failed",
-        "hermes response truncated due to output length limit (stopReason=max_tokens)",
+        "ax run failed: model_output_truncated",
       ),
     ).toBe("agent_response_truncated");
     expect(backendAgentFailureType("failed", "other error")).toBe(
@@ -1448,7 +1448,7 @@ describe("OpenNeko backend v2 corpus", () => {
 describe("OpenNeko backend tool-call budget", () => {
   const variant = (maxToolCalls: unknown): EvalVariant =>
     ({
-      id: "hermes-budget-test",
+      id: "ax-budget-test",
       settings: { max_tool_calls: maxToolCalls },
     }) as EvalVariant;
 
@@ -1543,7 +1543,7 @@ describe("OpenNeko backend GraphJin preflight budget", () => {
 describe("OpenNeko backend model budgets", () => {
   it("requires explicit output and context limits for v4 provider variants", () => {
     const variant = {
-      id: "hermes-budget-test",
+      id: "ax-budget-test",
       outer_model: {
         provider: "google-gemini",
         model: "gemini-3.6-flash",
@@ -1613,7 +1613,7 @@ describe("OpenNeko backend GraphJin API discovery", () => {
   });
 });
 
-describe("OpenNeko backend Hermes MCP event recognition", () => {
+describe("OpenNeko backend MCP event recognition", () => {
   it("recognizes the precise MCP event contract", () => {
     const events: AgentEvent[] = [
       {
@@ -1661,7 +1661,7 @@ describe("OpenNeko backend Hermes MCP event recognition", () => {
 
 describe("interrupted backend usage", () => {
   it("uses the last cumulative snapshot without summing it, and prefers final usage", async () => {
-    const loaded = await loadEval(resolve(import.meta.dirname, "../../../evals/configs/openneko-backend-hermes-gemini-3.8-flash-v4.yaml"));
+    const loaded = await loadEval(resolve(import.meta.dirname, "../../../evals/configs/openneko-backend-ax-gemini-3.8-flash-v4.yaml"));
     const variant = loaded.config.variants[0]!;
     const snapshot = (inputTokens: number): AgentEvent => ({
       type: "tool_start", id: "t", name: "terminal",

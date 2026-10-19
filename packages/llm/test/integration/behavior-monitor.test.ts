@@ -39,7 +39,7 @@ describeIfDb("SEC7 behavior monitor", () => {
   beforeAll(async () => {
     await createTestOrg(orgId);
     const thread = await createWorkThread(orgId, "t", "web");
-    const run = await createWorkRun(orgId, thread.id, "hermes", {
+    const run = await createWorkRun(orgId, thread.id, "ax", {
       userId: null,
       role: "service",
     });
@@ -64,7 +64,7 @@ describeIfDb("SEC7 behavior monitor", () => {
           run_id: runId,
           path: "/v1/memory/search",
           actor_role: "service",
-          backend: "hermes",
+          backend: "ax",
         })),
       );
     const first = await runBehaviorSweep(orgId, THRESHOLDS);

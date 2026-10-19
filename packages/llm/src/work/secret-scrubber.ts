@@ -98,7 +98,6 @@ export function scrubAgentEvent<T>(scrubber: Scrubber, event: T): T {
   const e = event as Record<string, unknown>;
   switch (e.type) {
     case "message":
-    case "interim":
       return {
         ...e,
         content: typeof e.content === "string" ? scrubber(e.content) : e.content,

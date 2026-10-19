@@ -43,7 +43,7 @@ import {
 } from "./tools";
 
 export interface RunAgentBackendInput {
-  /** Hermes backend. In the sandbox it is reconstructed from config. */
+  /** Agent backend. In the sandbox it is reconstructed from config. */
   backend: AgentBackend;
   prompt: string;
   userMessage: string;
@@ -52,9 +52,6 @@ export interface RunAgentBackendInput {
   runId: string;
   workspace: AgentWorkspace;
   backendState?: Record<string, unknown>;
-  /** Trusted host-only reuse boundary. Missing revision disables assigned reuse.
-   * Future RBAC must change this revision when ANY effective grant changes. */
-  sandboxUser?: { principalId: string; authorizationRevision: string };
   /** Skill names the run's actor holds. Undefined means every skill. */
   allowedSkills?: readonly string[];
   /** Team library files the actor holds. Undefined means the whole team library. */
@@ -90,7 +87,7 @@ export interface RunAgentBackendInput {
  * DB-bound prologue (load bundle/knowledge/memory/skills + build the prompt)
  * and epilogue (fence handling + persistence) stay on the host in runChatTurn.
  *
- * Hermes mounts these logical servers through the broker-backed stdio bridge.
+ * The agent mounts these logical servers through the broker-backed stdio bridge.
  */
 export async function runAgentBackend(
   input: RunAgentBackendInput,
@@ -195,7 +192,7 @@ export async function runAgentBackend(
         neko_skills: buildSkillBuilderServer(workspace.skillsRoot),
         neko_memory: buildWorkMemoryServer({ orgId, threadId, runId }, { controlPlane }),
         // Ax's discover() reaches the semantic skill index through this server.
-        ...(backend.id === "ax" ? { neko_guides: buildSkillSearchServer({ orgId, runId }, { controlPlane }) } : {}),
+        neko_guides: buildSkillSearchServer({ orgId, runId }, { controlPlane }),
         neko_library: buildLibraryServer({ orgId, threadId, runId }, { controlPlane }),
         neko_records: buildRecordsReadServer({ orgId, runId, controlPlane }),
         neko_workflow_builder: buildWorkflowBuilderServer({

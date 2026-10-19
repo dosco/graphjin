@@ -141,8 +141,8 @@ defaults:
   content_capture: metadata
   max_attempts: 2
 variants:
-  - id: ${options.variantId ?? "hermes-fixture"}
-    backend: ${options.backend ?? "hermes"}
+  - id: ${options.variantId ?? "ax-fixture"}
+    backend: ${options.backend ?? "ax"}
     outer_model: { provider: fixture, model: deterministic }
     data_path: none
 ${
@@ -681,7 +681,7 @@ describe("durable eval execution", () => {
       difficulty: "smoke",
       capabilityTags: ["fixture.read"],
       semantics: ["RUNTIME-RESUME"],
-      variantId: "hermes-fixture",
+      variantId: "ax-fixture",
       datasetId: "fixture",
       repetition: 1,
       phase: "initial",

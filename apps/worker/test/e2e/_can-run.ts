@@ -6,8 +6,8 @@
  * primary provider) combinations the host can exercise.
  *
  * Plan matrix:
- *   - Hermes × Google Gemini (GEMINI_API_KEY + `hermes` CLI)
- *   - Hermes × Anthropic     (ANTHROPIC_API_KEY + `hermes` CLI)
+ *   - Ax × Google Gemini (GEMINI_API_KEY + `openshell` CLI)
+ *   - Ax × Anthropic     (ANTHROPIC_API_KEY + `openshell` CLI)
  *
  * Both keys are independently optional — set one or both. The suite
  * blocks (skips entirely) only when GraphJin or `graphjin` CLI is missing,
@@ -16,7 +16,7 @@
 
 import { spawnSync } from "node:child_process";
 
-export type AgentBackendId = "hermes";
+export type AgentBackendId = "ax";
 export type PrimaryProviderId = "anthropic" | "google-gemini";
 
 export type RunPlan = {
@@ -37,26 +37,26 @@ type PlanSpec = {
   primaryProvider: PrimaryProviderId;
   primaryModel: string;
   envVar: "GEMINI_API_KEY" | "ANTHROPIC_API_KEY";
-  /** Extra binary the backend shells out to. `graphjin` is checked separately. */
-  binary: "hermes";
+  /** Extra binary the run needs. `graphjin` is checked separately. */
+  binary: "openshell";
 };
 
 const PLAN_SPECS: PlanSpec[] = [
   {
-    id: "hermes+gemini",
-    backend: "hermes",
+    id: "ax+gemini",
+    backend: "ax",
     primaryProvider: "google-gemini",
     primaryModel: "gemini-3.6-flash",
     envVar: "GEMINI_API_KEY",
-    binary: "hermes",
+    binary: "openshell",
   },
   {
-    id: "hermes+anthropic",
-    backend: "hermes",
+    id: "ax+anthropic",
+    backend: "ax",
     primaryProvider: "anthropic",
     primaryModel: "claude-opus-4-7",
     envVar: "ANTHROPIC_API_KEY",
-    binary: "hermes",
+    binary: "openshell",
   },
 ];
 
@@ -145,7 +145,7 @@ export async function detectRunnablePlans(): Promise<CanRunResult> {
 
   if (runnable.length === 0) {
     console.warn(
-      "[e2e] no runnable plans — set GEMINI_API_KEY and/or ANTHROPIC_API_KEY with Hermes installed",
+      "[e2e] no runnable plans — set GEMINI_API_KEY and/or ANTHROPIC_API_KEY with OpenShell installed",
     );
   }
 

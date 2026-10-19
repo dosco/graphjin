@@ -15,7 +15,7 @@ import {
   uniqueOrgId,
 } from "@neko/db/test-helpers";
 import { and, db, eq, llm_provider_config, pool } from "@neko/db";
-import { AGENT_BACKEND_OPTIONS, AGENT_DEFAULT_GLOBAL_CAP } from "@neko/llm";
+import { AGENT_DEFAULT_GLOBAL_CAP } from "@neko/llm";
 import { callRoute } from "../_helpers/route";
 
 const { mockGetOrgId, mockProvisionHostConfig } = vi.hoisted(() => ({
@@ -64,50 +64,35 @@ describeIfDb("/api/settings/agent", () => {
     await pool().end();
   });
 
-  it("GET exposes the backend choice and concurrency", async () => {
+  it("GET exposes the concurrency", async () => {
     const res = await callRoute(GET);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       agent: {
         source: "default",
-        backend: "hermes",
         globalCap: AGENT_DEFAULT_GLOBAL_CAP,
       },
-      options: AGENT_BACKEND_OPTIONS,
       defaults: { globalCap: AGENT_DEFAULT_GLOBAL_CAP },
     });
   });
 
-  it("PUT rejects a removed backend", async () => {
+  it("PUT rejects a backend choice", async () => {
     const res = await callRoute(PUT, {
       method: "PUT",
       body: { backend: "removed-runtime", globalCap: 30 },
     });
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({ error: "Unsupported agent backend: removed-runtime" });
+    expect(res.body).toEqual({ error: "Unsupported agent setting: backend" });
     expect(mockProvisionHostConfig).not.toHaveBeenCalled();
   });
 
-  it("PUT accepts Hermes", async () => {
-    const res = await callRoute(PUT, {
-      method: "PUT",
-      body: { backend: "hermes", globalCap: 12 },
-    });
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({
-      source: "org",
-      backend: "hermes",
-      globalCap: 12,
-    });
-  });
-
-  it("PUT persists the backend and globalCap", async () => {
+  it("PUT persists globalCap", async () => {
     const res = await callRoute(PUT, {
       method: "PUT",
       body: { globalCap: 30 },
     });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ source: "org", backend: "hermes", globalCap: 30 });
+    expect(res.body).toEqual({ source: "org", globalCap: 30 });
     expect(mockProvisionHostConfig).toHaveBeenCalledWith(orgId);
 
     const [row] = await db()
@@ -119,7 +104,7 @@ describeIfDb("/api/settings/agent", () => {
           eq(llm_provider_config.scope, "agent"),
         ),
       );
-    expect(row).toEqual({ provider: "hermes", config: { backend: "hermes", globalCap: 30 } });
+    expect(row).toEqual({ provider: "ax", config: { globalCap: 30 } });
   });
 
   it("PUT falls back for an invalid cap", async () => {
@@ -130,7 +115,6 @@ describeIfDb("/api/settings/agent", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       source: "org",
-      backend: "hermes",
       globalCap: AGENT_DEFAULT_GLOBAL_CAP,
     });
   });

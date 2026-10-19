@@ -20,7 +20,7 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
-// maxWebChars matches the Hermes web_extract stored-text ceiling. The agent
+// maxWebChars is the stored-text ceiling for one extracted page. The agent
 // result layer keeps up to 100,000 characters inline and saves the rest.
 const (
 	maxWebBody      = 10 << 20

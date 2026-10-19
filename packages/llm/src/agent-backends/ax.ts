@@ -251,7 +251,7 @@ export class AxBackend implements AgentBackend {
     let eventError: unknown;
     let shownText = false;
     const emit = (event: AgentEvent) => {
-      if ((event.type === "message" || event.type === "interim") && event.content) shownText = true;
+      if (event.type === "message" && event.content) shownText = true;
       if (!onEvent) return;
       queue = queue.then(() => onEvent(event)).catch((e) => {
         eventError ??= e;

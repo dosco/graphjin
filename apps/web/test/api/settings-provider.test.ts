@@ -125,7 +125,7 @@ describeIfDb("/api/settings/provider", () => {
     expect(mockProvisionHostConfig).not.toHaveBeenCalled();
   });
 
-  it("allows primary provider changes for the Hermes runtime", async () => {
+  it("allows primary provider changes for the agent runtime", async () => {
     const res = await callRoute(PUT, {
       method: "PUT",
       body: {

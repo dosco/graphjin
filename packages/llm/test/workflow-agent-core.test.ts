@@ -23,11 +23,11 @@ describe("runWorkflowAgentBackend", () => {
   it("threads workflow MCP bridge env needed by the in-box bridge", async () => {
     let captured: AgentRunOptions | undefined;
     const backend: AgentBackend = {
-      id: "hermes",
+      id: "ax",
       capabilities: {
         mcpTools: true,
         sessionResume: false,
-        nativeDelegation: "hermes-delegate-task",
+        nativeDelegation: "ax-worker",
       },
       async run(opts) {
         captured = opts;
@@ -74,17 +74,17 @@ describe("runWorkflowAgentBackend", () => {
 });
 
 describe("runWorkflowAgentBackend continuations", () => {
-  const timeoutError = "hermes turn exceeded its 900s budget and was terminated";
+  const timeoutError = "ax turn exceeded its 900s budget and was terminated (OPENNEKO_AGENT_TURN_TIMEOUT_MS overrides)";
 
   function scriptedBackend(outcomes: Array<"timeout" | "done">) {
     const prompts: string[] = [];
     const options: AgentRunOptions[] = [];
     const backend: AgentBackend = {
-      id: "hermes",
+      id: "ax",
       capabilities: {
         mcpTools: true,
         sessionResume: false,
-        nativeDelegation: "hermes-delegate-task",
+        nativeDelegation: "ax-worker",
       },
       async run(opts) {
         prompts.push(opts.prompt);

@@ -34,7 +34,6 @@ describe("agent sandbox runtime contract", () => {
 
     expect(runtime).toEqual({ mcpBridgePath: "/app/mcp-bridge.js" });
     expect(env).toEqual({
-      HERMES_DISABLE_LAZY_INSTALLS: "1",
       OPENNEKO_MCP_BRIDGE: "/app/mcp-bridge.js",
     });
   });

@@ -29,7 +29,7 @@ it("boots both standalone bundles with assets and no host or embedding dependenc
     // Deliberately omit inherited package/asset overrides and credentials.
     const options = { cwd: out, env: { PATH: process.env.PATH }, encoding: "utf8" as const };
     const preflight = JSON.parse(execFileSync(process.execPath, ["entry.js", "--preflight"], options));
-    expect(preflight).toMatchObject({ status: "ok", lazyInstallsDisabled: true,
+    expect(preflight).toMatchObject({ status: "ok",
       skillsRoot: join(out, "assets/builtin-skills"), mcpBridgePath: join(out, "mcp-bridge.js") });
     execFileSync(process.execPath, ["--input-type=module", "-e", "await import('./mcp-bridge.js')"], options);
     await rm(join(out, "assets"), { recursive: true });

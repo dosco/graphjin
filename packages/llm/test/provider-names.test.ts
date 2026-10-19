@@ -1,17 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeAxUsage } from "../src/agent-backends/ax";
-import { nekoProviderFromHermes } from "../src/provider-runtime";
 import catalog from "../src/spend/ax-model-catalog.json";
 import { estimateTokenCost, estimateTokenCostUsd, MODEL_PRICES_VERSION } from "../src/spend/model-prices";
-
-describe("provider names", () => {
-  it("maps Hermes provider names to the names Ax and OpenNeko use", () => {
-    expect(nekoProviderFromHermes("gemini")).toBe("google-gemini");
-    expect(nekoProviderFromHermes("openai-api")).toBe("openai");
-    expect(nekoProviderFromHermes("custom", { provider: "groq", model: "llama" })).toBe("groq");
-    expect(nekoProviderFromHermes("custom")).toBe("custom");
-  });
-});
 
 describe("Ax usage pricing", () => {
   const usage = {

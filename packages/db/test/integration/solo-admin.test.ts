@@ -11,7 +11,7 @@ it.skipIf(!reachable)("upgrades a userless installation once under concurrent re
     const [channelChat] = await db().insert(work_thread).values({ org_id: orgId, channel: "telegram", title: "Channel chat" }).returning();
     const [workflowChat] = await db().insert(work_thread).values({ org_id: orgId, channel: "web" }).returning();
     const [definition] = await db().insert(workflow_definition).values({ org_id: orgId, name: "Scheduled job" }).returning();
-    const [run] = await db().insert(work_run).values({ org_id: orgId, thread_id: workflowChat.id, backend: "hermes", actor_role: "service" }).returning();
+    const [run] = await db().insert(work_run).values({ org_id: orgId, thread_id: workflowChat.id, backend: "ax", actor_role: "service" }).returning();
     await db().insert(workflow_run).values({ org_id: orgId, workflow_id: definition.id, thread_id: workflowChat.id, work_run_id: run.id, trigger_kind: "cron" });
     const owners = await Promise.all(Array.from({ length: 8 }, () => getOrCreateSoloAdmin(orgId)));
     const owner = owners[0]!;

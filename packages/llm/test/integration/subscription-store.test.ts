@@ -108,7 +108,7 @@ describeIfDb("subscription + observation store", () => {
         steps: [{ id: "s1", description: "produce" }],
       });
       const thread = await createWorkThread(orgId, producer.name);
-      const workRun = await createWorkRun(orgId, thread.id, "hermes");
+      const workRun = await createWorkRun(orgId, thread.id, "ax");
       const wfRun = await createWorkflowRun({
         orgId,
         workflowId: producer.id,
@@ -163,7 +163,7 @@ describeIfDb("subscription + observation store", () => {
         steps: [{ id: "s1", description: "produce" }],
       });
       const thread = await createWorkThread(orgId, a.name);
-      const workRun = await createWorkRun(orgId, thread.id, "hermes");
+      const workRun = await createWorkRun(orgId, thread.id, "ax");
       const wfRun = await createWorkflowRun({
         orgId,
         workflowId: a.id,

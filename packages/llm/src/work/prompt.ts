@@ -7,7 +7,6 @@ import {
   buildDataAccessSection,
   buildMemorySection,
 } from "../prompts/sections";
-import type { InstalledSkill } from "./workspace";
 import type { PluginCatalog } from "./control-plane";
 import type { GraphjinDataPath } from "./graphjin-tool-policy";
 import {
@@ -299,21 +298,8 @@ Never invent a package name and never request credentials in chat.
 
 function buildNativeDelegationSection(supportedForRun: boolean, backend: AgentBackendId): string {
   if (!supportedForRun) return "";
-  if (backend === "ax") return AX_DELEGATION;
-  return `<delegation>
-You have Hermes native subagent delegation through \`delegate_task\`. Use it
-when a focused subtask would benefit from a fresh context, parallel work, or
-independent investigation. The parent agent decides whether to delegate and
-how to decompose the work; OpenNeko does not provide named subagent profiles.
-
-When delegating, pass all context the child needs in \`goal\` and \`context\`.
-Children do not know the parent conversation, prior tool calls, or unstated
-decisions. Choose \`toolsets\` per task (for example \`["file"]\` for read-only
-review, \`["terminal", "file"]\` for code work, \`["web"]\` for research) and
-use \`tasks\` for independent parallel subtasks. Use \`role: "orchestrator"\`
-only when nested delegation is truly worth the extra cost and the configured
-spawn depth allows it.
-</delegation>`;
+  void backend;
+  return AX_DELEGATION;
 }
 
 function triggerDiscovery(graphjinDataPath: GraphjinDataPath): string {
@@ -574,21 +560,8 @@ read/write/delete policy.
 function buildSkillsSection(
   supportsSkillTool: boolean,
   workspace: AgentWorkspace,
-  installedSkills: InstalledSkill[] | undefined,
   allowCreation = true,
-  catalog: "list" | "search" = "list",
 ): string {
-  const skillList =
-    installedSkills && installedSkills.length > 0
-      ? installedSkills
-          .map(
-            (s) =>
-              `- ${s.name} — ${s.description || "Capability instructions"} — ` +
-              `${workspace.skillsRoot}/${s.name}/SKILL.md`,
-          )
-          .join("\n")
-      : `(none installed; check ${workspace.skillsRoot})`;
-
   const creationGuidance = !allowCreation
     ? ""
     : supportsSkillTool
@@ -603,8 +576,7 @@ Python 3, LibreOffice (\`soffice\`), Poppler (\`pdftotext\`), qpdf, plus
 pip libs: pypdf, pdfplumber, reportlab, Pillow, openpyxl, python-pptx,
 python-docx, PyYAML.`;
 
-  if (catalog === "search") {
-    return `<skills>
+  return `<skills>
 Skill guides hold the team's instructions for recurring work of every kind:
 analysis methods, reports, data checks, documents and spreadsheets, customer
 replies, and the business's own procedures. Guides that may fit the request
@@ -613,17 +585,6 @@ before you start. For work no listed guide covers, search with
 discover({ skills: ["<the task, in a few words>"] }). Follow a loaded guide over
 your own approach. Each guide and its supporting files live under
 skills/<name>/; read or edit them with your file tools. ${libraries}
-
-${creationGuidance}
-</skills>`;
-  }
-
-  return `<skills>
-Installed skill catalog. Match the current task to the names and descriptions
-below. When a skill matches, read its SKILL.md at the listed path and follow
-its instructions. ${libraries}
-
-${skillList}
 
 ${creationGuidance}
 </skills>`;
@@ -867,7 +828,6 @@ export function buildWorkPrompt(args: {
   memoryContext?: string;
   /** CV3: compiled <operator-profile> block (already wrapped). */
   operatorProfile?: string;
-  installedSkills?: InstalledSkill[];
   /** Whether this channel renders a2ui cards (web). Default true. When false,
    *  the prompt carries no rendering section and the agent answers in markdown. */
   wantsCards?: boolean;
@@ -908,7 +868,6 @@ export function buildWorkPrompt(args: {
     priorSummary,
     memoryContext,
     operatorProfile,
-    installedSkills,
     wantsCards = true,
     includeUxMetadata = true,
     supportsCardTool,
@@ -949,14 +908,12 @@ that flags churn risk every Monday."
     buildClarificationSection(supportsClarificationTool),
     dataSurface === "customer" ? buildSelectedMentionsSection(workspace) : "",
     dataSurface === "customer" && wantsCards
-      ? buildCardsSection(supportsCardTool, richCards, backend === "ax")
+      ? buildCardsSection(supportsCardTool, richCards, true)
       : "",
     buildSkillsSection(
       dataSurface === "customer" && supportsSkillTool,
       workspace,
-      installedSkills,
       dataSurface === "customer",
-      backend === "ax" ? "search" : "list",
     ),
     dataSurface === "customer"
       ? buildWorkflowToolsSection(supportsWorkflowTool, graphjinDataPath)

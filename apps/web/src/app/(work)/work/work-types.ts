@@ -19,7 +19,8 @@ export type MessageRecord = {
 
 export type RunRecord = {
   id: string;
-  backend: "hermes";
+  /** The agent backend that ran it; "ax" for new runs. */
+  backend: string;
   status: string;
   error: string | null;
   createdAt: string;
@@ -36,7 +37,8 @@ export type WorkEvent =
   // reconstructs the full assistant text. Mirrors `AgentEvent.message` in
   // packages/llm/src/agent-backend.ts.
   | { type: "message"; role: "user" | "assistant"; content: string }
-  | { type: "interim"; id: string; content: string; source: "hermes_interim_assistant" }
+  // Mid-turn commentary stored by runs from earlier releases.
+  | { type: "interim"; id: string; content: string; source?: string }
   | { type: "tool_start"; id: string; name: string; input?: unknown }
   | { type: "tool_delta"; id: string; delta: unknown }
   | { type: "tool_end"; id: string; result?: unknown; error?: string }

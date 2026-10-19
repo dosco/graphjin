@@ -22,17 +22,14 @@ export async function PUT(request: NextRequest) {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       throw new Error("Agent settings payload must be an object");
     }
-    const unsupported = Object.keys(body).filter(
-      (key) => key !== "backend" && key !== "globalCap",
-    );
+    const unsupported = Object.keys(body).filter((key) => key !== "globalCap");
     if (unsupported.length > 0) {
       throw new Error(`Unsupported agent setting: ${unsupported.join(", ")}`);
     }
     const saved = await saveAgentSettingsDraft((await getOrgId()), {
-      backend: body.backend,
       globalCap: body.globalCap,
     });
-    // Reprovision so Hermes uses the latest provider settings.
+    // Reprovision so the agent sandbox uses the latest provider settings.
     await provisionHostConfig((await getOrgId()));
     return NextResponse.json(saved);
   } catch (e) {

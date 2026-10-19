@@ -38,7 +38,7 @@ describeIfDb("OL8 workflow-output dedupe", () => {
       steps: [{ id: "s1", description: "watch" }],
     });
     const thread = await createWorkThread(orgId, "t");
-    const workRun = await createWorkRun(orgId, thread.id, "hermes");
+    const workRun = await createWorkRun(orgId, thread.id, "ax");
     workRunId = workRun.id;
     workflowRunId = (
       await createWorkflowRun({
@@ -49,7 +49,7 @@ describeIfDb("OL8 workflow-output dedupe", () => {
         triggerKind: "manual",
       })
     ).id;
-    const secondWorkRun = await createWorkRun(orgId, thread.id, "hermes");
+    const secondWorkRun = await createWorkRun(orgId, thread.id, "ax");
     secondRunId = (
       await createWorkflowRun({
         orgId,
