@@ -1,0 +1,335 @@
+package sdata
+
+func GetTestDBInfo() *DBInfo {
+	columns := [][]DBColumn{
+		{
+			{Schema: "public", Table: "customers", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "customers", Name: "user_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
+			{Schema: "public", Table: "customers", Name: "product_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "products", FKeyCol: "id"},
+			{Schema: "public", Table: "customers", Name: "vip", Type: "boolean", NotNull: true, PrimaryKey: false, UniqueKey: false}},
+		{
+			{Schema: "public", Table: "users", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "users", Name: "full_name", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "users", Name: "phone", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "users", Name: "avatar", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "users", Name: "email", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "users", Name: "encrypted_password", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "users", Name: "reset_password_token", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "users", Name: "reset_password_sent_at", Type: "timestamp without time zone", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "users", Name: "remember_created_at", Type: "timestamp without time zone", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "users", Name: "created_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "users", Name: "updated_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false}},
+		{
+			{Schema: "public", Table: "products", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "products", Name: "name", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "products", Name: "description", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "products", Name: "price", Type: "numeric(7,2)", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "products", Name: "user_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
+			{Schema: "public", Table: "products", Name: "created_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "products", Name: "updated_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "products", Name: "tsv", Type: "tsvector", NotNull: false, PrimaryKey: false, UniqueKey: false, FullText: true},
+			{Schema: "public", Table: "products", Name: "tags", Type: "text[]", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "tags", FKeyCol: "slug", Array: true},
+			{Schema: "public", Table: "products", Name: "tag_count", Type: "json", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "tag_count", FKeyCol: ""}},
+		{
+			{Schema: "public", Table: "purchases", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "purchases", Name: "customer_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "customers", FKeyCol: "id"},
+			{Schema: "public", Table: "purchases", Name: "product_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "products", FKeyCol: "id"},
+			{Schema: "public", Table: "purchases", Name: "sale_type", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "purchases", Name: "quantity", Type: "integer", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "purchases", Name: "due_date", Type: "timestamp without time zone", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "purchases", Name: "returned", Type: "timestamp without time zone", NotNull: false, PrimaryKey: false, UniqueKey: false}},
+		{
+			{Schema: "public", Table: "tags", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "tags", Name: "name", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "tags", Name: "slug", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false}},
+		{
+			{Schema: "public", Table: "tag_count", Name: "tag_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "tags", FKeyCol: "id"},
+			{Schema: "public", Table: "tag_count", Name: "count", Type: "int", NotNull: false, PrimaryKey: false, UniqueKey: false}},
+		{
+			{Schema: "public", Table: "notifications", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "notifications", Name: "verb", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "notifications", Name: "subject_type", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "notifications", Name: "subject_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false}},
+		{
+			{Schema: "public", Table: "comments", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "comments", Name: "product_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "products", FKeyCol: "id"},
+			{Schema: "public", Table: "comments", Name: "commenter_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
+			{Schema: "public", Table: "comments", Name: "reply_to_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "comments", FKeyCol: "id", FKRecursive: true},
+			{Schema: "public", Table: "comments", Name: "body", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false}},
+		// GIS test table for spatial queries
+		{
+			{Schema: "public", Table: "locations", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "locations", Name: "name", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "locations", Name: "geom", Type: "geometry", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "locations", Name: "boundary", Type: "geometry", NotNull: false, PrimaryKey: false, UniqueKey: false}},
+	}
+
+	fn := []DBFunction{
+		{
+			Schema: "public",
+			Name:   "get_top_products",
+			Type:   "record",
+			Agg:    false,
+			Inputs: []DBFuncParam{
+				{ID: 1, Name: "n", Type: "integer", Array: false}},
+			Outputs: []DBFuncParam{
+				{ID: 2, Name: "id", Type: "bigint", Array: false},
+				{ID: 3, Name: "name", Type: "bigint", Array: false}},
+		},
+		{
+			Schema: "public",
+			Name:   "text2score",
+			Type:   "numeric",
+			Agg:    false,
+			Inputs: []DBFuncParam{
+				{ID: 1, Name: "text", Type: "text", Array: false}},
+			Outputs: []DBFuncParam{
+				{ID: 2, Name: "score", Type: "bigint", Array: false}},
+		},
+	}
+
+	var cols []DBColumn
+
+	for _, colset := range columns {
+		cols = append(cols, colset...)
+	}
+
+	vt := []VirtualTable{{
+		Name:       "subject",
+		IDColumn:   "subject_id",
+		TypeColumn: "subject_type",
+		FKeyColumn: "id"},
+	}
+
+	di := NewDBInfo("", 110000, "public", "db", cols, nil, nil)
+	di.VTables = vt
+	di.Functions = fn
+	return di
+}
+
+func GetTestSchema() (*DBSchema, error) {
+	aliases := map[string][]string{
+		"users": {"me"},
+	}
+
+	return NewDBSchema(GetTestDBInfo(), aliases)
+}
+
+// GetTestDBInfoWithDatabase returns a DBInfo with tables that have Database field set
+// for testing multi-database support with @database directive
+func GetTestDBInfoWithDatabase() *DBInfo {
+	columns := [][]DBColumn{
+		// Default database (empty) - users table
+		{
+			{Schema: "public", Table: "users", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "users", Name: "full_name", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "users", Name: "email", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false},
+		},
+		// Analytics database - events table
+		{
+			{Schema: "public", Table: "events", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true, Database: "analytics"},
+			{Schema: "public", Table: "events", Name: "event_type", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false, Database: "analytics"},
+			{Schema: "public", Table: "events", Name: "user_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "users", FKeyCol: "id", Database: "analytics"},
+		},
+		// Logs database - audit_logs table
+		{
+			{Schema: "public", Table: "audit_logs", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true, Database: "logs"},
+			{Schema: "public", Table: "audit_logs", Name: "action", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false, Database: "logs"},
+			{Schema: "public", Table: "audit_logs", Name: "created_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false, Database: "logs"},
+		},
+	}
+
+	var cols []DBColumn
+	for _, colset := range columns {
+		cols = append(cols, colset...)
+	}
+
+	di := NewDBInfo("postgres", 140000, "public", "db", cols, nil, nil)
+	return di
+}
+
+// GetTestPartitionedDBInfo returns a DBInfo with partition keys set on the
+// products table for testing partition filter injection.
+func GetTestPartitionedDBInfo() *DBInfo {
+	di := GetTestDBInfo()
+	for i := range di.Tables {
+		if di.Tables[i].Name == "products" {
+			di.Tables[i].PartitionKey = "created_at"
+			di.Tables[i].PartitionRangeDays = 30
+		}
+	}
+	return di
+}
+
+// GetTestPartitionedSchema returns a DBSchema with partition config for testing.
+func GetTestPartitionedSchema() (*DBSchema, error) {
+	return NewDBSchema(GetTestPartitionedDBInfo(), nil)
+}
+
+// GetTestPartitionedWarnOnlyDBInfo returns a DBInfo with partition key but no
+// default range (warn-only mode).
+func GetTestPartitionedWarnOnlyDBInfo() *DBInfo {
+	di := GetTestDBInfo()
+	for i := range di.Tables {
+		if di.Tables[i].Name == "products" {
+			di.Tables[i].PartitionKey = "created_at"
+			di.Tables[i].PartitionRangeDays = 0
+		}
+	}
+	return di
+}
+
+// GetTestPartitionedWarnOnlySchema returns a DBSchema with warn-only partition config.
+func GetTestPartitionedWarnOnlySchema() (*DBSchema, error) {
+	return NewDBSchema(GetTestPartitionedWarnOnlyDBInfo(), nil)
+}
+
+// GetTestSnowflakeDBInfo returns a Snowflake DBInfo with clustering keys set
+// on the products table for testing clustering-aware cursor pagination.
+func GetTestSnowflakeDBInfo() *DBInfo {
+	columns := [][]DBColumn{
+		{
+			{Schema: "public", Table: "users", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "users", Name: "full_name", Type: "varchar", NotNull: true},
+			{Schema: "public", Table: "users", Name: "email", Type: "varchar", NotNull: true},
+			{Schema: "public", Table: "users", Name: "created_at", Type: "timestamp", NotNull: true},
+		},
+		{
+			{Schema: "public", Table: "products", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "products", Name: "name", Type: "varchar"},
+			{Schema: "public", Table: "products", Name: "price", Type: "numeric(7,2)"},
+			{Schema: "public", Table: "products", Name: "user_id", Type: "bigint", FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
+			{Schema: "public", Table: "products", Name: "created_at", Type: "timestamp", NotNull: true},
+			{Schema: "public", Table: "products", Name: "updated_at", Type: "timestamp", NotNull: true},
+		},
+	}
+
+	var cols []DBColumn
+	for _, colset := range columns {
+		cols = append(cols, colset...)
+	}
+
+	di := NewDBInfo("snowflake", 0, "public", "db", cols, nil, nil)
+
+	// Set clustering keys on the products table and auto-derive partition key
+	for i := range di.Tables {
+		if di.Tables[i].Name == "products" {
+			di.Tables[i].ClusteringKeys = []string{"created_at", "user_id"}
+			di.Tables[i].PartitionKey = "created_at"
+			di.Tables[i].PartitionRangeDays = 60
+		}
+	}
+
+	return di
+}
+
+// GetTestSnowflakeSchema returns a DBSchema backed by Snowflake test data with clustering keys.
+func GetTestSnowflakeSchema() (*DBSchema, error) {
+	return NewDBSchema(GetTestSnowflakeDBInfo(), nil)
+}
+
+// GetTestMultiFKDBInfo returns a DBInfo where the `orders` table has two
+// distinct foreign keys to `users` (customer_id, salesperson_id). Used to
+// exercise ambiguous-path detection.
+func GetTestMultiFKDBInfo() *DBInfo {
+	columns := [][]DBColumn{
+		{
+			{Schema: "public", Table: "users", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "users", Name: "name", Type: "character varying", NotNull: true},
+		},
+		{
+			{Schema: "public", Table: "orders", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "orders", Name: "customer_id", Type: "bigint", FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
+			{Schema: "public", Table: "orders", Name: "salesperson_id", Type: "bigint", FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
+			{Schema: "public", Table: "orders", Name: "amount", Type: "numeric(10,2)"},
+		},
+	}
+
+	var cols []DBColumn
+	for _, colset := range columns {
+		cols = append(cols, colset...)
+	}
+
+	di := NewDBInfo("postgres", 140000, "public", "db", cols, nil, nil)
+	return di
+}
+
+// GetTestMultiFKSchema returns a DBSchema with two FKs from orders to users.
+func GetTestMultiFKSchema() (*DBSchema, error) {
+	return NewDBSchema(GetTestMultiFKDBInfo(), nil)
+}
+
+// GetTestCompositeFKDBInfo returns a DBInfo where the `enrollment` table has a
+// composite FK to `course_offering` on (term_id, course_id). Used to verify
+// that @through(column:) matches a non-primary composite-FK column via
+// ExtraPairs (the second column of the composite).
+func GetTestCompositeFKDBInfo() *DBInfo {
+	columns := [][]DBColumn{
+		{
+			{Schema: "public", Table: "course_offering", Name: "term_id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "course_offering", Name: "course_id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "course_offering", Name: "title", Type: "character varying"},
+		},
+		{
+			{Schema: "public", Table: "enrollment", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "enrollment", Name: "term_id", Type: "bigint", FKeySchema: "public", FKeyTable: "course_offering", FKeyCol: "term_id"},
+			{Schema: "public", Table: "enrollment", Name: "course_id", Type: "bigint", FKeySchema: "public", FKeyTable: "course_offering", FKeyCol: "course_id"},
+			{Schema: "public", Table: "enrollment", Name: "student_name", Type: "character varying"},
+		},
+	}
+
+	var cols []DBColumn
+	for _, colset := range columns {
+		cols = append(cols, colset...)
+	}
+
+	di := NewDBInfo("postgres", 140000, "public", "db", cols, nil, nil)
+	di.CompositeFKs = []CompositeFKInfo{
+		{
+			Schema:         "public",
+			Table:          "enrollment",
+			ConstraintName: "enrollment_offering_fkey",
+			LocalCols:      []string{"term_id", "course_id"},
+			FKeySchema:     "public",
+			FKeyTable:      "course_offering",
+			FKeyCols:       []string{"term_id", "course_id"},
+		},
+	}
+	return di
+}
+
+// GetTestCompositeFKSchema returns a DBSchema with a composite FK from
+// enrollment to course_offering.
+func GetTestCompositeFKSchema() (*DBSchema, error) {
+	return NewDBSchema(GetTestCompositeFKDBInfo(), nil)
+}
+
+// GetTestShipmentFKDBInfo reproduces issue #642: three composite FKs share
+// the same target columns, and the plain FK names also match those columns.
+func GetTestShipmentFKDBInfo() *DBInfo {
+	cols := []DBColumn{
+		{Schema: "public", Table: "warehouses", Name: "branch_id", Type: "bigint", PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "warehouses", Name: "warehouse_id", Type: "bigint", PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "warehouses", Name: "name", Type: "text"},
+		{Schema: "public", Table: "shipments", Name: "id", Type: "bigint", PrimaryKey: true, UniqueKey: true},
+	}
+	var fks []CompositeFKInfo
+	// Put alternates first so matching the referenced column cannot accidentally
+	// pass by choosing the first edge for the plain relationship.
+	for _, prefix := range []string{"origin_", "destination_", ""} {
+		for _, name := range []string{"branch_id", "warehouse_id"} {
+			cols = append(cols, DBColumn{
+				Schema: "public", Table: "shipments", Name: prefix + name, Type: "bigint",
+				FKeySchema: "public", FKeyTable: "warehouses", FKeyCol: name,
+			})
+		}
+		fks = append(fks, CompositeFKInfo{
+			Schema: "public", Table: "shipments", ConstraintName: prefix + "warehouse_fkey",
+			LocalCols:  []string{prefix + "branch_id", prefix + "warehouse_id"},
+			FKeySchema: "public", FKeyTable: "warehouses", FKeyCols: []string{"branch_id", "warehouse_id"},
+		})
+	}
+	di := NewDBInfo("postgres", 140000, "public", "db", cols, nil, nil)
+	di.CompositeFKs = fks
+	return di
+}

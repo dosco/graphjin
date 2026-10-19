@@ -1,0 +1,277 @@
+package tests_test
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"math/rand"
+	"os"
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/dosco/graphjin/core/v3"
+	"golang.org/x/sync/errgroup"
+)
+
+var cursorRegex *regexp.Regexp
+
+func init() {
+	cursorRegex = regexp.MustCompile(`cursor\"\:\s?\"([^\s\"]+)`)
+}
+
+func execWithLockRetry(q string) error {
+	const maxAttempts = 20
+	var err error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if _, err = db.Exec(q); err == nil {
+			return nil
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "database is locked") && !strings.Contains(msg, "database table is locked") {
+			return err
+		}
+		time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
+	}
+	return err
+}
+
+func Example_subscription() {
+	gql := `subscription test {
+		users(id: $id) {
+			id
+			email
+			phone
+		}
+	}`
+
+	vars := json.RawMessage(`{ "id": 3 }`)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, SubsPollDuration: 1})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	m, err := gj.Subscribe(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	for i := 0; i < 10; i++ {
+		msg := <-m.Result
+		printJSON(msg.Data)
+
+		// update user phone in database to trigger subscription
+		if dbType == "mongodb" {
+			// MongoDB: use JSON DSL for update
+			q := fmt.Sprintf(`{"operation":"updateOne","collection":"users","filter":{"_id":3},"update":{"$set":{"phone":"650-447-000%d"}}}`, i)
+			if _, err := db.Exec(q); err != nil {
+				panic(err)
+			}
+		} else {
+			// SQL databases: use SQL update
+			q := fmt.Sprintf(`UPDATE users SET phone = '650-447-000%d' WHERE id = 3`, i)
+			if err := execWithLockRetry(q); err != nil {
+				panic(err)
+			}
+		}
+	}
+	// Output:
+	// {"users":{"email":"user3@test.com","id":3,"phone":null}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0000"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0001"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0002"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0003"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0004"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0005"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0006"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0007"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0008"}}
+}
+
+func Example_subscriptionWithCursor() {
+	// func TestSubCursor(t *testing.T) {
+	// query to fetch existing chat messages
+	// gql1 := `query {
+	// 	chats(first: 3, after: $cursor) {
+	// 		id
+	// 		body
+	// 	}
+	// 	chats_cursor
+	// }`
+
+	// query to subscribe to new chat messages
+	gql2 := `subscription {
+		chats(first: 1, after: $cursor) {
+			id
+			body
+		}
+	}`
+
+	conf := newConfig(&core.Config{
+		DBType:           dbType,
+		DisableAllowList: true,
+		SubsPollDuration: 1,
+		SecretKey:        "not_a_real_secret",
+	})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	// struct to hold the cursor value from fetching the existing
+	// chat messages
+	// res := struct {
+	// 	Cursor string `json:"chats_cursor"`
+	// }{}
+
+	// execute query for existing chat messages
+	// m1, err := gj.GraphQL(context.Background(), gql1, nil, nil)
+	// if err != nil {
+	// 	fmt.Println(err)
+	// 	return
+	// }
+
+	// extract out the cursor `chats_cursor` to use in the subscription
+	// if err := json.Unmarshal(m1.Data, &res); err != nil {
+	// 	fmt.Println(err)
+	// 	return
+	// }
+
+	// replace cursor value to make test work since it's encrypted
+	// v1 := cursorRegex.ReplaceAllString(string(m1.Data), "cursor_was_here")
+	// fmt.Println(v1)
+
+	// create variables with the previously extracted cursor value to
+	// pass to the new chat messages subscription
+	// vars := json.RawMessage(`{ "cursor": "` + res.Cursor + `" }`)
+	vars := json.RawMessage(`{ "cursor": null }`)
+
+	// subscribe to new chat messages using the cursor
+	m2, err := gj.Subscribe(context.Background(), gql2, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	go func() {
+		for i := 6; i < 20; i++ {
+			// insert a new chat message
+			if dbType == "mongodb" {
+				// MongoDB: use JSON DSL for insert
+				q := fmt.Sprintf(`{"operation":"insertOne","collection":"chats","document":{"_id":%d,"body":"New chat message %d"}}`, i, i)
+				if _, err := db.Exec(q); err != nil {
+					panic(err)
+				}
+			} else {
+				// SQL databases: use SQL insert
+				q := fmt.Sprintf(`INSERT INTO chats (id, body) VALUES (%d, 'New chat message %d')`, i, i)
+				if err := execWithLockRetry(q); err != nil {
+					panic(err)
+				}
+			}
+			time.Sleep(3 * time.Second)
+		}
+	}()
+
+	msgCount := 0
+	maxRetries := 50 // prevent infinite loop
+	msgTimeout := 15 * time.Second
+	if dbType == "snowflake" && os.Getenv("GRAPHJIN_SNOWFLAKE_MOCK") == "1" {
+		msgTimeout = 60 * time.Second
+	}
+	for retries := 0; msgCount < 19 && retries < maxRetries; retries++ {
+		// Per-message timeout: insertions are 3s apart. The Snowflake mock
+		// gets a longer window because DuckDB execution under -race is slower.
+		// Without this, a stuck subscription would hang until the package timeout.
+		var msg *core.Result
+		select {
+		case msg = <-m2.Result:
+		case <-time.After(msgTimeout):
+			fmt.Printf("timeout waiting for message %d/19 after %d empty results\n", msgCount+1, retries-msgCount)
+			return
+		}
+		// replace cursor value to make test work since it's encrypted
+		v2 := cursorRegex.ReplaceAllString(string(msg.Data), `cursor":"cursor_was_here`)
+		// Skip empty results (timing issue on some databases like MSSQL)
+		if strings.Contains(v2, `"chats":[]`) {
+			continue
+		}
+		printJSON([]byte(v2))
+		msgCount++
+	}
+	// Output:
+	// {"chats":[{"body":"This is chat message number 1","id":1}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"This is chat message number 2","id":2}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"This is chat message number 3","id":3}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"This is chat message number 4","id":4}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"This is chat message number 5","id":5}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 6","id":6}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 7","id":7}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 8","id":8}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 9","id":9}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 10","id":10}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 11","id":11}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 12","id":12}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 13","id":13}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 14","id":14}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 15","id":15}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 16","id":16}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 17","id":17}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 18","id":18}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 19","id":19}],"chats_cursor":"cursor_was_here"}
+}
+
+func TestSubscription(t *testing.T) {
+	skipBigQuerySubscriptionsUnsupported(t)
+	skipCassandra(t, "shared subscription query isn't single-partition-bound (CQL needs a pinned partition key)")
+
+	gql := `subscription test {
+		users(where: { or: { id: { eq: $id }, id: { eq: $id2 } } }) @object {
+			id
+			email
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, SubsPollDuration: 1})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	g, ctx := errgroup.WithContext(context.Background())
+
+	for i := 101; i < 200; i++ {
+		n := i
+		time.Sleep(20 * time.Millisecond)
+
+		g.Go(func() error {
+			id := (rand.Intn(100-1) + 1)
+			vars := json.RawMessage(fmt.Sprintf(`{ "id": %d, "id2": %d }`, n, id))
+			m, err := gj.Subscribe(ctx, gql, vars, nil)
+			if err != nil {
+				return fmt.Errorf("subscribe: %w", err)
+			}
+			defer m.Unsubscribe()
+
+			msg := <-m.Result
+			exp := fmt.Sprintf(`{"users":{"email":"user%d@test.com","id":%d}}`, id, id)
+			val := stdJSON(msg.Data)
+
+			if val != exp {
+				t.Errorf("expected '%s' got '%s'", exp, val)
+			}
+
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		panic(err)
+	}
+}

@@ -1,0 +1,19 @@
+<svg viewBox="0 0 900 360" role="img" aria-label="One compiler from any client to any system" xmlns="http://www.w3.org/2000/svg">
+  <rect class="diag-bg" x="0" y="0" width="900" height="360" rx="16"/>
+  <rect class="diag-node" x="40" y="138" width="188" height="84" rx="12"/>
+  <text class="diag-text" x="134" y="176" text-anchor="middle">Any client</text>
+  <text class="diag-sub" x="134" y="198" text-anchor="middle">AI agents · REST · MCP</text>
+  <rect class="diag-ring" x="320" y="104" width="268" height="156" rx="20"/>
+  <text class="diag-sub" x="454" y="92" text-anchor="middle">one config · RBAC · allow-lists</text>
+  <rect class="diag-node-accent" x="352" y="140" width="204" height="84" rx="14"/>
+  <text class="diag-text" x="454" y="176" text-anchor="middle">GraphJin compiler</text>
+  <text class="diag-sub" x="454" y="200" text-anchor="middle">GraphQL -> one query</text>
+  <rect class="diag-node" x="700" y="58" width="168" height="66" rx="10"/><text class="diag-text" x="784" y="96" text-anchor="middle">Databases</text>
+  <rect class="diag-node" x="700" y="147" width="168" height="66" rx="10"/><text class="diag-text" x="784" y="185" text-anchor="middle">Remote APIs</text>
+  <rect class="diag-node" x="700" y="236" width="168" height="66" rx="10"/><text class="diag-text" x="784" y="274" text-anchor="middle">Files &amp; code</text>
+  <path class="diag-line" d="M228 180 L 320 182"/>
+  <path class="diag-line" d="M588 150 L 700 91"/>
+  <path class="diag-line" d="M588 182 L 700 180"/>
+  <path class="diag-line" d="M588 214 L 700 269"/>
+  <text class="diag-sub" x="454" y="334" text-anchor="middle">GraphQL, REST, and MCP in — one optimized operation out.</text>
+</svg>

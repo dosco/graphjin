@@ -1,0 +1,438 @@
+package core
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"strings"
+
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/openapi"
+)
+
+type openapiBridge struct {
+	gj       *graphjinEngine
+	caller   *openapi.Caller
+	pathName string
+	op       *openapi.OpDescriptor
+	topLevel bool
+}
+
+func (b *openapiBridge) Resolve(ctx context.Context, req ResolverReq) ([]byte, error) {
+	if b.gj != nil && b.op != nil {
+		role, _ := b.gj.initialRequestRole(ctx)
+		decision := b.gj.conf.authorizeOpenAPIOperation(ctx, b.op, role)
+		if !decision.Allowed {
+			return nil, fmt.Errorf("openapi: unauthorized: %s", decision.Reason)
+		}
+	}
+	if b.topLevel {
+		body, err := b.callTopLevel(ctx, req.Sel)
+		if err != nil {
+			return nil, err
+		}
+		return applyOpenAPIQuery(body, req)
+	}
+	params := openapi.CallParams{}
+	if b.pathName != "" {
+		params.PathValues = map[string]string{b.pathName: req.ID}
+	}
+	body, err := b.caller.Call(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	return applyOpenAPIQuery(body, req)
+}
+
+func (b *openapiBridge) callTopLevel(ctx context.Context, sel *qcode.Select) ([]byte, error) {
+	if sel == nil {
+		return nil, fmt.Errorf("openapi: top-level resolve called without a select")
+	}
+	if b.op == nil {
+		return nil, fmt.Errorf("openapi: top-level bridge missing operation metadata")
+	}
+	p, err := b.op.ResolveCallParams(sel.ExtraArgs)
+	if err != nil {
+		return nil, err
+	}
+	return b.caller.Call(ctx, p)
+}
+
+func (gj *graphjinEngine) loadOpenAPIIntegration() error {
+	defaultSource := LegacyOpenAPISourceName
+	apiSources := 0
+	for _, source := range gj.conf.Sources {
+		if source.CanonicalKind() == "api" {
+			apiSources++
+			defaultSource = source.Name
+		}
+	}
+	if gj.conf.IsSourcesUsed() && apiSources != 1 {
+		defaultSource = ""
+	}
+	res, err := openapi.Load(
+		openapi.LoaderOptions{
+			SpecsDir:          gj.configRelPath(gj.conf.OpenAPISpecsDir),
+			DefaultSourceName: defaultSource,
+			RequireSource:     true,
+		},
+		gj.conf.OpenAPI,
+		gj.log,
+	)
+	if err != nil {
+		return fmt.Errorf("openapi load: %w", err)
+	}
+	if res == nil || res.Registry == nil || len(res.Registry.Specs) == 0 {
+		for _, w := range res.Warnings {
+			gj.log.Println(w)
+		}
+		return nil
+	}
+
+	httpClient := gj.trace.NewHTTPClient()
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+
+	rt, rtWarnings, err := openapi.NewRuntime(res.Registry, httpClient)
+	if err != nil {
+		return fmt.Errorf("openapi runtime: %w", err)
+	}
+	gj.openapiRuntime = rt
+
+	for _, w := range res.Warnings {
+		gj.log.Println(w)
+	}
+	for _, w := range rtWarnings {
+		gj.log.Println(w)
+	}
+
+	synth := synthesiseResolvers(res.Registry)
+	if err := gj.validateOpenAPINoCollisions(append(synth, synthesiseMutationCollisionResolvers(res.Registry)...)); err != nil {
+		return err
+	}
+	if err := gj.preRegisterOpenAPITables(res.Registry); err != nil {
+		return err
+	}
+	gj.conf.Resolvers = append(gj.conf.Resolvers, synth...)
+	return nil
+}
+
+// Mutation operations do not use the resolver path, but participate in the
+// same root namespace and therefore need the same boot-time collision checks.
+func synthesiseMutationCollisionResolvers(reg *openapi.Registry) []ResolverConfig {
+	var out []ResolverConfig
+	for _, sp := range reg.Specs {
+		for i := range sp.Operations {
+			op := &sp.Operations[i]
+			if op.Mode != openapi.OpModeMutation {
+				continue
+			}
+			out = append(out, ResolverConfig{
+				Name: op.ExposeAs,
+				Type: "openapi_mutation",
+				Props: ResolverProps{
+					"source_name":  op.SourceName,
+					"spec_key":     op.SpecKey,
+					"operation_id": op.OperationID,
+				},
+			})
+		}
+	}
+	return out
+}
+
+// preRegisterOpenAPITables registers synthetic remote tables for top-level
+// operations into the primary DB's dbinfo before initResolvers walks the
+// resolver list. Row-join tables are added later by initRemote itself.
+func (gj *graphjinEngine) preRegisterOpenAPITables(reg *openapi.Registry) error {
+	pdb := gj.primaryDB()
+	if pdb == nil || pdb.dbinfo == nil {
+		return nil
+	}
+	schema := pdb.dbinfo.Schema
+	for _, sp := range reg.Specs {
+		for i := range sp.Operations {
+			op := &sp.Operations[i]
+			if op.Mode == openapi.OpModeMutation {
+				t := sdata.NewDBTable(schema, op.ExposeAs, "openapi_mutation", openapi.SynthesiseMutationColumns(schema, op.ExposeAs, op.ResponseSchema))
+				t.StrictColumns = true
+				pdb.dbinfo.AddTable(t)
+				continue
+			}
+			if op.Mode != openapi.OpModeSingleByID && op.Mode != openapi.OpModeList {
+				continue
+			}
+			cols := openapi.SynthesiseColumns(schema, op.ExposeAs, op.ResponseSchema, op.ResultPath)
+			t := sdata.NewDBTable(schema, op.ExposeAs, "remote", cols)
+			t.Args = openapi.SynthesiseArgs(schema, op.ExposeAs, *op)
+			// Same closed surface the mutation branch above declares: when the
+			// spec described the response, a selection outside it is an error
+			// worth naming rather than a field that silently comes back absent.
+			// SynthesiseColumns returns nothing for an open-shaped schema, and
+			// those tables keep the lenient pass-through.
+			if len(cols) != 0 {
+				t.StrictColumns = true
+			}
+			pdb.dbinfo.AddTable(t)
+		}
+	}
+	return nil
+}
+
+func (gj *graphjinEngine) validateOpenAPINoCollisions(synth []ResolverConfig) error {
+	realTables := make(map[string]string)
+	pdb := gj.primaryDB()
+	if pdb != nil && pdb.dbinfo != nil {
+		primarySchema := pdb.dbinfo.Schema
+		for _, t := range pdb.dbinfo.Tables {
+			if t.Type == "remote" {
+				continue
+			}
+			if t.Schema == primarySchema || t.Schema == "" {
+				realTables[t.Name] = t.Schema
+			}
+		}
+	}
+
+	aliases := make(map[string]struct{})
+	for _, t := range gj.conf.Tables {
+		if t.Name != "" && t.Name != t.Table {
+			aliases[t.Name] = struct{}{}
+		}
+	}
+
+	existingResolvers := make(map[string]struct{})
+	for _, r := range gj.conf.Resolvers {
+		existingResolvers[r.Name] = struct{}{}
+	}
+
+	// Managed mutation dispatch compares table names case-insensitively. Reject
+	// the same namespace here before synthetic OpenAPI tables are registered, so
+	// a case-only collision cannot compile as OpenAPI and execute as a service
+	// control-plane mutation instead.
+	managedRoots := make(map[string]string)
+	if handler := gj.managedQueryHandlers[gj.defaultDB]; handler != nil {
+		for _, table := range handler.ManagedQueryTables() {
+			if name := strings.TrimSpace(table.Name); name != "" {
+				managedRoots[strings.ToLower(name)] = name
+			}
+		}
+	}
+	if handler := gj.managedMutationHandlers[gj.defaultDB]; handler != nil {
+		for _, table := range handler.ManagedMutationTables() {
+			if name := strings.TrimSpace(table); name != "" {
+				managedRoots[strings.ToLower(name)] = name
+			}
+		}
+	}
+
+	seen := make(map[string]string)
+	for _, rc := range synth {
+		specKey, _ := rc.Props["spec_key"].(string)
+		opID, _ := rc.Props["operation_id"].(string)
+		opIdent := fmt.Sprintf("%s/%s", specKey, opID)
+
+		if managedName, ok := managedRoots[strings.ToLower(strings.TrimSpace(rc.Name))]; ok {
+			return fmt.Errorf(
+				"openapi: operation %s exposes as %q which collides with managed root %q; set operations.%s.expose_as under the owning sources[].specs.%s entry to a unique name",
+				opIdent, rc.Name, managedName, opID, specKey,
+			)
+		}
+
+		if schema, ok := realTables[rc.Name]; ok {
+			if schema == "" {
+				schema = "(default)"
+			}
+			return fmt.Errorf(
+				"openapi: operation %s exposes as %q which collides with a real table in schema %s; set operations.%s.expose_as under the owning sources[].specs.%s entry to a unique name",
+				opIdent, rc.Name, schema, opID, specKey,
+			)
+		}
+
+		if firstOp, ok := seen[rc.Name]; ok {
+			return fmt.Errorf(
+				"openapi: operations %s and %s both expose as %q; set 'expose_as' on one of them to disambiguate",
+				firstOp, opIdent, rc.Name,
+			)
+		}
+		seen[rc.Name] = opIdent
+
+		if _, ok := aliases[rc.Name]; ok {
+			gj.log.Printf("openapi: operation %s exposes as %q which matches a configured table alias; the OpenAPI remote will take precedence", opIdent, rc.Name)
+		}
+		if _, ok := existingResolvers[rc.Name]; ok {
+			gj.log.Printf("openapi: operation %s exposes as %q which collides with an existing resolver named the same; later registration will overwrite earlier", opIdent, rc.Name)
+		}
+	}
+	return nil
+}
+
+// synthesiseResolvers emits one ResolverConfig per row-join AND per
+// top-level operation. Row-join entries carry a parent table; top-level
+// entries leave Table empty so initRemote takes the parent-less path.
+func synthesiseResolvers(reg *openapi.Registry) []ResolverConfig {
+	var out []ResolverConfig
+	for _, sp := range reg.Specs {
+		for i := range sp.Operations {
+			op := &sp.Operations[i]
+			switch op.Mode {
+			case openapi.OpModeRowJoin:
+				if op.Join == nil {
+					continue
+				}
+				pathName := ""
+				if len(op.PathParams) > 0 {
+					pathName = op.PathParams[0].Name
+				}
+				out = append(out, ResolverConfig{
+					Name:   op.ExposeAs,
+					Type:   "openapi",
+					Table:  op.Join.ParentTable,
+					Column: op.Join.ParentColumn,
+					// The join's response shape is known from the spec. Without this the
+					// table registers with no columns at all, so the catalog publishes
+					// "0 columns" for it and every consumer has to guess field names.
+					remoteColumns: openapi.SynthesiseColumns("", op.ExposeAs, op.ResponseSchema, op.ResultPath),
+					Props: ResolverProps{
+						"source_name":      op.SourceName,
+						"spec_key":         op.SpecKey,
+						"operation_id":     op.OperationID,
+						"path_param":       pathName,
+						"spec_fingerprint": openAPISpecFingerprint(sp),
+					},
+				})
+			case openapi.OpModeSingleByID, openapi.OpModeList:
+				out = append(out, ResolverConfig{
+					Name: op.ExposeAs,
+					Type: "openapi",
+					// Table left empty: signals top-level to initRemote.
+					Props: ResolverProps{
+						"source_name":      op.SourceName,
+						"spec_key":         op.SpecKey,
+						"operation_id":     op.OperationID,
+						"spec_fingerprint": openAPISpecFingerprint(sp),
+					},
+				})
+			}
+		}
+	}
+	return out
+}
+
+func openAPISpecFingerprint(sp *openapi.Spec) string {
+	h := sha256.New()
+	if sp != nil {
+		h.Write([]byte(sp.SourceName))
+		h.Write([]byte{0})
+		h.Write([]byte(sp.Key))
+		h.Write([]byte{0})
+		h.Write([]byte(sp.BaseURL))
+		h.Write([]byte{0})
+		writeFingerprintJSON(h, sp.Auth)
+		writeFingerprintJSON(h, sp.Concurrency)
+		writeFingerprintJSON(h, sp.Timeout)
+		writeFingerprintJSON(h, openAPIOperationFingerprintParts(sp.Operations))
+		if sp.SourceDocument != nil {
+			h.Write(sp.SourceDocument)
+		} else if sp.SourcePath != "" {
+			if b, err := os.ReadFile(sp.SourcePath); err == nil {
+				h.Write(b)
+			} else {
+				h.Write([]byte(sp.SourcePath))
+			}
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func writeFingerprintJSON(h hashWriter, v interface{}) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	_, _ = h.Write(b)
+	_, _ = h.Write([]byte{0})
+}
+
+type hashWriter interface {
+	Write([]byte) (int, error)
+}
+
+type openAPIOpFingerprint struct {
+	SourceName          string
+	SpecKey             string
+	OperationID         string
+	Method              string
+	PathTemplate        string
+	Mode                string
+	PathParams          []openapi.ParamSpec
+	QueryParams         []openapi.ParamSpec
+	HeaderParams        []openapi.ParamSpec
+	ResultPath          []string
+	IsArrayResponse     bool
+	ExposeAs            string
+	Join                *openapi.JoinConfig
+	RequestMediaType    string
+	RequestBodyRequired bool
+	SuccessStatuses     []int
+	AllowedRoles        []string
+	RetryOnAuthFailure  bool
+	MaxRequestBytes     int64
+	MaxResponseBytes    int64
+}
+
+func openAPIOperationFingerprintParts(ops []openapi.OpDescriptor) []openAPIOpFingerprint {
+	out := make([]openAPIOpFingerprint, 0, len(ops))
+	for _, op := range ops {
+		out = append(out, openAPIOpFingerprint{
+			SourceName:          op.SourceName,
+			SpecKey:             op.SpecKey,
+			OperationID:         op.OperationID,
+			Method:              op.Method,
+			PathTemplate:        op.PathTemplate,
+			Mode:                op.Mode.String(),
+			PathParams:          op.PathParams,
+			QueryParams:         op.QueryParams,
+			HeaderParams:        op.HeaderParams,
+			ResultPath:          op.ResultPath,
+			IsArrayResponse:     op.IsArrayResponse,
+			ExposeAs:            op.ExposeAs,
+			Join:                op.Join,
+			RequestMediaType:    op.RequestMediaType,
+			RequestBodyRequired: op.RequestBodyRequired,
+			SuccessStatuses:     op.SuccessStatuses,
+			AllowedRoles:        op.AllowedRoles,
+			RetryOnAuthFailure:  op.RetryOnAuthFailure,
+			MaxRequestBytes:     op.MaxRequestBytes,
+			MaxResponseBytes:    op.MaxResponseBytes,
+		})
+	}
+	return out
+}
+
+func (gj *graphjinEngine) newOpenAPIResolverFn() ResolverFn {
+	return func(props ResolverProps) (Resolver, error) {
+		specKey, _ := props["spec_key"].(string)
+		opID, _ := props["operation_id"].(string)
+		pathName, _ := props["path_param"].(string)
+		if gj.openapiRuntime == nil {
+			return nil, fmt.Errorf("openapi: runtime not initialised")
+		}
+		caller, ok := gj.openapiRuntime.Caller(specKey, opID)
+		if !ok {
+			return nil, fmt.Errorf("openapi: operation %q in spec %q not found at runtime", opID, specKey)
+		}
+		op, _ := gj.openapiRuntime.Operation(specKey, opID)
+		b := &openapiBridge{gj: gj, caller: caller, pathName: pathName, op: op}
+		if op != nil && (op.Mode == openapi.OpModeSingleByID || op.Mode == openapi.OpModeList) {
+			b.topLevel = true
+		}
+		return b, nil
+	}
+}

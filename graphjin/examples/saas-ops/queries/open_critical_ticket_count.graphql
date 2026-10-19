@@ -1,0 +1,5 @@
+query open_critical_ticket_count {
+  support_tickets(where: { status: { eq: "open" }, severity: { eq: "critical" } }) {
+    count_id
+  }
+}

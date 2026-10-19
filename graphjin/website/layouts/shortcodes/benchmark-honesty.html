@@ -1,0 +1,30 @@
+{{- $key := .Get "benchmark" | default "deeporg" -}}
+{{- $data := index (index hugo.Data "benchmarks") $key -}}
+{{- $bestRuns := partial "benchmark-best-results.html" (dict "data" $data) -}}
+<aside class="benchmark-honesty" aria-labelledby="benchmark-honesty-title">
+  <p class="home-section-label">Read the fine print</p>
+  <h2 id="benchmark-honesty-title">What this board does—and does not—prove</h2>
+  <div class="benchmark-honesty-grid">
+    <section>
+      <h3>Suite composition</h3>
+      {{ with $data.suite.category_counts }}
+      <table><thead><tr><th>Task family</th><th>Questions</th></tr></thead><tbody>
+        {{ range (slice "aggregate" "window" "ranking" "discovery" "saved-metric" "refusal" "traversal" "action" "reactive" "multi-turn" "cross-source") }}
+          {{ $count := index $data.suite.category_counts . | default 0 }}
+          {{ if gt (int $count) 0 }}<tr><td>{{ humanize . }}</td><td>{{ $count }}</td></tr>{{ end }}
+        {{ end }}
+      </tbody></table>
+      {{ end }}
+    </section>
+    <section>
+      <h3>Consistency and scope</h3>
+      {{ range first 1 $bestRuns }}<p><strong>{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</strong> passed on every attempt, alongside the majority-of-three full-pass result shown above.</p>{{ end }}
+      <p>The exam has expanded over time. Each model's date and report show exactly what it was tested on; product capabilities outside that run are not benchmark claims.</p>
+    </section>
+    <section>
+      <h3>Cost and corrections</h3>
+      {{ range first 1 $bestRuns }}<p>Cost uses recorded provider prompt and completion tokens multiplied by {{ .pricing_source | default "the supplied list-price card" }}. It is an estimate, not an invoice.</p>{{ end }}
+      <p>We previously retracted a run whose stale scoring contract rejected a valid database dialect. Read the <a href="{{ printf "/benchmarks/%s/methodology/#scoring-correction" $data.benchmark.slug | relURL }}">correction and the guards added afterward</a>.</p>
+    </section>
+  </div>
+</aside>

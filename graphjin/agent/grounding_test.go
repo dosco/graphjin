@@ -1,0 +1,1047 @@
+package agent
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"testing"
+)
+
+type failingExecRuntime struct {
+	*fakeRuntime
+	execOut any
+}
+
+type sequencedExecRuntime struct {
+	*fakeRuntime
+	outputs []any
+	calls   int
+}
+
+func (r *sequencedExecRuntime) ExecuteGraphQL(_ context.Context, args map[string]any) (any, error) {
+	r.record(toolExecuteGraphQL, args)
+	if r.calls >= len(r.outputs) {
+		return nil, nil
+	}
+	out := r.outputs[r.calls]
+	r.calls++
+	return out, nil
+}
+
+func (r *failingExecRuntime) ExecuteGraphQL(_ context.Context, args map[string]any) (any, error) {
+	r.record("execute_graphql", args)
+	return r.execOut, nil
+}
+
+func newFailingExecProtocol(t *testing.T, execOut any) *protocolRuntime {
+	t.Helper()
+	base := &failingExecRuntime{fakeRuntime: &fakeRuntime{}, execOut: execOut}
+	runtime := newProtocolRuntime(base, "roast plan coverage", "", 20, nil, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:ops:public.green_lots"}); err != nil {
+		t.Fatal(err)
+	}
+	return runtime
+}
+
+// Failed execution recovery must use evidence already discovered in the run;
+// it must not perform hidden catalog calls or inject extra cards.
+func TestFailedExecutionDoesNotPerformHiddenCatalogLookup(t *testing.T) {
+	base := &failingExecRuntime{fakeRuntime: &fakeRuntime{}, execOut: executeResult{
+		Errors: []ErrorInfo{{Message: "field 'available' is not a column or a function"}},
+	}}
+	runtime := newProtocolRuntime(base, "does the roast plan cover committed shipments", "", 20, nil, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// Table-only discovery: the model looked at the schema but chose to author
+	// raw GraphQL anyway, which is the shape of the observed failure.
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:ops:public.green_lots"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { available } }"})
+	if err == nil {
+		t.Fatal("a dataless engine failure must throw")
+	}
+	// The teaching reaches the exception text: the original compiler text and
+	// the re-discover directive both survive into the one channel the next
+	// turn reads.
+	for _, want := range []string{"did NOT return data", "field 'available' is not a column", "re-discover real fields"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
+	}
+	recoveryActions := 0
+	for _, action := range runtime.state.actions {
+		if action.Source == "recovery" && action.Tool == "query_catalog" {
+			recoveryActions++
+		}
+	}
+	if recoveryActions != 0 {
+		t.Fatalf("recovery-sourced catalog actions = %d, want none", recoveryActions)
+	}
+	// It must run at most once per run, even across repeated failures.
+	before := len(base.calls)
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { alsoBad } }"}); err == nil {
+		t.Fatal("the second failure must throw too")
+	}
+	if got := len(base.calls) - before; got != 1 {
+		t.Fatalf("second failure issued %d extra calls, want 1 (execute only)", got)
+	}
+}
+
+// Dynamic authoring is the agent's primary path: a raw query whose root fields
+// happen to overlap an approved saved query must still execute — the dynamic
+// version can carry filters (today's orders, queued status) the fixed saved
+// query cannot express. Saved queries are shortcuts, never gates.
+func TestRawGraphQLCoveredBySavedQueryStillExecutes(t *testing.T) {
+	base := &fakeRuntime{}
+	runtime := newProtocolRuntime(base, "does the roast plan cover committed shipments", "", 20, nil, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:ops:public.production_orders"}); err != nil {
+		t.Fatal(err)
+	}
+	raw := "query { production_orders(where: { status: { eq: \"queued\" } }) { id } roast_schedule { id } }"
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": raw}); err != nil {
+		t.Fatalf("dynamic query overlapping a saved query must execute: %v", err)
+	}
+	executed := false
+	for _, call := range base.calls {
+		if call == "execute_graphql" {
+			executed = true
+		}
+	}
+	if !executed {
+		t.Fatal("dynamic query must reach the runtime")
+	}
+	for _, code := range ProtocolViolationCodes(runtime.state.finalize(Response{Status: StatusAnswered, Answer: "queued orders listed"})) {
+		if code == "saved_query_preferred" {
+			t.Fatal("overlap with a saved query must not record a violation")
+		}
+	}
+}
+
+// Authoring raw GraphQL straight off the seed is what produced invented field
+// names and a silently wrong result set. It must fail while the run can still
+// recover, not at finalize after the work is wasted.
+func TestRawGraphQLRejectedBeforeModelDiscovery(t *testing.T) {
+	base := &fakeRuntime{}
+	runtime := newProtocolRuntime(base, "does the roast plan cover committed shipments", "", 20, nil, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// The refusal throws, carrying the reason and the next step in the one
+	// channel straight-line executor code reads. What must not change is that
+	// the query does not run and the violation is recorded.
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { available } }"})
+	if err == nil {
+		t.Fatal("raw GraphQL off the seed must throw")
+	}
+	if !strings.Contains(err.Error(), "not discovery") {
+		t.Fatalf("refusal must carry the seed-is-not-discovery reason: %v", err)
+	}
+	if !strings.Contains(err.Error(), toolQueryCatalog) {
+		t.Fatalf("refusal must point at query_catalog: %v", err)
+	}
+	if len(base.calls) != 1 {
+		t.Fatalf("catalog calls = %v, want only the seed", base.calls)
+	}
+	for _, call := range base.calls {
+		if call == "execute_graphql" {
+			t.Fatal("rejected raw GraphQL must never reach the runtime")
+		}
+	}
+	codes := ProtocolViolationCodes(runtime.state.finalize(Response{Status: StatusAnswered, Answer: "done"}))
+	found := false
+	for _, code := range codes {
+		if code == "raw_graphql_discovery_required" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("violation codes = %v, want raw_graphql_discovery_required", codes)
+	}
+}
+
+func TestRawGraphQLRejectedAfterBroadCatalogListing(t *testing.T) {
+	base := &fakeRuntime{}
+	runtime := newProtocolRuntime(base, "inspect roast quality", "", 20, nil, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{
+		"database": "roast_warehouse",
+		"kind":     "column",
+		"table":    "roast_batches",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { roast_batches { id } }"})
+	if err == nil {
+		t.Fatal("raw GraphQL after only a broad listing must throw")
+	}
+	if !strings.Contains(err.Error(), "broad catalog results are not discovery detail") {
+		t.Fatalf("refusal must carry the exact-detail reason: %v", err)
+	}
+	// The whole point of the change: a run that has already listed the catalog
+	// gets told which ids to open, inline in the exception text.
+	if !strings.Contains(err.Error(), "Candidate ids:") {
+		t.Fatalf("refusal must name candidate ids once the catalog has been listed: %v", err)
+	}
+	for _, call := range base.calls {
+		if call == "execute_graphql" {
+			t.Fatal("raw GraphQL after only a broad listing must never reach the runtime")
+		}
+	}
+}
+
+// The guard must not obstruct the normal governed path: discover, then query.
+func TestRawGraphQLAllowedAfterModelDiscovery(t *testing.T) {
+	base := &fakeRuntime{}
+	runtime := newProtocolRuntime(base, "roast plan", "", 20, nil, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:ops:public.green_lots"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { remaining_kg } }"}); err != nil {
+		t.Fatalf("raw GraphQL after discovery must be allowed: %v", err)
+	}
+}
+
+// The seed stays one unexpanded catalog call with no hidden supplement.
+func TestSeedSearchItselfIsASingleUnexpandedCall(t *testing.T) {
+	base := &fakeRuntime{}
+	runtime := newProtocolRuntime(base, "does the roast plan cover committed shipments", "", 20, nil, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	seedArgs := runtime.state.actions[0].Args
+	if stringArg(seedArgs, "search") != "does the roast plan cover committed shipments" {
+		t.Fatalf("seed args = %+v, want the verbatim instruction search", seedArgs)
+	}
+	if seedArgs["searches"] != nil {
+		t.Fatalf("seed must never auto-expand into a coverage batch: %+v", seedArgs)
+	}
+}
+
+func TestExecuteGraphQLErrorAttachesCompactRecovery(t *testing.T) {
+	runtime := newFailingExecProtocol(t, executeResult{
+		Errors: []ErrorInfo{{
+			Message:    "no db column found for field 'available' on table 'green_lots'",
+			Extensions: map[string]any{"graphjin_repair": map[string]any{"kind": "field_not_on_table"}},
+		}},
+	})
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { available } }"})
+	if err == nil {
+		t.Fatal("a dataless engine failure must throw")
+	}
+	for _, want := range []string{"did NOT return data", "no db column found for field 'available'", "do not report it as broken or propose schema changes"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "approved saved quer") {
+		t.Fatalf("the exception should not inject saved-query cards: %v", err)
+	}
+}
+
+func TestWatchSystemRootDidYouMeanRepairNamesCanonicalRootsAndRecovers(t *testing.T) {
+	base := &sequencedExecRuntime{
+		fakeRuntime: &fakeRuntime{},
+		outputs: []any{
+			executeResult{Errors: []ErrorInfo{{
+				Message: "table not found: main.watch_events_unseen",
+				Extensions: map[string]any{
+					"graphjin_repair": map[string]any{"kind": "table_not_found"},
+				},
+			}}},
+			map[string]any{"data": map[string]any{
+				systemRootWatchEvent: []any{map[string]any{"id": "event-1", "watch_id": "watch-1", "seen": false}},
+			}},
+		},
+	}
+	profile := profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent)
+	runtime := newProtocolRuntime(base, "review the unseen watch event", "", 20, profile, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"help:watches"}
+	runtime.state.securityRuntimeEvidence = true
+
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		"query": `query { watch_events_unseen { id watch_id seen } }`,
+	})
+	if err == nil {
+		t.Fatal("the invented root must throw the did-you-mean teaching")
+	}
+	for _, want := range []string{"table not found: main.watch_events_unseen", `root "watch_events_unseen" is unknown`, `"gj_watch_event"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
+	}
+	// The corrected example is retained as state for the continuation below.
+	if !strings.Contains(runtime.state.pendingSystemRootQuery, "query { gj_watch_event(") {
+		t.Fatalf("pending system-root query = %q", runtime.state.pendingSystemRootQuery)
+	}
+	last := runtime.state.actions[len(runtime.state.actions)-1]
+	if last.Error == "" || !strings.Contains(last.Error, "gj_watch_event") {
+		t.Fatalf("repair action = %#v", last)
+	}
+	runtime.state.securityRuntimeEvidence = false
+	continuation := runtime.state.completionContinuation()
+	for _, fragment := range []string{
+		`query_catalog({ids:["help:security","help:runtime"]})`,
+		`execute_graphql({"query":`,
+		`query { gj_watch_event(`,
+		`data_json`,
+	} {
+		if !strings.Contains(continuation, fragment) {
+			t.Fatalf("system-root continuation missing %q: %s", fragment, continuation)
+		}
+	}
+	if runtime.state.pendingSystemRootQuery != "" {
+		t.Fatalf("system-root continuation was not consumed: %q", runtime.state.pendingSystemRootQuery)
+	}
+	runtime.state.securityRuntimeEvidence = true
+
+	corrected := `query { gj_watch_event(where: { seen: { eq: false } }, limit: 1) { id watch_id seen } }`
+	passed, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": corrected})
+	if err != nil || executionFailed(passed) {
+		t.Fatalf("corrected execution = %#v err=%v", passed, err)
+	}
+	if base.calls != 2 || runtime.state.pendingFailedQueryKey != "" {
+		t.Fatalf("repair state: calls=%d pending=%q", base.calls, runtime.state.pendingFailedQueryKey)
+	}
+}
+
+func TestSystemRootDidYouMeanDoesNotRewriteApplicationTableFailure(t *testing.T) {
+	runtime := newProtocolRuntime(&failingExecRuntime{fakeRuntime: &fakeRuntime{}, execOut: executeResult{
+		Errors: []ErrorInfo{{Message: "table not found: main.watchlists"}},
+	}}, "show watchlists", "", 20, profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent), nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"table:main:watchlists"}
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": `query { watchlists { id } }`})
+	if err == nil {
+		t.Fatal("a dataless engine failure must throw")
+	}
+	if strings.Contains(err.Error(), "caller-visible root") {
+		t.Fatalf("ordinary application table received a system-root rewrite: %v", err)
+	}
+	if !strings.Contains(err.Error(), "re-discover real fields") {
+		t.Fatalf("the generic teaching should ride the exception: %v", err)
+	}
+}
+
+func TestNonAggregateUnknownFieldKeepsGenericRecovery(t *testing.T) {
+	base := &failingExecRuntime{fakeRuntime: &fakeRuntime{}, execOut: executeResult{
+		Errors: []ErrorInfo{{
+			Message:    "unknown field display_label",
+			Extensions: map[string]any{"compiler_stage": "qcode"},
+		}},
+	}}
+	runtime := newProtocolRuntime(base, "Show the account display label", "", 20, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"table:app:main.accounts"}
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { accounts { display_label } }"})
+	if err == nil {
+		t.Fatal("a dataless engine failure must throw")
+	}
+	if !strings.Contains(err.Error(), "unknown field display_label") {
+		t.Fatalf("the exception must carry the engine text: %v", err)
+	}
+	if strings.Contains(err.Error(), "exactly as given") {
+		t.Fatalf("no invented repair may ride a failure with no certain correction: %v", err)
+	}
+}
+
+func TestFailedQueryRequiresDistinctRepairAndRejectsDuplicate(t *testing.T) {
+	base := &failingExecRuntime{fakeRuntime: &fakeRuntime{}, execOut: executeResult{
+		Errors: []ErrorInfo{{Message: "field not found"}},
+	}}
+	runtime := newProtocolRuntime(base, "How many accounts are active?", "", 20, nil, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:public.accounts"}); err != nil {
+		t.Fatal(err)
+	}
+	failed := "query { accounts { wrong_count } }"
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": failed}); err == nil {
+		t.Fatal("the first failure must throw")
+	}
+	if message := runtime.state.pendingRequiredFinalization(); !strings.HasPrefix(message, "execution_repair_required:") {
+		t.Fatalf("pending final = %q", message)
+	}
+	before := len(base.calls)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": failed})
+	if err == nil || !strings.Contains(err.Error(), "identical query already failed") {
+		t.Fatalf("the duplicate must throw the rejection: %v", err)
+	}
+	if len(base.calls) != before {
+		t.Fatal("identical failed query reached the database runtime")
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { accounts { count_id } }"}); err == nil {
+		t.Fatal("the distinct repair also fails at the engine and must throw")
+	}
+	if runtime.state.pendingFailedQueryKey != "" || len(runtime.state.failedQueryKeys) != 2 {
+		t.Fatalf("repair state = pending:%q failed:%v", runtime.state.pendingFailedQueryKey, runtime.state.failedQueryKeys)
+	}
+	distinctFailed := "query { accounts { count_id } }"
+	before = len(base.calls)
+	_, err = runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": distinctFailed})
+	if err == nil || !strings.Contains(err.Error(), "identical query already failed") {
+		t.Fatalf("the duplicate of the distinct failure must throw: %v", err)
+	}
+	if len(base.calls) != before {
+		t.Fatalf("distinct failed query was re-executed: calls=%d", len(base.calls))
+	}
+	newFailure := "query { accounts { max_id } }"
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": newFailure}); err == nil {
+		t.Fatal("a fresh engine failure must throw")
+	}
+	if runtime.state.pendingFailedQueryKey != executionQueryKey(map[string]any{"query": newFailure}) || len(runtime.state.failedQueryKeys) != 3 {
+		t.Fatalf("new failed identity did not re-arm repair: pending=%q failed=%v", runtime.state.pendingFailedQueryKey, runtime.state.failedQueryKeys)
+	}
+}
+
+func TestDatabaseComputationFinalGuard(t *testing.T) {
+	state := newDiscoveryState("How many accounts are active?")
+	state.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { accounts { id status } }"}, executeResult{
+		Data: map[string]any{"accounts": []any{map[string]any{"id": 1}}},
+	})
+	if message := state.pendingDatabaseComputation(); !strings.HasPrefix(message, "database_computation_required:") {
+		t.Fatalf("row-list final guard = %q", message)
+	}
+	state.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { accounts { count_id } }"}, executeResult{
+		Data: map[string]any{"accounts": []any{map[string]any{"count_id": 12}}},
+	})
+	if message := state.pendingDatabaseComputation(); message != "" {
+		t.Fatalf("aggregate result remained blocked: %q", message)
+	}
+
+	compat := newDiscoveryState("How many accounts are active?")
+	compat.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { accounts_aggregate { aggregate { count } } }"}, executeResult{
+		Data: map[string]any{"accounts_aggregate": map[string]any{"aggregate": map[string]any{"count": 12}}},
+	})
+	if message := compat.pendingDatabaseComputation(); message != "" {
+		t.Fatalf("Hasura-compatible aggregate result remained blocked: %q", message)
+	}
+
+	realSuffixTable := newDiscoveryState("How many audit aggregate rows are active?")
+	realSuffixTable.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { audit_aggregate { id } }"}, executeResult{
+		Data: map[string]any{"audit_aggregate": []any{map[string]any{"id": 1}}},
+	})
+	if message := realSuffixTable.pendingDatabaseComputation(); !strings.HasPrefix(message, "database_computation_required:") {
+		t.Fatalf("real _aggregate table falsely counted as database aggregate: %q", message)
+	}
+
+	ranking := newDiscoveryState("Which plan contributes the most total revenue?")
+	ranking.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { plans { name sum_revenue } }"}, executeResult{
+		Data: map[string]any{"plans": []any{map[string]any{"name": "pro", "sum_revenue": 10}}},
+	})
+	if message := ranking.pendingDatabaseComputation(); !strings.Contains(message, "aggregate order_by") {
+		t.Fatalf("ranking guard = %q", message)
+	}
+	ranking.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { plans(order_by: {sum_revenue: desc}, limit: 1) { name sum_revenue } }"}, executeResult{
+		Data: map[string]any{"plans": []any{map[string]any{"name": "pro", "sum_revenue": 10}}},
+	})
+	if message := ranking.pendingDatabaseComputation(); message != "" {
+		t.Fatalf("database-ranked result remained blocked: %q", message)
+	}
+
+	recordRanking := newDiscoveryState("Which record in invoices has the highest amount cents, and what is the value?")
+	recordRanking.seedOK = true
+	recordRanking.modelDiscoveryAction = true
+	rankingArgs := map[string]any{"query": "query { invoices(order_by: { amount_cents: desc }, limit: 1) { id amount_cents } }"}
+	rankingResult := executeResult{Data: map[string]any{"invoices": []any{map[string]any{"id": 7, "amount_cents": 9900}}}}
+	action := recordRanking.startAction("model", toolExecuteGraphQL, rankingArgs)
+	recordRanking.finishAction(action, toolExecuteGraphQL, rankingArgs, rankingResult, nil)
+	recordRanking.recordExecution(toolExecuteGraphQL, rankingArgs, rankingResult)
+	if message := recordRanking.pendingDatabaseComputation(); message != "" {
+		t.Fatalf("order_by+limit record ranking remained blocked: %q", message)
+	}
+	if resp := recordRanking.finalize(Response{Status: StatusAnswered, Answer: "Invoice 7 has the highest amount cents: 9900."}); resp.Status != StatusAnswered {
+		t.Fatalf("order_by+limit ranking did not finalize: %+v", resp)
+	}
+
+	wrongRankedColumn := newDiscoveryState("Which record in invoices has the highest amount cents, and what is the value?")
+	wrongRankedColumn.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { invoices(order_by: { id: desc }, limit: 1) { id amount_cents } }"}, rankingResult)
+	if message := wrongRankedColumn.pendingDatabaseComputation(); !strings.HasPrefix(message, "database_computation_required:") {
+		t.Fatalf("unrelated order_by column bypassed ranking guard: %q", message)
+	}
+
+	countWithLimit := newDiscoveryState("How many invoices are there?")
+	countWithLimit.recordExecution(toolExecuteGraphQL, rankingArgs, rankingResult)
+	if message := countWithLimit.pendingDatabaseComputation(); !strings.HasPrefix(message, "database_computation_required:") {
+		t.Fatalf("order_by+limit bypassed strict count guard: %q", message)
+	}
+
+	savedRows := newDiscoveryState("How many accounts are active?")
+	savedRows.recordExecution(toolExecuteSavedQuery, map[string]any{"name": "account_rows"}, executeResult{
+		Data: map[string]any{"accounts": []any{map[string]any{"id": 1}, map[string]any{"id": 2}}},
+	})
+	if message := savedRows.pendingDatabaseComputation(); !strings.HasPrefix(message, "database_computation_required:") {
+		t.Fatalf("row-returning saved query bypassed computation guard: %q", message)
+	}
+	savedAggregate := newDiscoveryState("What is the total monthly recurring revenue?")
+	savedAggregate.savedQueryGraphQL["mrr_summary"] = "query { accounts { total: sum_mrr } }"
+	savedAggregate.recordExecution(toolExecuteSavedQuery, map[string]any{"name": "mrr_summary"}, executeResult{
+		Data: map[string]any{"accounts": []any{map[string]any{"total": 42}}},
+	})
+	if message := savedAggregate.pendingDatabaseComputation(); message != "" {
+		t.Fatalf("aggregate saved query remained blocked: %q", message)
+	}
+}
+
+func TestResultContainsHasuraCompatibleAggregate(t *testing.T) {
+	value := map[string]any{
+		"accounts_aggregate": map[string]any{
+			"aggregate": map[string]any{"count": 12, "max": map[string]any{"renewed_at": "2027-02-19"}},
+		},
+	}
+	if !resultContainsAggregateField(value) {
+		t.Fatal("Hasura-compatible aggregate result was not recognized")
+	}
+}
+
+func TestCachedExecutionRecoveryKeepsPendingRequirement(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	runtime := newProtocolRuntime(base, "How many invoices are there?", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"table:main:invoices"}
+	args := map[string]any{"query": "query { invoices { id } }"}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err == nil || base.graphqlCalls != 1 {
+		t.Fatalf("the cached rejection must throw without re-executing: calls=%d err=%v", base.graphqlCalls, err)
+	}
+	// The rows are withheld by the throw itself, and the requirement rides the
+	// exception text — including the aggregate guidance and never the
+	// call-final shortcut.
+	for _, want := range []string{"did NOT execute", "identical successful query already ran", "database_computation_required", "max_<column>", "do not calculate from fetched rows"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "Call final now") {
+		t.Fatalf("the pending requirement must not offer the call-final shortcut: %v", err)
+	}
+	last := runtime.state.actions[len(runtime.state.actions)-1]
+	if last.Error == "" || !strings.Contains(last.Error, "database_computation_required") {
+		t.Fatalf("cached rejection action = %#v", last)
+	}
+	if runtime.state.completionLatchKey != "" || runtime.state.completionReady {
+		t.Fatalf("pending requirement armed completion latch: %+v", runtime.state)
+	}
+}
+
+func TestCachedSavedQueryWithPendingRequirementWithholdsRows(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	runtime := newProtocolRuntime(base, "How many invoices are there?", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.markSavedQueryDetailed("invoice_snapshot")
+	args := map[string]any{"name": "invoice_snapshot"}
+	if _, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args))
+	if err == nil || base.savedCalls != 1 {
+		t.Fatalf("the cached saved-query rejection must throw without re-executing: calls=%d err=%v", base.savedCalls, err)
+	}
+	for _, want := range []string{"a saved query is fixed, so re-running it will keep failing", "database_computation_required", "count_", "do not calculate from fetched rows"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
+	}
+}
+
+// TestCachedSavedQueryRejectionPointsAtAuthoring pins the distinction that broke a
+// run: raw GraphQL can be re-authored in place, a saved query cannot. Generation
+// 2028.1 recorded the same saved query re-run ten times, each rejection sending the
+// model to a catalog search that returned nothing, until the step budget ran out.
+func TestCachedSavedQueryRejectionPointsAtAuthoring(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	runtime := newProtocolRuntime(base, "How many invoices are there?", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.markSavedQueryDetailed("invoice_snapshot")
+	args := map[string]any{"name": "invoice_snapshot"}
+	if _, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args))
+	if err == nil {
+		t.Fatal("the cached saved-query rejection must throw")
+	}
+	for _, want := range []string{"Author the required query with execute_graphql", "count_", "do not calculate from fetched rows"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
+	}
+	if !strings.Contains(err.Error(), "re-running it will keep failing") {
+		t.Fatalf("saved-query message must say repetition cannot work: %v", err)
+	}
+
+	// Raw GraphQL keeps the repeat-differently repair, because the caller owns the query.
+	graphqlOut, rejected := pendingCachedExecutionRejection(runtime.state, "{ invoices { id } }", false)
+	if !rejected {
+		t.Fatal("a pending requirement must reject the cached GraphQL execution")
+	}
+	graphqlResult, _ := graphqlOut.(executeResult)
+	graphqlRepair := mapValue(graphqlResult.Errors[0].Extensions["graphjin_repair"])
+	if kind := stringFromMap(graphqlRepair, "kind"); kind != "distinct_aggregate_required" {
+		t.Fatalf("raw GraphQL repair kind = %q, want the re-author path", kind)
+	}
+	if tool := stringFromMap(graphqlRepair, "recommended_tool"); tool != "" {
+		t.Fatalf("raw GraphQL needs no tool redirect, got %q", tool)
+	}
+}
+
+// TestAnchoredAggregateNoticeNamesTheQueriedRoot covers the shape behind every
+// window runaway in generation 2028.1. "Using the latest recorded X as the anchor,
+// how many records ..." legitimately reads a row first; the notice then called that
+// evidence insufficient without saying the anchor was fine, and the model
+// resubmitted the same query until the step cap. All seven runaways spent all eight
+// steps this way.
+func TestAnchoredAggregateNoticeNamesTheQueriedRoot(t *testing.T) {
+	state := newDiscoveryState("Using the latest recorded last_active_at as the anchor, how many records in accounts have last_active_at on or after the date exactly 90 days before that anchor?")
+	state.executions = []map[string]any{{
+		"tool":        toolExecuteGraphQL,
+		"query":       "query { maxAnchor: accounts(order_by: { last_active_at: desc }, limit: 1) { last_active_at } }",
+		"has_data":    true,
+		"error_count": 0,
+	}}
+
+	notice := state.pendingDatabaseComputation()
+	if notice == "" {
+		t.Fatal("a row-only anchor read must still require the aggregate")
+	}
+	if !strings.Contains(notice, "accounts") {
+		t.Fatalf("notice must name the root already queried: %q", notice)
+	}
+	// The anchor value is usable; saying so is what stops the resubmit loop.
+	if !strings.Contains(notice, "intermediate value") || !strings.Contains(notice, "do not resubmit the row query") {
+		t.Fatalf("notice must keep the anchor and forbid the resubmit: %q", notice)
+	}
+
+	// Once the aggregate has run, the requirement is discharged.
+	state.executions = append(state.executions, map[string]any{
+		"tool":        toolExecuteGraphQL,
+		"query":       `query { accounts(where: { last_active_at: { gte: "2026-05-13" } }) { count_id } }`,
+		"has_data":    true,
+		"error_count": 0,
+	})
+	if notice := state.pendingDatabaseComputation(); notice != "" {
+		t.Fatalf("a database-side aggregate must satisfy the requirement, got %q", notice)
+	}
+}
+
+// TestAggregateNoticeWithoutRowEvidenceKeepsGenericGuidance holds the first-step
+// case: with nothing read yet there is no root to name.
+func TestAggregateNoticeWithoutRowEvidenceKeepsGenericGuidance(t *testing.T) {
+	state := newDiscoveryState("How many accounts are there?")
+	notice := state.pendingDatabaseComputation()
+	if notice == "" || strings.Contains(notice, "intermediate value") {
+		t.Fatalf("with no row evidence the generic requirement stands: %q", notice)
+	}
+}
+
+func TestCachedExecutionBecomesCurrentCompletionEvidence(t *testing.T) {
+	base := &sequencedExecRuntime{
+		fakeRuntime: &fakeRuntime{},
+		outputs: []any{
+			map[string]any{"data": map[string]any{"invoices": []any{map[string]any{"id": "A"}}}},
+			map[string]any{"data": map[string]any{"invoices": []any{map[string]any{"id": "B"}}}},
+		},
+	}
+	runtime := newProtocolRuntime(base, "Show invoice A", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"table:main:invoices"}
+	queryA := map[string]any{"query": `query { invoices(where: {id: {eq: "A"}}) { id } }`}
+	queryB := map[string]any{"query": `query { invoices(where: {id: {eq: "B"}}) { id } }`}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(queryA)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(queryB)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(queryA)); err != nil {
+		t.Fatal(err)
+	}
+	if base.calls != 2 {
+		t.Fatalf("cached query reached database: calls=%d", base.calls)
+	}
+	data, ok := runtime.state.lastExecutionData()
+	rows := anySlice(mapValue(data)["invoices"])
+	if !ok || len(rows) != 1 || stringFromMap(mapValue(rows[0]), "id") != "A" {
+		t.Fatalf("cached completion evidence = %+v, want query A", data)
+	}
+}
+
+func TestFinalizeClearsResolvedDiscoveryRefusalAfterTerminalExecution(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	runtime := newProtocolRuntime(base, "Show invoice INV-1", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"table:main:invoices"}
+	runtime.state.addViolation("raw_graphql_discovery_required", "inspect the relevant catalog detail first", toolExecuteGraphQL, true, nil)
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { invoices(limit: 1) { id status } }"}); err != nil {
+		t.Fatal(err)
+	}
+	resp := runtime.state.finalize(Response{
+		Status: StatusBlocked,
+		Answer: "Invoice INV-1 is paid.",
+		Refusal: &Refusal{
+			Code:          "raw_graphql_discovery_required",
+			BlockedAction: toolExecuteGraphQL,
+			Because:       []string{"inspect the relevant catalog detail first"},
+			Retryable:     true,
+		},
+		Errors: []ErrorInfo{{Message: "inspect the relevant catalog detail first", Extensions: map[string]any{"code": "raw_graphql_discovery_required"}}},
+	})
+	if resp.Status != StatusAnswered || resp.Refusal != nil || len(resp.Errors) != 0 {
+		t.Fatalf("resolved terminal execution remained blocked: %+v", resp)
+	}
+	violations := anySlice(mapValue(resp.Evidence)["violations"])
+	if len(violations) != 1 || mapValue(violations[0])["blocking"] != false || mapValue(mapValue(violations[0])["details"])["resolved"] != true {
+		t.Fatalf("resolved discovery violation evidence = %+v", violations)
+	}
+}
+
+func TestExecuteGraphQLSuccessAttachesNoRecovery(t *testing.T) {
+	runtime := newFailingExecProtocol(t, executeResult{
+		Data: map[string]any{"green_lots": []any{map[string]any{"remaining_kg": 720}}},
+	})
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { remaining_kg } }"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, ok := out.(executeResult)
+	if !ok {
+		t.Fatalf("result type = %T", out)
+	}
+	if res.Recovery != nil {
+		t.Fatalf("recovery = %#v, want nil", res.Recovery)
+	}
+}
+
+func TestExecuteGraphQLErrorAttachesRecoveryToMapResults(t *testing.T) {
+	runtime := newFailingExecProtocol(t, map[string]any{
+		"errors": []any{map[string]any{"message": "column not found"}},
+	})
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { available } }"})
+	if err == nil {
+		t.Fatal("a map-shaped dataless engine failure must throw too")
+	}
+	for _, want := range []string{"did NOT return data", "column not found", "re-discover real fields"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
+	}
+}
+
+func groundedAnswerState(t *testing.T) *discoveryState {
+	t.Helper()
+	state := newDiscoveryState("does the roast plan cover committed shipments")
+	state.seedOK = true
+	state.modelDiscoveryAction = true
+	args := map[string]any{"name": "daily_roast_context"}
+	index := state.startAction("model", "execute_saved_query", args)
+	state.finishAction(index, "execute_saved_query", args, map[string]any{
+		"data": map[string]any{
+			"production_orders": []any{map[string]any{"quantity_bags": 240, "requested_ship_date": "2026-07-28"}},
+			"roast_schedule":    []any{map[string]any{"target_output_kg": 132}},
+		},
+	}, nil)
+	return state
+}
+
+func TestFinalizeBlocksUngroundedAnswerFields(t *testing.T) {
+	state := groundedAnswerState(t)
+	resp := state.finalize(Response{
+		Status: StatusAnswered,
+		Answer: "The evidence explicitly states coversCommittedShipments is false.",
+	})
+	if resp.Status != StatusBlocked {
+		t.Fatalf("status = %s, want %s", resp.Status, StatusBlocked)
+	}
+	codes := ProtocolViolationCodes(resp)
+	found := false
+	for _, code := range codes {
+		if code == "ungrounded_answer_fields" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("violation codes = %v, want ungrounded_answer_fields", codes)
+	}
+	if resp.Refusal == nil {
+		t.Fatal("blocked ungrounded answer must carry a refusal")
+	}
+}
+
+func TestFinalizeAllowsGroundedAnswerFields(t *testing.T) {
+	state := groundedAnswerState(t)
+	resp := state.finalize(Response{
+		Status: StatusAnswered,
+		Answer: "Orders total 240 quantity_bags with requested_ship_date 2026-07-28; scheduled target_output_kg is 132, so the roast plan covers committed shipments. Next: confirm packaging labor.",
+	})
+	if resp.Status != StatusAnswered {
+		t.Fatalf("status = %s, want %s (violations: %v)", resp.Status, StatusAnswered, ProtocolViolationCodes(resp))
+	}
+}
+
+func TestFinalizeAllowsProtocolVocabularyAndInstructionTokens(t *testing.T) {
+	state := newDiscoveryState("audit the coversCommittedShipments flag semantics")
+	state.seedOK = true
+	state.modelDiscoveryAction = true
+	resp := state.finalize(Response{
+		Status: StatusAnswered,
+		Answer: "The coversCommittedShipments wording comes from your request; per gj_catalog discovery, use an approved saved_query via execute_saved_query.",
+	})
+	if resp.Status != StatusAnswered {
+		t.Fatalf("status = %s, want %s (violations: %v)", resp.Status, StatusAnswered, ProtocolViolationCodes(resp))
+	}
+}
+
+func TestFinalizeSkipsGroundingForNonAnsweredStatus(t *testing.T) {
+	state := groundedAnswerState(t)
+	resp := state.finalize(Response{
+		Status: StatusBlocked,
+		Answer: "Blocked: madeUpFieldName is unavailable to this role.",
+	})
+	for _, code := range ProtocolViolationCodes(resp) {
+		if code == "ungrounded_answer_fields" {
+			t.Fatal("grounding must not judge non-answered responses")
+		}
+	}
+}
+
+func TestUngroundedAnswerTokenExtraction(t *testing.T) {
+	state := newDiscoveryState("plan question")
+	state.addGrounding(map[string]any{"data": map[string]any{"remaining_kg": 720}})
+	tokens := state.ungroundedAnswerTokens("remaining_kg is observed, planStatus is invented, a_b is short, and gj_catalog is vocabulary.")
+	if len(tokens) != 1 || tokens[0] != "planStatus" {
+		t.Fatalf("tokens = %v, want [planStatus]", tokens)
+	}
+}
+
+func TestGroundingCorpusOverflowDisablesCheck(t *testing.T) {
+	state := newDiscoveryState("plan question")
+	state.addGrounding(strings.Repeat("x", maxGroundingCorpusBytes+1))
+	if !state.groundingOverflow {
+		t.Fatal("oversized grounding write must trip the overflow guard")
+	}
+	if tokens := state.ungroundedAnswerTokens("inventedFieldName everywhere"); tokens != nil {
+		t.Fatalf("tokens = %v, want nil after overflow", tokens)
+	}
+}
+
+func TestResultSummaryCarriesRecoveryCodesWithoutMessages(t *testing.T) {
+	summary := resultSummary(toolExecuteGraphQL, nil, map[string]any{
+		"errors": []any{map[string]any{
+			"message": "private compiler detail",
+			"extensions": map[string]any{
+				"code": "field_not_on_table",
+				"graphjin_repair": map[string]any{
+					"kind": "field_not_on_table",
+					"next": map[string]any{"tool": toolGraphQLHelp},
+				},
+			},
+		}},
+		"recovery": map[string]any{
+			"next": map[string]any{"tool": toolGraphQLHelp},
+		},
+	})
+	if got := summary["error_codes"]; stringify(got) != `["field_not_on_table"]` {
+		t.Fatalf("error codes = %v", got)
+	}
+	if got := summary["recovery_codes"]; stringify(got) != `["field_not_on_table"]` {
+		t.Fatalf("recovery codes = %v", got)
+	}
+	if got := summary["recovery_tool"]; got != toolGraphQLHelp {
+		t.Fatalf("recovery tool = %v, want %s", got, toolGraphQLHelp)
+	}
+	if strings.Contains(stringify(summary), "private compiler detail") {
+		t.Fatalf("action summary leaked error prose: %v", summary)
+	}
+}
+
+func TestDatabaseAggregatePatternAcceptsShallowCompatibilitySyntax(t *testing.T) {
+	queries := []string{
+		`query { support_tickets_aggregate { count } }`,
+		`query { usage_events_aggregate { min { quantity } } }`,
+		`query { usage_events_aggregate(where: { quantity: { gt: 0 } }) { count } }`,
+	}
+	for _, query := range queries {
+		if !databaseAggregateFieldPattern.MatchString(query) {
+			t.Fatalf("shallow aggregate query was not recognized: %s", query)
+		}
+	}
+	if databaseAggregateFieldPattern.MatchString(`query { audit_aggregate { id } }`) {
+		t.Fatal("ordinary table ending in _aggregate must not receive aggregate credit")
+	}
+}
+
+// TestExecutionRecoveryNamesFailedQueryTables pins the read-path counterpart of
+// the mutation-evidence defect. Benchmark run 35621a4f shows a cross-source
+// episode issuing one invented-field query seven times against the generic
+// "inspect the real table and column details" directive: it named no table and
+// no call shape, so the model had nothing to correct toward.
+func TestExecutionRecoveryNamesFailedQueryTables(t *testing.T) {
+	state := newDiscoveryState("Combine the account with the account-health API.")
+	state.catalogIDs["table:app:main.accounts"] = true
+	state.catalogIDs["table:app:main.account_health"] = true
+
+	query := `{ account_health(where: {name: {eq: "Meridian Robotics"}}) { open_risks health_color } }`
+	recovery := executionRecovery(state, query)
+	next, ok := recovery["next"].(map[string]any)
+	if !ok {
+		t.Fatalf("recovery.next = %#v", recovery["next"])
+	}
+	if next["recommended_tool"] != toolQueryCatalog {
+		t.Fatalf("recovery must keep the structured catalog pointer: %#v", next)
+	}
+	args, _ := next["args"].(map[string]any)
+	ids, _ := args["ids"].([]any)
+	if len(ids) == 0 {
+		t.Fatalf("recovery must name the failed query's table ids: %#v", next)
+	}
+	if fmt.Sprint(ids[0]) != "table:app:main.account_health" {
+		t.Fatalf("recovery named the wrong table: %#v", ids)
+	}
+	if !strings.Contains(fmt.Sprint(next["reason"]), "does not carry column names") {
+		t.Fatalf("recovery must reject list-only evidence: %#v", next["reason"])
+	}
+}
+
+// TestExecutionRecoveryFallsBackWhenRootsAreUnknown keeps the generic directive
+// for a genuinely unrecognizable root instead of inventing an id.
+func TestExecutionRecoveryFallsBackWhenRootsAreUnknown(t *testing.T) {
+	state := newDiscoveryState("Query something unknown.")
+	recovery := executionRecovery(state, `{ mystery_root { id } }`)
+	next, _ := recovery["next"].(map[string]any)
+	if next == nil || next["recommended_tool"] != toolQueryCatalog {
+		t.Fatalf("expected the generic catalog pointer: %#v", recovery["next"])
+	}
+	if _, named := next["args"]; named {
+		t.Fatalf("unknown roots must not fabricate catalog ids: %#v", next)
+	}
+}
+
+// TestStoredCountColumnDischargesCountIntent pins the discharge added after
+// generation 2028.1 measured pendingDatabaseComputation refusing the correct
+// read 10 of 12 times on the account-health family: "how many open risks" is
+// answered by the stored column account_health.open_risk_count, and no
+// aggregate exists to run against an API join.
+func TestStoredCountColumnDischargesCountIntent(t *testing.T) {
+	discharge := func(t *testing.T, instruction, query string) string {
+		t.Helper()
+		state := newDiscoveryState(instruction)
+		state.executions = []map[string]any{{
+			"tool": toolExecuteGraphQL, "query": query, "has_data": true, "error_count": 0,
+		}}
+		return state.pendingDatabaseComputation()
+	}
+
+	healthQuestion := "How healthy is Meridian Robotics right now, and how many open risks are there against it?"
+	nested := `query { accounts(where: {id: {eq: 1}}, limit: 1) { name account_health { health executive_owner open_risk_count } } }`
+
+	// (1) The real episode shape discharges.
+	if got := discharge(t, healthQuestion, nested); got != "" {
+		t.Fatalf("stored count read must discharge, got %q", got)
+	}
+	// (2) Multi-line, comma-free GraphQL — the shape models actually write.
+	multiline := "query {\n  accounts(where: {id: {eq: 1}} limit: 1) {\n    name\n    account_health {\n      health\n      open_risk_count\n    }\n  }\n}"
+	if got := discharge(t, healthQuestion, multiline); got != "" {
+		t.Fatalf("multi-line form must discharge, got %q", got)
+	}
+	// (3) JSON-escaped quotes, as query text arrives from runtime args.
+	escaped := `query { accounts(where: {name: {eq: \"Meridian Robotics\"}}) { account_health { open_risk_count } } }`
+	if got := discharge(t, healthQuestion, escaped); got != "" {
+		t.Fatalf("escaped-quote form must discharge, got %q", got)
+	}
+	// (4) A plain row fetch answers nothing and stays blocked.
+	if got := discharge(t, "How many open urgent tickets are there?", `query { support_tickets { id status } }`); got == "" {
+		t.Fatal("a row fetch must not discharge a count intent")
+	}
+	// (5) A window anchor read stays blocked, and the message still names the
+	// anchored root plus the new stored-count wording.
+	state := newDiscoveryState("Using the latest payment as the anchor, how many tickets were opened after it?")
+	state.executions = []map[string]any{{
+		"tool": toolExecuteGraphQL, "has_data": true, "error_count": 0,
+		"query": `query { payments(order_by: {occurred_at: desc}, limit: 1) { occurred_at } }`,
+	}}
+	if got := state.pendingDatabaseComputation(); got == "" {
+		t.Fatal("an anchor read must not discharge")
+	} else {
+		for _, want := range []string{"payments", "stored *_count column"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("blocked message should carry %q: %s", want, got)
+			}
+		}
+	}
+	// (6) Ranking intent never discharges via a stored scalar: a column cannot rank.
+	if got := discharge(t, "Which account has the most open risks?", nested); got == "" {
+		t.Fatal("ranking intent must still require the aggregate path")
+	}
+	// (7) An unrelated stored count does not discharge — the stem must be asked about.
+	if got := discharge(t, "How many open risks are there?", `query { accounts { invoice_count } }`); got == "" {
+		t.Fatal("invoice_count must not answer a question about risks")
+	}
+	// (8) Alias-name gaming is rejected; the alias-target form is a genuine read.
+	if got := discharge(t, healthQuestion, `query { accounts { account_health { open_risk_count: id } } }`); got == "" {
+		t.Fatal("aliasing another field AS open_risk_count must not discharge")
+	}
+	if got := discharge(t, healthQuestion, `query { accounts { account_health { risks: open_risk_count } } }`); got != "" {
+		t.Fatalf("alias-target read must discharge, got %q", got)
+	}
+	// (9) The saved-query path discharges symmetrically.
+	saved := newDiscoveryState(healthQuestion)
+	saved.savedQueryGraphQL["account_health_snapshot"] = nested
+	saved.executions = []map[string]any{{
+		"tool": toolExecuteSavedQuery, "name": "account_health_snapshot", "has_data": true, "error_count": 0,
+	}}
+	if got := saved.pendingDatabaseComputation(); got != "" {
+		t.Fatalf("saved-query stored count must discharge, got %q", got)
+	}
+	// (10) The two patterns partition: the aggregate pattern does not claim
+	// stored counts, and the stored-count pattern does not scalar-claim
+	// aggregate fields.
+	if databaseAggregateFieldPattern.MatchString("open_risk_count") {
+		t.Fatal("aggregate pattern must not match a stored *_count column")
+	}
+	if queryReadsAnsweringStoredCount(`query { support_tickets { count_id } }`, "how many tickets") {
+		t.Fatal("count_id is an aggregate field, not a stored count; the aggregate path owns it")
+	}
+}
+
+// The engine accepts `<agg>(column: <col>)` as a spelling of the prefix form;
+// the guard must recognize it as a database aggregate or a correct query loops
+// on database_computation_required exactly as the pre-widening episodes did.
+func TestDatabaseAggregatePatternAcceptsColumnArgSyntax(t *testing.T) {
+	for _, query := range []string{
+		`query { accounts { max_renewal_date: max(column: renewal_date) } }`,
+		`query { accounts(where: { renewal_date: { gte: "2027-01-30" } }) { count_id: count(column: id) } }`,
+		`query { invoices { total: sum(column: amount_cents) } }`,
+	} {
+		if !databaseAggregateFieldPattern.MatchString(query) {
+			t.Fatalf("column-arg aggregate was not recognized: %s", query)
+		}
+	}
+	if databaseAggregateFieldPattern.MatchString(`query { accounts { max(colour: renewal_date) } }`) {
+		t.Fatal("a non-column argument must not receive aggregate credit")
+	}
+}

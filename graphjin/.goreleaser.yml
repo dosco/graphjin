@@ -1,0 +1,165 @@
+# Make sure to check the documentation at http://goreleaser.com
+
+# Snapcraft credentials
+# snapcraft export-login --snaps=graphjin --channels=stable --acls=package_access,package_push,package_update,package_release credential
+
+# GPG Key
+# gpg --armor --export-secret-key <email> | pbcopy
+version: 2
+
+before:
+  hooks:
+    - go mod download
+    - make gen
+builds:
+  - id: graphjin
+    main: ./cmd
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+      - -X github.com/dosco/graphjin/serv/v3.version={{ .Version }}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    # 386 and arm are paused: the ax-llm Go package does not build for
+    # 32-bit targets yet.
+    goarch:
+      - amd64
+      - arm64
+
+kos:
+  - id: graphjin-docker
+    build: graphjin
+    main: ./cmd
+    repositories:
+      - dosco/graphjin
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    tags:
+      - latest
+      - "{{ .Version }}"
+    bare: true
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+      - -X github.com/dosco/graphjin/serv/v3.version={{ .Version }}
+    env:
+      - CGO_ENABLED=0
+
+  # The agent environment image. Same source, same build, same repository —
+  # only the role differs, because ko sets the entrypoint to the binary and
+  # offers no way to give it arguments (goreleaser's ko block has no
+  # entrypoint/cmd/args field). The role ldflag is how the binary knows to
+  # serve `env serve`, listen off loopback, and pin its clock to the build
+  # date so one tag measures one thing forever.
+  #
+  # Published alongside the server image under env-* tags, so `latest` and the
+  # version tag keep meaning the database server and nothing about this entry
+  # can change what an existing `docker pull dosco/graphjin` gets.
+  - id: graphjin-env-docker
+    build: graphjin
+    main: ./cmd
+    repositories:
+      - dosco/graphjin
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    tags:
+      - env-latest
+      - "env-{{ .Version }}"
+    bare: true
+    labels:
+      org.opencontainers.image.title: graphjin-env
+      org.opencontainers.image.description: GraphJin as a graded agent environment for training and evaluation
+      org.opencontainers.image.source: https://github.com/dosco/graphjin
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .Commit }}"
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+      - -X github.com/dosco/graphjin/serv/v3.version={{ .Version }}
+      - -X main.imageRole=env
+    env:
+      - CGO_ENABLED=0
+
+signs:
+  - artifacts: checksum
+    args:
+      [
+        "--batch",
+        "-u",
+        "{{ .Env.GPG_FINGERPRINT }}",
+        "--output",
+        "${signature}",
+        "--detach-sign",
+        "${artifact}",
+      ]
+
+archives:
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  name_template: "{{ .Tag }}-snapshot"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - Merge pull request
+      - Merge branch
+      - go mod tidy
+
+nfpms:
+  - homepage: https://graphjin.com
+    description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
+    license: Apache-2.0
+    maintainer: Vikram Rangnekar (https://twitter.com/dosco)
+    formats:
+      - deb
+      - rpm
+
+brews:
+  - repository:
+      owner: dosco
+      name: homebrew-graphjin
+    directory: Formula
+    homepage: https://graphjin.com
+    description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
+    license: Apache-2.0
+    skip_upload: false
+
+scoops:
+  - repository:
+      owner: dosco
+      name: graphjin-scoop
+    commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
+    homepage: https://graphjin.com
+    description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
+    license: Apache-2.0
+# snapcrafts:
+#   - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+#     summary: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler"
+#     description: |
+#       GraphJin gives you a high performance GraphQL API without you having to write any code. GraphQL is automagically compiled into an efficient SQL query. Use it either as a library or a standalone service.
+#     apps:
+#       graphjin:
+#         plugs: ["home", "network", "network-bind"]
+#     grade: stable
+#     confinement: strict
+#     publish: true
+#     license: Apache-2.0
+#     base: core18

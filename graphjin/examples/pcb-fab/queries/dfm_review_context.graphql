@@ -1,0 +1,39 @@
+query dfm_review_context {
+  fab_orders(where: { order_code: { eq: "FO-260701-ALPHA" } }, limit: 1) {
+    id
+    order_code
+    status
+    priority
+    due_date
+    pcb_designs {
+      design_code
+      layer_count
+      material
+      target_impedance_ohms
+    }
+    design_revisions {
+      revision
+      gerber_path
+      stackup_note
+    }
+  }
+  bom_items(where: { design_id: { eq: 1 } }, order_by: { id: asc }, limit: 10) {
+    id
+    sku
+    description
+    criticality
+    supplier_part {
+      sku
+      name
+      lifecycle
+      inventory_qty
+      lead_time_days
+    }
+  }
+  ncr_reports(where: { order_id: { eq: 1 } }, limit: 5) {
+    id
+    defect_code
+    severity
+    status
+  }
+}

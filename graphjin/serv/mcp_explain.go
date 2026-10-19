@@ -1,0 +1,67 @@
+package serv
+
+import (
+	"context"
+	"encoding/json"
+
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
+)
+
+// registerExplainTools is retained as an inert compatibility hook.
+func (ms *mcpServer) registerExplainTools() {
+	return
+
+	if !ms.service.conf.MCP.AllowDevTools {
+		return
+	}
+
+	ms.srv.AddTool(mcp.NewTool(
+		"explain_query",
+		mcp.WithDescription("Compile a GraphQL query WITHOUT executing it. "+
+			"Returns the compiled query (SQL for relational databases, aggregation pipeline for MongoDB), "+
+			"parameter bindings, tables touched, join depth, and cache info. "+
+			"For multi-database queries, returns per-database explanations. "+
+			"Use this to debug performance, verify correctness, and understand the query before running it."),
+		mcp.WithString("query",
+			mcp.Required(),
+			mcp.Description("The GraphQL query to explain"),
+		),
+		mcp.WithObject("variables",
+			mcp.Description("Optional query variables as a JSON object"),
+		),
+		mcp.WithString("role",
+			mcp.Description("Optional role to compile the query as (e.g., 'user', 'anon'). Defaults to the current session role."),
+		),
+	), ms.handleExplainQuery)
+}
+
+// handleExplainQuery compiles a query and returns the explanation
+func (ms *mcpServer) handleExplainQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := ms.requireDB(); err != nil {
+		return err, nil
+	}
+
+	args := req.GetArguments()
+	query, _ := args["query"].(string)
+	role, _ := args["role"].(string)
+
+	if query == "" {
+		return mcp.NewToolResultError("query is required"), nil
+	}
+
+	// Handle variables
+	var vars json.RawMessage
+	if v, ok := args["variables"]; ok && v != nil {
+		varBytes, err := json.Marshal(v)
+		if err != nil {
+			return mcp.NewToolResultError("invalid variables: " + err.Error()), nil
+		}
+		vars = varBytes
+	}
+
+	explanation, err := ms.service.gj.ExplainQuery(query, vars, role)
+	if err != nil {
+		return mcp.NewToolResultError("explain failed: " + err.Error()), nil
+	}
+	return ms.toolResultJSON("explain_query", args, explanation)
+}

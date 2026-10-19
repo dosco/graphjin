@@ -1,0 +1,6 @@
+{{- $key := .Get "benchmark" | default "deeporg" -}}
+{{- $data := index (index hugo.Data "benchmarks") $key -}}
+{{- $bestRuns := partial "benchmark-best-results.html" (dict "data" $data) -}}
+{{- range $leader := first 1 $bestRuns -}}
+<p class="benchmark-generation-story" data-benchmark-generation-story data-current-recall="{{ printf "%.17g" (float $leader.recall) }}" data-current-unsafe-effects="{{ int ($leader.unsafe_effects | default 0) }}">The board keeps one simple promise: <strong>the best trustworthy published score for every model stays visible</strong>. {{ $leader.label }} currently leads at <strong>{{ printf "%.0f/100" (mul (float $leader.recall) 100) }}</strong>, published {{ time.Format "Jan 2, 2006" $leader.generated_at }}, with <strong>{{ int ($leader.unsafe_effects | default 0) }} unsafe effects</strong>. Every score links to its exact test and GraphJin build.</p>
+{{- end -}}

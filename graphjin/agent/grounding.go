@@ -1,0 +1,821 @@
+package agent
+
+import (
+	"fmt"
+	"regexp"
+	"sort"
+	"strings"
+	"unicode"
+)
+
+// Execution recovery and answer grounding close the gap between "the protocol
+// ran" and "the conclusion is true". A failed execution steers the model back
+// onto catalog discovery and approved saved queries inside the same run, and an
+// answered response may cite field-shaped identifiers only when they appeared
+// in this run's observed tool evidence (instruction, history, arguments, and
+// results). Both are deterministic server-side guards, not prompt guidance.
+
+const (
+	// maxGroundingCorpusBytes bounds the evidence corpus; past it the grounding
+	// check disables itself rather than false-block on missing evidence.
+	maxGroundingCorpusBytes = 4 << 20
+	// minGroundedTokenLength skips short incidental tokens such as ids in
+	// prose; real field references (plan_status, remaining_kg) are longer.
+	minGroundedTokenLength = 5
+	// maxRecoverySavedQueries caps already-discovered candidates mentioned by
+	// the raw-GraphQL guard so recovery cannot flood the prompt.
+	maxRecoverySavedQueries = 8
+	// maxUngroundedTokens caps the reported token list in the violation.
+	maxUngroundedTokens = 8
+)
+
+// answerFieldTokenPatterns match identifier-shaped references: snake_case and
+// camelCase. Plain prose words never match, so ordinary sentences are exempt.
+var answerFieldTokenPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b`),
+	regexp.MustCompile(`\b[a-z][a-z0-9]*(?:[A-Z][A-Za-z0-9]*)+\b`),
+}
+
+var databaseAggregateFieldPattern = regexp.MustCompile(`(?is)(?:\b[a-zA-Z][a-zA-Z0-9_]*_aggregate\b(?:\s*\([^)]*\))?\s*\{\s*(?:aggregate\s*\{\s*)?(?:count\b|(?:sum|avg|min|max|stddev|variance)\s*\{)|\b(?:count|sum|avg|min|max|stddev|variance)_[a-zA-Z0-9_]+|\b(?:count|sum|avg|min|max|stddev|variance)\s*\(\s*(?:expr|column)\s*:)`)
+var databaseAggregateKeyPattern = regexp.MustCompile(`(?i)^(?:count|sum|avg|min|max|stddev|variance)_[a-zA-Z0-9_]+$`)
+var hasuraAggregateResultKeyPattern = regexp.MustCompile(`(?i)^(?:count|sum|avg|min|max|stddev|variance)$`)
+var databaseOrderFieldPattern = regexp.MustCompile(`(?i)\border_by\s*:\s*\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:`)
+var databaseLimitPattern = regexp.MustCompile(`(?i)\blimit\s*:\s*(?:[1-9][0-9]*|\$[a-zA-Z_][a-zA-Z0-9_]*)`)
+
+// groundingVocabulary lists identifier-shaped protocol, tool, skill, and
+// system-root terms an answer may always use without data evidence. Domain
+// field names never belong here — they must come from run evidence.
+var groundingVocabulary = strings.ToLower(strings.Join([]string{
+	toolGraphQLHelp, toolQueryCatalog, toolValidateWhere, toolExecuteSavedQuery, toolExecuteGraphQL,
+	systemRootCatalog, systemRootSecurity, systemRootRuntime, systemRootConfig,
+	systemRootWorkflow, systemRootWorkflowExec, systemRootArtifacts,
+	systemRootWatch, systemRootWatchEvent, systemRootTask, systemRootTaskEntry,
+	skillDataDiscovery, skillDataAggregation, skillDataWrite, skillCodeRead, skillCodeWrite,
+	skillWorkflowRead, skillWorkflowExec, skillWorkflowWrite,
+	skillWatchRead, skillWatchWrite,
+	skillTaskRead, skillTaskWrite, skillAdminRead, skillAdminWrite,
+	StatusAnswered, StatusNeedsClarification, StatusBlocked, StatusError,
+	"saved_query", "saved_queries", "saved_mutation", "mutation_pattern", "system_capability",
+	"catalog_first", "read_only", "row_level_security", "graphjin_repair", "graphjin_discovery",
+	"task_id", "trace_id", "watch_id", "order_by", "args_template", "variables_json",
+	"delivery_json", "absence_json", "enrich_json", "snapshot_json", "detail_json",
+	"data_json", "verify_json", "metadata_json", "field_not_on_table",
+}, "\n"))
+
+// addGrounding appends observed run evidence to the grounding corpus. Values
+// are serialized and lowercased; once the corpus would exceed its bound the
+// check degrades to disabled instead of risking false blocks.
+func (s *discoveryState) addGrounding(values ...any) {
+	if s.groundingOverflow {
+		return
+	}
+	for _, value := range values {
+		text := stringify(normalizeValue(value))
+		if text == "" {
+			continue
+		}
+		if s.groundingCorpus.Len()+len(text) > maxGroundingCorpusBytes {
+			s.groundingOverflow = true
+			return
+		}
+		s.groundingCorpus.WriteString(strings.ToLower(text))
+		s.groundingCorpus.WriteByte('\n')
+	}
+}
+
+// ungroundedAnswerTokens returns field-shaped identifiers cited in an answer
+// that never appeared in this run's evidence corpus or the fixed protocol
+// vocabulary. Matching is case-insensitive substring containment, so JSON
+// keys, argument names, and quoted values all ground a token.
+func (s *discoveryState) ungroundedAnswerTokens(answer string) []string {
+	if s.groundingOverflow {
+		return nil
+	}
+	answer = strings.TrimSpace(answer)
+	if answer == "" {
+		return nil
+	}
+	corpus := s.groundingCorpus.String()
+	seen := map[string]bool{}
+	var out []string
+	for _, pattern := range answerFieldTokenPatterns {
+		for _, token := range pattern.FindAllString(answer, -1) {
+			if len(token) < minGroundedTokenLength {
+				continue
+			}
+			key := strings.ToLower(token)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			if strings.Contains(groundingVocabulary, key) || strings.Contains(corpus, key) {
+				continue
+			}
+			out = append(out, token)
+		}
+	}
+	sort.Strings(out)
+	if len(out) > maxUngroundedTokens {
+		out = out[:maxUngroundedTokens]
+	}
+	return out
+}
+
+// executionFailed reports whether an execution result carries GraphQL errors,
+// across the typed, map-shaped, and foreign-struct runtime results.
+func executionFailed(out any) bool {
+	switch res := out.(type) {
+	case executeResult:
+		return len(res.Errors) != 0
+	case *executeResult:
+		return res != nil && len(res.Errors) != 0
+	case map[string]any:
+		return len(anySlice(res["errors"])) != 0
+	default:
+		// A base runtime outside this package fails as whatever struct it
+		// built — the same foreign-shape seam attachNoticeToForeignResult
+		// covers on the success path. Reading such a result as success set
+		// mutationSucceeded on a failed write and skipped every recovery
+		// hook, so normalize and read errors the way the map case does.
+		return len(anySlice(mapValue(normalizeValue(out))["errors"])) != 0
+	}
+}
+
+// attachExecutionRecovery decorates a failed execution result with
+// deterministic in-run recovery guidance: the live schema is authoritative,
+// repair extensions point at the fix, and approved saved queries discovered in
+// this run are the preferred retry path.
+//
+// The guidance is also appended to each error message, not just carried in a
+// sibling field. A model that has decided the run failed reads errors[].message
+// and summarizes it; recovery advice it never opens does not change behavior.
+func attachExecutionRecovery(out any, state *discoveryState, query string) any {
+	if !executionFailed(out) {
+		return out
+	}
+	if repair, ok := systemRootDidYouMeanRepair(out, state, query); ok {
+		return attachSystemRootDidYouMean(out, repair)
+	}
+	recovery := executionRecovery(state, query)
+	directive := recoveryDirective(recovery)
+	switch res := out.(type) {
+	case executeResult:
+		res.Recovery = recovery
+		res.Errors = appendRecoveryDirective(res.Errors, directive)
+		return res
+	case *executeResult:
+		res.Recovery = recovery
+		res.Errors = appendRecoveryDirective(res.Errors, directive)
+		return res
+	case map[string]any:
+		res["recovery"] = recovery
+		errors := anySlice(res["errors"])
+		for _, item := range errors {
+			entry, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			entry["message"] = joinRecoveryMessage(stringValue(entry["message"]), directive)
+		}
+		if len(errors) != 0 {
+			res["errors"] = errors
+		}
+		return res
+	default:
+		return out
+	}
+}
+
+type systemRootRepair struct {
+	attempted  string
+	candidates []string
+	example    string
+}
+
+// systemRootDidYouMeanRepair recognizes invented GraphJin-owned roots only
+// after the execution reports an unknown-root failure. Application table
+// failures retain the generic catalog repair. Candidate roots are restricted
+// to the caller-visible fixed roots in the capability profile.
+func systemRootDidYouMeanRepair(out any, state *discoveryState, query string) (systemRootRepair, bool) {
+	if state == nil || state.capabilities == nil {
+		return systemRootRepair{}, false
+	}
+	roots := append(QueryRootFields(query), MutationRootFields(query)...)
+	for _, attempted := range roots {
+		attempted = strings.ToLower(strings.TrimSpace(attempted))
+		if attempted == "" || isFixedSystemRoot(attempted) {
+			continue
+		}
+		watchIntent := systemWatchRootIntent(attempted)
+		if !watchIntent && !strings.HasPrefix(attempted, "gj_") {
+			continue
+		}
+		if !executionReportsUnknownRoot(out, attempted) {
+			continue
+		}
+		candidates := visibleSystemRootSuggestions(state.capabilities, attempted, watchIntent)
+		if len(candidates) == 0 {
+			continue
+		}
+		return systemRootRepair{
+			attempted:  attempted,
+			candidates: candidates,
+			example:    systemRootExample(candidates[0]),
+		}, true
+	}
+	return systemRootRepair{}, false
+}
+
+func systemWatchRootIntent(root string) bool {
+	root = strings.ToLower(strings.TrimSpace(root))
+	return root == "watch" || root == "watches" ||
+		strings.Contains(root, "watch_event") ||
+		strings.Contains(root, "watch_events")
+}
+
+func isFixedSystemRoot(root string) bool {
+	for _, candidate := range fixedSystemRoots {
+		if strings.EqualFold(strings.TrimSpace(root), candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func visibleSystemRootSuggestions(profile *CapabilityProfile, attempted string, watchIntent bool) []string {
+	visible := make([]string, 0, len(profile.AvailableSystemRoots))
+	for _, root := range fixedSystemRoots {
+		if profileHasSystemRoot(profile, root) {
+			visible = append(visible, root)
+		}
+	}
+	if watchIntent {
+		preferred := []string{systemRootWatch, systemRootWatchEvent}
+		if strings.Contains(attempted, "event") {
+			preferred[0], preferred[1] = preferred[1], preferred[0]
+		}
+		var out []string
+		for _, root := range preferred {
+			if profileHasSystemRoot(profile, root) {
+				out = append(out, root)
+			}
+		}
+		return out
+	}
+	if !strings.HasPrefix(attempted, "gj_") || len(visible) == 0 {
+		return nil
+	}
+	bestDistance := -1
+	var out []string
+	for _, root := range visible {
+		distance := editDistance(attempted, root)
+		if bestDistance == -1 || distance < bestDistance {
+			bestDistance = distance
+			out = []string{root}
+			continue
+		}
+		if distance == bestDistance {
+			out = append(out, root)
+		}
+	}
+	return out
+}
+
+func editDistance(left, right string) int {
+	if left == right {
+		return 0
+	}
+	previous := make([]int, len(right)+1)
+	for i := range previous {
+		previous[i] = i
+	}
+	for i := 1; i <= len(left); i++ {
+		current := make([]int, len(right)+1)
+		current[0] = i
+		for j := 1; j <= len(right); j++ {
+			cost := 1
+			if left[i-1] == right[j-1] {
+				cost = 0
+			}
+			current[j] = min(previous[j]+1, current[j-1]+1, previous[j-1]+cost)
+		}
+		previous = current
+	}
+	return previous[len(right)]
+}
+
+func executionReportsUnknownRoot(out any, attempted string) bool {
+	for _, message := range executionErrorMessages(out) {
+		lower := strings.ToLower(message)
+		if !strings.Contains(lower, attempted) {
+			continue
+		}
+		for _, marker := range []string{
+			"table not found",
+			"unknown table",
+			"root field not found",
+			"unknown root",
+			"cannot query field",
+			"unknown field",
+			"field not found",
+			"does not exist",
+		} {
+			if strings.Contains(lower, marker) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func executionErrorMessages(out any) []string {
+	var messages []string
+	switch result := out.(type) {
+	case executeResult:
+		for _, info := range result.Errors {
+			messages = append(messages, info.Message)
+		}
+	case *executeResult:
+		if result != nil {
+			for _, info := range result.Errors {
+				messages = append(messages, info.Message)
+			}
+		}
+	case map[string]any:
+		for _, item := range anySlice(result["errors"]) {
+			if info := mapValue(item); info != nil {
+				messages = append(messages, stringFromMap(info, "message"))
+			}
+		}
+	}
+	return messages
+}
+
+func systemRootExample(root string) string {
+	switch root {
+	case systemRootWatchEvent:
+		return `query { gj_watch_event(where: { seen: { eq: false } }, order_by: { created_at: desc }, limit: 20) { id watch_id data_json seen created_at } }`
+	case systemRootWatch:
+		return `query { gj_watch(limit: 20) { id name status enabled } }`
+	default:
+		return fmt.Sprintf("query { %s(limit: 20) { id } }", root)
+	}
+}
+
+func attachSystemRootDidYouMean(out any, suggestion systemRootRepair) any {
+	next := map[string]any{
+		"recommended_tool": toolExecuteGraphQL,
+		"reason":           "Retry with a caller-visible canonical GraphJin system root; do not invent an alias.",
+		"args":             map[string]any{"query": suggestion.example},
+	}
+	repair := map[string]any{
+		"code":                   "system_root_did_you_mean",
+		"kind":                   "system_root_did_you_mean",
+		"attempted_root":         suggestion.attempted,
+		"available_system_roots": suggestion.candidates,
+		"example_query":          suggestion.example,
+		"next":                   next,
+	}
+	recovery := map[string]any{
+		"code":                   "system_root_did_you_mean",
+		"kind":                   "system_root_did_you_mean",
+		"instruction":            fmt.Sprintf("Root %q is not a GraphJin system root visible to this caller. Use one of the named roots exactly and retry the provided query in this run.", suggestion.attempted),
+		"attempted_root":         suggestion.attempted,
+		"available_system_roots": suggestion.candidates,
+		"example_query":          suggestion.example,
+		"next":                   next,
+	}
+	directive := fmt.Sprintf("%s root %q is unknown; use the caller-visible root %q exactly and retry the provided example in this run.", recoveryDirectivePrefix, suggestion.attempted, suggestion.candidates[0])
+	decorate := func(info *ErrorInfo) {
+		if info.Extensions == nil {
+			info.Extensions = map[string]any{}
+		}
+		info.Extensions["code"] = "system_root_did_you_mean"
+		info.Extensions["graphjin_repair"] = repair
+		info.Message = joinRecoveryMessage(info.Message, directive)
+	}
+
+	switch result := out.(type) {
+	case executeResult:
+		for i := range result.Errors {
+			decorate(&result.Errors[i])
+		}
+		result.Recovery = recovery
+		return result
+	case *executeResult:
+		if result == nil {
+			return out
+		}
+		for i := range result.Errors {
+			decorate(&result.Errors[i])
+		}
+		result.Recovery = recovery
+		return result
+	case map[string]any:
+		errors := anySlice(result["errors"])
+		for _, item := range errors {
+			entry := mapValue(item)
+			if entry == nil {
+				continue
+			}
+			extensions := mapValue(entry["extensions"])
+			if extensions == nil {
+				extensions = map[string]any{}
+			}
+			extensions["code"] = "system_root_did_you_mean"
+			extensions["graphjin_repair"] = repair
+			entry["extensions"] = extensions
+			entry["message"] = joinRecoveryMessage(stringFromMap(entry, "message"), directive)
+		}
+		result["errors"] = errors
+		result["recovery"] = recovery
+		return result
+	default:
+		return out
+	}
+}
+
+func appendRecoveryDirective(errors []ErrorInfo, directive string) []ErrorInfo {
+	for i := range errors {
+		errors[i].Message = joinRecoveryMessage(errors[i].Message, directive)
+	}
+	return errors
+}
+
+func joinRecoveryMessage(message, directive string) string {
+	message = strings.TrimSpace(message)
+	if directive == "" || strings.Contains(message, recoveryDirectivePrefix) {
+		return message
+	}
+	if message == "" {
+		return directive
+	}
+	return message + " " + directive
+}
+
+const recoveryDirectivePrefix = "GraphJin recovery:"
+
+// recommendedSavedQueryNames returns saved queries already discovered in this
+// run. Recovery never performs hidden catalog calls or injects extra cards.
+func recommendedSavedQueryNames(s *discoveryState) []string {
+	return sortedBoolKeys(s.savedQueriesDiscovered)
+}
+
+// approvedSavedQuerySuffix names the governed shortcuts discovered for this
+// run, for appending to a protocol rejection message. Dynamic authoring stays
+// the primary path; the names are an option, not a required route.
+func approvedSavedQuerySuffix(s *discoveryState) string {
+	names := recommendedSavedQueryNames(s)
+	if len(names) > maxRecoverySavedQueries {
+		names = names[:maxRecoverySavedQueries]
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return " Author the query from the returned column names, or use an approved saved query as a governed shortcut when one matches (" +
+		strings.Join(names, ", ") + "): query_catalog({id:\"saved_query:<name>\"}) then execute_saved_query({name:\"<name>\"})."
+}
+
+// recoveryDirective is the single sentence appended to execution errors; the
+// structured recovery.next field carries the actionable tool pointer.
+func recoveryDirective(map[string]any) string {
+	return recoveryDirectivePrefix + " the live schema is authoritative; do not report it as broken or propose schema changes—follow recovery.next to re-discover real fields and retry in this run."
+}
+
+// executionRecovery builds the generic post-failure directive. Whenever the
+// failed query's roots resolve to known catalog ids it names them, because a
+// bare "inspect the real table and column details" leaves a weak model no way
+// to tell which table or which call shape is meant: benchmark run 35621a4f
+// shows a cross-source episode re-issuing one invented-field query seven times
+// against exactly this advice. Same defect, and same fix, as the mutation
+// evidence continuation.
+func executionRecovery(state *discoveryState, query string) map[string]any {
+	// The code/kind pair flows into the action summary's recovery_codes, which
+	// is what replay assertions and run diagnosis read; without it an
+	// execution-error recovery left no machine-readable trace at all.
+	instruction := "The live schema is authoritative; do not report it as broken or propose schema changes—follow errors[].extensions.graphjin_repair and next to re-discover real fields and retry in this run."
+	if ids := state.catalogIDsForQueryRoots(query); len(ids) != 0 {
+		return map[string]any{
+			"code":        "execution_error",
+			"kind":        "execution_error",
+			"instruction": instruction,
+			"next": map[string]any{
+				"recommended_tool": toolQueryCatalog,
+				"args":             map[string]any{"ids": ids},
+				"reason":           "Inspect these exact table details, re-author the query from the column names they return — including nested related roots — and retry in this run. A table list or search does not carry column names.",
+			},
+		}
+	}
+	return map[string]any{
+		"code":        "execution_error",
+		"kind":        "execution_error",
+		"instruction": instruction,
+		"next": catalogNext(
+			toolQueryCatalog,
+			"Inspect the real table and column details by id, re-author the query from returned fields, and retry in this run.",
+		),
+	}
+}
+
+// catalogIDsForQueryRoots maps the roots of a failed operation to catalog ids
+// this run can inspect. Mutation roots resolve too — a failed write used to
+// get the id-less generic fallback because only read roots were consulted.
+// Unresolvable roots are skipped rather than discarding the ids that did
+// resolve.
+func (s *discoveryState) catalogIDsForQueryRoots(query string) []any {
+	if s == nil || strings.TrimSpace(query) == "" {
+		return nil
+	}
+	ids := make([]any, 0, 4)
+	seen := map[string]bool{}
+	for _, root := range append(QueryRootFields(query), MutationRootFields(query)...) {
+		target, _ := s.mutationTargetTable(root)
+		id := s.catalogIDForTable(target)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func (s *discoveryState) pendingDatabaseComputation() string {
+	needsAggregate, needsAggregateOrder := databaseComputationIntent(s.instruction)
+	if !needsAggregate {
+		return ""
+	}
+	allowsRankedRows := databaseOrderedRowIntent(s.instruction)
+	for _, execution := range s.executions {
+		if execution["has_data"] != true || executionErrorCount(execution["error_count"]) != 0 {
+			continue
+		}
+		if strings.EqualFold(stringFromMap(execution, "tool"), toolExecuteSavedQuery) {
+			query := s.savedQueryGraphQLFor(stringFromMap(execution, "name"))
+			hasAggregate := databaseAggregateFieldPattern.MatchString(query) || execution["database_aggregate"] == true
+			if hasAggregate && (!needsAggregateOrder || strings.Contains(strings.ToLower(query), "order_by")) {
+				return ""
+			}
+			if allowsRankedRows && queryUsesDatabaseRanking(query, s.instruction) {
+				return ""
+			}
+			if !needsAggregateOrder && queryReadsAnsweringStoredCount(query, s.instruction) {
+				return ""
+			}
+			continue
+		}
+		query := stringFromMap(execution, "query")
+		if databaseAggregateFieldPattern.MatchString(query) &&
+			(!needsAggregateOrder || strings.Contains(strings.ToLower(query), "order_by")) {
+			return ""
+		}
+		if allowsRankedRows && queryUsesDatabaseRanking(query, s.instruction) {
+			return ""
+		}
+		// Some schemas store the asked-for quantity as a plain column: the
+		// account-health API publishes open_risk_count, and "how many open risks"
+		// is answered by reading it, not by aggregating anything. Generation
+		// 2028.1 measured this guard refusing that correct read 10 of 12 times —
+		// method scored the queries right while the model burned its whole step
+		// budget resubmitting them, because no aggregate exists to run. A stored
+		// scalar cannot rank, so ranking intents still require the aggregate path.
+		if !needsAggregateOrder && queryReadsAnsweringStoredCount(query, s.instruction) {
+			return ""
+		}
+	}
+	if allowsRankedRows {
+		return "database_computation_required: this request asks for an extreme or ranking, but the run only has row-list or failed evidence. Execute one distinct database-side query that applies order_by on the requested ranked column together with a limit, then answer from that result."
+	}
+	requirement := "a successful database-side aggregate field such as count_/sum_/avg_/min_/max_<column>, or a stored *_count column that names the asked quantity (for example open_risk_count for open risks)"
+	if needsAggregateOrder {
+		requirement += " with aggregate order_by for the requested ranking"
+	}
+	// Anchored questions read a row first on purpose: "using the latest recorded X
+	// as the anchor, how many records ..." needs that value before the count can be
+	// filtered. Generation 2028.1 measured every window runaway starting here — the
+	// anchor read succeeded, this notice called the evidence insufficient without
+	// saying the anchor was fine, and the model resubmitted the same query to the
+	// step cap. Naming the root already queried says which step is still missing.
+	if roots := s.rowEvidenceRoots(); len(roots) != 0 {
+		return "database_computation_required: the run has rows from " + strings.Join(roots, ", ") +
+			", which can serve as an intermediate value, but the answer itself still needs " + requirement +
+			" on " + roots[len(roots)-1] + ". Keep the value already read and execute that aggregate as a distinct query; do not resubmit the row query and do not calculate from fetched rows."
+	}
+	return "database_computation_required: this request asks for a count, total, average, extreme, or ranking, but the run only has row-list or failed evidence. Execute " + requirement + " and answer from that result; do not calculate from fetched rows."
+}
+
+// rowEvidenceRoots names the query roots this run already read rows from, most
+// recent last. It reports only roots from successful row reads, so the guidance
+// never points at a table the run failed to query.
+func (s *discoveryState) rowEvidenceRoots() []string {
+	var out []string
+	for _, execution := range s.executions {
+		if execution["has_data"] != true || executionErrorCount(execution["error_count"]) != 0 {
+			continue
+		}
+		query := stringFromMap(execution, "query")
+		if query == "" {
+			continue
+		}
+		for _, root := range QueryRootFields(query) {
+			root = strings.TrimSpace(root)
+			if root == "" || strings.HasPrefix(strings.ToLower(root), "gj_") {
+				continue
+			}
+			out = appendUniqueString(out, root)
+		}
+	}
+	if len(out) > 3 {
+		out = out[len(out)-3:]
+	}
+	return out
+}
+
+// storedCountFieldPattern matches a selected scalar column named *_count. The
+// optional trailing group captures "(", "{" or ":" so the caller can reject
+// root calls, nested objects and alias names — RE2 has no lookahead, so the
+// rejection reads the capture instead. An alias TARGET (risks: open_risk_count)
+// still matches with an empty capture, which is correct: the read is the same.
+var storedCountFieldPattern = regexp.MustCompile(`\b([A-Za-z][A-Za-z0-9_]*_count)\b(\s*[:({])?`)
+
+// queryReadsAnsweringStoredCount reports whether the query selects a stored
+// *_count scalar whose name stem the instruction actually asks about —
+// open_risk_count for "how many open risks". It mirrors
+// queryUsesDatabaseRanking's philosophy: the schema names the quantity, and the
+// instruction must be asking for that quantity, so an unrelated invoice_count
+// never discharges a question about risks.
+func queryReadsAnsweringStoredCount(query, instruction string) bool {
+	tokens := strings.FieldsFunc(strings.ToLower(instruction), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	if len(tokens) == 0 {
+		return false
+	}
+	lowered := " " + strings.Join(tokens, " ") + " "
+	for _, match := range storedCountFieldPattern.FindAllStringSubmatch(query, -1) {
+		if match[2] != "" {
+			// Followed by "(", "{" or ":" — a root call, a nested object, or an
+			// alias name aliasing something else. Not a scalar read of the column.
+			continue
+		}
+		matched := false
+		stemFits := true
+		for _, part := range strings.Split(strings.TrimSuffix(strings.ToLower(match[1]), "_count"), "_") {
+			if len(part) < 3 {
+				continue
+			}
+			if !strings.Contains(lowered, part) {
+				stemFits = false
+				break
+			}
+			matched = true
+		}
+		if stemFits && matched {
+			return true
+		}
+	}
+	return false
+}
+
+// databaseOrderedRowIntent recognizes extrema where the user wants the record
+// as well as its value. A database-side order_by plus limit computes that
+// result without client-side aggregation. Explicit count/total/average intent
+// remains aggregate-only, including grouped rankings such as "most total
+// revenue".
+func databaseOrderedRowIntent(instruction string) bool {
+	lower := strings.ToLower(strings.TrimSpace(instruction))
+	if lower == "" || databaseStrictAggregateIntent(lower) {
+		return false
+	}
+	for _, phrase := range []string{"top ", "rank", "ranking", "minimum", "maximum", "highest", "lowest", "latest", "earliest", "extreme"} {
+		if strings.Contains(" "+lower+" ", phrase) {
+			return true
+		}
+	}
+	choosesRecord := strings.Contains(lower, "which ") || strings.Contains(lower, "who ")
+	return choosesRecord && (strings.Contains(" "+lower+" ", " most ") || strings.Contains(" "+lower+" ", " least "))
+}
+
+func databaseStrictAggregateIntent(instruction string) bool {
+	lower := " " + strings.ToLower(strings.TrimSpace(instruction)) + " "
+	for _, phrase := range []string{" how many ", " count ", " count of ", " total ", " sum ", " average", " avg ", " mean "} {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// foldToWords lowercases text and reduces every run of non-alphanumeric
+// characters to a single space, so identifiers and prose can be compared on
+// the same footing.
+func foldToWords(text string) string {
+	return strings.Join(strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}), " ")
+}
+
+func queryUsesDatabaseRanking(query, instruction string) bool {
+	if !databaseLimitPattern.MatchString(query) {
+		return false
+	}
+	match := databaseOrderFieldPattern.FindStringSubmatch(query)
+	if len(match) != 2 {
+		return false
+	}
+	// Both sides are normalized the same way. The column is folded to words
+	// ("due_at" -> "due at"), so folding only the column and searching the raw
+	// instruction compared a normalized needle against an unnormalized
+	// haystack: "the latest date recorded in invoices.due_at" does not contain
+	// "due at", so a correct order_by+limit read was judged not to rank by the
+	// asked-for column. The database-computation guard then refused to let the
+	// run finalize and the episode spent its whole budget re-querying — 12 of
+	// 15 recorded runaways, and the frozen suite's own method gate accepts that
+	// exact order_by+limit form.
+	rankedColumn := foldToWords(match[1])
+	return rankedColumn != "" && strings.Contains(foldToWords(instruction), rankedColumn)
+}
+
+func resultContainsAggregateField(value any) bool {
+	var walk func(any, int) bool
+	walk = func(current any, depth int) bool {
+		if depth > 16 {
+			return false
+		}
+		switch typed := normalizeValue(current).(type) {
+		case map[string]any:
+			for key, item := range typed {
+				if databaseAggregateKeyPattern.MatchString(key) ||
+					(strings.EqualFold(key, "aggregate") && hasuraAggregateResult(item)) ||
+					walk(item, depth+1) {
+					return true
+				}
+			}
+		case []any:
+			for _, item := range typed {
+				if walk(item, depth+1) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return walk(value, 0)
+}
+
+func hasuraAggregateResult(value any) bool {
+	result := mapValue(value)
+	for key := range result {
+		if hasuraAggregateResultKeyPattern.MatchString(key) {
+			return true
+		}
+	}
+	return false
+}
+
+func executionErrorCount(value any) int64 {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed)
+	case int64:
+		return typed
+	case float64:
+		return int64(typed)
+	default:
+		return 0
+	}
+}
+
+func databaseComputationIntent(instruction string) (aggregate, aggregateOrder bool) {
+	lower := strings.Join(strings.FieldsFunc(strings.ToLower(strings.TrimSpace(instruction)), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}), " ")
+	if lower == "" {
+		return false, false
+	}
+	padded := " " + lower + " "
+	for _, phrase := range []string{"how many", "count", "count of", "total", "sum", "average", "avg", "mean", "minimum", "maximum", "highest", "lowest", "latest", "earliest", "extreme"} {
+		if strings.Contains(padded, " "+phrase+" ") {
+			aggregate = true
+			break
+		}
+	}
+	for _, phrase := range []string{"top", "rank", "ranking"} {
+		if strings.Contains(padded, " "+phrase+" ") {
+			aggregate = true
+			aggregateOrder = true
+			break
+		}
+	}
+	choosesGroup := strings.Contains(padded, " which ") || strings.Contains(padded, " who ")
+	if choosesGroup {
+		for _, phrase := range []string{"most", "least", "highest", "lowest"} {
+			if strings.Contains(padded, " "+phrase+" ") {
+				aggregate = true
+				aggregateOrder = true
+				break
+			}
+		}
+	}
+	return aggregate, aggregateOrder
+}

@@ -1,0 +1,10 @@
+<svg viewBox="0 0 860 300" role="img" aria-label="OpenAPI operations exposed as graph fields" xmlns="http://www.w3.org/2000/svg">
+  <rect class="diag-bg" width="860" height="300" rx="16"/>
+  <defs><marker id="api-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 10 5 0 10Z" fill="var(--accent-readable)"/></marker></defs>
+  <rect class="diag-node" x="34" y="62" width="170" height="72" rx="10"/><text class="diag-text" x="119" y="96" text-anchor="middle">OpenAPI spec</text><text class="diag-sub" x="119" y="118" text-anchor="middle">GET operations</text>
+  <rect class="diag-node-accent" x="276" y="42" width="210" height="112" rx="12"/><text class="diag-text" x="381" y="82" text-anchor="middle">Classify + map</text><text class="diag-sub" x="381" y="106" text-anchor="middle">root fields · row joins</text><text class="diag-sub" x="381" y="126" text-anchor="middle">auth · concurrency caps</text>
+  <rect class="diag-node" x="560" y="62" width="138" height="72" rx="10"/><text class="diag-text" x="629" y="96" text-anchor="middle">GraphQL field</text><text class="diag-sub" x="629" y="118" text-anchor="middle">joinable</text>
+  <rect class="diag-node" x="724" y="62" width="104" height="72" rx="10"/><text class="diag-text" x="776" y="96" text-anchor="middle">REST API</text>
+  <path class="diag-line" marker-end="url(#api-arrow)" d="M204 98H276"/><path class="diag-line" marker-end="url(#api-arrow)" d="M486 98H560"/><path class="diag-line" marker-end="url(#api-arrow)" d="M698 98H724"/>
+  <rect class="diag-node" x="112" y="198" width="638" height="52" rx="10"/><text class="diag-sub" x="431" y="229" text-anchor="middle">Database rows can feed path or query parameters, so remote records appear beside SQL data in one response.</text>
+</svg>

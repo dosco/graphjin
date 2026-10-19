@@ -1,0 +1,10 @@
+inherits: dev
+mode: agentic
+
+# Agentic mode refuses header-trust dev identity; demo callers authenticate
+# with HS256 JWTs minted from this demo secret (see scripts/smoke.sh).
+auth:
+  type: jwt
+  development: false
+  jwt:
+    secret: saas-ops-demo-jwt-secret

@@ -1,0 +1,5 @@
+query CodeInsight {
+  rows: gj_code(where: { kind: { in: ["file", "symbol", "reference", "db_reference"] } }, order_by: { path: asc }, limit: 160) {
+    id kind name title summary path language hash symbol_kind qualified_name signature doc db_object_id database_name schema_name table_name column_name start_row start_col end_row end_col details_json updated_at
+  }
+}

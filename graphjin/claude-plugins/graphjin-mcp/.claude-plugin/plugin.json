@@ -1,0 +1,11 @@
+{
+  "name": "graphjin-mcp",
+  "version": "1.0.0",
+  "description": "GraphJin MCP server plugin for Claude Code",
+  "author": {
+    "name": "GraphJin",
+    "email": "maintainers@graphjin.com"
+  },
+  "homepage": "https://graphjin.com",
+  "repository": "https://github.com/dosco/graphjin"
+}

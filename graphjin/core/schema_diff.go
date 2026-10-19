@@ -1,0 +1,600 @@
+package core
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/dosco/graphjin/core/v3/internal/introspection"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+)
+
+// DiffOptions controls what operations are included in the schema diff
+type DiffOptions struct {
+	// Destructive enables DROP TABLE and DROP COLUMN operations
+	Destructive bool
+}
+
+// SchemaOperation represents a schema change operation
+type SchemaOperation struct {
+	Type   string // "create_table", "add_column", "drop_table", "drop_column", "add_index", "add_constraint"
+	Table  string
+	Column string
+	SQL    string
+	Danger bool // true if this is a destructive operation
+}
+
+// SchemaDiff computes the SQL statements needed to sync the database with the schema file
+func SchemaDiff(db *sql.DB, dbType string, schemaBytes []byte, blocklist []string, opts DiffOptions) ([]SchemaOperation, error) {
+	// Parse the schema file
+	ds, err := qcode.ParseSchema(schemaBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse schema: %w", err)
+	}
+	if strings.TrimSpace(dbType) == "" {
+		dbType = ds.Type
+	}
+	if strings.TrimSpace(dbType) == "" {
+		dbType = "postgres"
+	}
+	if !SupportsSchemaDDL(dbType) {
+		return nil, fmt.Errorf("schema DDL is not supported for database type %q", dbType)
+	}
+
+	// Determine schema based on dbType when not specified via @schema directive
+	schema := ds.Schema
+	if schema == "" {
+		schema = defaultSchemaForDBType(dbType)
+	}
+
+	// Convert parsed schema to DBInfo (expected state)
+	// Always use dbType parameter, not ds.Type from schema file
+	expected := sdata.NewDBInfo(
+		dbType,
+		ds.Version,
+		schema,
+		"", // dbName - not needed for diff
+		ds.Columns,
+		ds.Functions,
+		blocklist,
+	)
+
+	// Attach clustering keys from schema DDL to expected tables
+	attachClusteringKeys(expected, ds.ClusteringKeys, schema, dbType)
+
+	// Get current database schema
+	current, err := introspection.GetDBInfo(context.Background(), db, dbType, blocklist)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover database schema: %w", err)
+	}
+
+	// Compute the diff
+	ops := computeDiff(current, expected, opts)
+	return ops, nil
+}
+
+// TemporalColumn describes a date or timestamp column parsed from GraphJin
+// schema DDL. DateOnly marks calendar-date columns with no time component.
+type TemporalColumn struct {
+	Name     string
+	DateOnly bool
+}
+
+// SchemaDDLTemporalColumns parses GraphJin schema DDL and returns the date and
+// timestamp columns of each table, keyed by table name. Time-of-day and
+// interval columns are excluded. It lets tooling such as the demo data
+// refresher find date-bearing columns without live schema discovery, which
+// stays accurate on engines like SQLite that store temporal values as TEXT.
+func SchemaDDLTemporalColumns(schemaBytes []byte) (map[string][]TemporalColumn, error) {
+	ds, err := qcode.ParseSchema(schemaBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse schema: %w", err)
+	}
+	tables := make(map[string][]TemporalColumn)
+	for _, col := range ds.Columns {
+		var dateOnly bool
+		switch strings.ToLower(strings.TrimSpace(col.Type)) {
+		case "date":
+			dateOnly = true
+		case "timestamp", "timestamp with time zone", "timestamptz",
+			"timestamp without time zone", "datetime":
+		default:
+			continue
+		}
+		tables[col.Table] = append(tables[col.Table], TemporalColumn{
+			Name:     col.Name,
+			DateOnly: dateOnly,
+		})
+	}
+	return tables, nil
+}
+
+// GenerateSchemaSQL renders executable DDL from GraphJin DDL without discovering
+// a live database. It is intended for local simulators and generated fixtures;
+// live migration support is still gated by SupportsSchemaDDL.
+func GenerateSchemaSQL(dbType string, schemaBytes []byte, blocklist []string) ([]string, error) {
+	ds, err := qcode.ParseSchema(schemaBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse schema: %w", err)
+	}
+	if strings.TrimSpace(dbType) == "" {
+		dbType = ds.Type
+	}
+	if strings.TrimSpace(dbType) == "" {
+		dbType = "postgres"
+	}
+	if getDDLDialect(dbType) == nil {
+		return nil, fmt.Errorf("schema DDL rendering is not available for database type %q", dbType)
+	}
+
+	schema := ds.Schema
+	if schema == "" {
+		schema = defaultSchemaForDBType(dbType)
+	}
+	expected := sdata.NewDBInfo(
+		dbType,
+		ds.Version,
+		schema,
+		"",
+		ds.Columns,
+		ds.Functions,
+		blocklist,
+	)
+	attachClusteringKeys(expected, ds.ClusteringKeys, schema, dbType)
+
+	current := &sdata.DBInfo{Type: dbType}
+	return GenerateDiffSQL(computeDiff(current, expected, DiffOptions{})), nil
+}
+
+// defaultSchemaForDBType returns the default schema name for a database type
+func defaultSchemaForDBType(dbType string) string {
+	switch dbType {
+	case "postgres", "postgresql":
+		return "public"
+	case "mysql", "mariadb":
+		return "db"
+	case "sqlite":
+		return "main"
+	case "mssql":
+		return "dbo"
+	case "oracle":
+		return "TESTER"
+	case "snowflake":
+		return "main"
+	case "bigquery":
+		return ""
+	case "redshift":
+		return "public"
+	case "cassandra":
+		return ""
+	default:
+		return "public"
+	}
+}
+
+// sortTablesByDependency performs a topological sort of tables based on FK dependencies
+// Parent tables (referenced by FKs) come before child tables (containing FKs)
+func sortTablesByDependency(tables []sdata.DBTable) []sdata.DBTable {
+	// Build a map of table name -> table for quick lookup
+	tableMap := make(map[string]sdata.DBTable)
+	for _, t := range tables {
+		tableMap[t.Name] = t
+	}
+
+	// Build dependency graph: table -> tables it depends on (FK references)
+	// Exclude self-referential FKs (e.g., comments.reply_to_id -> comments.id)
+	deps := make(map[string][]string)
+	for _, t := range tables {
+		for _, col := range t.Columns {
+			if col.FKeyTable != "" && col.FKeyTable != t.Name {
+				deps[t.Name] = append(deps[t.Name], col.FKeyTable)
+			}
+		}
+	}
+
+	// Topological sort using Kahn's algorithm
+	// Calculate in-degree (number of dependencies) for each table
+	inDegree := make(map[string]int)
+	for _, t := range tables {
+		inDegree[t.Name] = len(deps[t.Name])
+	}
+
+	// Start with tables that have no dependencies
+	var queue []string
+	for _, t := range tables {
+		if inDegree[t.Name] == 0 {
+			queue = append(queue, t.Name)
+		}
+	}
+
+	var sorted []sdata.DBTable
+	for len(queue) > 0 {
+		// Pop first item
+		name := queue[0]
+		queue = queue[1:]
+
+		if t, exists := tableMap[name]; exists {
+			sorted = append(sorted, t)
+		}
+
+		// Reduce in-degree for tables that depend on this one
+		for tName, depList := range deps {
+			for _, dep := range depList {
+				if dep == name {
+					inDegree[tName]--
+					if inDegree[tName] == 0 {
+						queue = append(queue, tName)
+					}
+				}
+			}
+		}
+	}
+
+	// If we couldn't sort all tables (circular dependency), return original order
+	if len(sorted) != len(tables) {
+		return tables
+	}
+
+	return sorted
+}
+
+// computeDiff computes the difference between current and expected schemas
+func computeDiff(current, expected *sdata.DBInfo, opts DiffOptions) []SchemaOperation {
+	dialect := getDDLDialect(expected.Type)
+	if dialect == nil {
+		dialect = getDDLDialect(current.Type)
+	}
+	if dialect == nil {
+		return nil
+	}
+
+	var ops []SchemaOperation
+
+	// Build maps for efficient lookup
+	currentTables := make(map[string]*sdata.DBTable)
+	for i := range current.Tables {
+		t := &current.Tables[i]
+		currentTables[t.Name] = t
+	}
+
+	expectedTables := make(map[string]*sdata.DBTable)
+	for i := range expected.Tables {
+		t := &expected.Tables[i]
+		expectedTables[t.Name] = t
+	}
+
+	// Find tables to create
+	// Sort tables to create parent tables before children (FK dependency order)
+	sortedTables := sortTablesByDependency(expected.Tables)
+	for _, expTable := range sortedTables {
+		if _, exists := currentTables[expTable.Name]; !exists {
+			sql := dialect.CreateTable(expTable)
+			ops = append(ops, SchemaOperation{
+				Type:  "create_table",
+				Table: expTable.Name,
+				SQL:   sql,
+			})
+
+			// Add indexes for searchable, unique, and indexed columns
+			for _, col := range expTable.Columns {
+				if col.FullText {
+					sql := dialect.CreateSearchIndex(expTable.Name, col)
+					if sql != "" {
+						ops = append(ops, SchemaOperation{
+							Type:   "add_index",
+							Table:  expTable.Name,
+							Column: col.Name,
+							SQL:    sql,
+						})
+					}
+				}
+				if col.UniqueKey && !col.PrimaryKey {
+					sql := dialect.CreateUniqueIndex(expTable.Name, col)
+					if sql != "" {
+						ops = append(ops, SchemaOperation{
+							Type:   "add_index",
+							Table:  expTable.Name,
+							Column: col.Name,
+							SQL:    sql,
+						})
+					}
+				}
+				if col.Index {
+					sql := dialect.CreateIndex(expTable.Name, col)
+					if sql != "" {
+						ops = append(ops, SchemaOperation{
+							Type:   "add_index",
+							Table:  expTable.Name,
+							Column: col.Name,
+							SQL:    sql,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	// Find columns to add to existing tables
+	for _, expTable := range expected.Tables {
+		currTable, exists := currentTables[expTable.Name]
+		if !exists {
+			continue
+		}
+
+		currentCols := make(map[string]*sdata.DBColumn)
+		for i := range currTable.Columns {
+			c := &currTable.Columns[i]
+			currentCols[c.Name] = c
+		}
+
+		for _, expCol := range expTable.Columns {
+			if _, exists := currentCols[expCol.Name]; !exists {
+				sql := dialect.AddColumn(expTable.Name, expCol)
+				ops = append(ops, SchemaOperation{
+					Type:   "add_column",
+					Table:  expTable.Name,
+					Column: expCol.Name,
+					SQL:    sql,
+				})
+
+				if expCol.FKeyTable != "" {
+					sql := dialect.AddForeignKey(expTable.Name, expCol)
+					if sql != "" {
+						ops = append(ops, SchemaOperation{
+							Type:   "add_constraint",
+							Table:  expTable.Name,
+							Column: expCol.Name,
+							SQL:    sql,
+						})
+					}
+				}
+
+				if expCol.FullText {
+					sql := dialect.CreateSearchIndex(expTable.Name, expCol)
+					if sql != "" {
+						ops = append(ops, SchemaOperation{
+							Type:   "add_index",
+							Table:  expTable.Name,
+							Column: expCol.Name,
+							SQL:    sql,
+						})
+					}
+				}
+				if expCol.UniqueKey && !expCol.PrimaryKey {
+					sql := dialect.CreateUniqueIndex(expTable.Name, expCol)
+					if sql != "" {
+						ops = append(ops, SchemaOperation{
+							Type:   "add_index",
+							Table:  expTable.Name,
+							Column: expCol.Name,
+							SQL:    sql,
+						})
+					}
+				}
+				if expCol.Index {
+					sql := dialect.CreateIndex(expTable.Name, expCol)
+					if sql != "" {
+						ops = append(ops, SchemaOperation{
+							Type:   "add_index",
+							Table:  expTable.Name,
+							Column: expCol.Name,
+							SQL:    sql,
+						})
+					}
+				}
+			}
+		}
+
+		// Find columns to drop (destructive)
+		if opts.Destructive {
+			expectedCols := make(map[string]bool)
+			for _, c := range expTable.Columns {
+				expectedCols[c.Name] = true
+			}
+
+			for _, currCol := range currTable.Columns {
+				if !expectedCols[currCol.Name] {
+					tableName := expTable.Name
+					if schemaQualifiedDDLTable(dialect) && expTable.Schema != "" {
+						tableName = expTable.Schema + "." + expTable.Name
+					}
+					sql := dialect.DropColumn(tableName, currCol.Name)
+					ops = append(ops, SchemaOperation{
+						Type:   "drop_column",
+						Table:  expTable.Name,
+						Column: currCol.Name,
+						SQL:    sql,
+						Danger: true,
+					})
+				}
+			}
+		}
+	}
+
+	// Detect clustering key changes on existing tables
+	for _, expTable := range expected.Tables {
+		currTable, exists := currentTables[expTable.Name]
+		if !exists {
+			continue
+		}
+		if !clusteringKeysEqual(currTable.ClusteringKeys, expTable.ClusteringKeys) {
+			sql := dialect.AlterClusteringKey(expTable.Name, expTable.ClusteringKeys)
+			if sql != "" {
+				ops = append(ops, SchemaOperation{
+					Type:  "alter_clustering_key",
+					Table: expTable.Name,
+					SQL:   sql,
+				})
+			}
+		}
+	}
+
+	// Find tables to drop (destructive)
+	if opts.Destructive {
+		for tableName, currTable := range currentTables {
+			if _, exists := expectedTables[tableName]; !exists {
+				dropTableName := tableName
+				if schemaQualifiedDDLTable(dialect) && currTable.Schema != "" {
+					dropTableName = currTable.Schema + "." + currTable.Name
+				}
+				sql := dialect.DropTable(dropTableName)
+				ops = append(ops, SchemaOperation{
+					Type:   "drop_table",
+					Table:  tableName,
+					SQL:    sql,
+					Danger: true,
+				})
+			}
+		}
+	}
+
+	return ops
+}
+
+func schemaQualifiedDDLTable(dialect DDLDialect) bool {
+	switch dialect.(type) {
+	case *bigqueryDDLDialect, *cassandraDDLDialect:
+		return true
+	default:
+		return false
+	}
+}
+
+// GenerateDiffSQL converts operations to SQL strings
+func GenerateDiffSQL(ops []SchemaOperation) []string {
+	var sqls []string
+	for _, op := range ops {
+		if op.SQL != "" {
+			sqls = append(sqls, op.SQL)
+		}
+	}
+	return sqls
+}
+
+// SchemaDiffMultiDB computes schema diffs across multiple databases.
+// Tables are assigned to databases based on the @database directive in the schema.
+// Every table must have a @database directive when multiple databases are configured.
+func SchemaDiffMultiDB(
+	connections map[string]*sql.DB,
+	dbTypes map[string]string,
+	schemaBytes []byte,
+	blocklist []string,
+	opts DiffOptions,
+) (map[string][]SchemaOperation, error) {
+	// Parse the schema file
+	ds, err := qcode.ParseSchema(schemaBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse schema: %w", err)
+	}
+
+	// Validate that all tables have a @database directive
+	missingTables := make(map[string]bool)
+	for _, col := range ds.Columns {
+		if col.Database == "" {
+			missingTables[col.Table] = true
+		}
+	}
+	if len(missingTables) > 0 {
+		// Collect missing table names sorted for deterministic output
+		names := make([]string, 0, len(missingTables))
+		for name := range missingTables {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+
+		// Collect available database names sorted
+		dbNames := make([]string, 0, len(connections))
+		for name := range connections {
+			dbNames = append(dbNames, name)
+		}
+		sort.Strings(dbNames)
+
+		return nil, fmt.Errorf(
+			"tables missing @database directive: %s (available databases: %s). "+
+				"In multi-database mode, every table must have a @database(name: \"...\") directive",
+			strings.Join(names, ", "),
+			strings.Join(dbNames, ", "),
+		)
+	}
+
+	// Group columns by database (from @database directive)
+	columnsByDB := make(map[string][]sdata.DBColumn)
+
+	for _, col := range ds.Columns {
+		columnsByDB[col.Database] = append(columnsByDB[col.Database], col)
+	}
+
+	results := make(map[string][]SchemaOperation)
+
+	// Run diff for each database
+	for dbName, dbConn := range connections {
+		dbType, ok := dbTypes[dbName]
+		if !ok {
+			continue
+		}
+
+		// Skip sources without live DDL support.
+		if !SupportsSchemaDDL(dbType) {
+			continue
+		}
+
+		cols := columnsByDB[dbName]
+		if len(cols) == 0 {
+			continue
+		}
+
+		// Determine schema for this database type
+		schema := ds.Schema
+		if schema == "" {
+			schema = defaultSchemaForDBType(dbType)
+		}
+
+		// Create expected DBInfo for this database
+		expected := sdata.NewDBInfo(dbType, ds.Version, schema, "", cols, nil, blocklist)
+
+		// Attach clustering keys for tables in this database
+		attachClusteringKeys(expected, ds.ClusteringKeys, schema, dbType)
+
+		// Get current database schema
+		current, err := introspection.GetDBInfo(context.Background(), dbConn, dbType, blocklist)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get schema for %s: %w", dbName, err)
+		}
+
+		// Compute diff
+		ops := computeDiff(current, expected, opts)
+		if len(ops) > 0 {
+			results[dbName] = ops
+		}
+	}
+
+	return results, nil
+}
+
+func clusteringKeysEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// attachClusteringKeys assigns parsed @cluster directive data to the matching DBTable entries.
+func attachClusteringKeys(di *sdata.DBInfo, clusters []qcode.TableCluster, defaultSchema, dbType string) {
+	for _, ck := range clusters {
+		schema := ck.Schema
+		if schema == "" {
+			schema = defaultSchema
+		}
+		if t, err := di.GetTable(schema, ck.Table); err == nil {
+			t.ClusteringKeys = ck.Keys
+		}
+	}
+}

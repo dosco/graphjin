@@ -1,0 +1,85 @@
+package auth_test
+
+import (
+	"net/http"
+	"testing"
+
+	"github.com/dosco/graphjin/auth/v3"
+	"github.com/dosco/graphjin/core/v3"
+	jwt "github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestJWTTokenInAuthorizationHeader(t *testing.T) {
+	ah, err := auth.JwtHandler(auth.Auth{
+		Cookie: "Boo",
+		JWT: auth.JWTConfig{
+			Secret: "casper",
+		},
+	})
+	assert.NoError(t, err)
+
+	// {
+	// 	"sub": "1234567890",
+	// 	"name": "John Doe",
+	// 	"iat": 1516239022
+	//   }
+	tok := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.VZ01qXI7Whbuj8X3FZw0mLyZT7iMKMCDl_rtzdNpjAg"
+
+	req, err := http.NewRequest(
+		http.MethodGet,
+		"https://test.com",
+		nil)
+	assert.NoError(t, err)
+
+	req.Header.Set("Authorization", "Bearer "+tok)
+
+	c, err := ah(nil, req)
+	assert.NoError(t, err)
+
+	assert.Equal(t, 1234567890, auth.UserIDInt(c))
+	// The token has a `name` claim but no `email`. UserName should pick it
+	// up; UserEmail should report empty.
+	assert.Equal(t, "John Doe", auth.UserName(c))
+	assert.Equal(t, "", auth.UserEmail(c))
+}
+
+func TestSimpleHandlerStripsReservedRoleHeader(t *testing.T) {
+	ah, err := auth.SimpleHandler(auth.Auth{})
+	assert.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodGet, "https://test.com", nil)
+	assert.NoError(t, err)
+	req.Header.Set("X-User-ID", "user_1")
+	req.Header.Set("X-User-Role", "__graphjin_internal_store")
+
+	ctx, err := ah(nil, req)
+	assert.NoError(t, err)
+	assert.Nil(t, ctx.Value(core.UserRoleKey))
+	assert.Nil(t, ctx.Value(core.IdentityRolesKey))
+}
+
+// TestJWTAttachesEmailAndName verifies that when the JWT contains email and
+// name claims, JwtHandler stashes them on the context for audit logging.
+func TestJWTAttachesEmailAndName(t *testing.T) {
+	const secret = "casper"
+	jwtTok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub":   "42",
+		"email": "alice@example.com",
+		"name":  "Alice",
+	})
+	signed, err := jwtTok.SignedString([]byte(secret))
+	assert.NoError(t, err)
+
+	ah, err := auth.JwtHandler(auth.Auth{JWT: auth.JWTConfig{Secret: secret}})
+	assert.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodGet, "https://test.com", nil)
+	assert.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+signed)
+
+	c, err := ah(nil, req)
+	assert.NoError(t, err)
+	assert.Equal(t, "alice@example.com", auth.UserEmail(c))
+	assert.Equal(t, "Alice", auth.UserName(c))
+}

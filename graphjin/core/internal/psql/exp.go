@@ -1,0 +1,564 @@
+package psql
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/dosco/graphjin/core/v3/internal/dialect"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/util"
+)
+
+type expContext struct {
+	*compilerContext
+	ti         sdata.DBTable
+	sel        *qcode.Select // optional, for outer-alias resolution
+	prefixPath []string
+	skipNested bool
+}
+
+func (c *compilerContext) renderExp(ti sdata.DBTable, ex *qcode.Exp, skipNested bool) {
+	c.renderExpPath(ti, ex, skipNested, nil)
+}
+
+func (c *compilerContext) renderExpPath(ti sdata.DBTable, ex *qcode.Exp, skipNested bool, prefixPath []string) {
+	previous := c.columnScope
+	c.columnScope = ti
+	defer func() { c.columnScope = previous }()
+	ec := expContext{
+		compilerContext: c,
+		ti:              ti,
+		prefixPath:      prefixPath,
+		skipNested:      skipNested,
+	}
+	ec.render(ex)
+}
+
+func (c *compilerContext) renderExpForSel(sel *qcode.Select, ex *qcode.Exp, skipNested bool) {
+	previous := c.columnScope
+	c.columnScope = sel.Ti
+	defer func() { c.columnScope = previous }()
+	ec := expContext{
+		compilerContext: c,
+		ti:              sel.Ti,
+		sel:             sel,
+		skipNested:      skipNested,
+	}
+	ec.render(ex)
+}
+
+func (c *expContext) render(ex *qcode.Exp) {
+	st := util.NewStackInf()
+	st.Push(ex)
+
+	for {
+		if st.Len() == 0 {
+			break
+		}
+
+		intf := st.Pop()
+
+		switch val := intf.(type) {
+		case int32:
+			switch val {
+			case '(':
+				c.w.WriteString(`(`)
+			case ')':
+				c.w.WriteString(`)`)
+			}
+
+		case qcode.ExpOp:
+			switch val {
+			case qcode.OpAnd:
+				c.w.WriteString(` AND `)
+			case qcode.OpOr:
+				c.w.WriteString(` OR `)
+			case qcode.OpNot:
+				c.w.WriteString(`NOT `)
+			case qcode.OpFalse:
+				c.w.WriteString(`false`)
+			}
+
+		case *qcode.Exp:
+			if val == nil {
+				return
+			}
+			switch val.Op {
+			case qcode.OpFalse:
+				st.Push(val.Op)
+
+			case qcode.OpAnd, qcode.OpOr:
+				st.Push(')')
+				for i := len(val.Children) - 1; i >= 0; i-- {
+					st.Push(val.Children[i])
+					if i > 0 {
+						st.Push(val.Op)
+					}
+				}
+				st.Push('(')
+
+			case qcode.OpNot:
+				st.Push(val.Children[0])
+				st.Push(qcode.OpNot)
+
+			case qcode.OpSelectExists:
+				if !c.skipNested {
+					c.renderNestedExp(st, val)
+				}
+			default:
+				c.renderOp(val)
+			}
+		}
+	}
+}
+
+func (c *expContext) renderNestedExp(st *util.StackInf, ex *qcode.Exp) {
+	firstJoin := ex.Joins[0]
+	c.w.WriteString(`EXISTS (SELECT 1 FROM `)
+	c.table(nil, firstJoin.Rel.Left.Col.Schema, firstJoin.Rel.Left.Col.Table, true)
+
+	if len(ex.Joins) > 1 {
+		for i := 1; i < len(ex.Joins); i++ {
+			c.renderJoin(ex.Joins[i])
+		}
+	}
+
+	c.w.WriteString(` WHERE `)
+	c.render(firstJoin.Filter)
+
+	c.w.WriteString(` AND `)
+	st.Push(')')
+	for i := len(ex.Children) - 1; i >= 0; i-- {
+		st.Push(ex.Children[i])
+	}
+}
+
+func (c *expContext) renderOp(ex *qcode.Exp) {
+	if ex.Op == qcode.OpNop {
+		return
+	}
+
+	if c.renderValPrefix(ex) {
+		return
+	}
+
+	// Handle TsQuery early - it generates a self-contained condition without column prefix
+	if ex.Op == qcode.OpTsQuery {
+		c.dialect.RenderTsQuery(c, c.ti, ex)
+		return
+	}
+
+	// Handle GIS operators - they generate self-contained spatial conditions
+	if qcode.IsGeoOp(ex.Op) {
+		var table string
+		if ex.Left.Table == "" {
+			table = ex.Left.Col.Table
+		} else {
+			table = ex.Left.Table
+		}
+
+		// Add table ID suffix for proper aliasing (e.g., "locations" -> "locations_0")
+		if ex.Left.ID != -1 {
+			table = table + "_" + strconv.Itoa(int(ex.Left.ID))
+		}
+
+		var colName string
+		if ex.Left.ColName != "" {
+			colName = ex.Left.ColName
+		} else {
+			colName = ex.Left.Col.Name
+		}
+
+		c.w.WriteString(`(`)
+		if err := c.dialect.RenderGeoOp(c, table, colName, ex); err != nil {
+			c.err = err
+		}
+		c.w.WriteString(`)`)
+		return
+	}
+
+	if ex.Left.Col.Name != "" {
+		var table string
+		if ex.Left.Table == "" {
+			table = ex.Left.Col.Table
+		} else {
+			table = ex.Left.Table
+		}
+
+		var colName string
+		if ex.Left.ColName != "" {
+			colName = ex.Left.ColName
+		} else {
+			colName = ex.Left.Col.Name
+		}
+
+		c.w.WriteString(`((`)
+
+		// Handle JSON path operations
+		if len(ex.Left.Path) > 0 && ex.LeftJSONB {
+			c.renderJSONBPathColumn(table, colName, ex.Left.Path, ex.Left.ID)
+		} else if len(ex.Left.Path) > 0 {
+			valType := ex.Right.ValType
+			if valType == qcode.ValList {
+				valType = ex.Right.ListType
+			}
+			// is_null takes a boolean flag, not a boolean value to compare.
+			if ex.Op == qcode.OpIsNull || ex.Op == qcode.OpIsNotNull {
+				valType = qcode.ValStr
+			}
+			switch valType {
+			case qcode.ValBool:
+				c.dialect.RenderTryCast(c, func() {
+					c.renderJSONPathColumn(table, colName, ex.Left.Path, ex.Left.ID)
+				}, "boolean")
+
+			case qcode.ValNum:
+				c.dialect.RenderTryCast(c, func() {
+					c.renderJSONPathColumn(table, colName, ex.Left.Path, ex.Left.ID)
+				}, "numeric")
+
+			default:
+				c.renderJSONPathColumn(table, colName, ex.Left.Path, ex.Left.ID)
+			}
+
+		} else {
+			if ex.Left.ID == -1 {
+				c.colWithTable(table, colName)
+			} else {
+				c.colWithTableID(table, ex.Left.ID, colName)
+			}
+		}
+		c.w.WriteString(`) `)
+	}
+
+	// Handle standard operators first
+	switch ex.Op {
+	case qcode.OpEquals:
+		c.w.WriteString(`=`)
+	case qcode.OpNotEquals:
+		c.w.WriteString(`!=`)
+	case qcode.OpNotDistinct:
+		c.w.WriteString(`IS NOT DISTINCT FROM`)
+	case qcode.OpDistinct:
+		c.w.WriteString(`IS DISTINCT FROM`)
+	case qcode.OpGreaterOrEquals:
+		c.w.WriteString(`>=`)
+	case qcode.OpLesserOrEquals:
+		c.w.WriteString(`<=`)
+	case qcode.OpGreaterThan:
+		c.w.WriteString(`>`)
+	case qcode.OpLesserThan:
+		c.w.WriteString(`<`)
+
+	case qcode.OpEqualsTrue:
+		c.dialect.RenderBooleanEqualsTrue(c, ex.Right.Val)
+		return
+
+	case qcode.OpNotEqualsTrue:
+		c.dialect.RenderBooleanNotEqualsTrue(c, ex.Right.Val)
+		return
+
+	case qcode.OpIsNull:
+		if strings.EqualFold(ex.Right.Val, "false") {
+			c.w.WriteString(`IS NOT NULL)`)
+		} else {
+			c.w.WriteString(`IS NULL)`)
+		}
+		return
+
+	case qcode.OpIsNotNull:
+		if strings.EqualFold(ex.Right.Val, "false") {
+			c.w.WriteString(`IS NULL)`)
+		} else {
+			c.w.WriteString(`IS NOT NULL)`)
+		}
+		return
+
+	// Note: OpTsQuery is handled early in renderOp, before column prefix logic
+
+	default:
+		opStr, err := c.dialect.RenderOp(ex.Op)
+		if err != nil {
+			c.err = err
+			return
+		}
+		if opStr != "" {
+			c.w.WriteString(opStr)
+		} else {
+			// If not handled, logic error or unknown op?
+			// Just ignore or error?
+		}
+	}
+	c.w.WriteString(` `)
+
+	switch ex.Right.ValType {
+	case qcode.ValList:
+		c.renderList(ex)
+	default:
+		c.renderVal(ex)
+	}
+	c.w.WriteString(`)`)
+}
+
+func (c *expContext) renderValPrefix(ex *qcode.Exp) bool {
+	if c.dialect.RenderValPrefix(c, ex) {
+		return true
+	}
+	return false
+}
+
+func (c *expContext) renderVal(ex *qcode.Exp) {
+	switch {
+	case ex.Right.ValType == qcode.ValRef:
+		c.renderColRefVal(ex)
+
+	case ex.Right.ValType == qcode.ValDBVar:
+		c.dialect.RenderVar(c, ex.Right.Val)
+
+	case ex.Right.ValType == qcode.ValVar:
+		c.renderValVar(ex)
+
+	case ex.Right.ValType == qcode.ValSubQuery:
+		c.w.WriteString(`(SELECT `)
+		if ex.Right.ColName != "" {
+			c.colWithTable(ex.Right.Table, ex.Right.ColName)
+		} else {
+			c.colWithTable(ex.Right.Table, ex.Right.Col.Name)
+		}
+		c.w.WriteString(` FROM `)
+		c.quoted(ex.Right.Table)
+		c.w.WriteString(`)`)
+
+	case ex.Right.ValType == qcode.ValPartitionBound:
+		c.renderPartitionBound(ex.Right.Val)
+
+	case !ex.Right.Col.Array && (ex.Op == qcode.OpContains ||
+		ex.Op == qcode.OpContainedIn ||
+		ex.Op == qcode.OpHasInCommon):
+		c.w.WriteString(`CAST(ARRAY[`)
+		c.colWithTable(c.ti.Name, ex.Right.Col.Name)
+		c.w.WriteString(`] AS `)
+		c.w.WriteString(ex.Right.Col.Type)
+		c.w.WriteString(`[])`)
+
+	case ex.Right.Col.Name != "":
+		var table string
+		if ex.Right.Table == "" {
+			table = ex.Right.Col.Table
+		} else {
+			table = ex.Right.Table
+		}
+
+		var colName string
+		if ex.Right.ColName != "" {
+			colName = ex.Right.ColName
+		} else {
+			colName = ex.Right.Col.Name
+		}
+
+		pid := ex.Right.ID
+		if ex.Right.ID != -1 {
+			pid = ex.Right.ID
+		}
+
+		c.w.WriteString(`(`)
+		if ex.Right.Col.Array {
+			c.renderValArrayColumn(ex, table, pid)
+		} else {
+			if pid == -1 {
+				c.colWithTable(table, colName)
+			} else {
+				c.colWithTableID(table, pid, colName)
+			}
+		}
+		c.w.WriteString(`)`)
+
+	default:
+		if len(ex.Right.Path) == 0 {
+			c.dialect.RenderLiteral(c, ex.Right.Val, ex.Right.ValType)
+			return
+		} else if c.dialect.Name() == "postgres" && (len(c.prefixPath) != 0 || len(ex.Right.Path) != 0) {
+			// Build path from JSON input (i.j), matching original Postgres behavior
+			path := append(c.prefixPath, ex.Right.Path...)
+			j := (len(path) - 1)
+
+			c.w.WriteString(`CAST(i.j`)
+			for i := 0; i < j; i++ {
+				c.w.WriteString(`->`)
+				c.squoted(path[i])
+			}
+			c.w.WriteString(`->>`)
+			c.squoted(path[j])
+			c.w.WriteString(` AS `)
+			c.w.WriteString(ex.Left.Col.Type)
+			c.w.WriteString(`)`)
+		} else {
+			// If not postgres or path is empty, render as a literal.
+			// This handles cases where JSON path is not supported or not applicable.
+			c.dialect.RenderLiteral(c, ex.Right.Val, ex.Right.ValType)
+		}
+	}
+}
+
+func (c *expContext) renderValVar(ex *qcode.Exp) {
+	val, isVal := c.svars[ex.Right.Val]
+	switch {
+	case c.dialect.RenderValVar(c, ex, val):
+		return
+
+	case isVal && strings.HasPrefix(val, "sql:"):
+		c.w.WriteString(`(`)
+		c.renderVar(val[4:])
+		c.w.WriteString(`)`)
+
+	case isVal:
+		c.w.WriteString(`'`)
+		c.renderVar(val)
+		c.w.WriteString(`'`)
+
+	default:
+		c.renderParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type, IsArray: false})
+	}
+}
+
+func (c *expContext) renderList(ex *qcode.Exp) {
+	c.dialect.RenderList(c, ex)
+}
+
+func (c *compilerContext) renderValArrayColumn(ex *qcode.Exp, table string, pid int32) {
+	c.dialect.RenderValArrayColumn(c, ex, table, pid)
+}
+
+func (c *expContext) renderJSONBPathColumn(table, colName string, path []string, selID int32) {
+	r, ok := c.dialect.(dialect.JSONKeyRenderer)
+	if !ok {
+		c.err = fmt.Errorf("%s cannot compare keys inside a JSON column", c.dialect.Name())
+		return
+	}
+	t := table
+	if selID != -1 {
+		t = fmt.Sprintf("%s_%d", table, selID)
+	}
+	r.RenderJSONBPath(c, t, colName, path)
+}
+
+func (c *expContext) renderJSONPathColumn(table, colName string, path []string, selID int32) {
+	// Build the JSON path
+	t := table
+	if selID != -1 {
+		t = fmt.Sprintf("%s_%d", table, selID)
+	}
+	c.dialect.RenderJSONPath(c, t, colName, path)
+}
+
+// renderPartitionBound renders a dialect-specific "now minus N days" expression
+// for partition filter auto-injection. The days parameter is validated as a
+// positive integer to prevent SQL injection.
+func (c *expContext) renderPartitionBound(daysStr string) {
+	// Validate: must be a positive integer
+	n, err := strconv.Atoi(daysStr)
+	if err != nil || n <= 0 {
+		// Fallback to a safe default
+		daysStr = "30"
+	} else {
+		daysStr = strconv.Itoa(n)
+	}
+
+	switch c.dialect.Name() {
+	case "snowflake", "redshift":
+		c.w.WriteString(`DATEADD(day, -`)
+		c.w.WriteString(daysStr)
+		c.w.WriteString(`, CURRENT_TIMESTAMP())`)
+	case "mysql", "mariadb":
+		c.w.WriteString(`DATE_SUB(NOW(), INTERVAL `)
+		c.w.WriteString(daysStr)
+		c.w.WriteString(` DAY)`)
+	case "mssql":
+		c.w.WriteString(`DATEADD(day, -`)
+		c.w.WriteString(daysStr)
+		c.w.WriteString(`, GETDATE())`)
+	case "oracle":
+		c.w.WriteString(`(SYSDATE - `)
+		c.w.WriteString(daysStr)
+		c.w.WriteString(`)`)
+	default: // postgres, sqlite
+		c.w.WriteString(`(CURRENT_TIMESTAMP - INTERVAL '`)
+		c.w.WriteString(daysStr)
+		c.w.WriteString(` days')`)
+	}
+}
+
+// renderColRefVal emits the right-hand column reference for col-ref operands.
+func (c *expContext) renderColRefVal(ex *qcode.Exp) {
+	c.w.WriteString(`(`)
+	if len(ex.Right.RelPath) > 0 {
+		c.renderRelColRefVal(ex)
+	} else {
+		c.writeLocalColRef(ex.Right.Col)
+	}
+	c.w.WriteString(`)`)
+}
+
+// writeLocalColRef emits a reference to a column on c.ti, respecting
+// the dialect's base-table aliasing convention.
+func (c *expContext) writeLocalColRef(col sdata.DBColumn) {
+	if c.sel != nil && col.Table == c.sel.Table && dialectAliasesBaseTable(c.dialect) {
+		c.colWithTableID(c.sel.Table, c.sel.ID, col.Name)
+		return
+	}
+	c.colWithTable(col.Table, col.Name)
+}
+
+// renderRelColRefVal emits nested correlated subqueries for a multi-hop
+// belongs-to column reference on the RIGHT of a WHERE comparison.
+func (c *expContext) renderRelColRefVal(ex *qcode.Exp) {
+	path := ex.Right.RelPath
+	closeParens := len(path)
+
+	lastHop := path[len(path)-1]
+	c.w.WriteString(`SELECT `)
+	c.colWithTable(ex.Right.Col.Table, ex.Right.Col.Name)
+	c.w.WriteString(` FROM `)
+	c.writeQualifiedTable(lastHop.Right.Ti)
+	c.w.WriteString(` WHERE `)
+	c.colWithTable(lastHop.Right.Col.Table, lastHop.Right.Col.Name)
+	c.w.WriteString(` = `)
+
+	for i := len(path) - 2; i >= 0; i-- {
+		hop := path[i]
+		outerHop := path[i+1]
+		c.w.WriteString(`(SELECT `)
+		c.colWithTable(outerHop.Left.Col.Table, outerHop.Left.Col.Name)
+		c.w.WriteString(` FROM `)
+		c.writeQualifiedTable(hop.Right.Ti)
+		c.w.WriteString(` WHERE `)
+		c.colWithTable(hop.Right.Col.Table, hop.Right.Col.Name)
+		c.w.WriteString(` = `)
+		if i > 0 {
+			continue
+		}
+		c.writeLocalColRef(hop.Left.Col)
+		for _, pair := range hop.ExtraPairs {
+			c.w.WriteString(` AND `)
+			c.colWithTable(pair.R.Table, pair.R.Name)
+			c.w.WriteString(` = `)
+			c.writeLocalColRef(pair.L)
+		}
+	}
+
+	if len(path) == 1 {
+		c.writeLocalColRef(path[0].Left.Col)
+		for _, pair := range path[0].ExtraPairs {
+			c.w.WriteString(` AND `)
+			c.colWithTable(pair.R.Table, pair.R.Name)
+			c.w.WriteString(` = `)
+			c.writeLocalColRef(pair.L)
+		}
+	}
+
+	for i := 1; i < closeParens; i++ {
+		c.w.WriteString(`)`)
+	}
+}

@@ -1,0 +1,15 @@
+goos: darwin
+goarch: amd64
+pkg: github.com/dosco/graphjin/core/internal/graph
+BenchmarkParse
+BenchmarkParse-16            	  117146	      9878 ns/op	    4174 B/op	      18 allocs/op
+BenchmarkParseP
+BenchmarkParseP-16           	  524686	      2364 ns/op	    4176 B/op	      18 allocs/op
+BenchmarkParseFragment
+BenchmarkParseFragment-16    	  169130	      7025 ns/op	    3785 B/op	       7 allocs/op
+BenchmarkSchemaParse
+BenchmarkSchemaParse-16      	  184374	      6586 ns/op	    2733 B/op	      46 allocs/op
+BenchmarkSchemaParseP
+BenchmarkSchemaParseP-16     	  647048	      1759 ns/op	    2739 B/op	      46 allocs/op
+PASS
+ok  	github.com/dosco/graphjin/core/internal/graph	6.343s

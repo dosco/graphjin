@@ -1,0 +1,44 @@
+query plant_schedule_context {
+  work_orders(order_by: { priority: asc }, limit: 10) {
+    id
+    order_code
+    customer_id
+    board_grade_id
+    due_date
+    quantity_m2
+    status
+    priority
+    customers {
+      name
+      priority_tier
+    }
+    board_grades {
+      grade_code
+      flute
+    }
+  }
+  corrugator_runs(order_by: { scheduled_start: asc }, limit: 10) {
+    id
+    work_order_id
+    machine_id
+    scheduled_start
+    planned_minutes
+    status
+    operator
+  }
+  converting_jobs(order_by: { id: asc }, limit: 10) {
+    id
+    work_order_id
+    job_code
+    station
+    status
+    planned_minutes
+  }
+  shipments(order_by: { ship_date: asc }, limit: 10) {
+    id
+    work_order_id
+    ship_date
+    carrier
+    status
+  }
+}

@@ -1,0 +1,105 @@
+# yaml-language-server: $schema=./config.schema.json
+app_name: "{{- .AppName }} Agentic"
+mode: agentic
+# Agentic mode includes a private managed artifact store, approved-watch
+# runner, built-in agent, dual modern/legacy MCP HTTP, and primitive MCP tools.
+# Add explicit settings only to opt out or customize them.
+production: true
+host_port: 0.0.0.0:8080
+# Defaults on in agentic mode so operators can inspect catalog, runtime,
+# security, code, and config system roots from the console.
+web_ui: true
+log_level: "warn"
+log_format: "json"
+http_compress: true
+auth_fail_block: true
+enable_tracing: false
+reload_on_config_change: false
+
+# Agentic deployments keep legacy MCP compatibility tools disabled. Agents
+# should use catalog/control-plane GraphQL roots instead.
+mcp:
+  oauth:
+    enabled: false
+    mode: external
+    # resource: https://graphjin.example.com/api/v1/mcp
+    # authorization_servers:
+    #   - https://graphjin.example.com
+    scopes: ["mcp"]
+    dynamic_client_registration: true
+    client_id_metadata_documents: true
+  allow_config_updates: false
+  allow_mutations: true
+  allow_raw_queries: false
+  allow_workflow_execution: false
+  allow_workflow_updates: false
+  allow_schema_reload: false
+  allow_schema_updates: false
+  allow_dev_tools: false
+  legacy_discovery: false
+
+# The agent is enabled automatically. REST and MCP use GraphJin-owned model
+# credentials selected by agent.api_key_env.
+# Override only when needed:
+# agent:
+#   provider: openai                  # any named Ax deployment profile
+#   api_key_env: OPENAI_API_KEY
+#   model: gpt-4.1-mini
+#   structured_output_mode: auto      # auto | native | function | json_object
+#   service_tier: auto                # auto | standard | flex | priority
+#   rate_limit:                        # outbound provider limits; zero/omitted disables
+#     requests_per_minute: 60
+#     tokens_per_minute: 100000
+#
+# The profile owns the endpoint, auth, capabilities and model rules, so a
+# different deployment is a different profile name, not a code change:
+# agent:
+#   provider: vertex-ai
+#   model: google/gemma-4-26b-a4b-it-maas
+#   api_key_env: VERTEX_AI_TOKEN
+#   base_url: https://REGION-aiplatform.googleapis.com/v1beta1/projects/PROJECT/locations/REGION/endpoints/openapi
+#   structured_output_mode: auto
+#   service_tier: auto
+
+# Discovery generations are immutable files. In a horizontal deployment this
+# path must be a shared read-after-write mount; Redis coordinates the one
+# replica that discovers and activates each generation. Redis is optional for
+# a single GraphJin process, which uses in-process coordination.
+discovery_cache:
+  enabled: true
+  path: .graphjin/discovery
+  refresh_interval: 5m
+  startup_wait: 2m
+  retain_generations: 2
+
+# Semantic catalog recall is optional. Vectors stay under discovery_cache.path;
+# Redis stores only coordination state. Named dimensions are strictly checked.
+catalog_search:
+  semantic:
+    enabled: false
+    provider: openai
+    embedding_model: text-embedding-3-small
+    api_key_env: OPENAI_API_KEY
+    base_url: ""
+    dimensions: tiny
+
+# Agentic sources are explicit because GraphJin supports only one inheritance
+# level, and prod.yml already inherits dev.yml. Database values come from
+# `graphjin serve new --db-url`.
+sources:
+  - name: default
+    kind: database
+    default: true
+    type: {{ printf "%q" .DBType }}
+    host: {{ printf "%q" .DBHost }}
+    port: {{ .DBPort }}
+{{ if eq .DBName "" }}    dbname: "{{ .AppNameSlug }}_production"
+{{ else }}    dbname: {{ printf "%q" .DBName }}
+{{ end }}    user: {{ printf "%q" .DBUser }}
+    password: {{ printf "%q" .DBPass }}
+    #schema: "public"
+    #read_only: false
+    # Alternatively, replace the fields above with a connection string.
+    # connection_string: "postgres://user:password@host:5432/database"
+    ping_timeout: 5m
+    enable_tls: false

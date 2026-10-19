@@ -1,0 +1,7 @@
+goos: darwin
+goarch: amd64
+pkg: github.com/dosco/graphjin/qcode
+BenchmarkQCompile-8    	  100000	     18528 ns/op	    9208 B/op	     107 allocs/op
+BenchmarkQCompileP-8   	  300000	      5952 ns/op	    9208 B/op	     107 allocs/op
+PASS
+ok  	github.com/dosco/graphjin/qcode	3.893s

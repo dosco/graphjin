@@ -1,0 +1,97 @@
+{ 
+	"data": {
+	"test": { "__twitter_id": "ABCD" },
+	"users": [
+		{
+			"id": 1,
+			"full_name": "Sidney Stroman",
+			"email": "user0@demo.com",
+			"__twitter_id": "2048666903444506956",
+			"embed": {
+				"id": 8,
+				"full_name": "Caroll Orn Sr.",
+				"email": "joannarau@hegmann.io",
+				"__twitter_id": "ABC123"
+				"more": [{
+					"__twitter_id": "more123",
+					"hello: "world
+				}]
+			}
+		},
+		{
+			"id": 2,
+			"full_name": "Jerry Dickinson",
+			"email": "user1@demo.com",
+			"__twitter_id": [{ "name": "hello" }, { "name": "world"}]
+		},
+		{
+			"id": 3,
+			"full_name": "Kenna Cassin",
+			"email": "user2@demo.com",
+			"__twitter_id": { "name": "hello", "address": { "work": "1 infinity loop" } }
+		},
+		{
+			"id": 4,
+			"full_name": "Mr. Pat Parisian",
+			"email": "__twitter_id",
+			"__twitter_id": 1234567890
+		},
+		{
+			"id": 5,
+			"full_name": "Bette Ebert",
+			"email": "janeenrath@goyette.com",
+			"__twitter_id": 1.23E
+		},
+		{
+			"id": 6,
+			"full_name": "Everett Kiehn",
+			"email": "michael@bartoletti.com",
+			"__twitter_id": true
+		},
+		{
+			"id": 7,
+			"full_name": "Katrina Cronin",
+			"email": "loretaklocko@framivolkman.org",
+			"__twitter_id": false
+		},
+		{
+			"id": 8,
+			"full_name": "Caroll Orn Sr.",
+			"email": "joannarau@hegmann.io",
+			"__twitter_id": "2048666903444506956"
+		},
+		{
+			"id": 9,
+			"full_name": "Gwendolyn Ziemann",
+			"email": "renaytoy@rutherford.co",
+			"__twitter_id": ["hello", "world"]
+		},
+		{
+			"id": 10,
+			"full_name": "Mrs. Rosann Fritsch",
+			"email": "holliemosciski@thiel.org",
+			"__twitter_id": "2048666903444506956"
+		},
+		{
+			"id": 11,
+			"full_name": "Arden Koss",
+			"email": "cristobalankunding@howewelch.org",
+			"__twitter_id": "2048666903444506956",
+			"something": null
+		},
+		{
+			"id": 12,
+			"full_name": "Brenton Bauch PhD",
+			"email": "renee@miller.co",
+			"__twitter_id": 1
+		},
+		{
+			"id": 13,
+			"full_name": "Daine Gleichner",
+			"email": "andrea@gmail.com",
+			"__twitter_id": "",
+			"id__twitter_id": "NOOO",
+			"work_email": "andrea@nienow.co"
+		}
+	]}
+	}

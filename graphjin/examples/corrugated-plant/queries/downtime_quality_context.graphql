@@ -1,0 +1,36 @@
+query downtime_quality_context {
+  downtime_events(order_by: { occurred_at: desc }, limit: 10) {
+    id
+    machine_id
+    occurred_at
+    minutes_down
+    reason
+    severity
+    status
+  }
+  quality_holds(order_by: { created_at: desc }, limit: 10) {
+    id
+    work_order_id
+    created_at
+    defect_type
+    severity
+    status
+  }
+  oee_daily(order_by: { production_date: desc }, limit: 10) {
+    id
+    machine_code
+    production_date
+    availability_pct
+    performance_pct
+    quality_pct
+    oee_pct
+  }
+  scrap_rates(order_by: { production_date: desc }, limit: 10) {
+    id
+    machine_code
+    production_date
+    board_grade_code
+    scrap_pct
+    cause
+  }
+}

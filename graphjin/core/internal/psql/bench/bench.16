@@ -1,0 +1,8 @@
+goos: darwin
+goarch: amd64
+pkg: github.com/dosco/graphjin/core/internal/psql
+cpu: Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
+BenchmarkCompile-16            	   47503	     26006 ns/op	   31161 B/op	      75 allocs/op
+BenchmarkCompileParallel-16    	   86120	     13846 ns/op	   31184 B/op	      75 allocs/op
+PASS
+ok  	github.com/dosco/graphjin/core/internal/psql	2.958s

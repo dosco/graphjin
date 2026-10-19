@@ -1,0 +1,221 @@
+package tests_test
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+
+	"github.com/dosco/graphjin/core/v3"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
+	skipCassandra(t, "array/collection columns are not seeded in the cassandra fixture")
+	skipClickHouse(t, "array/collection columns are not seeded in the fixture")
+	if dbType == "mssql" {
+		t.Skip("skipping test for mssql (array column joins not yet supported)")
+	}
+	if dbType == "snowflake" {
+		t.Skip("snowflake: test assumes Postgres-style insertion order; Snowflake doesn't guarantee order without ORDER BY")
+	}
+	if dbType == "bigquery" {
+		t.Skip("bigquery: array-column relationship joins need UNNEST lowering in the dialect/simulator")
+	}
+	if dbType == "redshift" {
+		t.Skip("redshift: emulator fixture has no webshop products/users tables to configure")
+	}
+	skipMariaDBNestedLimit(t)
+
+	gql := `
+	query {
+		products(limit: 2, order_by: { id: asc }) {
+			name
+			price
+			categories(order_by: { id: asc }) {
+				id
+				name
+			}
+		}
+		categories(order_by: { id: asc }) {
+			name
+			products(order_by: { id: asc }) {
+				name
+			}
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2})
+	conf.Tables = []core.Table{
+		{
+			Name: "products",
+			Columns: []core.Column{
+				{Name: "category_ids", ForeignKey: "categories.id", Array: true},
+			},
+		},
+	}
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	exp := `{"categories":[{"name":"Category 1","products":[{"name":"Product 1"},{"name":"Product 2"}]},{"name":"Category 2","products":[{"name":"Product 1"},{"name":"Product 2"}]}],"products":[{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"name":"Product 1","price":11.5},{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"name":"Product 2","price":12.5}]}`
+	assert.Equal(t, exp, stdJSON(res.Data))
+}
+
+func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
+	skipCassandra(t, "array/collection columns are not seeded in the cassandra fixture")
+	skipClickHouse(t, "array/collection columns are not seeded in the fixture")
+	if dbType == "sqlite" || dbType == "mssql" || dbType == "snowflake" || dbType == "bigquery" {
+		t.Skip("skipping test for sqlite/mssql/snowflake/bigquery (array-column connect mutations are not fully implemented)")
+	}
+	if dbType == "redshift" {
+		t.Skip("redshift: emulator fixture has no webshop products/users tables to configure")
+	}
+
+	gql := `mutation {
+		products(insert: $data) {
+			id
+			name
+			categories {
+				id
+				name
+			}
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"data": {
+			"id": 100006,
+			"name": "Product 100006",
+			"description": "Description for product 100006",
+			"price": 2016.5,
+			"tags": ["Tag 1", "Tag 2"],
+			"categories": {
+				"connect": { "id": [1, 2, 3, 4, 5] }
+			}
+		}
+	}`)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	conf.Tables = []core.Table{
+		{Name: "products", Columns: []core.Column{{Name: "category_ids", ForeignKey: "categories.id", Array: true}}},
+	}
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gj.Close()
+
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	exp := `{"products":[{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"},{"id":3,"name":"Category 3"},{"id":4,"name":"Category 4"},{"id":5,"name":"Category 5"}],"id":100006,"name":"Product 100006"}]}`
+	assert.Equal(t, exp, stdJSON(res.Data))
+}
+
+func TestVeryComplexQueryWithArrayColumns(t *testing.T) {
+	skipCassandra(t, "array/collection columns are not seeded in the cassandra fixture")
+	skipClickHouse(t, "array/collection columns are not seeded in the fixture")
+	if dbType == "mssql" {
+		t.Skip("skipping test for mssql (JSON virtual tables and deep nesting not yet supported)")
+	}
+	if dbType == "snowflake" {
+		t.Skip("snowflake: VARIANT as JSON-virtual-table needs RelEmbedded/RenderFromEdge lateral-join compiler support (not yet implemented)")
+	}
+	if dbType == "bigquery" {
+		t.Skip("bigquery: JSON virtual tables over arrays need RelEmbedded UNNEST lowering in the dialect/simulator")
+	}
+	if dbType == "redshift" {
+		t.Skip("redshift: emulator fixture has no webshop products/users tables to configure")
+	}
+	skipMariaDBNestedLimit(t)
+
+	gql := `query {
+		products(
+			# returns only 1 items
+			limit: 1,
+	
+			# starts from item 10, commented out for now
+			# offset: 10,
+	
+			# orders the response items by highest price
+			order_by: { price: desc },
+	
+			# only items with an id >= 30 and < 30 are returned
+			where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) {
+			id
+			name
+			price
+			owner {
+				full_name
+				picture : avatar
+				email
+				category_counts(limit: 2, order_by: { category_id: asc }) {
+					count
+					category {
+						name
+					}
+				}
+			}
+			category(limit: 2) {
+				id
+				name
+			}
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	conf.Tables = append(conf.Tables, core.Table{
+		Name:  "category_counts",
+		Table: "users",
+		Type:  "json",
+		Columns: []core.Column{
+			{Name: "category_id", Type: "int", ForeignKey: "categories.id"},
+			{Name: "count", Type: "int"},
+		},
+	})
+	// Append array column config to existing products table or add new.
+	// Array must be declared: only Postgres has a native array type that
+	// discovery can infer from, MySQL/MariaDB/SQLite hold the ids as a JSON
+	// array inside a text column that looks like any other scalar column.
+	categoryIDs := core.Column{Name: "category_ids", ForeignKey: "categories.id", Array: true}
+	found := false
+	for i, t := range conf.Tables {
+		if t.Name == "products" {
+			conf.Tables[i].Columns = append(conf.Tables[i].Columns, categoryIDs)
+			found = true
+			break
+		}
+	}
+	if !found {
+		conf.Tables = append(conf.Tables, core.Table{
+			Name:    "products",
+			Columns: []core.Column{categoryIDs},
+		})
+	}
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	exp := `{"products":[{"category":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"id":27,"name":"Product 27","owner":{"category_counts":[{"category":{"name":"Category 1"},"count":400},{"category":{"name":"Category 2"},"count":600}],"email":"user27@test.com","full_name":"User 27","picture":null},"price":37.5}]}`
+	assert.Equal(t, exp, stdJSON(res.Data))
+}

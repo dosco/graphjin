@@ -1,0 +1,91 @@
+### Go ###
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Profiling output
+*.asm
+*.pdf
+
+### Go Patch ###
+/vendor
+/Godeps
+/tmp
+/tmp/runner-build
+/demo/tmp
+/demo/
+.graphjin/
+.gemini/
+# Default extraction path for the built-in demo (cmd/cmd_demo_default.go);
+# running `graphjin demo` or `graphjin serv` from a clone creates it.
+/graphjin-demo/
+examples/*/demo/
+examples/*/codesql/
+
+.idea
+*.iml
+.vscode
+.DS_Store
+.swp
+.release
+main
+graphjin
+*-fuzz.zip
+crashers
+suppressions
+release
+.gofuzz
+*-fuzz.zip
+*.test
+.firebase
+/dist
+.idea
+node_modules
+# Ignore Go binary but not npm bin directory
+/graphjin
+!/bin/
+./package-lock.json
+slim.report.json
+examples/nodejs/config/**/*.gql
+
+*.mp4
+*.mov
+*.mp3
+*.ac3
+*.webm
+*.log
+*.txt
+
+test.db
+tests/.snowflake-capture/
+
+cmd/cmd
+
+.claude-plugins
+# Local Claude state stays out, but skills that belong to this repo are part of
+# it: they are how a coding agent working on GraphJin learns the workflows and
+# the gates. .claude/worktrees and settings.local.json remain ignored.
+.claude/*
+!.claude/skills/
+# Local WIP status files (never commit)
+snowflake-wip.md
+docs/DESIGN-OPENAPI-TOPLEVEL.md
+
+.env
+
+# agent data-eval ledger (reports are local artifacts)
+.graphjin-evals/
+
+# Python bytecode from the training client
+__pycache__/
+*.pyc
+*.egg-info/

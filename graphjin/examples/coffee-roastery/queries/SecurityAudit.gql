@@ -1,0 +1,11 @@
+query SecurityAudit {
+  summary: gj_security(id: "summary") {
+    id kind mode status severity title summary summary_json safety_json updated_at
+  }
+  findings: gj_security(where: { kind: { eq: "finding" } }, order_by: { severity_rank: desc }, limit: 80) {
+    id scope config_id mode surface transport database_name source source_kind role capability action title summary severity severity_rank confidence status recommendation evidence_json details_json updated_at
+  }
+  policies: gj_security(where: { kind: { eq: "policy" } }, order_by: { source: asc }, limit: 100) {
+    id scope mode surface source source_kind role capability action effective default_effective weakens_default read_only override_explicit override_key evidence_json
+  }
+}

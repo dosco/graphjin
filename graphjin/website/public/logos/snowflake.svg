@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <g stroke="#29B5E8" stroke-width="3.6" stroke-linecap="round">
+    <line x1="32" y1="6"  x2="32" y2="58"/>
+    <line x1="9.5" y1="19" x2="54.5" y2="45"/>
+    <line x1="9.5" y1="45" x2="54.5" y2="19"/>
+  </g>
+  <g stroke="#29B5E8" stroke-width="3" stroke-linecap="round">
+    <!-- vertical tips -->
+    <line x1="32" y1="6"  x2="27" y2="11"/>
+    <line x1="32" y1="6"  x2="37" y2="11"/>
+    <line x1="32" y1="58" x2="27" y2="53"/>
+    <line x1="32" y1="58" x2="37" y2="53"/>
+    <!-- diagonal NE-SW tips -->
+    <line x1="9.5"  y1="19" x2="14"   y2="16"/>
+    <line x1="9.5"  y1="19" x2="11"   y2="24.5"/>
+    <line x1="54.5" y1="45" x2="50"   y2="48"/>
+    <line x1="54.5" y1="45" x2="53"   y2="39.5"/>
+    <!-- diagonal NW-SE tips -->
+    <line x1="9.5"  y1="45" x2="11"   y2="39.5"/>
+    <line x1="9.5"  y1="45" x2="14"   y2="48"/>
+    <line x1="54.5" y1="19" x2="50"   y2="16"/>
+    <line x1="54.5" y1="19" x2="53"   y2="24.5"/>
+  </g>
+  <circle cx="32" cy="32" r="3.2" fill="#29B5E8"/>
+</svg>

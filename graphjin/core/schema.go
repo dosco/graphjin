@@ -1,0 +1,212 @@
+package core
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"fmt"
+	"io"
+	"path"
+	"regexp"
+	"strings"
+	"text/tabwriter"
+	"text/template"
+	"unicode"
+
+	"github.com/dosco/graphjin/core/v3/internal/introspection"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+)
+
+const (
+	// SchemaDDLFile is the canonical project-level GraphJin DDL file.
+	SchemaDDLFile = "db.ddl"
+
+	// LegacySchemaGraphQLFile is the legacy name for SchemaDDLFile.
+	LegacySchemaGraphQLFile = "db.graphql"
+
+	// SourceSchemaDDLDir stores source-local desired schema DDL files.
+	SourceSchemaDDLDir = "schema-ddl"
+
+	// LocalStateDir stores generated runtime artifacts that should not be committed.
+	LocalStateDir = ".graphjin"
+)
+
+// SourceSchemaDDLPath returns the canonical source-local DDL path.
+func SourceSchemaDDLPath(source string) string {
+	return path.Join(SourceSchemaDDLDir, sanitizeSchemaDDLName(source)+".ddl")
+}
+
+// RuntimeSchemaDDLPath returns the generated runtime-cache DDL path.
+func RuntimeSchemaDDLPath(source string) string {
+	return path.Join(LocalStateDir, SourceSchemaDDLDir, sanitizeSchemaDDLName(source)+".ddl")
+}
+
+// RuntimeSchemaSnapshotPath returns the generated full-fidelity runtime schema
+// snapshot path. The JSON snapshot is the machine cache; DDL remains the
+// human-readable companion artifact.
+func RuntimeSchemaSnapshotPath(source string) string {
+	return path.Join(LocalStateDir, SourceSchemaDDLDir, sanitizeSchemaDDLName(source)+".schema.json")
+}
+
+func sanitizeSchemaDDLName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "default"
+	}
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9',
+			r == '_',
+			r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "default"
+	}
+	return b.String()
+}
+
+const schemaTemplate = `# dbinfo:{{if .Type}}{{ .Type }}{{else}}postgres{{end}},{{- .Version }},{{- .Schema }}
+
+{{ define "schema_directive"}}
+{{- if and (ne .Schema "public") (ne .Schema "")}} @schema(name: {{ .Schema }}){{end}}
+{{- end}}
+
+{{- define "database_directive"}}
+{{- if (ne .Database "")}} @database(name: {{ .Database }}){{end}}
+{{- end}}
+
+{{- define "cluster_directive"}}
+{{- if .ClusteringKeys}} @cluster(columns: [{{range $i, $c := .ClusteringKeys}}{{if $i}}, {{end}}"{{$c}}"{{end}}]){{end}}
+{{- end}}
+
+{{- define "relation_directive"}}
+{{- if (ne .FKeyTable "")}} @relation(type: {{ .FKeyTable }}
+{{- if (ne .FKeyCol "")}}, field: {{ .FKeyCol }}{{end -}}
+{{- if and (ne .FKeySchema "public") (ne .FKeySchema "")}}, schema: {{ .FKeySchema }}{{end -}})
+{{- end}}
+{{- end}}
+
+{{- define "function_directive"}}
+{{- " @function" }}
+{{- if (ne .Type "")}}(return_type: {{ .Type | printf "%q" }}){{end}}
+{{- end}}
+
+{{- define "column_type"}}
+{{- $var := .Type|dbtype }}
+{{- $type := (index $var 0)|pascal }}
+{{- if .Array}}[{{ $type }}]{{else}}{{ $type }}{{end}}
+{{- if .NotNull}}!{{end}}
+{{- "\t" }}
+{{- if ne (index $var 1) ""}} @type(args: {{ (index $var 1) | printf "%q" }}){{end}}
+{{- template "relation_directive" .}}
+{{- end}}
+
+{{- define "column"}}
+{{ "\t" }}
+{{- .Name }}:
+{{- "\t"}}
+{{- template "column_type" .}}
+{{- if .PrimaryKey}} @id{{end}}
+{{- if .UniqueKey}} @unique{{end}}
+{{- if .FullText}} @search{{end}}
+{{- if .Blocked}} @blocked{{end}}
+{{- end}}
+
+{{- define "func_args"}}
+{{ "\t" }}
+{{- if ne .Name "" }}{{ .Name }}{{ else }}_arg{{ .ID }}{{ end }}:
+{{- "\t"}}
+{{- $var := .Type|dbtype }}
+{{- (index $var 0)|pascal }}
+{{- if .Array}}[]{{end}}
+{{- "\t"}}
+{{- if ne (index $var 1) ""}} @type_args(args: {{ (index $var 1) | printf "%q" }}){{end}}
+{{- end -}}
+
+{{range .Tables -}}
+type {{.Name}}
+{{- template "database_directive" .}}
+{{- template "schema_directive" .}}
+{{- template "cluster_directive" .}} {
+{{- range .Columns}}{{template "column" .}}{{end}}
+}
+
+{{end -}}
+
+{{range .Functions -}}
+type {{.Name}}
+{{- template "schema_directive" .}}
+{{- template "function_directive" .}} {
+{{- range .Inputs}}{{template "func_args" .}}{{"\t"}}@input{{end}}
+{{- range .Outputs}}{{template "func_args" .}}{{"\t"}}@output{{end}}
+}
+
+{{end -}}
+`
+
+// writeSchema writes the schema to the given writer
+func writeSchema(s *sdata.DBInfo, out io.Writer) (err error) {
+	fn := template.FuncMap{
+		"pascal": toPascalCase,
+		"dbtype": parseDBType,
+	}
+
+	tmpl, err := template.
+		New("schema").
+		Funcs(fn).
+		Parse(schemaTemplate)
+	if err != nil {
+		return err
+	}
+
+	w := tabwriter.NewWriter(out, 2, 2, 2, ' ', 0)
+	err = tmpl.Execute(w, s)
+	if err != nil {
+		return err
+	}
+	return
+}
+
+// toPascalCase converts a string to pascal case
+func toPascalCase(text string) string {
+	var sb strings.Builder
+	for _, v := range strings.Fields(text) {
+		sb.WriteRune(unicode.ToUpper(rune(v[0])))
+		sb.WriteString(v[1:])
+	}
+	return sb.String()
+}
+
+var dbTypeRe = regexp.MustCompile(`([a-zA-Z ]+)(\((.+)\))?`)
+
+// parseDBType parses the db type string
+func parseDBType(name string) (res [2]string, err error) {
+	v := dbTypeRe.FindStringSubmatch(name)
+	if len(v) == 4 {
+		res = [2]string{v[1], v[3]}
+	} else {
+		err = fmt.Errorf("invalid db type: %s", name)
+	}
+	return
+}
+
+// GenerateSchema generates GraphJin DDL from database introspection.
+func GenerateSchema(db *sql.DB, dbType string, blocklist []string) ([]byte, error) {
+	dbinfo, err := introspection.GetDBInfo(context.Background(), db, dbType, blocklist)
+	if err != nil {
+		return nil, fmt.Errorf("failed to introspect database: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := writeSchema(dbinfo, &buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}

@@ -1,0 +1,270 @@
+package core
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+)
+
+type ResolverFn func(v ResolverProps) (Resolver, error)
+
+type resItem struct {
+	IDField     []byte
+	Path        [][]byte
+	Fn          Resolver
+	Source      string
+	Scope       string
+	Fingerprint string
+}
+
+// newRTMap returns a map of resolver functions
+func (gj *graphjinEngine) newRTMap() map[string]ResolverFn {
+	return map[string]ResolverFn{
+		"remote_api": func(v ResolverProps) (Resolver, error) {
+			return newRemoteAPI(v, gj.trace.NewHTTPClient())
+		},
+		// "openapi" wraps an openapi.Caller resolved at request time
+		// from gj.openapiRuntime. The factory closes over gj so the
+		// runtime reference doesn't have to ride on every Props bag.
+		"openapi": gj.newOpenAPIResolverFn(),
+		// "filesystem" routes a synthesised remote table to one of the
+		// configured fstable.Backend instances by name.
+		"filesystem": gj.newFilesystemResolverFn(),
+	}
+}
+
+// initResolvers initializes the resolvers
+func (gj *graphjinEngine) initResolvers() error {
+	gj.rmap = make(map[string]resItem)
+
+	if gj.conf.IsSourcesUsed() {
+		// Load OpenAPI integration before the rtmap is built so the
+		// "openapi" factory in newRTMap can see gj.openapiRuntime, and
+		// before the resolver loop so any synthesised ResolverConfigs are
+		// processed in the same pass as user-declared ones.
+		if err := gj.loadOpenAPIIntegration(); err != nil {
+			return err
+		}
+
+		// Filesystem virtual tables: install the built-in "local" factory
+		// before the bridge loads so locally-declared filesystems work
+		// out-of-the-box; serv layer adds s3/gcs via OptionSetFilesystemBackend.
+		gj.registerBuiltinFilesystemFactories()
+		if err := gj.loadFilesystemIntegration(); err != nil {
+			return err
+		}
+	}
+
+	if gj.rtmap == nil {
+		gj.rtmap = gj.newRTMap()
+	}
+
+	pdb := gj.primaryDB()
+	if pdb == nil || pdb.dbinfo == nil {
+		return nil
+	}
+
+	for i, r := range gj.conf.Resolvers {
+		if r.Schema == "" {
+			gj.conf.Resolvers[i].Schema = pdb.dbinfo.Schema
+			r.Schema = pdb.dbinfo.Schema
+		}
+		if err := gj.initRemote(r, gj.rtmap, pdb.dbinfo); err != nil {
+			return fmt.Errorf("resolvers: %w", err)
+		}
+	}
+	return nil
+}
+
+// initRemote initializes the remote resolver
+// remoteTableColumns returns the response columns for a remote table with their
+// schema and table names bound to where the table is actually registered. A
+// synthesised resolver knows its response shape; a hand-written one does not, and
+// returns nil so the table keeps its previous empty shape.
+func remoteTableColumns(rc ResolverConfig) []sdata.DBColumn {
+	if len(rc.remoteColumns) == 0 {
+		return nil
+	}
+	out := make([]sdata.DBColumn, 0, len(rc.remoteColumns))
+	for i, c := range rc.remoteColumns {
+		c.Schema = rc.Schema
+		c.Table = rc.Name
+		c.ID = int32(i)
+		out = append(out, c)
+	}
+	return out
+}
+
+func (gj *graphjinEngine) initRemote(
+	rc ResolverConfig, rtmap map[string]ResolverFn, dbinfo *sdata.DBInfo,
+) error {
+	if rc.Table == "" {
+		return gj.initToplevelRemote(rc, rtmap, dbinfo)
+	}
+
+	// Defines the table column to be used as an id in the
+	// remote reques
+	var col sdata.DBColumn
+
+	dbinfo, err := gj.resolverDBInfo(&rc, dbinfo)
+	if err != nil {
+		return err
+	}
+
+	ti, err := dbinfo.GetTable(rc.Schema, rc.Table)
+	if err != nil {
+		return err
+	}
+
+	// If no table column specified in the config then
+	// use the primary key of the table as the id
+	if rc.Column != "" {
+		idcol, err := ti.GetColumn(rc.Column)
+		if err != nil {
+			return err
+		}
+		col = idcol
+	} else {
+		col = ti.PrimaryCol
+	}
+
+	idk := fmt.Sprintf("__%s_%s", rc.Name, col.Name)
+	col1 := sdata.DBColumn{
+		PrimaryKey: true,
+		Schema:     rc.Schema,
+		Table:      rc.Name,
+		Name:       idk,
+		Type:       col.Type,
+		FKeySchema: col.Schema,
+		FKeyTable:  col.Table,
+		FKeyCol:    col.Name,
+	}
+
+	remoteColumns := remoteTableColumns(rc)
+	nt := sdata.NewDBTable(rc.Schema, rc.Name, "remote", remoteColumns)
+	// A resolver that knows its response shape has a closed column surface, so
+	// unknown selections should fail at compile time the way they do on database
+	// tables — the same reasoning filesystem tables were given. Without it the
+	// selection rides the remote pass-through and jsn.FilterAliased quietly drops
+	// every field the response does not carry: a benchmark episode asked a join
+	// for open_risks and health_color, neither of which exists, and was handed
+	// has_data:true with an empty object and no error. It reported the risks as
+	// undefined. A hand-written resolver returns no columns and keeps the
+	// historical pass-through, since GraphJin never learned its shape.
+	if len(remoteColumns) != 0 {
+		nt.StrictColumns = true
+	}
+	nt.PrimaryCols = []sdata.DBColumn{col1}
+	nt.PrimaryCol = col1
+
+	dbinfo.AddTable(nt)
+
+	// The function thats called to resolve this remote
+	// data request
+	var fn Resolver
+
+	if v, ok := rtmap[rc.Type]; ok {
+		fn, err = v(rc.Props)
+	} else {
+		err = fmt.Errorf("unknown resolver type: %s", rc.Type)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	path := [][]byte{}
+	for _, p := range strings.Split(rc.StripPath, ".") {
+		path = append(path, []byte(p))
+	}
+
+	rf := resItem{
+		IDField:     []byte(idk),
+		Path:        path,
+		Fn:          fn,
+		Source:      rc.Type,
+		Scope:       rc.Name,
+		Fingerprint: resolverConfigFingerprint(rc),
+	}
+
+	// Index resolver obj by parent and child names
+	gj.rmap[(rc.Name + rc.Table)] = rf
+
+	// Index resolver obj by IDField
+	gj.rmap[string(rf.IDField)] = rf
+
+	return nil
+}
+
+func (gj *graphjinEngine) resolverDBInfo(rc *ResolverConfig, fallback *sdata.DBInfo) (*sdata.DBInfo, error) {
+	dbinfo := fallback
+	table := strings.TrimSpace(rc.Table)
+	if table == "" {
+		return dbinfo, nil
+	}
+
+	sourceQualified := false
+	if idx := strings.IndexByte(table, ':'); idx != -1 {
+		source := strings.TrimSpace(table[:idx])
+		table = strings.TrimSpace(table[idx+1:])
+		sourceQualified = true
+		ctx, ok := gj.databases[source]
+		if !ok || ctx == nil || ctx.dbinfo == nil {
+			return nil, fmt.Errorf("resolver table %q: database source %q not found", rc.Table, source)
+		}
+		dbinfo = ctx.dbinfo
+	}
+
+	if idx := strings.LastIndexByte(table, '.'); idx != -1 {
+		rc.Schema = strings.TrimSpace(table[:idx])
+		rc.Table = strings.TrimSpace(table[idx+1:])
+	} else {
+		rc.Table = table
+		if sourceQualified || rc.Schema == "" {
+			rc.Schema = dbinfo.Schema
+		}
+	}
+	return dbinfo, nil
+}
+
+// initToplevelRemote registers a parent-less remote resolver. The synthetic
+// table is pre-registered in dbinfo by the bridge during loadOpenAPIIntegration.
+func (gj *graphjinEngine) initToplevelRemote(
+	rc ResolverConfig, rtmap map[string]ResolverFn, dbinfo *sdata.DBInfo,
+) error {
+	if _, err := dbinfo.GetTable(rc.Schema, rc.Name); err != nil {
+		return fmt.Errorf("top-level remote %q: synthetic table not registered: %w", rc.Name, err)
+	}
+
+	factory, ok := rtmap[rc.Type]
+	if !ok {
+		return fmt.Errorf("unknown resolver type: %s", rc.Type)
+	}
+	fn, err := factory(rc.Props)
+	if err != nil {
+		return err
+	}
+
+	var path [][]byte
+	if rc.StripPath != "" {
+		for _, p := range strings.Split(rc.StripPath, ".") {
+			path = append(path, []byte(p))
+		}
+	}
+
+	gj.rmap[rc.Name] = resItem{Path: path, Fn: fn, Source: rc.Type, Scope: rc.Name, Fingerprint: resolverConfigFingerprint(rc)}
+	return nil
+}
+
+func resolverConfigFingerprint(rc ResolverConfig) string {
+	b, err := json.Marshal(rc)
+	if err != nil {
+		b = []byte(fmt.Sprintf("%s|%s|%s|%s|%s|%s", rc.Name, rc.Type, rc.Schema, rc.Table, rc.Column, rc.StripPath))
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}

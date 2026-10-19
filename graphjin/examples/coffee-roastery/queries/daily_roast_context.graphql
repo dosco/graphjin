@@ -1,0 +1,35 @@
+query daily_roast_context {
+  production_orders(order_by: { priority: asc }, limit: 10) {
+    id
+    customer_id
+    product_name
+    quantity_bags
+    bag_size_g
+    requested_ship_date
+    status
+    priority
+  }
+  roast_schedule(order_by: { scheduled_for: asc }, limit: 10) {
+    id
+    profile_id
+    scheduled_for
+    machine_id
+    target_output_kg
+    status
+    operator
+  }
+  green_lots(order_by: { remaining_kg: asc }, limit: 10) {
+    id
+    lot_code
+    origin
+    remaining_kg
+    cupping_score
+  }
+  subscriptions(where: { active: { eq: true } }, order_by: { next_ship_date: asc }, limit: 10) {
+    id
+    customer_id
+    product_name
+    next_ship_date
+    bags_per_shipment
+  }
+}

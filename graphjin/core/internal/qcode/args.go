@@ -1,0 +1,522 @@
+package qcode
+
+import (
+	"errors"
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"github.com/dosco/graphjin/core/v3/internal/graph"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+)
+
+func (co *Compiler) compileSelectArgs(qc *QCode, sel *Select, args []graph.Arg, role string) (err error) {
+	for _, a := range args {
+		switch a.Name {
+		case "id":
+			err = co.compileArgID(sel, a)
+
+		case "search":
+			err = co.compileArgSearch(sel, a)
+
+		case "where":
+			err = co.compileArgWhere(qc, sel, a, role)
+
+		case "orderBy", "order_by", "order":
+			err = co.compileArgOrderBy(sel, a)
+
+		case "distinctOn", "distinct_on", "distinct":
+			err = co.compileArgDistinctOn(sel, a)
+
+		case "limit":
+			err = co.compileArgLimit(sel, a)
+
+		case "offset":
+			err = co.compileArgOffset(sel, a)
+
+		case "first":
+			err = co.compileArgFirstLast(sel, a, OrderAsc)
+
+		case "last":
+			err = co.compileArgFirstLast(sel, a, OrderDesc)
+
+		case "after":
+			err = co.compileArgAfterBefore(sel, a, PTForward)
+
+		case "before":
+			err = co.compileArgAfterBefore(sel, a, PTBackward)
+
+		case "find":
+			err = co.compileArgFind(sel, a)
+
+		case "args":
+			err = co.compileArgArgs(sel, a)
+
+		case "unrestricted":
+			err = co.compileArgUnrestricted(sel, a)
+
+		// case "includeIf", "include_if":
+		// 	err = co.compileArgSkipIncludeIf(false, sel, &sel.Field, a, role)
+
+		// case "skipIf", "skip_if":
+		// 	err = co.compileArgSkipIncludeIf(true, sel, &sel.Field, a, role)
+
+		case "insert", "update", "upsert", "delete", "call":
+
+		case "on_conflict", "onConflict":
+			if qc.SType != QTInsert || qc.InsertConflictAction != ConflictGet {
+				err = errors.New("on_conflict is only valid with insert")
+			}
+
+		default:
+			if sel.Ti.Type == "remote" {
+				err = co.compileArgRemoteExtra(sel, a)
+				break
+			}
+			return unknownArg(a)
+		}
+
+		if err != nil {
+			return fmt.Errorf("%s: %w", a.Name, err)
+		}
+	}
+	return
+}
+
+// compileArgRemoteExtra accepts arbitrary scalar args on a remote table
+// and stashes them in sel.ExtraArgs for the resolver to consume.
+func (co *Compiler) compileArgRemoteExtra(sel *Select, arg graph.Arg) error {
+	if arg.Val == nil {
+		return fmt.Errorf("argument %q has no value", arg.Name)
+	}
+	switch arg.Val.Type {
+	case graph.NodeStr, graph.NodeNum, graph.NodeBool:
+	default:
+		return fmt.Errorf("argument %q on remote table must be a scalar literal", arg.Name)
+	}
+	if sel.ExtraArgs == nil {
+		sel.ExtraArgs = map[string]string{}
+	}
+	sel.ExtraArgs[arg.Name] = arg.Val.Val
+	return nil
+}
+
+func (co *Compiler) compileArgFind(sel *Select, arg graph.Arg) (err error) {
+	if err = validateArg(arg, graph.NodeStr); err != nil {
+		return err
+	}
+
+	// Check if relationship is recursive - either directly or by checking if both tables are the same.
+	// The Rel.Type may have been converted from RelRecursive to RelOneToOne/RelOneToMany during
+	// mutation processing, so we also check if both tables are the same (self-referencing).
+	isRecursive := sel.Rel.Type == sdata.RelRecursive
+	if !isRecursive && sel.ParentID != -1 {
+		// Check if the underlying relationship is self-referencing (same table)
+		if sel.Rel.Left.Ti.Name == sel.Rel.Right.Ti.Name {
+			isRecursive = true
+		}
+	}
+
+	if !isRecursive {
+		return fmt.Errorf("selector '%s' is not recursive", sel.FieldName)
+	}
+	if arg.Val.Val != "parents" && arg.Val.Val != "children" {
+		return fmt.Errorf("valid values 'parents' or 'children'")
+	}
+	sel.addIArg(Arg{Name: arg.Name, Val: arg.Val.Val})
+	return nil
+}
+
+func (co *Compiler) compileArgID(sel *Select, arg graph.Arg) (err error) {
+	if sel.ParentID != -1 {
+		return fmt.Errorf("can only be specified at the query root")
+	}
+
+	if sel.Ti.PrimaryCol.Name == "" {
+		return fmt.Errorf("no primary key column defined for '%s'", sel.Table)
+	}
+
+	node := arg.Val
+
+	// Composite PK: id is an object like {user_id: 1, session_id: 5}
+	if sel.Ti.HasCompositePK() && node.Type == graph.NodeObj {
+		return co.compileArgCompositeID(sel, node)
+	}
+
+	if err = validateArg(arg, graph.NodeNum, graph.NodeStr, graph.NodeVar); err != nil {
+		return
+	}
+
+	ex := newExpOp(OpEquals)
+	ex.Left.Col = sel.Ti.PrimaryCol
+
+	switch node.Type {
+	case graph.NodeNum:
+		if _, err := strconv.ParseInt(node.Val, 10, 32); err != nil {
+			return err
+		} else {
+			ex.Right.ValType = ValNum
+			ex.Right.Val = node.Val
+		}
+
+	case graph.NodeStr:
+		ex.Right.ValType = ValStr
+		ex.Right.Val = node.Val
+
+	case graph.NodeVar:
+		ex.Right.ValType = ValVar
+		ex.Right.Val = node.Val
+	}
+
+	sel.Where.Exp = ex
+	sel.Singular = true
+	return nil
+}
+
+// compileArgCompositeID handles id: {col1: val1, col2: val2} for composite PK tables.
+func (co *Compiler) compileArgCompositeID(sel *Select, node *graph.Node) error {
+	and := newExpOp(OpAnd)
+
+	for _, pkCol := range sel.Ti.PrimaryCols {
+		child, ok := node.CMap[pkCol.Name]
+		if !ok {
+			return fmt.Errorf("composite id missing key '%s' for table '%s'", pkCol.Name, sel.Table)
+		}
+
+		ex := newExpOp(OpEquals)
+		ex.Left.Col = pkCol
+
+		switch child.Type {
+		case graph.NodeNum:
+			if _, err := strconv.ParseInt(child.Val, 10, 32); err != nil {
+				return err
+			}
+			ex.Right.ValType = ValNum
+			ex.Right.Val = child.Val
+		case graph.NodeStr:
+			ex.Right.ValType = ValStr
+			ex.Right.Val = child.Val
+		case graph.NodeVar:
+			ex.Right.ValType = ValVar
+			ex.Right.Val = child.Val
+		default:
+			return fmt.Errorf("invalid type for composite id key '%s'", pkCol.Name)
+		}
+
+		and.Children = append(and.Children, ex)
+	}
+
+	sel.Where.Exp = and
+	sel.Singular = true
+	return nil
+}
+
+func (co *Compiler) compileArgSearch(sel *Select, arg graph.Arg) (err error) {
+	if len(sel.Ti.FullText) == 0 {
+		switch co.s.DBType() {
+		case "mysql":
+			return fmt.Errorf("no fulltext indexes defined for table '%s'", sel.Table)
+		case "sqlite":
+			return fmt.Errorf("no fts virtual table or fulltext indexes defined for table '%s'", sel.Table)
+		default:
+			return fmt.Errorf("no tsvector column defined on table '%s'", sel.Table)
+		}
+	}
+	if err = validateArg(arg, graph.NodeStr, graph.NodeVar); err != nil {
+		return
+	}
+
+	ex := newExpOp(OpTsQuery)
+	if arg.Val.Type == graph.NodeStr {
+		ex.Right.ValType = ValStr
+	} else {
+		ex.Right.ValType = ValVar
+	}
+	ex.Right.Val = arg.Val.Val
+
+	sel.addIArg(Arg{Name: arg.Name, Val: arg.Val.Val})
+	addAndFilter(&sel.Where, ex)
+	return nil
+}
+
+func (co *Compiler) compileArgWhere(qc *QCode, sel *Select, arg graph.Arg, role string) (err error) {
+	if arg.Val.Type == graph.NodeVar {
+		return fmt.Errorf("where must be an inline object; use variables only inside filter values")
+	}
+	if err = validateArg(arg, graph.NodeObj); err != nil {
+		return
+	}
+
+	ex, err := co.compileArgFilter(qc, sel, -1, arg, role)
+	if err != nil {
+		return
+	}
+	addAndFilterLast(&sel.Where, ex)
+	return
+}
+
+func (co *Compiler) compileArgOrderBy(sel *Select, arg graph.Arg) (err error) {
+	if err = validateArg(arg, graph.NodeObj, graph.NodeVar); err != nil {
+		return
+	}
+
+	node := arg.Val
+	cm := make(map[string]struct{})
+
+	for _, ob := range sel.OrderBy {
+		cm[ob.Col.Name] = struct{}{}
+	}
+
+	switch node.Type {
+	case graph.NodeObj:
+		return co.compileArgOrderByObj(sel, node, cm)
+
+	case graph.NodeVar:
+		return co.compileArgOrderByVar(sel, node, cm)
+	}
+
+	return nil
+}
+
+func (co *Compiler) compileArgSkipIncludeIf(qc *QCode, skip bool, sel *Select, f *Field, arg graph.Arg, role string) (err error) {
+	if err = validateArg(arg, graph.NodeObj); err != nil {
+		return
+	}
+	sid := sel.ID
+
+	// functions are rendered in the base select hence
+	// no column suffix is needed when rendering the filter
+	// expression
+	if f.Type == FieldTypeFunc {
+		sid = -1
+	}
+
+	ex, err := co.compileArgFilter(qc, sel, sid, arg, role)
+	if err != nil {
+		return
+	}
+	if skip {
+		addNotFilter(&f.FieldFilter, ex)
+	} else {
+		addAndFilter(&f.FieldFilter, ex)
+	}
+	return
+}
+
+func (co *Compiler) compileArgArgs(sel *Select, arg graph.Arg) (err error) {
+	if sel.Ti.Type != "function" {
+		return fmt.Errorf("'%s' does not have any argument", sel.Ti.Name)
+	}
+
+	if err = validateArg(arg, graph.NodeObj); err != nil {
+		return
+	}
+	args, err := newArgs(sel, sel.Ti.Func, arg)
+	if err != nil {
+		return
+	}
+	sel.Args = args
+	return
+}
+
+func (co *Compiler) compileArgDistinctOn(sel *Select, arg graph.Arg) (err error) {
+	if err = validateArg(arg,
+		graph.NodeList, graph.NodeLabel,
+		graph.NodeList, graph.NodeStr,
+		graph.NodeStr); err != nil {
+		return
+	}
+
+	node := arg.Val
+
+	if node.Type == graph.NodeStr {
+		var col sdata.DBColumn
+		if col, err = sel.Ti.GetColumn(node.Val); err != nil {
+			return
+		}
+		switch co.s.DBType() {
+		case "mysql":
+			sel.OrderBy = append(sel.OrderBy, OrderBy{Order: OrderAsc, Col: col})
+		default:
+			sel.DistinctOn = append(sel.DistinctOn, col)
+		}
+	}
+
+	for _, cn := range node.Children {
+		var col sdata.DBColumn
+		if col, err = sel.Ti.GetColumn(cn.Val); err != nil {
+			return
+		}
+		switch co.s.DBType() {
+		case "mysql":
+			sel.OrderBy = append(sel.OrderBy, OrderBy{Order: OrderAsc, Col: col})
+		default:
+			sel.DistinctOn = append(sel.DistinctOn, col)
+		}
+	}
+
+	return
+}
+
+func (co *Compiler) compileArgLimit(sel *Select, arg graph.Arg) (err error) {
+	if err = validateArg(arg, graph.NodeNum, graph.NodeVar); err != nil {
+		return
+	}
+
+	node := arg.Val
+
+	switch node.Type {
+	case graph.NodeNum:
+		var n int64
+		if n, err = strconv.ParseInt(node.Val, 10, 32); err != nil {
+			return
+		}
+		sel.Paging.Limit = int32(n)
+		sel.Paging.NoLimit = false
+
+	case graph.NodeVar:
+		if co.s.DBType() == "mysql" {
+			return dbArgErr("limit", "number", "mysql")
+		}
+		sel.Paging.LimitVar = node.Val
+		sel.Paging.NoLimit = false
+	}
+	return
+}
+
+func (co *Compiler) compileArgOffset(sel *Select, arg graph.Arg) (err error) {
+	if err = validateArg(arg, graph.NodeNum, graph.NodeVar); err != nil {
+		return
+	}
+
+	node := arg.Val
+
+	switch node.Type {
+	case graph.NodeNum:
+		var n int64
+		if n, err = strconv.ParseInt(node.Val, 10, 32); err != nil {
+			return
+		}
+		sel.Paging.Offset = int32(n)
+
+	case graph.NodeVar:
+		if co.s.DBType() == "mysql" {
+			return dbArgErr("offset", "number", "mysql")
+		}
+		sel.Paging.OffsetVar = node.Val
+	}
+	return nil
+}
+
+func (co *Compiler) compileArgFirstLast(sel *Select, arg graph.Arg, order Order) (err error) {
+	if err := co.compileArgLimit(sel, arg); err != nil {
+		return err
+	}
+
+	if !sel.Singular {
+		sel.Paging.Cursor = true
+	}
+
+	sel.order = order
+	sel.Paging.Backward = order == OrderDesc
+	return
+}
+
+func (co *Compiler) compileArgUnrestricted(sel *Select, arg graph.Arg) (err error) {
+	if err = validateArg(arg, graph.NodeBool); err != nil {
+		return err
+	}
+	sel.Unrestricted = (arg.Val.Val == "true")
+	return
+}
+
+func (co *Compiler) compileArgAfterBefore(sel *Select, arg graph.Arg, pt PagingType) (err error) {
+	if err = validateArg(arg, graph.NodeVar); err != nil {
+		return
+	}
+
+	node := arg.Val
+	varName := node.Val
+
+	// Accept "cursor" (backward compatible) or "<fieldname>_cursor" prefix (e.g., products_cursor_1)
+	expectedNamed := sel.FieldName + "_cursor"
+	if varName != "cursor" && !strings.HasPrefix(varName, expectedNamed) {
+		return fmt.Errorf("value for argument '%s' must be $cursor or $%s (or $%s_*)",
+			arg.Name, expectedNamed, expectedNamed)
+	}
+
+	sel.Paging.Type = pt
+	sel.Paging.CursorVar = varName // Store the variable name
+	if !sel.Singular {
+		sel.Paging.Cursor = true
+	}
+	return
+}
+
+// isCursorVar checks if a variable name is a cursor variable (either "cursor" or contains "_cursor")
+func isCursorVar(name string) bool {
+	return name == "cursor" || strings.Contains(name, "_cursor")
+}
+
+func (co *Compiler) compileFieldArgs(qc *QCode, sel *Select, f *Field, args []graph.Arg, role string) (err error) {
+	for _, a := range args {
+		switch a.Name {
+		case "args":
+			err = co.compileFuncArgArgs(sel, f, a)
+
+		case "includeIf", "include_if":
+			err = co.compileArgSkipIncludeIf(qc, false, sel, f, a, role)
+
+		case "skipIf", "skip_if":
+			err = co.compileArgSkipIncludeIf(qc, true, sel, f, a, role)
+
+		case "expr":
+			// Consumed by isFunction during expression-aggregate compilation.
+			// Reaching this branch with a non-function field would mean the
+			// user attached `expr:` to a regular column field, which doesn't
+			// make sense — error explicitly.
+			if f.Type != FieldTypeFunc {
+				err = fmt.Errorf("`expr:` is only valid on aggregate fields, not on column %q", f.FieldName)
+			}
+
+		case "column":
+			// Consumed by isFunction during column-aggregate compilation. Only a
+			// field that path actually produced (an aggregate function carrying
+			// the resolved ArgTypeCol) may tolerate it; every other field keeps
+			// its historical rejection — otherwise `lower(column: name)` would
+			// silently compile as an argument-less function call.
+			if f.Type != FieldTypeFunc || len(f.Args) == 0 || f.Args[0].Type != ArgTypeCol || !f.Func.Agg {
+				err = unknownArg(a)
+			}
+
+		default:
+			err = unknownArg(a)
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+var numArgKeyRe = regexp.MustCompile(`^[a_]\d+`)
+
+func (co *Compiler) compileFuncArgArgs(sel *Select, f *Field, arg graph.Arg) (err error) {
+	if f.Type == FieldTypeFunc && len(f.Func.Inputs) == 0 {
+		return fmt.Errorf("db function '%s': has no arguments", f.Func.Name)
+	}
+
+	if err = validateArg(arg, graph.NodeObj); err != nil {
+		return
+	}
+
+	args, err := newArgs(sel, f.Func, arg)
+	if err != nil {
+		return
+	}
+	f.Args = args
+	return
+}

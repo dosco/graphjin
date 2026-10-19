@@ -1,0 +1,701 @@
+package openapi
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/getkin/kin-openapi/openapi3"
+)
+
+// classifyAll walks every path/operation pair in doc and produces an
+// OpDescriptor per operation. Operations that can't be auto-exposed are
+// returned with Mode == OpModeSkipped and a populated SkipReason; nothing
+// is dropped silently. Per-operation diagnostic warnings (typically
+// internal inconsistencies the user might want to know about) are
+// returned alongside.
+func classifyAll(spec *Spec, doc *openapi3.T, cfg SpecConfig) ([]OpDescriptor, []string) {
+	if doc == nil || doc.Paths == nil {
+		return nil, nil
+	}
+
+	var ops []OpDescriptor
+	var warnings []string
+
+	// Iterate paths in deterministic order so registry output is stable
+	// across boots — important for log diffing and tests.
+	pathKeys := make([]string, 0, len(doc.Paths.Map()))
+	for k := range doc.Paths.Map() {
+		pathKeys = append(pathKeys, k)
+	}
+	sort.Strings(pathKeys)
+
+	for _, path := range pathKeys {
+		item := doc.Paths.Find(path)
+		if item == nil {
+			continue
+		}
+
+		// Method-by-method so the per-method skip reasons are accurate and
+		// mutating verbs can require an explicit operation-level opt-in.
+		methodOps := []struct {
+			method string
+			op     *openapi3.Operation
+		}{
+			{"GET", item.Get},
+			{"POST", item.Post},
+			{"PUT", item.Put},
+			{"PATCH", item.Patch},
+			{"DELETE", item.Delete},
+		}
+
+		for _, mo := range methodOps {
+			if mo.op == nil {
+				continue
+			}
+			op := classifyOne(spec, path, mo.method, mo.op, item, cfg)
+			op.JSONSchema2020 = doc.IsOpenAPI31OrLater()
+			ops = append(ops, op)
+			if op.Mode == OpModeSkipped {
+				warnings = append(warnings, fmt.Sprintf(
+					"openapi: %s %s %s — skipped: %s",
+					spec.Key, mo.method, path, op.SkipReason))
+			}
+		}
+	}
+
+	return ops, warnings
+}
+
+// classifyOne is the per-operation classifier. It first decides whether
+// the operation can be exposed at all and then picks between Mutation,
+// RowJoin, SingleByID, or List based on method, shape, and configuration.
+func classifyOne(
+	spec *Spec, path, method string,
+	op *openapi3.Operation,
+	pathItem *openapi3.PathItem,
+	cfg SpecConfig,
+) OpDescriptor {
+	specKey := ""
+	sourceName := ""
+	maxRequestBytes := int64(0)
+	maxResponseBytes := int64(0)
+	if spec != nil {
+		specKey = spec.Key
+		sourceName = spec.SourceName
+		maxRequestBytes = spec.MaxRequestBytes
+		maxResponseBytes = spec.MaxResponseBytes
+	}
+	d := OpDescriptor{
+		SourceName:       sourceName,
+		SpecKey:          specKey,
+		OperationID:      operationID(op, method, path),
+		Method:           method,
+		PathTemplate:     path,
+		Mode:             OpModeSkipped,
+		MaxRequestBytes:  maxRequestBytes,
+		MaxResponseBytes: maxResponseBytes,
+	}
+
+	// Operations explicitly disabled via config never appear regardless
+	// of how they would otherwise classify.
+	override := cfg.Operations[d.OperationID]
+	if override.Disabled {
+		d.SkipReason = "disabled by config"
+		return d
+	}
+
+	if method != "GET" {
+		return classifyMutation(d, op, pathItem, cfg, override)
+	}
+	d.RetryOnAuthFailure = true
+
+	// Find the success response. We only examine 200 — 201/202/204 are
+	// either non-applicable to GET or signal async/empty-body patterns
+	// that don't fit the join model.
+	resp := findSuccessResponse(op)
+	if resp == nil {
+		d.SkipReason = "no 200 success response declared"
+		return d
+	}
+
+	// Async / file-download responses can't participate in a query — they
+	// don't return JSON in their response body.
+	if hasLocationHeader(resp) {
+		d.SkipReason = "async pattern (Location header on success response)"
+		return d
+	}
+
+	jsonContent, mediaType := pickJSONContent(resp)
+	if jsonContent == nil {
+		d.SkipReason = fmt.Sprintf("non-JSON response (%s)", mediaType)
+		return d
+	}
+
+	// Parameters live in two places — on the path item (shared across
+	// methods) and on the operation itself. Merge and bucket by location.
+	pathParams, queryParams, headerParams := collectParams(pathItem, op)
+	d.PathParams = pathParams
+	d.QueryParams = queryParams
+	d.HeaderParams = headerParams
+
+	// Detect a sensible result_path by walking the response schema. List
+	// endpoints frequently wrap the array in {data: [...]} or
+	// {results: [...]} — stripping that wrapper makes the GraphQL output
+	// directly usable. A user override in cfg.Operations wins.
+	d.ResultPath, d.IsArrayResponse = deriveResultPath(jsonContent.Schema)
+	if ov, ok := cfg.Operations[d.OperationID]; ok && ov.ResultPath != "" {
+		d.ResultPath = splitPath(ov.ResultPath)
+	}
+	d.ResponseSchema = jsonContent.Schema
+
+	switch len(pathParams) {
+	case 0:
+		d.Mode = OpModeList
+	case 1:
+		switch {
+		case isSingleResourcePath(path):
+			d.Mode = OpModeSingleByID
+		case override.ExposeTopLevel:
+			if d.IsArrayResponse {
+				d.Mode = OpModeList
+			} else {
+				d.Mode = OpModeSingleByID
+			}
+		default:
+			d.SkipReason = "path parameter not in trailing position (set expose_top_level: true to opt in)"
+			return d
+		}
+	default:
+		if override.ExposeTopLevel {
+			if d.IsArrayResponse {
+				d.Mode = OpModeList
+			} else {
+				d.Mode = OpModeSingleByID
+			}
+			break
+		}
+
+		d.SkipReason = fmt.Sprintf("multi-segment path (%d path params) — needs explicit join config", len(pathParams))
+		return d
+	}
+
+	// User-provided join wiring upgrades a SingleByID to a RowJoin so
+	// the operation is also exposed as a child field on the parent table.
+	if d.Mode == OpModeSingleByID && len(d.PathParams) == 1 {
+		if jc, ok := cfg.Joins[d.OperationID]; ok && jc.ParentTable != "" {
+			j := jc
+			d.Join = &j
+			d.Mode = OpModeRowJoin
+		}
+	}
+
+	d.ExposeAs = exposeAs(specKey, d.OperationID, cfg.Operations[d.OperationID])
+	if d.Join != nil && d.Join.ExposeAs != "" {
+		d.ExposeAs = d.Join.ExposeAs
+	}
+
+	d.Defaults = canonicalParameterDefaults(override.Defaults, d.PathParams, d.QueryParams)
+
+	return d
+}
+
+func classifyMutation(d OpDescriptor, op *openapi3.Operation, pathItem *openapi3.PathItem, cfg SpecConfig, override OperationOverride) OpDescriptor {
+	if !override.ExposeMutation {
+		d.SkipReason = "mutating verb requires expose_mutation: true"
+		return d
+	}
+	if _, joined := cfg.Joins[d.OperationID]; joined {
+		d.SkipReason = "mutations cannot be configured as remote joins"
+		return d
+	}
+	if override.ExposeTopLevel {
+		d.SkipReason = "expose_top_level is query-only and cannot be combined with expose_mutation"
+		return d
+	}
+	if reason := unsupportedMutationParameter(pathItem, op); reason != "" {
+		d.SkipReason = reason
+		return d
+	}
+
+	d.PathParams, d.QueryParams, d.HeaderParams = collectParams(pathItem, op)
+	for _, p := range append(append(append([]ParamSpec(nil), d.PathParams...), d.QueryParams...), d.HeaderParams...) {
+		if !isPrimitiveParamType(p.Type) {
+			d.SkipReason = fmt.Sprintf("unsupported %s parameter %q type %q", p.In, p.Name, p.Type)
+			return d
+		}
+	}
+
+	if op.RequestBody != nil {
+		if op.RequestBody.Value == nil {
+			d.SkipReason = "unresolved request body"
+			return d
+		}
+		mt, contentType, reason := pickJSONRequestContent(op.RequestBody.Value)
+		if reason != "" {
+			d.SkipReason = reason
+			return d
+		}
+		if mt == nil || mt.Schema == nil || mt.Schema.Value == nil {
+			d.SkipReason = fmt.Sprintf("unsupported request body media type (%s); JSON schema required", contentType)
+			return d
+		}
+		d.RequestMediaType = contentType
+		d.RequestBodySchema = mt.Schema
+		d.RequestBodyRequired = op.RequestBody.Value.Required
+	}
+
+	statuses, responseSchema, reason := mutationSuccessResponses(op)
+	if reason != "" {
+		d.SkipReason = reason
+		return d
+	}
+	d.SuccessStatuses = statuses
+	d.ResponseSchema = responseSchema
+	d.AllowedRoles = canonicalRoles(override.AllowedRoles)
+	d.RetryOnAuthFailure = override.RetryOnAuthFailure
+	d.Defaults = canonicalParameterDefaults(override.Defaults, d.PathParams, d.QueryParams)
+	d.ExposeAs = exposeAs(d.SpecKey, d.OperationID, override)
+	d.Mode = OpModeMutation
+	return d
+}
+
+func canonicalParameterDefaults(defaults map[string]string, groups ...[]ParamSpec) map[string]string {
+	if len(defaults) == 0 {
+		return nil
+	}
+	// Viper lowercases YAML keys; restore the spec's parameter casing while
+	// keeping unknown keys intact for legacy compatibility.
+	canonical := make(map[string]string)
+	for _, specs := range groups {
+		for _, ps := range specs {
+			canonical[strings.ToLower(ps.Name)] = ps.Name
+		}
+	}
+	out := make(map[string]string, len(defaults))
+	for key, value := range defaults {
+		if name, ok := canonical[strings.ToLower(key)]; ok {
+			out[name] = value
+		} else {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+func unsupportedMutationParameter(pathItem *openapi3.PathItem, op *openapi3.Operation) string {
+	refs := make([]*openapi3.ParameterRef, 0)
+	if pathItem != nil {
+		refs = append(refs, pathItem.Parameters...)
+	}
+	if op != nil {
+		refs = append(refs, op.Parameters...)
+	}
+	for _, ref := range refs {
+		if ref == nil || ref.Value == nil {
+			return "unresolved request parameter"
+		}
+		switch ParamLocation(ref.Value.In) {
+		case ParamInPath, ParamInQuery, ParamInHeader:
+		default:
+			return fmt.Sprintf("unsupported request parameter %q location %q", ref.Value.Name, ref.Value.In)
+		}
+	}
+	return ""
+}
+
+func isPrimitiveParamType(t string) bool {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "string", "integer", "number", "boolean":
+		return true
+	default:
+		return false
+	}
+}
+
+func pickJSONRequestContent(body *openapi3.RequestBody) (*openapi3.MediaType, string, string) {
+	if body == nil || len(body.Content) == 0 {
+		return nil, "", ""
+	}
+	if mt := body.Content["application/json"]; mt != nil {
+		return mt, "application/json", ""
+	}
+	keys := make([]string, 0, len(body.Content))
+	for contentType := range body.Content {
+		keys = append(keys, contentType)
+	}
+	sort.Strings(keys)
+	jsonTypes := make([]string, 0, len(keys))
+	for _, contentType := range keys {
+		base := strings.TrimSpace(strings.Split(strings.ToLower(contentType), ";")[0])
+		if base == "application/json" || strings.HasSuffix(base, "+json") {
+			jsonTypes = append(jsonTypes, contentType)
+		}
+	}
+	if len(jsonTypes) == 1 {
+		contentType := jsonTypes[0]
+		return body.Content[contentType], contentType, ""
+	}
+	if len(jsonTypes) > 1 {
+		return nil, "", fmt.Sprintf("ambiguous JSON request body media types (%s)", strings.Join(jsonTypes, ", "))
+	}
+	return nil, keys[0], ""
+}
+
+func mutationSuccessResponses(op *openapi3.Operation) ([]int, *openapi3.SchemaRef, string) {
+	if op == nil || op.Responses == nil {
+		return nil, nil, "no supported success response declared"
+	}
+	var statuses []int
+	var schema *openapi3.SchemaRef
+	for _, status := range []int{200, 201, 202, 204} {
+		ref := op.Responses.Value(fmt.Sprint(status))
+		if ref == nil || ref.Value == nil {
+			continue
+		}
+		if status != 204 {
+			mt, mediaType := pickMutationJSONContent(ref.Value)
+			if mt == nil || mt.Schema == nil || mt.Schema.Value == nil {
+				return nil, nil, fmt.Sprintf("success response %d must declare a JSON schema (found %s)", status, mediaType)
+			}
+			if schema == nil {
+				schema = mt.Schema
+			}
+		}
+		statuses = append(statuses, status)
+	}
+	if len(statuses) == 0 {
+		return nil, nil, "no supported success response declared (expected 200, 201, 202, or 204)"
+	}
+	return statuses, schema, ""
+}
+
+// pickMutationJSONContent is intentionally stricter than the legacy GET
+// response classifier: the write contract supports application/json and
+// structured-syntax +json types, not streaming or loosely named media types.
+func pickMutationJSONContent(resp *openapi3.Response) (*openapi3.MediaType, string) {
+	if resp == nil || resp.Content == nil {
+		return nil, ""
+	}
+	if mt := resp.Content["application/json"]; mt != nil {
+		return mt, "application/json"
+	}
+	keys := make([]string, 0, len(resp.Content))
+	for contentType := range resp.Content {
+		keys = append(keys, contentType)
+	}
+	sort.Strings(keys)
+	for _, contentType := range keys {
+		base := strings.TrimSpace(strings.Split(strings.ToLower(contentType), ";")[0])
+		if base == "application/json" || strings.HasSuffix(base, "+json") {
+			return resp.Content[contentType], contentType
+		}
+	}
+	if len(keys) != 0 {
+		return nil, keys[0]
+	}
+	return nil, ""
+}
+
+func canonicalRoles(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, role := range in {
+		role = strings.TrimSpace(role)
+		if role == "" {
+			continue
+		}
+		key := strings.ToLower(role)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, role)
+	}
+	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i]) < strings.ToLower(out[j]) })
+	return out
+}
+
+// operationID returns the spec-supplied operationId or, when missing,
+// synthesises one from method + path so logs and registry keys still
+// reference something meaningful. Synthesised IDs are stable across
+// runs, which matters for log diffing.
+func operationID(op *openapi3.Operation, method, path string) string {
+	if op != nil && op.OperationID != "" {
+		return op.OperationID
+	}
+	// Fall back to "<method>_<path>" with non-identifier characters
+	// replaced. e.g. "GET /users/{userId}" → "get_users_userId".
+	repl := strings.NewReplacer("/", "_", "{", "", "}", "", "-", "_")
+	return strings.ToLower(method) + repl.Replace(path)
+}
+
+func findSuccessResponse(op *openapi3.Operation) *openapi3.Response {
+	if op == nil || op.Responses == nil {
+		return nil
+	}
+	if r := op.Responses.Status(200); r != nil && r.Value != nil {
+		return r.Value
+	}
+	// Some specs put the success under "default". Treat as 200 if nothing
+	// more specific exists.
+	if r := op.Responses.Default(); r != nil && r.Value != nil {
+		return r.Value
+	}
+	return nil
+}
+
+func hasLocationHeader(resp *openapi3.Response) bool {
+	if resp == nil {
+		return false
+	}
+	for name := range resp.Headers {
+		if strings.EqualFold(name, "Location") {
+			return true
+		}
+	}
+	return false
+}
+
+// pickJSONContent finds the JSON content variant of a response and
+// returns it along with the matched media type (for diagnostic messages
+// when no JSON variant exists). It accepts both "application/json" and
+// vendor variants like "application/vnd.api+json" — anything that
+// declares a JSON payload is fair game.
+func pickJSONContent(resp *openapi3.Response) (*openapi3.MediaType, string) {
+	if resp == nil || resp.Content == nil {
+		return nil, ""
+	}
+	if mt := resp.Content["application/json"]; mt != nil {
+		return mt, "application/json"
+	}
+	keys := make([]string, 0, len(resp.Content))
+	for contentType := range resp.Content {
+		keys = append(keys, contentType)
+	}
+	sort.Strings(keys)
+	for _, contentType := range keys {
+		if strings.Contains(strings.ToLower(contentType), "json") {
+			return resp.Content[contentType], contentType
+		}
+	}
+	// Return the first deterministic media type for diagnostics only.
+	if len(keys) != 0 {
+		return nil, keys[0]
+	}
+	return nil, ""
+}
+
+// collectParams merges PathItem-level parameters (shared) with
+// Operation-level parameters (operation-specific) and buckets the result
+// by location. We deduplicate on (name, in) — operation-level entries
+// win on collision, matching the OpenAPI spec's resolution rule.
+func collectParams(pathItem *openapi3.PathItem, op *openapi3.Operation) (path, query, header []ParamSpec) {
+	merged := make(map[string]ParamSpec)
+
+	for _, p := range pathItem.Parameters {
+		if p == nil || p.Value == nil {
+			continue
+		}
+		key := paramKey(p.Value.Name, p.Value.In)
+		merged[key] = paramSpecFromOpenAPI(p.Value)
+	}
+	for _, p := range op.Parameters {
+		if p == nil || p.Value == nil {
+			continue
+		}
+		key := paramKey(p.Value.Name, p.Value.In)
+		merged[key] = paramSpecFromOpenAPI(p.Value)
+	}
+
+	for _, ps := range merged {
+		switch ps.In {
+		case ParamInPath:
+			path = append(path, ps)
+		case ParamInQuery:
+			query = append(query, ps)
+		case ParamInHeader:
+			header = append(header, ps)
+		}
+	}
+
+	// Deterministic order for tests + log output.
+	sort.Slice(path, func(i, j int) bool { return path[i].Name < path[j].Name })
+	sort.Slice(query, func(i, j int) bool { return query[i].Name < query[j].Name })
+	sort.Slice(header, func(i, j int) bool { return header[i].Name < header[j].Name })
+	return
+}
+
+func paramKey(name, in string) string { return in + ":" + name }
+
+func paramSpecFromOpenAPI(p *openapi3.Parameter) ParamSpec {
+	ps := ParamSpec{
+		Name:     p.Name,
+		In:       ParamLocation(p.In),
+		Required: p.Required,
+		Schema:   p.Schema,
+	}
+	if p.Schema != nil && p.Schema.Value != nil {
+		s := p.Schema.Value
+		if len(s.Type.Slice()) > 0 {
+			ps.Type = s.Type.Slice()[0]
+		}
+		ps.Format = s.Format
+	}
+	return ps
+}
+
+// deriveResultPath inspects a response schema for the common "wrapper
+// object containing the actual data" pattern. When the top-level schema
+// is an object with exactly one property whose value is an array (or
+// object), we return that property as the result path. This matches
+// the data/items/results conventions most APIs use without forcing the
+// user to declare them.
+func deriveResultPath(schema *openapi3.SchemaRef) ([]string, bool) {
+	if schema == nil || schema.Value == nil {
+		return nil, false
+	}
+	s := schema.Value
+
+	// Top-level array — no wrapper.
+	if isType(s, "array") {
+		return nil, true
+	}
+
+	// Object with exactly one likely-payload property. We restrict the
+	// auto-detection to common names to avoid being too clever — users
+	// can always set result_path explicitly when our heuristic misses.
+	if isType(s, "object") {
+		candidates := []string{"data", "items", "results", "records"}
+		for _, name := range candidates {
+			if s.Properties == nil {
+				continue
+			}
+			prop, ok := s.Properties[name]
+			if !ok || prop == nil || prop.Value == nil {
+				continue
+			}
+			isArr := isType(prop.Value, "array")
+			return []string{name}, isArr
+		}
+	}
+
+	return nil, false
+}
+
+func isType(s *openapi3.Schema, t string) bool {
+	if s == nil {
+		return false
+	}
+	for _, x := range s.Type.Slice() {
+		if x == t {
+			return true
+		}
+	}
+	return false
+}
+
+// isSingleResourcePath returns true when the path's only path parameter
+// is at the trailing position (e.g. /users/{userId}, /accounts/{aid}).
+// We deliberately reject paths like /users/{userId}/profile because their
+// semantic mapping to a join key is ambiguous without explicit user input.
+func isSingleResourcePath(path string) bool {
+	segs := strings.Split(strings.Trim(path, "/"), "/")
+	if len(segs) == 0 {
+		return false
+	}
+	last := segs[len(segs)-1]
+	return strings.HasPrefix(last, "{") && strings.HasSuffix(last, "}")
+}
+
+// splitPath turns "data.items" into ["data", "items"]. Empty input
+// returns nil so downstream code can treat "no result path" as a single
+// nil check.
+func splitPath(p string) []string {
+	if p == "" {
+		return nil
+	}
+	return strings.Split(p, ".")
+}
+
+// exposeAs returns the GraphQL field name to surface this operation
+// under. Precedence: per-operation override > default convention.
+// The default is "<spec_key>_<operationId_snake>" to avoid collisions
+// when multiple specs declare similarly-named operations.
+func exposeAs(specKey, operationID string, override OperationOverride) string {
+	if override.ExposeAs != "" {
+		return override.ExposeAs
+	}
+	return sanitizeGraphQLName(specKey + "_" + toSnakeCase(operationID))
+}
+
+// sanitizeGraphQLName converts an arbitrary generated name to the GraphQL
+// Name grammar: [_A-Za-z][_0-9A-Za-z]*. OpenAPI operationIds are free-form
+// strings, so punctuation that is valid there must not leak into the field
+// names exposed by GraphJin. Consecutive invalid characters collapse to keep
+// generated names readable; existing valid underscores remain unchanged.
+func sanitizeGraphQLName(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 1)
+	replacingInvalid := false
+
+	for _, r := range s {
+		isLetter := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+		isDigit := r >= '0' && r <= '9'
+		if !isLetter && !isDigit && r != '_' {
+			if replacingInvalid {
+				continue
+			}
+			r = '_'
+			replacingInvalid = true
+		} else {
+			replacingInvalid = false
+		}
+
+		if b.Len() == 0 && isDigit {
+			b.WriteByte('_')
+		}
+		b.WriteRune(r)
+	}
+
+	if b.Len() == 0 {
+		return "_"
+	}
+	name := b.String()
+	if strings.HasPrefix(name, "__") {
+		name = "_" + strings.TrimLeft(name, "_")
+	}
+	return name
+}
+
+// toSnakeCase converts camelCase / PascalCase identifiers to snake_case.
+// It's intentionally conservative: only inserts an underscore at a
+// lower→upper transition. Acronyms (UserID → user_id) are handled by
+// also breaking before the last upper in an upper run that's followed
+// by a lower — the standard idiom for this conversion.
+func toSnakeCase(s string) string {
+	if s == "" {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 4)
+	runes := []rune(s)
+	for i, r := range runes {
+		isUpper := r >= 'A' && r <= 'Z'
+		if i > 0 && isUpper {
+			prev := runes[i-1]
+			prevIsLower := prev >= 'a' && prev <= 'z'
+			nextIsLower := i+1 < len(runes) && runes[i+1] >= 'a' && runes[i+1] <= 'z'
+			prevIsUpper := prev >= 'A' && prev <= 'Z'
+			if prevIsLower || (prevIsUpper && nextIsLower) {
+				b.WriteByte('_')
+			}
+		}
+		if isUpper {
+			b.WriteRune(r + ('a' - 'A'))
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}

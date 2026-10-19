@@ -1,0 +1,8 @@
+inherits: dev
+mode: agentic
+auth_fail_block: true
+auth:
+  type: jwt
+  development: false
+  jwt:
+    secret: pcb-fab-demo-jwt-secret

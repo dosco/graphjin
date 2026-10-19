@@ -1,0 +1,35 @@
+query churn_risk_context {
+  accounts(
+    where: { status: { eq: "churn_risk" } }
+    order_by: { renewal_date: asc }
+    limit: 20
+  ) {
+    id
+    name
+    plan
+    status
+    mrr_cents
+    renewal_date
+    last_active_at
+  }
+  invoices(
+    where: { status: { eq: "failed" } }
+    order_by: { last_attempt_at: desc }
+    limit: 20
+  ) {
+    id
+    account_id
+    amount_cents
+    status
+    attempts
+    due_at
+    last_attempt_at
+  }
+  usage_events(order_by: { occurred_at: desc }, limit: 30) {
+    id
+    account_id
+    kind
+    quantity
+    occurred_at
+  }
+}

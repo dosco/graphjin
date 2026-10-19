@@ -1,0 +1,5 @@
+query open_stores_count {
+  store(where: { status: { eq: "Open" } }) {
+    count_store_key
+  }
+}

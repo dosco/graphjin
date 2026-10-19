@@ -1,0 +1,541 @@
+package serv
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/dop251/goja"
+	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
+)
+
+const (
+	workflowsPath                = "workflows"
+	workflowExt                  = ".js"
+	defaultWorkflowScriptTimeout = 5 // seconds
+)
+
+var workflowCallableToolNames = map[string]struct{}{
+	"get_catalog_card":         {},
+	"get_catalog_capabilities": {},
+	"get_catalog_entrypoints":  {},
+	"graphql_help":             {},
+	"query_catalog":            {},
+	"describe_table":           {},
+	"execute_graphql":          {},
+	"execute_saved_query":      {},
+	"find_path":                {},
+	"get_mutation_syntax":      {},
+	"get_query_syntax":         {},
+	"get_table_sample":         {},
+	"get_saved_query":          {},
+	"get_fragment":             {},
+	"list_fragments":           {},
+	"list_tables":              {},
+	"list_saved_queries":       {},
+	"search_fragments":         {},
+	"search_saved_queries":     {},
+	"validate_where_clause":    {},
+}
+
+// extendDeadlineForWorkflow lifts the per-request read/write deadlines so a
+// handler that may execute a long-running JS workflow is not killed by the
+// global http.Server WriteTimeout (10s by default in serv.go). The new
+// deadline is workflow_timeout + 30s (response serialization buffer), or
+// the default workflow timeout if MCP.WorkflowTimeout is unset.
+//
+// Falls through silently if the underlying ResponseWriter does not support
+// deadline control (test stubs, intermediaries) — the global timeout still
+// applies in that case.
+func extendDeadlineForWorkflow(w http.ResponseWriter, conf *Config) {
+	timeoutSecs := conf.MCP.WorkflowTimeout
+	if timeoutSecs <= 0 {
+		timeoutSecs = defaultWorkflowScriptTimeout
+	}
+	deadline := time.Now().Add(time.Duration(timeoutSecs+30) * time.Second)
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(deadline); err != nil {
+		return
+	}
+	_ = rc.SetReadDeadline(deadline)
+}
+
+// apiV1Workflows handles REST execution of named JS workflows.
+// Route format: /api/v1/workflows/<name>
+func (s1 *HttpService) apiV1Workflows(ns *string) http.Handler {
+	rLen := len(routeWorkflows)
+
+	h := func(w http.ResponseWriter, r *http.Request) {
+		s := s1.Load().(*graphjinService)
+		if !s.conf.legacyDiscoveryEnabled() {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		extendDeadlineForWorkflow(w, s.conf)
+
+		if len(r.RequestURI) <= rLen {
+			renderErr(w, errors.New("no workflow name defined"))
+			return
+		}
+
+		workflowName := r.RequestURI[rLen:]
+		if n := strings.IndexRune(workflowName, '?'); n != -1 {
+			workflowName = workflowName[:n]
+		}
+
+		input, err := parseWorkflowInput(r)
+		if err != nil {
+			renderErr(w, err)
+			return
+		}
+
+		result, err := s.runNamedWorkflow(r.Context(), workflowName, input, ns)
+		if err != nil {
+			renderErr(w, err)
+			return
+		}
+
+		if err := json.NewEncoder(w).Encode(map[string]any{"data": result}); err != nil {
+			renderErr(w, err)
+		}
+	}
+
+	return http.HandlerFunc(h)
+}
+
+func parseWorkflowInput(r *http.Request) (any, error) {
+	switch r.Method {
+	case http.MethodPost:
+		b, err := parseBody(r)
+		if err != nil {
+			return nil, err
+		}
+		if len(strings.TrimSpace(string(b))) == 0 {
+			return map[string]any{}, nil
+		}
+
+		var input any
+		if err := json.Unmarshal(b, &input); err != nil {
+			return nil, fmt.Errorf("invalid request body JSON: %w", err)
+		}
+		return input, nil
+
+	case http.MethodGet:
+		vars := strings.TrimSpace(r.URL.Query().Get("variables"))
+		if vars == "" {
+			return map[string]any{}, nil
+		}
+
+		var input any
+		if err := json.Unmarshal([]byte(vars), &input); err != nil {
+			return nil, fmt.Errorf("invalid variables JSON: %w", err)
+		}
+		return input, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported method %q (use GET or POST)", r.Method)
+	}
+}
+
+func (s *graphjinService) workflowBasePath() string {
+	if s == nil || s.conf == nil {
+		return workflowsPath
+	}
+	if strings.TrimSpace(s.conf.Core.Workflows.Path) == "" {
+		return workflowsPath
+	}
+	path := filepath.Clean(strings.TrimSpace(s.conf.Core.Workflows.Path))
+	if path == "." {
+		return workflowsPath
+	}
+	return path
+}
+
+func (s *graphjinService) workflowRuntime() string {
+	return "goja"
+}
+
+func (s *graphjinService) runNamedWorkflow(ctx context.Context, name string, input any, ns *string) (any, error) {
+	normName, err := normalizeWorkflowName(name)
+	if err != nil {
+		return nil, err
+	}
+
+	wf, src, _, err := s.resolveWorkflowForContext(ctx, normName)
+	if err != nil {
+		return nil, err
+	}
+	meta := WorkflowMeta{Variables: workflowVariablesFromCatalog(wf.Variables)}
+	if err := validateWorkflowInput(meta, input); err != nil {
+		return nil, err
+	}
+
+	ms := s.newMCPServerWithContext(ctx)
+	return ms.runWorkflowScript(ctx, normName, src, input, ns)
+}
+
+func (s *graphjinService) runNamedWorkflowPinned(ctx context.Context, name, expectedSourceHash string, input any, ns *string) (any, error) {
+	normName, err := normalizeWorkflowName(name)
+	if err != nil {
+		return nil, err
+	}
+	wf, src, _, err := s.resolveWorkflowForContext(ctx, normName)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(expectedSourceHash) == "" || wf.SourceHash != strings.TrimSpace(expectedSourceHash) {
+		return nil, fmt.Errorf("workflow source changed; watch action approval is required")
+	}
+	meta := WorkflowMeta{Variables: workflowVariablesFromCatalog(wf.Variables)}
+	if err := validateWorkflowInput(meta, input); err != nil {
+		return nil, err
+	}
+	ms := s.newMCPServerWithContext(ctx)
+	return ms.runWorkflowScript(ctx, normName, src, input, ns)
+}
+
+func normalizeWorkflowName(name string) (string, error) {
+	name = strings.TrimSpace(strings.TrimPrefix(name, "/"))
+	if name == "" {
+		return "", errors.New("workflow name is required")
+	}
+
+	if strings.HasSuffix(strings.ToLower(name), workflowExt) {
+		name = name[:len(name)-len(workflowExt)]
+	}
+
+	if strings.Contains(name, "..") || strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("invalid workflow name: %q", name)
+	}
+
+	return name, nil
+}
+
+func (ms *mcpServer) runWorkflowScript(ctx context.Context, workflowName, script string, input any, ns *string) (any, error) {
+	vm := goja.New()
+	done := make(chan struct{})
+
+	timeoutSecs := ms.service.conf.MCP.WorkflowTimeout
+	if timeoutSecs <= 0 {
+		timeoutSecs = defaultWorkflowScriptTimeout
+	}
+	timeout := time.Duration(timeoutSecs) * time.Second
+
+	timer := time.AfterFunc(timeout, func() {
+		vm.Interrupt(fmt.Errorf("workflow execution exceeded %s", timeout))
+	})
+	defer timer.Stop()
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			vm.Interrupt(ctx.Err())
+		case <-done:
+		}
+	}()
+	defer close(done)
+
+	if input == nil {
+		input = map[string]any{}
+	}
+
+	if err := vm.Set("input", input); err != nil {
+		return nil, err
+	}
+	if err := vm.Set("ctx", workflowContext(ctx, ns)); err != nil {
+		return nil, err
+	}
+
+	console := vm.NewObject()
+	console.Set("log", func(args ...any) {
+		if ms.service.log != nil {
+			ms.service.log.Debugw("workflow console.log", "workflow", workflowName, "args", args)
+		}
+	}) //nolint:errcheck
+	if err := vm.Set("console", console); err != nil {
+		return nil, err
+	}
+
+	gj, err := ms.newWorkflowGlobals(vm, ctx, ns)
+	if err != nil {
+		return nil, err
+	}
+	if err := vm.Set("gj", gj); err != nil {
+		return nil, err
+	}
+
+	val, err := vm.RunScript(workflowName+workflowExt, script)
+	if err != nil {
+		return nil, err
+	}
+
+	mainFn, ok := goja.AssertFunction(vm.Get("main"))
+	if ok {
+		v, err := mainFn(goja.Undefined(), vm.ToValue(input))
+		if err != nil {
+			return nil, err
+		}
+		return v.Export(), nil
+	}
+
+	if !goja.IsUndefined(val) && !goja.IsNull(val) {
+		return val.Export(), nil
+	}
+
+	resultVal := vm.Get("result")
+	if !goja.IsUndefined(resultVal) && !goja.IsNull(resultVal) {
+		return resultVal.Export(), nil
+	}
+
+	return nil, nil
+}
+
+func (ms *mcpServer) newWorkflowGlobals(vm *goja.Runtime, ctx context.Context, ns *string) (*goja.Object, error) {
+	gj := vm.NewObject()
+	tools := vm.NewObject()
+
+	callTool := func(call goja.FunctionCall) goja.Value {
+		toolName, args := parseToolCall(vm, call)
+		out, err := ms.invokeToolForWorkflow(ctx, toolName, args, ns)
+		if err != nil {
+			panic(vm.ToValue(err.Error()))
+		}
+		return vm.ToValue(out)
+	}
+
+	if err := tools.Set("call", callTool); err != nil {
+		return nil, err
+	}
+
+	for _, toolName := range ms.workflowCallableToolNames() {
+		toolName := toolName
+		fnName := snakeToCamel(toolName)
+		fn := func(call goja.FunctionCall) goja.Value {
+			args := map[string]any{}
+			if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+				exported := call.Argument(0).Export()
+				if exported != nil {
+					var ok bool
+					args, ok = exported.(map[string]any)
+					if !ok {
+						panic(vm.ToValue("tool arguments must be an object"))
+					}
+				}
+			}
+
+			out, err := ms.invokeToolForWorkflow(ctx, toolName, args, ns)
+			if err != nil {
+				panic(vm.ToValue(err.Error()))
+			}
+			return vm.ToValue(out)
+		}
+		if err := tools.Set(fnName, fn); err != nil {
+			return nil, err
+		}
+	}
+
+	meta := vm.NewObject()
+	if err := meta.Set("listFunctions", func() []JSRuntimeFunction {
+		return ms.buildJSRuntimeAPI().Functions
+	}); err != nil {
+		return nil, err
+	}
+
+	if err := gj.Set("tools", tools); err != nil {
+		return nil, err
+	}
+	if err := gj.Set("meta", meta); err != nil {
+		return nil, err
+	}
+
+	return gj, nil
+}
+
+func parseToolCall(vm *goja.Runtime, call goja.FunctionCall) (string, map[string]any) {
+	if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+		panic(vm.ToValue("tool name is required"))
+	}
+
+	toolName := call.Argument(0).String()
+	args := map[string]any{}
+
+	if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+		exported := call.Argument(1).Export()
+		if exported != nil {
+			var ok bool
+			args, ok = exported.(map[string]any)
+			if !ok {
+				panic(vm.ToValue("tool arguments must be an object"))
+			}
+		}
+	}
+
+	return toolName, args
+}
+
+func workflowContext(ctx context.Context, ns *string) map[string]any {
+	data := map[string]any{
+		"user_id":   ctx.Value(core.UserIDKey),
+		"user_role": ctx.Value(core.UserRoleKey),
+	}
+	if ns != nil {
+		data["namespace"] = *ns
+	}
+	return data
+}
+
+func isWorkflowCallableTool(name string) bool {
+	_, ok := workflowCallableToolNames[name]
+	return ok
+}
+
+func (ms *mcpServer) workflowCallableToolNames() []string {
+	toolMap := ms.srv.ListTools()
+	names := make([]string, 0, len(toolMap))
+	for name := range toolMap {
+		if isWorkflowCallableTool(name) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func (ms *mcpServer) invokeToolForWorkflow(
+	ctx context.Context,
+	toolName string,
+	args map[string]any,
+	ns *string,
+) (any, error) {
+	if !isWorkflowCallableTool(toolName) {
+		return nil, fmt.Errorf("tool %s cannot be called from workflow runtime", toolName)
+	}
+
+	tool, ok := ms.srv.ListTools()[toolName]
+	if !ok {
+		return nil, fmt.Errorf("unknown workflow tool: %s", toolName)
+	}
+
+	callArgs := map[string]any{}
+	for k, v := range args {
+		callArgs[k] = v
+	}
+
+	if ns != nil && *ns != "" {
+		if _, ok := tool.Tool.InputSchema.Properties["namespace"]; ok {
+			if v, ok := callArgs["namespace"].(string); !ok || v == "" {
+				callArgs["namespace"] = *ns
+			}
+		}
+	}
+
+	req := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name:      toolName,
+			Arguments: callArgs,
+		},
+	}
+
+	res, err := tool.Handler(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return decodeWorkflowToolResult(res)
+}
+
+func validateWorkflowInput(meta WorkflowMeta, input any) error {
+	if len(meta.Variables) == 0 {
+		return nil
+	}
+
+	if input == nil {
+		input = map[string]any{}
+	}
+
+	inputMap, ok := input.(map[string]any)
+	if !ok {
+		return errors.New("workflow declares variables in metadata, so execute_workflow input must be an object")
+	}
+
+	var missing []string
+	for _, v := range meta.Variables {
+		if !v.Required {
+			continue
+		}
+		value, ok := inputMap[v.Name]
+		if !ok || value == nil {
+			missing = append(missing, v.Name)
+		}
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("workflow requires variables: %s", strings.Join(missing, ", "))
+	}
+
+	return nil
+}
+
+func decodeWorkflowToolResult(res *mcp.CallToolResult) (any, error) {
+	if res == nil {
+		return nil, nil
+	}
+
+	if res.IsError {
+		return nil, errors.New(workflowToolErrorMessage(res))
+	}
+
+	if res.StructuredContent != nil {
+		return res.StructuredContent, nil
+	}
+
+	if len(res.Content) == 0 {
+		return nil, nil
+	}
+
+	if text, ok := res.Content[0].(mcp.TextContent); ok {
+		t := strings.TrimSpace(text.Text)
+		if t == "" {
+			return "", nil
+		}
+		var decoded any
+		if err := json.Unmarshal([]byte(t), &decoded); err == nil {
+			return decoded, nil
+		}
+		return t, nil
+	}
+
+	b, err := json.Marshal(res.Content[0])
+	if err != nil {
+		return res.Content[0], nil
+	}
+	var out any
+	if err := json.Unmarshal(b, &out); err != nil {
+		return string(b), nil
+	}
+	return out, nil
+}
+
+func workflowToolErrorMessage(res *mcp.CallToolResult) string {
+	if len(res.Content) > 0 {
+		if text, ok := res.Content[0].(mcp.TextContent); ok && strings.TrimSpace(text.Text) != "" {
+			return text.Text
+		}
+	}
+
+	if res.StructuredContent != nil {
+		b, err := json.Marshal(res.StructuredContent)
+		if err == nil {
+			return string(b)
+		}
+	}
+
+	return "workflow tool call failed"
+}

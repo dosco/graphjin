@@ -1,0 +1,27 @@
+query roll_stock_context {
+  paper_rolls(order_by: { remaining_kg: asc }, limit: 10) {
+    id
+    roll_code
+    paper_type
+    gsm
+    remaining_kg
+    reorder_point_kg
+    supplier
+    status
+  }
+  material_price_index(order_by: { week_start: desc }, limit: 10) {
+    id
+    paper_type
+    week_start
+    price_per_kg
+    trend
+  }
+  demand_history(order_by: { week_start: desc }, limit: 10) {
+    id
+    customer_id
+    board_grade_code
+    week_start
+    ordered_m_2
+    rush_m_2
+  }
+}

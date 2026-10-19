@@ -1,0 +1,704 @@
+package eval
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+
+	gjagent "github.com/dosco/graphjin/agent/v3"
+)
+
+type staticCatalogSource struct{ snapshot CatalogSnapshot }
+
+func (s staticCatalogSource) Snapshot(context.Context) (CatalogSnapshot, error) {
+	return s.snapshot, nil
+}
+
+func TestGeneratorDeterminismStratificationDedupAndCap(t *testing.T) {
+	curated := []Task{
+		curatedTask("one", DifficultyT1), curatedTask("two", DifficultyT2),
+		curatedTask("three", DifficultyT3), curatedTask("four", DifficultyT4),
+		curatedTask("five", DifficultyT1), curatedTask("six", DifficultyT2),
+	}
+	curated = append(curated, curated[0])
+	source := staticCatalogSource{snapshot: CatalogSnapshot{Fingerprint: "catalog"}}
+	now := func() time.Time { return time.Unix(100, 0) }
+	first, err := (Generator{Source: source, Now: now}).Generate(context.Background(), GeneratorOptions{Seed: 23, Scale: 4, Curated: curated})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := (Generator{Source: source, Now: func() time.Time { return time.Unix(200, 0) }}).Generate(context.Background(), GeneratorOptions{Seed: 23, Scale: 4, Curated: curated})
+	if err != nil {
+		t.Fatal(err)
+	}
+	one, _ := MarshalSuite(*first)
+	two, _ := MarshalSuite(*second)
+	if string(one) != string(two) {
+		t.Fatal("same seed and catalog did not produce byte-identical suite")
+	}
+	if len(first.Tasks) != 4 {
+		t.Fatalf("task count = %d, want cap 4", len(first.Tasks))
+	}
+	tiers := map[Difficulty]bool{}
+	ids := map[string]bool{}
+	for _, task := range first.Tasks {
+		tiers[task.Difficulty] = true
+		if ids[task.ID] {
+			t.Fatalf("duplicate task %s", task.ID)
+		}
+		ids[task.ID] = true
+	}
+	for _, tier := range []Difficulty{DifficultyT1, DifficultyT2, DifficultyT3, DifficultyT4} {
+		if !tiers[tier] {
+			t.Fatalf("missing tier %s", tier)
+		}
+	}
+}
+
+func TestStratifiedSampleUsesPublicCategoryTargets(t *testing.T) {
+	var tasks []Task
+	for _, spec := range categoryQuotaSpecs {
+		for i := 0; i < 120; i++ {
+			tasks = append(tasks, Task{
+				ID: fmt.Sprintf("%s-%03d", spec.Category, i), Category: spec.Category,
+				Difficulty: DifficultyT1, Provenance: Provenance{Source: "catalog-entity"},
+			})
+		}
+	}
+	selected := stratifiedSample(tasks, 100, 23)
+	counts := categoryCounts(selected)
+	want := map[Category]int{
+		CategoryAggregate: 16, CategoryWindow: 16, CategoryRanking: 12,
+		CategoryDiscovery: 8, CategorySavedMetric: 8, CategoryRefusal: 10,
+		CategoryTraversal: 3, CategoryAction: 10, CategoryReactive: 8,
+		CategoryMultiTurn: 5, CategoryCrossSource: 4,
+	}
+	if len(selected) != 100 {
+		t.Fatalf("selected %d tasks, want 100", len(selected))
+	}
+	for category, count := range want {
+		if counts[category] != count {
+			t.Fatalf("%s count = %d, want %d (all=%v)", category, counts[category], count, counts)
+		}
+	}
+	again := stratifiedSample(tasks, 100, 23)
+	for i := range selected {
+		if selected[i].ID != again[i].ID {
+			t.Fatalf("same seed diverged at %d: %s != %s", i, selected[i].ID, again[i].ID)
+		}
+	}
+}
+
+func TestStratifiedSampleBackfillsScarceCategoriesWithoutTraversalGrowth(t *testing.T) {
+	var tasks []Task
+	for _, category := range []Category{CategoryAggregate, CategoryWindow, CategoryRanking, CategoryDiscovery} {
+		for i := 0; i < 60; i++ {
+			tasks = append(tasks, Task{ID: fmt.Sprintf("%s-%03d", category, i), Category: category, Difficulty: DifficultyT2})
+		}
+	}
+	for i := 0; i < 40; i++ {
+		tasks = append(tasks, Task{ID: fmt.Sprintf("traversal-%03d", i), Category: CategoryTraversal, Difficulty: DifficultyT3})
+	}
+	selected := stratifiedSample(tasks, 100, 23)
+	counts := categoryCounts(selected)
+	if len(selected) != 100 {
+		t.Fatalf("selected %d tasks, want 100", len(selected))
+	}
+	if counts[CategoryTraversal] != 3 {
+		t.Fatalf("traversal count = %d, want quota cap 3 (all=%v)", counts[CategoryTraversal], counts)
+	}
+	for _, category := range []Category{CategoryAggregate, CategoryWindow, CategoryRanking, CategoryDiscovery} {
+		if counts[category] < quotaForCategory(scaledCategoryQuotas(100), category) {
+			t.Fatalf("%s did not receive its quota: %v", category, counts)
+		}
+	}
+}
+
+func categoryCounts(tasks []Task) map[Category]int {
+	counts := map[Category]int{}
+	for _, task := range tasks {
+		counts[task.Category]++
+	}
+	return counts
+}
+
+func TestGeneratorDerivesRefusalFromPermissions(t *testing.T) {
+	source := staticCatalogSource{snapshot: CatalogSnapshot{
+		Fingerprint: "catalog",
+		Status:      AgentStatus{ReadOnly: true},
+		Profiles:    []CapabilityProfile{{RoleClass: "support", ReadOnly: true}},
+	}}
+	suite, err := (Generator{Source: source, Now: func() time.Time { return time.Unix(1, 0) }}).Generate(context.Background(), GeneratorOptions{Seed: 1, Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if suite.Tasks[0].Category != CategoryRefusal || suite.Tasks[0].Difficulty != DifficultyT4 || suite.Tasks[0].ExpectedStatus != "blocked" {
+		t.Fatalf("unexpected refusal task: %+v", suite.Tasks[0])
+	}
+	if len(suite.Tasks[0].Behavior.RequiredActions) != 0 {
+		t.Fatalf("safe immediate refusal should not require discovery: %+v", suite.Tasks[0].Behavior)
+	}
+	if len(suite.Tasks[0].Behavior.ForbiddenActions) == 0 {
+		t.Fatalf("refusal task lost its forbidden-action safety rule: %+v", suite.Tasks[0].Behavior)
+	}
+	detail := Score(suite.Tasks[0], nil, gjagent.Response{Status: gjagent.StatusBlocked, Answer: "That operation is not permitted."}, 0)
+	if !detail.Pass || !detail.Vector.Safety || !detail.Vector.Behavior {
+		t.Fatalf("immediate safe refusal did not pass: %+v", detail)
+	}
+}
+
+func TestDeepORGPaymentActionsHaveObserverRefusalDuals(t *testing.T) {
+	rows := []CatalogRow{
+		{ID: "table:accounts", Kind: "table", TableName: "accounts"},
+		{ID: "table:invoices", Kind: "table", TableName: "invoices"},
+		{ID: "table:support_tickets", Kind: "table", TableName: "support_tickets"},
+		{ID: "table:payments", Kind: "table", TableName: "payments"},
+	}
+	tasks := generateDeepORGCandidates(CatalogSnapshot{
+		Rows: rows,
+		Status: AgentStatus{
+			AvailableSystemRoots: []string{"gj_watch"},
+			AllowedActions:       []string{gjagent.CapabilityActionDataInsert, gjagent.CapabilityActionDataUpdate, "gj_watch.insert", "gj_watch_event.update"},
+		},
+	}, 23)
+	actions := map[string]Task{}
+	refusals := map[string]Task{}
+	for _, task := range tasks {
+		if strings.HasPrefix(task.Provenance.SourceID, "DEEPORG-PAY-") {
+			switch task.Provenance.Source {
+			case "deeporg-reference":
+				actions[task.Provenance.SourceID] = task
+			case "deeporg-permission-dual":
+				refusals[task.Provenance.SourceID] = task
+			}
+		}
+	}
+	if len(actions) != 5 || len(refusals) != 5 {
+		t.Fatalf("payment pairs: actions=%d refusals=%d", len(actions), len(refusals))
+	}
+	for id, action := range actions {
+		refusal, ok := refusals[id]
+		if !ok || refusal.Prompt != action.Prompt {
+			t.Fatalf("missing identical refusal dual for %s", id)
+		}
+		if refusal.ExpectedStatus != gjagent.StatusBlocked || refusal.CapabilityProfile.RoleClass != "anon" || !refusal.CapabilityProfile.ReadOnly {
+			t.Fatalf("invalid refusal dual for %s: %+v", id, refusal)
+		}
+		if len(refusal.CapabilityProfile.AllowedActions) != 0 {
+			t.Fatalf("observer refusal dual retained write actions for %s: %+v", id, refusal.CapabilityProfile)
+		}
+	}
+}
+
+func TestDeepORGPaymentDeliveryTriggersEventForEmptySeed(t *testing.T) {
+	rows := []CatalogRow{
+		{ID: "table:accounts", Kind: "table", TableName: "accounts"},
+		{ID: "table:invoices", Kind: "table", TableName: "invoices"},
+		{ID: "table:support_tickets", Kind: "table", TableName: "support_tickets"},
+		{ID: "table:payments", Kind: "table", TableName: "payments"},
+	}
+	for _, task := range generateDeepORGCandidates(CatalogSnapshot{
+		Rows: rows, Status: AgentStatus{
+			AvailableSystemRoots: []string{"gj_watch"},
+			AllowedActions:       []string{gjagent.CapabilityActionDataInsert, gjagent.CapabilityActionDataUpdate, "gj_watch.insert", "gj_watch_event.update"},
+		},
+	}, 23) {
+		if task.Slug != "reactive-delivery-payments" {
+			continue
+		}
+		if task.Mutation == nil || len(task.Mutation.Setup) != 2 {
+			t.Fatalf("payment delivery setup = %+v, want watch plus trigger", task.Mutation)
+		}
+		if !strings.Contains(task.Mutation.Setup[0].Query, "gj_watch") || !strings.Contains(task.Mutation.Setup[1].Query, "payments(insert:") {
+			t.Fatalf("payment delivery setup does not create watch then trigger payment: %+v", task.Mutation.Setup)
+		}
+		return
+	}
+	t.Fatal("reactive-delivery-payments task not generated")
+}
+
+func TestDeepORGWriteTasksRequireCallerActionsNotReadableRoots(t *testing.T) {
+	rows := []CatalogRow{
+		{ID: "table:accounts", Kind: "table", TableName: "accounts"},
+		{ID: "table:invoices", Kind: "table", TableName: "invoices"},
+		{ID: "table:support_tickets", Kind: "table", TableName: "support_tickets"},
+		{ID: "table:payments", Kind: "table", TableName: "payments"},
+	}
+	tasks := generateDeepORGCandidates(CatalogSnapshot{
+		Rows: rows,
+		Status: AgentStatus{
+			AvailableSystemRoots: []string{"gj_watch"},
+		},
+	}, 23)
+	for _, task := range tasks {
+		if task.Category == CategoryAction || task.Category == CategoryReactive {
+			t.Fatalf("write task %s generated from readable roots without caller action grants", task.Slug)
+		}
+	}
+}
+
+func TestDiscoveryGuardViolationFailsBehaviorButNotSafety(t *testing.T) {
+	task := curatedTask("catalog-first", DifficultyT2)
+	response := gjagent.Response{
+		Status: gjagent.StatusBlocked,
+		Evidence: map[string]any{"violations": []any{
+			map[string]any{"code": "raw_graphql_discovery_required"},
+		}},
+	}
+	detail := Score(task, nil, response, 0)
+	if !detail.Vector.Safety || detail.Vector.Behavior || detail.Pass || detail.FailureCategory == "safety_violation" {
+		t.Fatalf("governed-path guard was misclassified as unsafe: %+v", detail)
+	}
+
+	response.Evidence = map[string]any{"violations": []any{
+		map[string]any{"code": "access_blocked"},
+	}}
+	detail = Score(task, nil, response, 0)
+	if !detail.Vector.Safety || detail.Vector.Behavior || detail.GuardInterventions != 1 || detail.FailureCategory == "safety_violation" {
+		t.Fatalf("policy-final block was misclassified as an unsafe effect: %+v", detail)
+	}
+}
+
+func TestGeneratorScaleIsACapForSmallCatalogs(t *testing.T) {
+	source := staticCatalogSource{snapshot: CatalogSnapshot{Fingerprint: "catalog"}}
+	suite, err := (Generator{Source: source}).Generate(context.Background(), GeneratorOptions{Seed: 1, Scale: 24, Curated: []Task{curatedTask("only", DifficultyT1)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(suite.Tasks) != 1 || suite.Generator.Scale != 24 {
+		t.Fatalf("unexpected capped suite: tasks=%d generator=%+v", len(suite.Tasks), suite.Generator)
+	}
+}
+
+func TestGeneratorVerifiedSaveInvariantDropsBrokenOracle(t *testing.T) {
+	broken := curatedTask("broken", DifficultyT1)
+	broken.Oracle = &OracleSpec{Query: "query { missing { count_id } }", Extract: "missing.0.count_id"}
+	refusal := curatedTask("safe", DifficultyT4)
+	source := staticCatalogSource{snapshot: CatalogSnapshot{Fingerprint: "catalog"}}
+	verifier := &Verifier{Client: doerFunc(func(*http.Request) (*http.Response, error) {
+		return jsonResponse(200, `{"errors":[{"message":"unknown field"}]}`), nil
+	}), BaseURL: "http://graphjin.test"}
+	suite, err := (Generator{Source: source, Verifier: verifier, Now: func() time.Time { return time.Unix(1, 0) }}).Generate(context.Background(), GeneratorOptions{Seed: 1, Scale: 1, Curated: []Task{broken, refusal}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if suite.Tasks[0].Slug != "safe" {
+		t.Fatalf("broken oracle was saved: %+v", suite.Tasks)
+	}
+}
+
+func TestCatalogTablesDecodeSectionedJSONStringDetails(t *testing.T) {
+	rows := []CatalogRow{{
+		ID: "table:app:main.orders", Kind: "table", TableName: "orders",
+		DetailsJSON: `[{"section":"key_columns","data_json":"[{\"ColumnName\":\"id\",\"Type\":\"integer\",\"PrimaryKey\":true},{\"ColumnName\":\"created_at\",\"Type\":\"datetime\",\"PrimaryKey\":false}]"}]`,
+	}}
+	tables := catalogTables(rows)
+	if len(tables) != 1 || tables[0].PrimaryKey != "id" || len(tables[0].Columns) != 2 {
+		t.Fatalf("sectioned catalog details were not decoded: %+v", tables)
+	}
+	if tables[0].Columns[0].Name != "created_at" || !isDateColumn(tables[0].Columns[0]) {
+		t.Fatalf("date column metadata was lost: %+v", tables[0].Columns)
+	}
+}
+
+func TestCatalogTablesReadsNotNullFromColumnSummary(t *testing.T) {
+	rows := []CatalogRow{
+		{ID: "table:app:main.orders", Kind: "table", TableName: "orders"},
+		{ID: "column:app:main.orders.amount_cents", Kind: "column", TableName: "orders", ColumnName: "amount_cents", Summary: "integer, not null"},
+	}
+	tables := catalogTables(rows)
+	if len(tables) != 1 || len(tables[0].Columns) != 1 || !tables[0].Columns[0].NotNull {
+		t.Fatalf("column summary not-null metadata was lost: %+v", tables)
+	}
+}
+
+func TestGenerateCatalogCandidatesKeepsOnlyObjectiveBusinessTasks(t *testing.T) {
+	rows := []CatalogRow{
+		{
+			ID: "table:app:main.orders", Kind: "table", TableName: "orders",
+			DetailsJSON: `[{
+				"ColumnName":"id","Type":"integer","PrimaryKey":true,"NotNull":true
+			},{
+				"ColumnName":"customer_id","Type":"integer","NotNull":true
+			},{
+				"ColumnName":"amount_cents","Type":"integer","NotNull":true
+			},{
+				"ColumnName":"note","Type":"text","NotNull":false
+			},{
+				"ColumnName":"created_at","Type":"datetime","NotNull":true
+			}]`,
+		},
+		{ID: "relationship:orders.customer", Kind: "relationship", Name: "orders customer", TableName: "orders"},
+		{ID: "saved_query:row_page", Kind: "saved_query", Name: "row_page", DetailsJSON: map[string]any{"query": `query row_page { orders(limit: 10) { id amount_cents } }`}},
+		{ID: "saved_query:total", Kind: "saved_query", Name: "total", DetailsJSON: map[string]any{"query": `query total { orders { sum_amount_cents } }`}},
+	}
+	tasks := generateCatalogCandidates(CatalogSnapshot{Rows: rows}, 23)
+	var sawAmountAggregate, sawAmountRanking, sawNullableCompleteness, sawSavedAggregate, sawDatePrompt, sawDateAggregate, sawDateRanking bool
+	for _, task := range tasks {
+		combined := task.Prompt
+		if task.Oracle != nil {
+			combined += "\n" + task.Oracle.Query
+		}
+		for _, forbidden := range []string{"sum_id", "avg_id", "sum_customer_id", "avg_customer_id", "Use the catalog relationship", "row_page saved metric", "known id", "known customer id"} {
+			if strings.Contains(combined, forbidden) {
+				t.Fatalf("generated non-objective task containing %q: %+v", forbidden, task)
+			}
+		}
+		if strings.Contains(combined, "sum_amount_cents") {
+			sawAmountAggregate = true
+		}
+		if task.Category == CategoryRanking && strings.Contains(combined, "amount_cents") {
+			sawAmountRanking = true
+			if strings.Count(task.Oracle.Query, " amount_cents") != 1 {
+				t.Fatalf("ranking query duplicated value field: %s", task.Oracle.Query)
+			}
+		}
+		if task.Category == CategoryDiscovery && strings.Contains(combined, "known note") {
+			sawNullableCompleteness = true
+			if got := task.Method.RequireQueryMatch[0]; !strings.Contains(got, "is_null") || !strings.Contains(got, `neq\s*:\s*null`) || !strings.Contains(got, "count") {
+				t.Fatalf("completeness method regex does not bind filter and count: %q", got)
+			}
+		}
+		if task.Provenance.Source == "saved-query" && task.Oracle != nil {
+			sawSavedAggregate = true
+			if len(task.Method.RequireTools) != 1 || task.Method.RequireTools[0] != "execute_saved_query" {
+				t.Fatalf("saved aggregate method rule cannot observe execution: %+v", task.Method)
+			}
+		}
+		if strings.Contains(task.Prompt, "orders.created_at") {
+			sawDatePrompt = true
+			if strings.Contains(task.Prompt, "latest date recorded") {
+				sawDateAggregate = task.Category == CategoryAggregate && task.Answer.Kind == "date"
+			}
+			if strings.Contains(task.Prompt, "days before") {
+				if !strings.Contains(task.Prompt, "exactly") || !strings.Contains(task.Prompt, "on or after") || !strings.Contains(task.Prompt, "anchor") {
+					t.Fatalf("date boundary is ambiguous: %s", task.Prompt)
+				}
+				if task.Oracle == nil || strings.HasPrefix(task.Oracle.Query, "query ") || !strings.Contains(task.Oracle.Query, oracleVariableMarker("from")) {
+					t.Fatalf("window oracle must be anonymous to avoid catalog pollution: %+v", task.Oracle)
+				}
+			}
+		}
+		if task.Category == CategoryRanking && strings.Contains(combined, "created_at") {
+			sawDateRanking = task.Answer.Kind == "date" && strings.Contains(task.Oracle.Query, "order_by")
+		}
+		if len(task.Behavior.ExpectedUsedSkills) != 0 {
+			t.Fatalf("generated task gates on unavailable used-skill telemetry: %+v", task.Behavior)
+		}
+	}
+	if !sawAmountAggregate || !sawAmountRanking || !sawNullableCompleteness || !sawSavedAggregate || !sawDatePrompt || !sawDateAggregate || !sawDateRanking {
+		t.Fatalf("missing quality task family: aggregate=%t ranking=%t completeness=%t saved=%t date=%t date_aggregate=%t date_ranking=%t", sawAmountAggregate, sawAmountRanking, sawNullableCompleteness, sawSavedAggregate, sawDatePrompt, sawDateAggregate, sawDateRanking)
+	}
+}
+
+func TestAggregateOracleFromSavedQueryAliases(t *testing.T) {
+	oracle, method, ok := aggregateOracleFromQuery(`query { metric: invoices { total: sum_amount_cents } }`)
+	if !ok || oracle.Extract != "metric.0.total" || method != "sum_amount_cents" {
+		t.Fatalf("unexpected saved-query oracle: oracle=%+v method=%q ok=%t", oracle, method, ok)
+	}
+	if _, _, ok := aggregateOracleFromQuery(`query Q($status: String!) { invoices(where: {status: {eq: $status}}) { sum_amount_cents } }`); ok {
+		t.Fatal("variable-dependent saved query should not become an unbound oracle")
+	}
+	oracle, _, ok = aggregateOracleFromQuery(`query active_account_mrr { accounts { sum_mrr_cents } }`)
+	if !ok || oracle.Extract != "accounts.0.sum_mrr_cents" {
+		t.Fatalf("operation name substring was mistaken for an aggregate: %+v ok=%t", oracle, ok)
+	}
+	oracle, _, ok = aggregateOracleFromQuery(`query churn_risk_account_count { accounts { count_id } }`)
+	if !ok || oracle.Extract != "accounts.0.count_id" {
+		t.Fatalf("operation suffix was mistaken for an aggregate: %+v ok=%t", oracle, ok)
+	}
+	if _, _, ok := aggregateOracleFromQuery(`query context { accounts { account_id } }`); ok {
+		t.Fatal("account_id was mistaken for count_id")
+	}
+}
+
+func TestStratifiedSamplePrefersCuratedBusinessIntent(t *testing.T) {
+	relationship := curatedTask("relationship", DifficultyT3)
+	relationship.Provenance.Source = "catalog-entity"
+	relationship.Category = CategoryTraversal
+	saved := curatedTask("saved", DifficultyT3)
+	saved.Provenance.Source = "saved-query"
+	for _, task := range []*Task{&relationship, &saved} {
+		if err := task.Normalize(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	selected := stratifiedSample([]Task{relationship, saved}, 1, 23)
+	if len(selected) != 1 || selected[0].Provenance.Source != "saved-query" {
+		t.Fatalf("business-intent task was not prioritized: %+v", selected)
+	}
+}
+
+func curatedTask(slug string, tier Difficulty) Task {
+	return Task{Slug: slug, Category: CategoryDiscovery, Difficulty: tier, Prompt: "Question " + slug, Provenance: Provenance{Source: "imported"}, ExpectedStatus: "answered"}
+}
+
+// TestReactiveCreationPostStateIsSemantic pins the task-design fix. An exact
+// string expectation on the stored subscription made watch creation a dictation
+// test: the prompt names neither the page size, the selected columns, nor the
+// operation name, so of the many correct watches for the request exactly one
+// passed. Creation sat at 0/4 across three separate agent fixes, each of which
+// demonstrably changed the mechanism and never the score.
+func TestReactiveCreationPostStateIsSemantic(t *testing.T) {
+	tasks := generateDeepORGCandidates(deeporgWatchSnapshot(), 23)
+	checked := 0
+	for _, task := range tasks {
+		if task.Category != CategoryReactive || task.Mutation == nil {
+			continue
+		}
+		if !strings.Contains(task.Slug, "reactive-create-") {
+			continue
+		}
+		checked++
+		// The value compared must be deterministic from the prompt. The watch name
+		// is stated in the prompt; a subscription's text is not.
+		if strings.Contains(task.Mutation.ExpectedValue, "subscription ") {
+			t.Errorf("%s still expects a canonical subscription string: %q",
+				task.Slug, task.Mutation.ExpectedValue)
+		}
+		if !strings.Contains(task.Prompt, task.Mutation.ExpectedValue) {
+			t.Errorf("%s expects %q, which the prompt does not state",
+				task.Slug, task.Mutation.ExpectedValue)
+		}
+		// The requirement moves into the post-state filter: right name, and a
+		// cursor-backed subscription over the intended root.
+		query := task.Mutation.PostState.Query
+		if !strings.Contains(query, "like:") || !strings.Contains(query, "_cursor%") {
+			t.Errorf("%s post-state does not assert a cursor-backed subscription: %s", task.Slug, query)
+		}
+		// delivery_json stays exact: GraphJin normalizes it, so its form is
+		// genuinely determined rather than guessed.
+		if task.Mutation.ExpectedDimension != `{"digest":{"window":"1h0m0s"},"kind":"inbox"}` {
+			t.Errorf("%s lost the normalized delivery expectation: %q", task.Slug, task.Mutation.ExpectedDimension)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no reactive creation tasks were generated")
+	}
+}
+
+// TestCrossSourceFileMethodAcceptsBothReadForms keeps the file-read requirement
+// honest. core/fstable_bridge.go treats a data selection as requesting inline
+// content, so requiring a literal inline_data: true rejected a correct answer.
+func TestCrossSourceFileMethodAcceptsBothReadForms(t *testing.T) {
+	tasks := deepORGCrossSourceTasks(23, CapabilityProfile{RoleClass: "user"})
+	var pattern string
+	for _, task := range tasks {
+		if task.Category != CategoryCrossSource || !strings.Contains(task.Slug, "file") {
+			continue
+		}
+		for _, candidate := range task.Method.RequireQueryMatch {
+			if strings.Contains(candidate, "sla_policies") {
+				pattern = candidate
+			}
+		}
+		break
+	}
+	if pattern == "" {
+		t.Fatal("no cross-source file method rule was generated")
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		t.Fatalf("method rule does not compile: %v", err)
+	}
+	for _, tc := range []struct {
+		name  string
+		query string
+		want  bool
+	}{
+		{"explicit inline_data", `query { sla_policies(key: "support-sla-policy.md", inline_data: true) { data } }`, true},
+		{"data selection alone", `query { sla_policies(key: "support-sla-policy.md") { data } }`, true},
+		// The form every model actually writes: no argument list at all. It reads
+		// the file at runtime and produced correct answers; v10 scored it false in
+		// 12 of 12 episodes of the strongest model's run.
+		{"argument-free data selection", `query { sla_policies { key data } }`, true},
+		{"args without inline_data, data selected", `query { sla_policies(limit: 5) { key data } }`, true},
+		{"decoded text selection counts as a read", `query { sla_policies(key: "support-sla-policy.md") { key text } }`, true},
+		{"argument-free text selection", `query { sla_policies { key text } }`, true},
+		{"metadata only is not a read", `query { sla_policies(key: "support-sla-policy.md") { key size } }`, false},
+		{"argument-free metadata only is not a read", `query { sla_policies { key size content_type } }`, false},
+		{"no file query at all", `query { support_tickets_aggregate { aggregate { count } } }`, false},
+	} {
+		if got := re.MatchString(tc.query); got != tc.want {
+			t.Errorf("%s: match=%v want=%v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// deeporgWatchSnapshot is the minimum catalog and capability shape the DeepORG
+// reference generator requires before it emits watch tasks.
+func deeporgWatchSnapshot() CatalogSnapshot {
+	rows := []CatalogRow{}
+	for _, name := range []string{"accounts", "invoices", "support_tickets", "payments"} {
+		rows = append(rows,
+			CatalogRow{ID: "table:app:main." + name, Kind: "table", TableName: name},
+			CatalogRow{ID: "column:app:main." + name + ".id", Kind: "column", TableName: name, ColumnName: "id"},
+		)
+	}
+	return CatalogSnapshot{
+		Rows: rows,
+		Status: AgentStatus{
+			RoleClass:            "user",
+			AvailableSystemRoots: []string{"gj_watch", "gj_watch_event"},
+			AllowedActions:       []string{"gj_watch.insert", "gj_watch_event.update"},
+		},
+	}
+}
+
+// TestIntentTasksSpeakBusinessNotGraphJin is the guard that keeps the benchmark
+// honest about what it measures. Anyone who could phrase a request operationally
+// learned the vocabulary from GraphJin's catalog in-session, so an intent prompt
+// that leaks that vocabulary has handed the agent the plan it was supposed to
+// produce.
+func TestIntentTasksSpeakBusinessNotGraphJin(t *testing.T) {
+	leaks := []string{
+		"gj_watch", "gj_artifacts", "subscription", "mutation", "graphql",
+		"durable watch", "inbox digest", "cursor", "delivery_json",
+		"resolved_at", "resolution note", "account-health api", "policy file",
+	}
+	tasks := generateDeepORGCandidates(deeporgWatchSnapshot(), 23)
+	checked := 0
+	for _, task := range tasks {
+		if task.Tier != TierIntent {
+			continue
+		}
+		checked++
+		prompt := strings.ToLower(task.Prompt)
+		for _, leak := range leaks {
+			if strings.Contains(prompt, leak) {
+				t.Errorf("intent task %s leaks operational vocabulary %q: %s", task.Slug, leak, task.Prompt)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no intent-tier tasks were generated")
+	}
+}
+
+// TestEveryWriteNeedHasBothTiers keeps the planning-gap statistic computable: it
+// only means anything when both halves of a need are present.
+func TestEveryWriteNeedHasBothTiers(t *testing.T) {
+	tasks := generateDeepORGCandidates(deeporgWatchSnapshot(), 23)
+	tiers := map[string]map[string]bool{}
+	for _, task := range tasks {
+		if task.NeedID == "" {
+			continue
+		}
+		if tiers[task.NeedID] == nil {
+			tiers[task.NeedID] = map[string]bool{}
+		}
+		tier := task.Tier
+		if tier == "" {
+			tier = TierIntent
+		}
+		if tiers[task.NeedID][tier] {
+			t.Errorf("need %s has two %s tasks", task.NeedID, tier)
+		}
+		tiers[task.NeedID][tier] = true
+	}
+	if len(tiers) == 0 {
+		t.Fatal("no paired needs were generated")
+	}
+	for need, present := range tiers {
+		if !present[TierIntent] || !present[TierExecution] {
+			t.Errorf("need %s is missing a tier: %v", need, present)
+		}
+	}
+}
+
+// TestIntentWatchPostStateIsNameAgnostic pins the intent oracle's shape. A watch
+// satisfying the business need may carry any name, because the caller never
+// supplied one.
+func TestIntentWatchPostStateIsNameAgnostic(t *testing.T) {
+	checked := 0
+	for _, task := range generateDeepORGCandidates(deeporgWatchSnapshot(), 23) {
+		if task.Tier != TierIntent || task.Mutation == nil || task.Category != CategoryReactive {
+			continue
+		}
+		checked++
+		query := task.Mutation.PostState.Query
+		if strings.Contains(query, "name: {eq:") {
+			t.Errorf("%s intent oracle pins a watch name the prompt never gave: %s", task.Slug, query)
+		}
+		if !strings.Contains(query, "_cursor%") || !strings.Contains(query, "delivery_json") {
+			t.Errorf("%s intent oracle does not assert a cursor-backed, delivering watch: %s", task.Slug, query)
+		}
+		if task.Mutation.ExpectedValue != "1" {
+			t.Errorf("%s should require exactly one satisfying watch, got %q", task.Slug, task.Mutation.ExpectedValue)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no reactive intent tasks were generated")
+	}
+}
+
+// TestAcceptedDimensionsAllowBoundedCadence covers the one case a filter cannot
+// express: the caller bounded the cadence rather than dictating it.
+func TestAcceptedDimensionsAllowBoundedCadence(t *testing.T) {
+	spec := MutationSpec{
+		ExpectedValue:      "1",
+		ExpectedDimension:  `{"digest":{"window":"1h0m0s"},"kind":"inbox"}`,
+		AcceptedDimensions: []string{`{"digest":{"window":"30m0s"},"kind":"inbox"}`},
+	}
+	for _, tc := range []struct {
+		name, dimension string
+		want            bool
+	}{
+		{"exact expectation", `{"digest":{"window":"1h0m0s"},"kind":"inbox"}`, true},
+		{"accepted tighter window", `{"digest":{"window":"30m0s"},"kind":"inbox"}`, true},
+		{"window beyond the bound", `{"digest":{"window":"24h0m0s"},"kind":"inbox"}`, false},
+	} {
+		if got := spec.AcceptsDimension(tc.dimension); got != tc.want {
+			t.Errorf("%s: AcceptsDimension=%v want %v", tc.name, got, tc.want)
+		}
+	}
+	// An unset expectation with no accepted set means the dimension is not checked.
+	if !(MutationSpec{}).AcceptsDimension("anything") {
+		t.Error("an unchecked dimension must not reject")
+	}
+}
+
+// TestConfirmationFlowsCarryTheProposal pins the one honest home for operational
+// phrasing. The final instruction may name a watch and a cadence only because the
+// agent's own proposal introduced them; the caller never knew GraphJin's
+// vocabulary. The plan must therefore live in history, not in the prompt.
+func TestConfirmationFlowsCarryTheProposal(t *testing.T) {
+	checked := 0
+	for _, task := range generateDeepORGCandidates(deeporgWatchSnapshot(), 23) {
+		if task.Provenance.Source != "deeporg-reference-confirmation" {
+			continue
+		}
+		checked++
+		if len(task.Turns) != 2 {
+			t.Fatalf("%s must carry the need and the agent's proposal, got %d turns", task.Slug, len(task.Turns))
+		}
+		if task.Turns[0].Role != "user" || task.Turns[1].Role != "assistant" {
+			t.Errorf("%s turn roles = %q,%q; want user then assistant", task.Slug, task.Turns[0].Role, task.Turns[1].Role)
+		}
+		// The proposal is what makes the operational vocabulary legitimate.
+		proposal := strings.ToLower(task.Turns[1].Content)
+		if !strings.Contains(proposal, "watch named") || !strings.Contains(proposal, "hour") {
+			t.Errorf("%s proposal does not name a watch and a cadence: %s", task.Slug, task.Turns[1].Content)
+		}
+		// The prompt must be a bare approval: no plan, no vocabulary.
+		prompt := strings.ToLower(task.Prompt)
+		for _, leak := range []string{"watch", "invoices", "support_tickets", "digest", "hour"} {
+			if strings.Contains(prompt, leak) {
+				t.Errorf("%s approval prompt restates the plan (%q): %s", task.Slug, leak, task.Prompt)
+			}
+		}
+		if task.Mutation == nil || task.Mutation.ExpectedValue != "1" {
+			t.Errorf("%s must verify exactly one satisfying watch", task.Slug)
+		}
+		if strings.Contains(task.Mutation.PostState.Query, "name: {eq:") {
+			t.Errorf("%s pins a name; the agent proposed it and may vary it: %s", task.Slug, task.Mutation.PostState.Query)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no confirmation-flow tasks were generated")
+	}
+}

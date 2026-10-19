@@ -1,0 +1,1494 @@
+package core
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/dosco/graphjin/core/v3/internal/graph"
+	"github.com/dosco/graphjin/core/v3/internal/psql"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
+)
+
+type gstate struct {
+	gj    *graphjinEngine
+	r     GraphqlReq
+	cs    *cstate
+	vmap  map[string]json.RawMessage
+	data  []byte
+	dhash [sha256.Size]byte
+	role  string
+	// trustedReservedRole is true only when a service-installed authorizer
+	// allowed a reserved role for this exact request context.
+	trustedReservedRole bool
+	verrs               []qcode.ValidErr
+	// database is the target database name for multi-database support.
+	// Empty string means default database (backward compatible single-DB mode).
+	database string
+	// multiDB is true when the query spans multiple databases and requires
+	// parallel execution with result merging.
+	multiDB bool
+	// dbGroups maps database names to their root field names for multi-DB queries.
+	// Only populated when multiDB is true.
+	dbGroups map[string][]string
+
+	// Cache-related fields
+	cacheKey       string    // Cache key for this query
+	queryStarted   time.Time // When query started (for race condition detection)
+	cacheHit       bool      // True if response was served from cache
+	skipCache      bool      // True if caching should be skipped for this query
+	fragmentHits   atomic.Int64
+	fragmentMisses atomic.Int64
+}
+
+type cstate struct {
+	sync.Once
+	st  stmt
+	err error
+}
+
+type stmt struct {
+	role string
+	roc  *Role
+	qc   *qcode.QCode
+	md   psql.Metadata
+	sql  string
+}
+
+func newGState(c context.Context, gj *graphjinEngine, r GraphqlReq) (s gstate, err error) {
+	s.gj = gj
+	s.r = r
+
+	s.role, s.trustedReservedRole = gj.initialRequestRole(c)
+
+	// convert variable json to a go map also decrypted encrypted values
+	if len(r.vars) != 0 {
+		var vars json.RawMessage
+		vars, err = decryptValues(r.vars, decPrefix, s.gj.encryptionKey)
+		if err != nil {
+			return
+		}
+
+		s.vmap = make(map[string]json.RawMessage, 5)
+		if err = json.Unmarshal(vars, &s.vmap); err != nil {
+			return
+		}
+	}
+	return
+}
+
+func (gj *graphjinEngine) initialRequestRole(ctx context.Context) (string, bool) {
+	if ctx == nil {
+		return "anon", false
+	}
+	if gj != nil && gj.conf != nil {
+		candidates := contextIdentityRoles(ctx)
+		if len(candidates) != 0 {
+			resolve := gj.firstConfiguredRole
+			if gj.conf.roleUnionEnabled() {
+				resolve = gj.unionConfiguredRoles
+			}
+			if role, trusted := resolve(ctx, candidates); role != "" {
+				return role, trusted
+			}
+		}
+	}
+	if v, ok := ctx.Value(UserRoleKey).(string); ok && strings.TrimSpace(v) != "" {
+		if role, trusted := gj.requestRole(ctx, v); role != "" {
+			return role, trusted
+		}
+	}
+	switch ctx.Value(UserIDKey).(type) {
+	case string, int:
+		return "user", false
+	default:
+		return "anon", false
+	}
+}
+
+func contextIdentityRoles(ctx context.Context) []string {
+	if ctx == nil {
+		return nil
+	}
+	switch roles := ctx.Value(IdentityRolesKey).(type) {
+	case []string:
+		return roles
+	case []interface{}:
+		out := make([]string, 0, len(roles))
+		for _, role := range roles {
+			if s, ok := role.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	case string:
+		if strings.TrimSpace(roles) == "" {
+			return nil
+		}
+		return []string{roles}
+	default:
+		return nil
+	}
+}
+
+func (gj *graphjinEngine) firstConfiguredRole(ctx context.Context, candidates []string) (string, bool) {
+	if gj == nil || gj.conf == nil || len(candidates) == 0 {
+		return "", false
+	}
+	trusted := make(map[string]bool, len(candidates))
+	cset := make(map[string]struct{}, len(candidates))
+	for _, role := range candidates {
+		role, ok := gj.requestRole(ctx, role)
+		if role != "" {
+			key := strings.ToLower(role)
+			cset[key] = struct{}{}
+			trusted[key] = ok
+		}
+	}
+	for _, role := range gj.conf.Roles {
+		name := strings.ToLower(strings.TrimSpace(role.Name))
+		if _, ok := cset[name]; ok {
+			return role.Name, trusted[name]
+		}
+	}
+	for _, name := range []string{"user", "anon"} {
+		if _, ok := cset[name]; ok {
+			return name, false
+		}
+	}
+	return "", false
+}
+
+// IsReservedRoleName reports whether a role name is reserved for GraphJin
+// internals and must not be accepted from request-controlled identity data.
+func IsReservedRoleName(role string) bool {
+	return isReservedRoleName(role)
+}
+
+func isReservedRoleName(role string) bool {
+	return strings.HasPrefix(strings.TrimSpace(role), "__")
+}
+
+func (gj *graphjinEngine) requestRole(ctx context.Context, role string) (string, bool) {
+	role = strings.TrimSpace(role)
+	if role == "" {
+		return "", false
+	}
+	if !isReservedRoleName(role) {
+		return role, false
+	}
+	if gj != nil && gj.reservedRoleAuthorizer != nil && gj.reservedRoleAuthorizer(ctx, role) {
+		return role, true
+	}
+	return "", false
+}
+
+func (gj *graphjinEngine) requestRoleOrDefault(ctx context.Context, role, fallback string) (string, bool) {
+	if role, trusted := gj.requestRole(ctx, role); role != "" {
+		return role, trusted
+	}
+	fallback = strings.TrimSpace(fallback)
+	if fallback == "" || isReservedRoleName(fallback) {
+		fallback = "user"
+	}
+	return fallback, false
+}
+
+func (s *gstate) cloneForDatabaseRoot(dbName string) gstate {
+	return gstate{
+		gj:                  s.gj,
+		r:                   cloneGraphqlReq(s.r),
+		vmap:                cloneRawMessageMap(s.vmap),
+		role:                s.role,
+		trustedReservedRole: s.trustedReservedRole,
+		database:            dbName,
+		skipCache:           s.skipCache,
+	}
+}
+
+func (s *gstate) pollGState(vmap map[string]json.RawMessage) gstate {
+	return gstate{
+		gj:                  s.gj,
+		r:                   cloneGraphqlReq(s.r),
+		cs:                  s.cs,
+		vmap:                cloneRawMessageMap(vmap),
+		role:                s.role,
+		trustedReservedRole: s.trustedReservedRole,
+		database:            s.database,
+		skipCache:           true,
+	}
+}
+
+func cloneGraphqlReq(r GraphqlReq) GraphqlReq {
+	out := r
+	out.query = cloneBytes(r.query)
+	out.vars = json.RawMessage(cloneBytes(r.vars))
+	out.aschema = cloneRawMessageMap(r.aschema)
+	out.requestconfig = cloneRequestConfig(r.requestconfig)
+	return out
+}
+
+func cloneRequestConfig(rc *RequestConfig) *RequestConfig {
+	if rc == nil {
+		return nil
+	}
+	out := *rc
+	if rc.ns != nil {
+		ns := *rc.ns
+		out.ns = &ns
+	}
+	if rc.Vars != nil {
+		out.Vars = make(map[string]interface{}, len(rc.Vars))
+		for k, v := range rc.Vars {
+			out.Vars[k] = v
+		}
+	}
+	return &out
+}
+
+func cloneRawMessageMap(in map[string]json.RawMessage) map[string]json.RawMessage {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]json.RawMessage, len(in))
+	for k, v := range in {
+		out[k] = json.RawMessage(cloneBytes(v))
+	}
+	return out
+}
+
+func cloneBytes(in []byte) []byte {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]byte, len(in))
+	copy(out, in)
+	return out
+}
+
+func (s *gstate) compile() (err error) {
+	if !s.gj.prodSec {
+		err = s.compileQueryForRole()
+		return
+	}
+
+	// In production mode and compile and cache the result
+	// In production mode the query is derived from the allow list
+	err = s.compileQueryForRoleOnce()
+	return
+}
+
+func (s *gstate) compileQueryForRoleOnce() (err error) {
+	val, loaded := s.gj.queries.LoadOrStore(s.key(), &cstate{})
+	s.cs = val.(*cstate)
+
+	if !loaded {
+		s.cs.Do(func() {
+			s.cs.err = s.compileQueryForRole()
+		})
+	}
+
+	err = s.cs.err
+	return
+}
+
+func (s *gstate) compileQueryForRole() (err error) {
+	if isReservedRoleName(s.role) && !s.trustedReservedRole {
+		return fmt.Errorf(`role '%s' is reserved`, s.role)
+	}
+
+	st := stmt{role: s.role}
+
+	var ok bool
+	if st.roc, ok = s.gj.roleByName(s.role); !ok {
+		err = fmt.Errorf(`roles '%s' not defined in c.gj.config`, s.role)
+		return
+	}
+
+	var vars map[string]json.RawMessage
+	if len(s.r.aschema) != 0 { // compile in prod (once)
+		vars = s.r.aschema
+	} else { // compiling in dev
+		vars = s.vmap
+	}
+
+	// Multi-DB mode: check if query spans multiple databases
+	if s.gj.isMultiDB() {
+		roots := s.extractAllRootFields()
+		if len(roots) > 0 {
+			byDB := s.groupRootsByDatabase(roots)
+
+			// Multiple databases - mark for parallel execution
+			if len(byDB) > 1 {
+				s.multiDB = true
+				s.dbGroups = byDB
+				// Store role info for parallel execution
+				if s.cs == nil {
+					s.cs = &cstate{st: st}
+				} else {
+					s.cs.st = st
+				}
+				// Compilation will be done per-database in executeParallelRoots
+				return nil
+			}
+
+			// Single database - use that database's compilers
+			for db := range byDB {
+				if db != s.gj.defaultDB {
+					dbCtx, found := s.gj.GetDatabase(db)
+					if !found {
+						err = fmt.Errorf("database not found: %s", db)
+						return
+					}
+					return s.compileForDatabase(st, vars, dbCtx)
+				}
+			}
+		}
+	}
+
+	// Default path: compile with default (primary) database's compilers
+	pdb := s.gj.primaryDB()
+	return s.compileWithCompilers(st, vars, pdb.qcodeCompiler, pdb.psqlCompiler, "")
+}
+
+// compileForDatabase compiles the query using a specific database's compilers.
+func (s *gstate) compileForDatabase(st stmt, vars map[string]json.RawMessage, dbCtx *dbContext) (err error) {
+	s.database = dbCtx.name
+	return s.compileWithCompilers(st, vars, dbCtx.qcodeCompiler, dbCtx.psqlCompiler, dbCtx.name)
+}
+
+// compileWithCompilers performs the actual compilation with the given compilers.
+func (s *gstate) compileWithCompilers(st stmt, vars map[string]json.RawMessage, qcc *qcode.Compiler, pc *psql.Compiler, dbName string) (err error) {
+	if st.qc, err = qcc.Compile(
+		s.r.query,
+		vars,
+		s.role,
+		s.r.namespace); err != nil {
+		return
+	}
+	if st.qc.SType == qcode.QTOpenAPICall {
+		st.sql = ""
+		s.database = dbName
+		if s.cs == nil {
+			s.cs = &cstate{st: st}
+		} else {
+			s.cs.st = st
+		}
+		return nil
+	}
+
+	if dbCtx, ok := s.gj.GetDatabase(dbName); ok && dbCtx.nano != nil {
+		st.sql = ""
+		s.database = dbName
+		if s.cs == nil {
+			s.cs = &cstate{st: st}
+		} else {
+			s.cs.st = st
+		}
+		return nil
+	}
+
+	var w bytes.Buffer
+	if st.md, err = pc.Compile(&w, st.qc); err != nil {
+		return
+	}
+
+	st.sql = w.String()
+	s.database = dbName
+
+	if s.cs == nil {
+		s.cs = &cstate{st: st}
+	} else {
+		s.cs.st = st
+	}
+
+	return
+}
+
+// extractAllRootFields parses the GraphQL query to extract all root field names
+// without performing schema validation. Uses the graph parser for robust parsing.
+func (s *gstate) extractAllRootFields() []string {
+	op, err := graph.Parse(s.r.query)
+	if err != nil {
+		return nil
+	}
+
+	var roots []string
+	for _, f := range op.Fields {
+		// Root fields have ParentID == -1
+		if f.ParentID == -1 && f.Type != graph.FieldKeyword {
+			roots = append(roots, f.Name)
+		}
+	}
+	return roots
+}
+
+// groupRootsByDatabase maps root field names to their target databases.
+// Returns a map of database name to list of root field names.
+// After normalization, gj.defaultDB is always set and all tables have Database set.
+func (s *gstate) groupRootsByDatabase(roots []string) map[string][]string {
+	byDB := make(map[string][]string)
+
+	for _, root := range roots {
+		db := s.gj.defaultDB
+
+		// Look up the table's database from config
+		for _, t := range s.gj.conf.Tables {
+			if t.Name == root && t.Database != "" {
+				db = t.Database
+				break
+			}
+		}
+		byDB[db] = append(byDB[db], root)
+	}
+	return byDB
+}
+
+// getTargetDBCtx returns the dbContext for the target database.
+// If s.database is set, returns that database's context.
+// Otherwise returns the default database context.
+func (s *gstate) getTargetDBCtx() *dbContext {
+	name := s.database
+	if name == "" {
+		name = s.gj.defaultDB
+	}
+	ctx, _ := s.gj.GetDatabase(name)
+	return ctx
+}
+
+// getTargetPsqlCompiler returns the psql compiler for the target database.
+func (s *gstate) getTargetPsqlCompiler() *psql.Compiler {
+	return s.getTargetDBCtx().psqlCompiler
+}
+
+// getTargetDB returns the *sql.DB for the target database.
+// If s.database is set (non-default database), returns that database's connection.
+// Otherwise returns the default database connection.
+func (s *gstate) getTargetDB() *sql.DB {
+	return s.getTargetDBCtx().db
+}
+
+func (s *gstate) compileAndExecuteWrapper(c context.Context) (err error) {
+	// Record query start time for cache race condition detection
+	s.queryStarted = time.Now()
+
+	// Check for multi-database queries BEFORE compilation
+	// This is done by parsing root fields without schema validation
+	if s.gj.isMultiDB() {
+		roots := s.extractAllRootFields()
+		if len(roots) > 0 {
+			byDB := s.groupRootsByDatabase(roots)
+			if len(byDB) > 1 {
+				// Multi-database parallel execution path
+				s.multiDB = true
+				s.dbGroups = byDB
+				if err = s.executeParallelRoots(c); err != nil {
+					return
+				}
+				return
+			}
+		}
+	}
+
+	// Single database execution path (handles compilation internally)
+	if err = s.compileAndExecute(c); err != nil {
+		return
+	}
+
+	if s.gj.conf.Debug {
+		s.debugLogStmt()
+	}
+
+	if len(s.data) == 0 {
+		return
+	}
+
+	cs := s.cs
+
+	// Handle remote joins (HTTP calls to external APIs)
+	if cs.st.qc.Remotes != 0 {
+		if err = s.execRemoteJoin(c); err != nil {
+			return
+		}
+	}
+
+	// Handle cross-database joins (in-process calls to other databases)
+	if s.gj.isMultiDB() && countDatabaseJoins(cs.st.qc) > 0 {
+		if err = s.execDatabaseJoins(c); err != nil {
+			return
+		}
+	}
+
+	if len(cs.st.qc.HasuraAggregates) != 0 {
+		if s.data, err = reshapeHasuraAggregateData(s.data, cs.st.qc.HasuraAggregates); err != nil {
+			return fmt.Errorf("reshape Hasura-compatible aggregate response: %w", err)
+		}
+	}
+
+	if len(cs.st.qc.HasuraMutations) != 0 {
+		if s.data, err = reshapeHasuraMutationData(s.data, cs.st.qc.HasuraMutations); err != nil {
+			return fmt.Errorf("reshape Hasura-compatible mutation response: %w", err)
+		}
+	}
+
+	// Whole responses are intentionally not cached. Fragment caches are
+	// handled at each source fetch; mutations only publish invalidations.
+	if s.gj.responseCache != nil && s.r.operation != qcode.QTQuery {
+		s.invalidateCache(c)
+	}
+
+	return
+}
+
+// readOnlyDatabaseMutationError returns the blocking error when a mutation
+// targets a database configured read-only. routed reports whether the target
+// database is settled: compile resolves multi-database routing, so before it
+// runs the target is only known when the request names one or a single
+// database is configured — otherwise this defers to the post-compile call.
+func (s *gstate) readOnlyDatabaseMutationError(routed bool) error {
+	if s.r.operation != qcode.QTMutation {
+		return nil
+	}
+	dbName := s.database
+	if dbName == "" {
+		if !routed && len(s.gj.databases) > 1 {
+			return nil
+		}
+		dbName = s.gj.defaultDB
+	}
+	// A database with a managed-mutation handler is read-only only to SQL;
+	// its gj_* mutations have their own authority and their own errors. On
+	// the compile-failure path especially, "read-only" must not mask a more
+	// specific managed rejection (a workflow-shape error, a locked kind).
+	if !routed && s.gj.managedMutationHandlers[dbName] != nil {
+		return nil
+	}
+	if dbConf, ok := s.gj.conf.Databases[dbName]; ok && dbConf.ReadOnly {
+		return fmt.Errorf("mutations blocked: database %s is read-only", dbName)
+	}
+	return nil
+}
+
+func (s *gstate) compileAndExecute(c context.Context) (err error) {
+	if s.gj.conf.MockDB {
+		// compile query for the role
+		if err = s.compile(); err != nil {
+			return
+		}
+
+		// set default variables
+		s.setDefaultVars()
+
+		// execute query
+		err = s.executeMock(c)
+		return
+	}
+
+	var defaultConn *sql.Conn
+
+	// For ABAC, we need to execute role query first using default database
+	if s.role == "user" && s.gj.abacEnabled && s.tx() == nil {
+		c1, span1 := s.gj.spanStart(c, "Get Default Connection for ABAC")
+		defer span1.End()
+
+		err = retryOperation(c1, func() (err1 error) {
+			defaultConn, err1 = s.gj.primaryDB().db.Conn(c1)
+			return
+		})
+		if err != nil {
+			span1.Error(err)
+			return
+		}
+		defer defaultConn.Close() //nolint:errcheck
+
+		if err = s.executeRoleQuery(c, defaultConn); err != nil {
+			return
+		}
+	}
+
+	// Compile query for the role (this also determines target database for multi-DB)
+	if err = s.compile(); err != nil {
+		// A mutation that cannot compile against a read-only database is
+		// refused for being read-only, not for whatever the compiler happened
+		// to notice first — an unknown column says more about the schema than
+		// a refused caller needs and less about why the write was impossible.
+		// Only failed compiles are reconsidered here: managed-root mutations
+		// compile cleanly and are dispatched further down, which is why the
+		// authoritative check stays after them rather than moving up here.
+		if roErr := s.readOnlyDatabaseMutationError(false); roErr != nil {
+			err = roErr
+			return
+		}
+		err = s.sourceModeAuthorizeCompileError(err)
+		return
+	}
+	if err = s.sourceModeBlockedRootError(); err != nil {
+		return
+	}
+
+	// All-remote shortcut: skip SQL when every root is a remote select.
+	// qc.Remotes counts every remote in the tree (incl. row-join children),
+	// so we check root selects specifically.
+	if qc := s.cs.st.qc; qc != nil && len(qc.Roots) > 0 {
+		allRemote := true
+		for _, rid := range qc.Roots {
+			if qc.Selects[rid].SkipRender != qcode.SkipTypeRemote {
+				allRemote = false
+				break
+			}
+		}
+		if allRemote {
+			s.setDefaultVars()
+			s.data = seedRemotePlaceholders(qc)
+			return
+		}
+	}
+
+	if handled, err1 := s.executeManagedQuery(c); handled {
+		err = err1
+		return
+	}
+
+	if handled, err1 := s.executeOpenAPIMutation(c); handled {
+		err = err1
+		return
+	}
+
+	if s.r.operation == qcode.QTMutation {
+		if table, ok := s.readOnlyMutationRoot(); ok {
+			err = fmt.Errorf("mutations blocked: table %s is read-only", table)
+			return
+		}
+	}
+
+	if handled, err1 := s.executeManagedMutation(c); handled {
+		err = err1
+		return
+	}
+
+	// Block mutations on read-only databases (absolute, independent of roles)
+	if err = s.readOnlyDatabaseMutationError(true); err != nil {
+		return
+	}
+
+	// set default variables
+	s.setDefaultVars()
+
+	if dbCtx := s.getTargetDBCtx(); dbCtx != nil && dbCtx.nano != nil {
+		err = s.executeNanoDB(c, dbCtx)
+		return
+	}
+
+	var conn *sql.Conn
+
+	if s.tx() == nil {
+		// get a database connection from the target database
+		c1, span1 := s.gj.spanStart(c, "Get Connection")
+		defer span1.End()
+
+		db := s.getTargetDB()
+		err = retryOperation(c1, func() (err1 error) {
+			conn, err1 = db.Conn(c1)
+			return
+		})
+		if err != nil {
+			span1.Error(err)
+			return
+		}
+		defer conn.Close() //nolint:errcheck
+	}
+
+	// set the local user id on the connection if needed
+	if s.gj.conf.SetUserID {
+		c1, span2 := s.gj.spanStart(c, "Set Local User ID")
+		defer span2.End()
+
+		err = retryOperation(c1, func() (err1 error) {
+			return s.setLocalUserID(c1, conn)
+		})
+		if err != nil {
+			span2.Error(err)
+			return
+		}
+	}
+
+	// execute query
+	if err = s.execute(c, conn); err != nil {
+		return
+	}
+
+	// Mixed-roots: SQL output has only the real-table roots; inject
+	// markers for the top-level remote roots so execRemoteJoin can
+	// resolve them.
+	if qc := s.cs.st.qc; qc != nil && qc.Remotes > 0 {
+		s.data = injectRemoteMarkers(s.data, qc)
+	}
+	return
+}
+
+func (s *gstate) sourceModeAuthorizeCompileError(err error) error {
+	if err == nil || s == nil || s.gj == nil || s.gj.conf == nil || !s.gj.conf.IsSourcesUsed() {
+		return err
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, " blocked") || strings.Contains(msg, "blocked:") {
+		return fmt.Errorf("unauthorized: %w", err)
+	}
+	return err
+}
+
+func (s *gstate) sourceModeBlockedRootError() error {
+	if s == nil || s.gj == nil || s.gj.conf == nil || !s.gj.conf.IsSourcesUsed() || s.cs == nil || s.cs.st.qc == nil {
+		return nil
+	}
+	qc := s.cs.st.qc
+	if qc.Type != qcode.QTQuery {
+		return nil
+	}
+	for _, rid := range qc.Roots {
+		sel := qc.Selects[rid]
+		if sel.Ti.Name == "" || strings.HasPrefix(strings.ToLower(sel.Ti.Name), "gj_") {
+			continue
+		}
+		switch sel.SkipRender {
+		case qcode.SkipTypeBlocked:
+			return fmt.Errorf("unauthorized: table %s is blocked for role %s", sel.Ti.Name, s.role)
+		case qcode.SkipTypeUserNeeded:
+			return fmt.Errorf("unauthorized: table %s requires authenticated access", sel.Ti.Name)
+		}
+	}
+	return nil
+}
+
+func (s *gstate) setDefaultVars() {
+	if vlen := len(s.cs.st.qc.Vars); vlen != 0 && s.vmap == nil {
+		s.vmap = make(map[string]json.RawMessage, vlen)
+	}
+
+	for _, v := range s.cs.st.qc.Vars {
+		s.vmap[v.Name] = v.Val
+	}
+}
+
+func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
+
+	if err = s.validateAndUpdateVars(c); err != nil {
+		return
+	}
+
+	if s.cs.st.qc != nil {
+		for i := range s.cs.st.qc.Selects {
+			if msg := s.cs.st.qc.Selects[i].PartitionFilterRequired; msg != "" {
+				return errors.New(msg)
+			}
+		}
+	}
+
+	var args args
+	if args, err = s.argList(c); err != nil {
+		return
+	}
+
+	cs := s.cs
+	dbType := s.getTargetDBCtx().dbtype
+	if dbType == "sqlite" && cs.st.qc.InsertConflictFallback {
+		s.gj.sqliteConflictGetMu.Lock()
+		defer s.gj.sqliteConflictGetMu.Unlock()
+	}
+
+	// Use Dialect to check for multi-statement scripts (e.g., SQLite)
+	dialect := s.getTargetPsqlCompiler().GetDialect()
+	parts := dialect.SplitQuery(cs.st.sql)
+
+	if len(parts) > 1 {
+		// Multi-statement script execution
+		c1, span := s.gj.spanStart(c, "Execute Script")
+		defer span.End()
+
+		attempts := 1
+		if cs.st.qc.InsertConflictFallback {
+			attempts = 2
+		}
+		for attempt := 0; attempt < attempts; attempt++ {
+			s.data = nil
+			argIdx := 0
+			for i, stmt := range parts {
+				// Count parameters (?) in this statement to slice arguments
+				nParams := strings.Count(stmt, "?")
+				var stmtArgs []interface{}
+
+				if nParams > 0 {
+					if argIdx+nParams > len(args.values) {
+						span.Error(fmt.Errorf("script: not enough arguments for statement %d", i))
+						return fmt.Errorf("script: not enough arguments")
+					}
+					stmtArgs = args.values[argIdx : argIdx+nParams]
+					argIdx += nParams
+				}
+
+				stmt, stmtArgs, err = prepareQueryArgsForDB(s.getTargetDBCtx().dbtype, stmt, stmtArgs)
+				if err != nil {
+					span.Error(err)
+					return err
+				}
+
+				upperStmt := strings.ToUpper(strings.TrimSpace(stmt))
+
+				isReturning := strings.Contains(upperStmt, "RETURNING")
+				isSelect := (strings.HasPrefix(upperStmt, "SELECT") && !strings.Contains(upperStmt, " INTO ")) || strings.HasPrefix(upperStmt, "WITH")
+
+				// Check for @gj_ids hint
+				gjIdsHint := strings.Index(stmt, "-- @gj_ids=")
+				var gjIdsKey string
+				if gjIdsHint != -1 {
+					// Parse key: -- @gj_ids=users_0;
+					remainder := stmt[gjIdsHint+11:]
+					if idx := strings.Index(remainder, ";"); idx != -1 {
+						gjIdsKey = strings.TrimSpace(remainder[:idx])
+					} else {
+						gjIdsKey = strings.TrimSpace(remainder)
+					}
+				}
+
+				if gjIdsKey != "" {
+					// Bulk Capture Path for SQLite (handles RETURNING and SELECT)
+					var rows *sql.Rows
+					var err1 error
+					if tx := s.tx(); tx != nil {
+						rows, err1 = tx.QueryContext(c1, stmt, stmtArgs...)
+					} else {
+						err1 = retryOperationForDB(c1, dbType, func() (err2 error) {
+							rows, err2 = conn.QueryContext(c1, stmt, stmtArgs...)
+							return
+						})
+					}
+					if err1 != nil {
+						err = err1 // Propagate error
+					} else {
+						defer rows.Close() //nolint:errcheck
+
+						var ids []string
+
+						for rows.Next() {
+							var b []byte
+							if err = rows.Scan(&b); err != nil {
+								return err
+							}
+							// b is JSON object from RETURNING json_object(...)
+
+							// Parse ID from JSON
+							var rowMap map[string]interface{}
+							if err = json.Unmarshal(b, &rowMap); err != nil {
+								return err
+							}
+
+							if idVal, ok := rowMap["id"]; ok {
+								ids = append(ids, fmt.Sprintf("%v", idVal))
+							}
+						}
+
+						if err = rows.Err(); err != nil {
+							return err
+						}
+
+						// Note: We do NOT set s.data here - the final SELECT will set the response
+						// We only capture IDs into _gj_ids for the scoping CTE
+
+						// Insert captured IDs into _gj_ids
+						if len(ids) > 0 {
+							var ib strings.Builder
+							ib.WriteString(`INSERT OR IGNORE INTO _gj_ids (k, id) VALUES `)
+							for k, id := range ids {
+								if k > 0 {
+									ib.WriteString(", ")
+								}
+								ib.WriteString(fmt.Sprintf("('%s', '%s')",
+									strings.ReplaceAll(gjIdsKey, "'", "''"),
+									strings.ReplaceAll(id, "'", "''")))
+							}
+							insertSQL := ib.String()
+
+							if tx := s.tx(); tx != nil {
+								_, err = tx.ExecContext(c1, insertSQL)
+							} else {
+								_, err = conn.ExecContext(c1, insertSQL)
+							}
+						}
+					}
+				} else if isReturning || isSelect {
+					// Statement returns data (e.g. INSERT ... RETURNING or SELECT ...)
+					var row *sql.Row
+					if tx := s.tx(); tx != nil {
+						row = tx.QueryRowContext(c1, stmt, stmtArgs...)
+						err = row.Scan(&s.data)
+					} else {
+						err = retryOperationForDB(c1, dbType, func() (err1 error) {
+							row = conn.QueryRowContext(c1, stmt, stmtArgs...)
+							return row.Scan(&s.data)
+						})
+					}
+
+				} else {
+					// Intermediate statement: Use Exec
+					if tx := s.tx(); tx != nil {
+						_, err = tx.ExecContext(c1, stmt, stmtArgs...)
+					} else {
+						err = retryOperationForDB(c1, dbType, func() (err1 error) {
+							_, err1 = conn.ExecContext(c1, stmt, stmtArgs...)
+							return
+						})
+					}
+				}
+
+				if err != nil {
+					if cs.st.qc.InsertConflictFallback && dbType == "sqlite" && attempt+1 < attempts && isSQLiteLockError(err) {
+						err = nil
+						break
+					}
+					if dbType == "snowflake" {
+						err = wrapSnowflakeScriptError(i, stmt, isReturning || isSelect || gjIdsKey != "", err)
+					}
+					if err != sql.ErrNoRows {
+						span.Error(err)
+					}
+					return
+				}
+			}
+
+			if cs.st.qc.InsertConflictFallback && insertConflictGetResultEmpty(s.data, cs.st.qc) {
+				if attempt+1 < attempts {
+					continue
+				}
+				return insertConflictGetUnavailableError(cs.st.qc)
+			}
+
+			if err == nil {
+				s.dhash = sha256.Sum256(s.data)
+				s.data, err = encryptValues(s.data,
+					s.gj.printFormat, decPrefix, s.dhash[:], s.gj.encryptionKey)
+			}
+			return
+		}
+		return
+	}
+
+	// Standard Single-Statement Execution
+	c1, span := s.gj.spanStart(c, "Execute Query")
+	defer span.End()
+
+	querySQL, queryArgs, err := prepareQueryArgsForDB(s.getTargetDBCtx().dbtype, cs.st.sql, args.values)
+	if err != nil {
+		span.Error(err)
+		return err
+	}
+
+	dbCtx := s.getTargetDBCtx()
+	dbName := dbCtx.name
+	cacheKey := s.dbFragmentKey(c1, fragmentKindDBRoot, dbName, querySQL, queryArgs, cs.st.qc)
+	produce := func(ctx context.Context, useConn *sql.Conn) ([]byte, [sha256.Size]byte, error) {
+		raw, err := scanJSONRow(ctx, dbType, useConn, s.tx(), querySQL, queryArgs)
+		if err == sql.ErrNoRows {
+			return nil, [sha256.Size]byte{}, nil
+		}
+		if err != nil {
+			return nil, [sha256.Size]byte{}, err
+		}
+		if cs.st.qc.InsertConflictAction == qcode.ConflictGet && insertConflictGetResultEmpty(raw, cs.st.qc) {
+			if cs.st.qc.InsertConflictFallback {
+				raw, err = scanJSONRow(ctx, dbType, useConn, s.tx(), querySQL, queryArgs)
+				if err != nil {
+					return nil, [sha256.Size]byte{}, err
+				}
+			}
+			if insertConflictGetResultEmpty(raw, cs.st.qc) {
+				return nil, [sha256.Size]byte{}, insertConflictGetUnavailableError(cs.st.qc)
+			}
+		}
+		encrypted, dhash, err := encryptResultFragment(raw, s.gj.printFormat, s.gj.encryptionKey)
+		return encrypted, dhash, err
+	}
+
+	if cached, ok := s.fragmentCacheGet(c1, cacheKey, func() ([]byte, []RowRef, CacheEntryOptions, error) {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(c), swrRefreshTimeout)
+		defer cancel()
+		refreshConn, err := dbCtx.db.Conn(ctx)
+		if err != nil {
+			return nil, nil, CacheEntryOptions{}, err
+		}
+		defer refreshConn.Close() //nolint:errcheck
+		data, _, err := produce(ctx, refreshConn)
+		if err != nil {
+			return nil, nil, CacheEntryOptions{}, err
+		}
+		cachedData, refs, err := s.processDBFragmentForCache(dbName, cs.st.qc, data)
+		return cachedData, refs, CacheEntryOptions{}, err
+	}); ok {
+		s.data = cached
+		s.dhash = sha256.Sum256(cached)
+		err = nil
+	} else {
+		start := time.Now()
+		s.data, s.dhash, err = produce(c1, conn)
+		if err == nil {
+			cachedData, refs, perr := s.processDBFragmentForCache(dbName, cs.st.qc, s.data)
+			if perr == nil {
+				s.fragmentCacheSet(c1, cacheKey, cachedData, refs, start, CacheEntryOptions{})
+			}
+		}
+	}
+
+	if err != nil && err != sql.ErrNoRows {
+		span.Error(err)
+	}
+
+	if span.IsRecording() {
+		attrs := []StringAttr{
+			{"query.namespace", s.r.namespace},
+			{"query.operation", cs.st.qc.Type.String()},
+			{"query.name", cs.st.qc.Name},
+			{"query.role", cs.st.role},
+		}
+		// Add database attribute for multi-database observability
+		if s.database != "" {
+			attrs = append(attrs, StringAttr{"query.database", s.database})
+		}
+		span.SetAttributesString(attrs...)
+	}
+
+	if err != nil {
+		return
+	}
+
+	return
+}
+
+func insertConflictGetResultEmpty(data []byte, qc *qcode.QCode) bool {
+	if qc == nil || len(qc.Roots) != 1 {
+		return false
+	}
+	var root map[string]json.RawMessage
+	if len(data) == 0 || json.Unmarshal(data, &root) != nil {
+		return len(data) == 0
+	}
+	selID := qc.Roots[0]
+	if selID < 0 || int(selID) >= len(qc.Selects) {
+		return false
+	}
+	v, ok := root[qc.Selects[selID].FieldName]
+	if !ok {
+		return true
+	}
+	v = bytes.TrimSpace(v)
+	return bytes.Equal(v, []byte("null")) || bytes.Equal(v, []byte("[]")) || bytes.Equal(v, []byte("{}"))
+}
+
+func insertConflictGetUnavailableError(qc *qcode.QCode) error {
+	if qc != nil && qc.InsertConflictReadFiltered {
+		return errors.New("authorization error: on_conflict: get cannot return an existing row hidden by the active role policy")
+	}
+	return errors.New("retryable concurrency error: on_conflict: get could not return the row after one complete-statement retry")
+}
+
+func isSQLiteLockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database is locked") || strings.Contains(msg, "database table is locked")
+}
+
+func wrapSnowflakeScriptError(stmtIdx int, stmt string, usesQueryPath bool, err error) error {
+	kind := "exec"
+	if usesQueryPath {
+		kind = "query"
+	}
+
+	preview := strings.Join(strings.Fields(strings.TrimSpace(stmt)), " ")
+	const maxPreview = 180
+	if len(preview) > maxPreview {
+		preview = preview[:maxPreview-3] + "..."
+	}
+
+	msg := fmt.Sprintf("snowflake script statement %d (%s) failed", stmtIdx+1, kind)
+	if qid := snowflakeQueryID(err); qid != "" {
+		msg += fmt.Sprintf(" [query_id=%s]", qid)
+	}
+	if preview != "" {
+		msg += fmt.Sprintf(": %s", preview)
+	}
+
+	return fmt.Errorf("%s: %w", msg, err)
+}
+
+func (s *gstate) executeRoleQuery(c context.Context, conn *sql.Conn) (err error) {
+	s.role, s.trustedReservedRole, err = s.gj.executeRoleQuery(c, conn, s.vmap, s.r.requestconfig)
+	return
+}
+
+func (s *gstate) argList(c context.Context) (args args, err error) {
+	args, err = s.gj.argList(c, s.cs.st.md, s.vmap, s.r.requestconfig, false, s.getTargetPsqlCompiler())
+	return
+}
+
+func (s *gstate) argListForSub(c context.Context,
+	vmap map[string]json.RawMessage,
+) (args args, err error) {
+	args, err = s.gj.argList(c, s.cs.st.md, vmap, s.r.requestconfig, true, s.getTargetPsqlCompiler())
+	return
+}
+
+func (s *gstate) setLocalUserID(c context.Context, conn *sql.Conn) (err error) {
+	if v := c.Value(UserIDKey); v == nil {
+		return nil
+	} else {
+		var val string
+		switch v1 := v.(type) {
+		case string:
+			val = v1
+		case int:
+			val = strconv.Itoa(v1)
+		}
+
+		q := s.getTargetPsqlCompiler().RenderSetSessionVar("user.id", val)
+		if q == "" {
+			return nil
+		}
+
+		if tx := s.tx(); tx != nil {
+			_, err = tx.ExecContext(c, q)
+		} else {
+			_, err = conn.ExecContext(c, q)
+		}
+	}
+	return
+}
+
+var errValidationFailed = errors.New("validation failed")
+
+func (s *gstate) validateAndUpdateVars(c context.Context) (err error) {
+	cs := s.cs
+	qc := cs.st.qc
+
+	if qc == nil {
+		return nil
+	}
+
+	if len(qc.Consts) != 0 {
+		s.verrs = qc.ProcessConstraints(s.vmap)
+		if len(s.verrs) != 0 {
+			err = errValidationFailed
+			return
+		}
+	}
+	return
+}
+
+func (s *gstate) sql() (sql string) {
+	if s.cs != nil && s.cs.st.qc != nil {
+		sql = s.cs.st.sql
+	}
+	return
+}
+
+func (s *gstate) cacheHeader() (ch string) {
+	if s.cs != nil && s.cs.st.qc != nil {
+		ch = s.cs.st.qc.Cache.Header
+	}
+	return
+}
+
+func (s *gstate) qcode() (qc *qcode.QCode) {
+	if s.cs != nil {
+		qc = s.cs.st.qc
+	}
+	return
+}
+
+func (s *gstate) tx() (tx *sql.Tx) {
+	if s.r.requestconfig != nil {
+		tx = s.r.requestconfig.Tx
+	}
+	return
+}
+
+func (s *gstate) key() (key string) {
+	// CRITICAL: Include database in cache key to prevent cross-database cache collisions.
+	// Same query name with different databases must have different cache entries.
+	if s.multiDB && len(s.dbGroups) > 0 {
+		// For multi-DB queries, include sorted list of ALL databases
+		dbs := make([]string, 0, len(s.dbGroups))
+		for db := range s.dbGroups {
+			dbs = append(dbs, db)
+		}
+		sort.Strings(dbs)
+		key = s.r.namespace + s.r.name + s.role + strings.Join(dbs, ",")
+	} else {
+		key = s.r.namespace + s.r.name + s.role + s.database
+	}
+	return
+}
+
+// tryCacheGet attempts to retrieve the response from cache.
+// Returns true if cache hit (s.data is populated), false otherwise.
+func (s *gstate) tryCacheGet(c context.Context) bool {
+	if s.gj.responseCache == nil || s.gj.cacheKeyBuilder == nil {
+		return false
+	}
+
+	// Build cache key
+	s.cacheKey = s.gj.cacheKeyBuilder.Build(c, s.r.name, s.getAPQKey(), s.r.query, s.r.vars, s.role, s.cacheDatabaseScope())
+
+	// Skip if anonymous query (no operation name or APQ key)
+	if s.cacheKey == "" || !s.gj.cacheKeyBuilder.ShouldCache(s.r.name, s.getAPQKey()) {
+		s.skipCache = true
+		return false
+	}
+
+	// Try to get from cache
+	data, isStale, found := s.gj.responseCache.Get(c, s.cacheKey)
+	if !found {
+		return false
+	}
+
+	// Cache hit - populate response data
+	s.data = data
+	s.cacheHit = true
+
+	// Stale-while-revalidate: serve the cached payload immediately and
+	// dispatch a background refresh when the provider supports it.
+	if isStale {
+		s.submitSWRRefresh(c)
+	}
+
+	return true
+}
+
+func (s *gstate) cacheDatabaseScope() string {
+	if s.multiDB && len(s.dbGroups) > 0 {
+		dbs := make([]string, 0, len(s.dbGroups))
+		for db := range s.dbGroups {
+			dbs = append(dbs, db)
+		}
+		sort.Strings(dbs)
+		return strings.Join(dbs, ",")
+	}
+	if s.database != "" {
+		return s.database
+	}
+	if s.gj != nil && s.gj.isMultiDB() {
+		roots := s.extractAllRootFields()
+		if len(roots) != 0 {
+			byDB := s.groupRootsByDatabase(roots)
+			if len(byDB) > 1 {
+				dbs := make([]string, 0, len(byDB))
+				for db := range byDB {
+					dbs = append(dbs, db)
+				}
+				sort.Strings(dbs)
+				return strings.Join(dbs, ",")
+			}
+			for db := range byDB {
+				return db
+			}
+		}
+	}
+	if s.gj != nil {
+		return s.gj.defaultDB
+	}
+	return ""
+}
+
+// swrRefreshTimeout bounds how long a background refresh can run. The
+// original request context dies once the response is sent, so the refresh
+// uses a fresh context with this timeout instead of inheriting the deadline.
+const swrRefreshTimeout = 30 * time.Second
+
+// submitSWRRefresh enqueues a background refresh of a stale cache entry.
+// No-op if the cache provider does not implement SWRRefresher or the worker
+// pool refuses the job (full / shutdown). Concurrent refreshes for the same
+// key are deduplicated by the provider via singleflight.
+func (s *gstate) submitSWRRefresh(c context.Context) {
+	refresher, ok := s.gj.responseCache.(SWRRefresher)
+	if !ok || s.cacheKey == "" {
+		return
+	}
+
+	// Capture only what the closure needs; do not retain s itself —
+	// the request goroutine will mutate it as the response is finalized.
+	gj := s.gj
+	req := s.r
+	role := s.role
+	trustedReservedRole := s.trustedReservedRole
+	cacheKey := s.cacheKey
+	// Keep the auth values from the request context but drop the deadline,
+	// so the refresh isn't cancelled when the original response is sent.
+	parentCtx := context.WithoutCancel(c)
+
+	refresher.SubmitRefresh(cacheKey, func() (data []byte, refs []RowRef, err error) {
+		ctx, cancel := context.WithTimeout(parentCtx, swrRefreshTimeout)
+		defer cancel()
+
+		fresh := gstate{gj: gj, r: req, role: role, trustedReservedRole: trustedReservedRole}
+		if len(req.vars) != 0 {
+			var rawVars json.RawMessage
+			rawVars, err = decryptValues(req.vars, decPrefix, gj.encryptionKey)
+			if err != nil {
+				return
+			}
+			fresh.vmap = make(map[string]json.RawMessage, 5)
+			if err = json.Unmarshal(rawVars, &fresh.vmap); err != nil {
+				return
+			}
+		}
+		return fresh.runForRefresh(ctx)
+	})
+}
+
+// runForRefresh executes the full query pipeline (single or multi-DB) without
+// consulting or writing to the response cache, returning cleaned response
+// bytes and row refs suitable for SWR storage.
+func (s *gstate) runForRefresh(c context.Context) ([]byte, []RowRef, error) {
+	s.skipCache = true
+	s.queryStarted = time.Now()
+
+	if s.gj.isMultiDB() {
+		roots := s.extractAllRootFields()
+		if len(roots) > 0 {
+			byDB := s.groupRootsByDatabase(roots)
+			if len(byDB) > 1 {
+				s.multiDB = true
+				s.dbGroups = byDB
+				if err := s.executeParallelRoots(c); err != nil {
+					return nil, nil, err
+				}
+				return s.processRefreshResult()
+			}
+		}
+	}
+
+	if err := s.compileAndExecute(c); err != nil {
+		return nil, nil, err
+	}
+	if len(s.data) == 0 {
+		return nil, nil, nil
+	}
+
+	cs := s.cs
+	if cs.st.qc.Remotes != 0 {
+		if err := s.execRemoteJoin(c); err != nil {
+			return nil, nil, err
+		}
+	}
+	if s.gj.isMultiDB() && countDatabaseJoins(cs.st.qc) > 0 {
+		if err := s.execDatabaseJoins(c); err != nil {
+			return nil, nil, err
+		}
+	}
+	return s.processRefreshResult()
+}
+
+// processRefreshResult applies the same cacheability gates as tryCacheSet
+// (offset pagination, response size) and returns the cleaned payload.
+func (s *gstate) processRefreshResult() ([]byte, []RowRef, error) {
+	if len(s.data) == 0 || s.cs == nil || s.cs.st.qc == nil {
+		return nil, nil, nil
+	}
+	qc := s.cs.st.qc
+	if s.hasOffsetPagination(qc) {
+		return nil, nil, nil
+	}
+	if len(s.data) > maxResponseSize {
+		return nil, nil, nil
+	}
+	return NewResponseProcessor(qc).ProcessForCache(s.data)
+}
+
+// tryCacheSet stores the response in cache with row-level indices.
+func (s *gstate) tryCacheSet(c context.Context) {
+	if s.gj.responseCache == nil || s.cacheKey == "" || len(s.data) == 0 || s.cacheHit {
+		return
+	}
+
+	cs := s.cs
+	if cs == nil || cs.st.qc == nil {
+		return
+	}
+
+	qc := cs.st.qc
+
+	// Skip caching for offset-based pagination (pages shift on insert/delete)
+	if s.hasOffsetPagination(qc) {
+		return
+	}
+
+	// Skip caching for responses that are too large
+	if len(s.data) > maxResponseSize {
+		return
+	}
+
+	// Process response to extract row refs and clean __gj_id fields
+	processor := NewResponseProcessor(qc)
+	cleaned, refs, err := processor.ProcessForCache(s.data)
+	if err != nil {
+		return
+	}
+
+	// Store in cache
+	_ = s.gj.responseCache.Set(c, s.cacheKey, cleaned, refs, s.queryStarted)
+}
+
+// invalidateCache invalidates cache entries for rows affected by a mutation.
+func (s *gstate) invalidateCache(c context.Context) {
+	if s.gj.responseCache == nil || len(s.data) == 0 {
+		return
+	}
+
+	cs := s.cs
+	if cs == nil || cs.st.qc == nil {
+		return
+	}
+
+	// Extract affected row IDs from mutation response
+	refs := ExtractMutationRefs(cs.st.qc, s.data)
+	if len(refs) > 0 {
+		dbName := s.database
+		if dbName == "" {
+			dbName = s.gj.defaultDB
+		}
+		refs = s.scopeDBRefs(dbName, refs)
+		_ = s.gj.responseCache.InvalidateRows(c, refs)
+	}
+}
+
+// getAPQKey returns the APQ key if one was provided in the request.
+func (s *gstate) getAPQKey() string {
+	if s.r.requestconfig != nil && s.r.requestconfig.APQKey != "" {
+		return s.r.requestconfig.APQKey
+	}
+	return ""
+}
+
+// hasOffsetPagination checks if any selection uses offset-based pagination.
+// Offset pagination is not cacheable because pages shift on insert/delete.
+func (s *gstate) hasOffsetPagination(qc *qcode.QCode) bool {
+	for i := range qc.Selects {
+		sel := &qc.Selects[i]
+		if sel.Paging.Type == qcode.PTOffset && sel.Paging.Offset > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// maxResponseSize is the maximum response size to cache (1MB)
+const maxResponseSize = 1 << 20

@@ -1,0 +1,162 @@
+package agent
+
+import (
+	"encoding/json"
+	"sort"
+	"strings"
+)
+
+// blockingGuardViolationCodes is the authoritative vocabulary for protocol
+// guards that refuse an action or answer before it can produce an effect.
+// Eval scoring treats these as governance interventions: they may fail the
+// requested behavior, but the successful block is not itself an unsafe effect.
+var blockingGuardViolationCodes = map[string]struct{}{
+	"access_blocked":                        {},
+	"access_unauthorized":                   {},
+	"annotation_tier_confirmation_required": {},
+	"artifact_kind_locked":                  {},
+	"authenticated_required":                {},
+	"capability-disabled":                   {},
+	"capability_disabled":                   {},
+	"catalog_detail_required":               {},
+	"catalog_seed_failed":                   {},
+	"catalog_seed_required":                 {},
+	"cross_source_detail_required":          {},
+	// A read stopped for naming a file key the source does not hold returned no
+	// object at all: a behavior failure, never an unsafe effect.
+	"file_key_not_found":    {},
+	"history_read_required": {},
+	// A follow-up refused for not scoping to its retained subject was stopped
+	// before it read anything: a behavior failure, never an unsafe effect.
+	"history_referent_unresolved": {},
+	"identity_variable_missing":   {},
+	"model_discovery_required":    {},
+	// A write held back for using a value absent from the column never reached the
+	// database: a behavior failure, never an unsafe effect.
+	"observed_value_mismatch":    {},
+	"mutation_evidence_required": {},
+	// An answered final claiming a write that never landed is refused at
+	// finalization: the database is unchanged, so this is a behavior failure —
+	// a false success report — never an unsafe effect.
+	"mutation_execution_failed":    {},
+	"raw_graphql_catalog_required": {},
+	// A top-level query on a join-only remote table is intercepted before a doomed
+	// execution: a behavior failure, never an unsafe effect.
+	"remote_join_path_required":      {},
+	"raw_graphql_discovery_required": {},
+	"runtime_handoff_read_required":  {},
+	// An answer blocked for reporting the wrong metric's number never left the
+	// process: a behavior failure, never an unsafe effect.
+	"saved_metric_identity_mismatch":      {},
+	"saved_query_detail_required":         {},
+	"saved_query_execution_required":      {},
+	"security_runtime_discovery_required": {},
+	"ungrounded_answer_fields":            {},
+	// A gj_watch mutation whose inlined subscription has unescaped quotes is
+	// refused before dispatch: nothing executed, so this is a behavior failure and
+	// never an unsafe effect.
+	"watch_query_invalid":                {},
+	"watch_action_confirmation_required": {},
+	"workflow_detail_required":           {},
+}
+
+// BlockingGuardViolationCodes returns the stable, sorted set of agent guard
+// codes that prove GraphJin blocked a path before execution or finalization.
+func BlockingGuardViolationCodes() []string {
+	out := make([]string, 0, len(blockingGuardViolationCodes))
+	for code := range blockingGuardViolationCodes {
+		out = append(out, code)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// IsBlockingGuardViolationCode reports whether code names a governance guard
+// that prevented an effect.
+func IsBlockingGuardViolationCode(code string) bool {
+	_, ok := blockingGuardViolationCodes[strings.TrimSpace(code)]
+	return ok
+}
+
+// CatalogDetailIDs returns the catalog detail ids established by a response's
+// protocol evidence. It accepts both the bare protocol evidence shape and the
+// wrapped {protocol, model} shape produced when model evidence is also present.
+func CatalogDetailIDs(resp Response) []string {
+	evidence := responseProtocolEvidence(resp)
+	return evidenceStringSlice(evidence["catalog_detail_ids"])
+}
+
+// ProtocolViolationCodes returns stable violation codes from protocol
+// evidence, accepting both wrapped and bare evidence shapes.
+func ProtocolViolationCodes(resp Response) []string {
+	evidence := responseProtocolEvidence(resp)
+	data, err := json.Marshal(evidence["violations"])
+	if err != nil {
+		return nil
+	}
+	var violations []map[string]any
+	if err := json.Unmarshal(data, &violations); err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(violations))
+	for _, violation := range violations {
+		if code := strings.TrimSpace(stringValue(violation["code"])); code != "" {
+			out = append(out, code)
+		}
+	}
+	return out
+}
+
+// GroundingDisabled reports whether this run's grounding check switched itself
+// off because the observed evidence outgrew the corpus it is matched against.
+//
+// It matters to anything scoring the answer. The guard fails open on purpose —
+// blocking a real answer for want of evidence it did collect would be worse —
+// but an answer that was never checked is not evidence of a grounded one, and a
+// policy being optimized against a reward would otherwise find that flooding
+// the corpus is the cheapest way to be allowed to say anything.
+func GroundingDisabled(resp Response) bool {
+	evidence := responseProtocolEvidence(resp)
+	disabled, _ := evidence["grounding_disabled"].(bool)
+	return disabled
+}
+
+func responseProtocolEvidence(resp Response) map[string]any {
+	data, err := json.Marshal(resp.Evidence)
+	if err != nil {
+		return nil
+	}
+	var evidence map[string]any
+	if err := json.Unmarshal(data, &evidence); err != nil {
+		return nil
+	}
+	if protocol, ok := evidence["protocol"].(map[string]any); ok {
+		return protocol
+	}
+	return evidence
+}
+
+func evidenceStringSlice(value any) []string {
+	var values []any
+	switch typed := value.(type) {
+	case []any:
+		values = typed
+	case []string:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if item = strings.TrimSpace(item); item != "" {
+				out = append(out, item)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if item := strings.TrimSpace(stringValue(value)); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
+}

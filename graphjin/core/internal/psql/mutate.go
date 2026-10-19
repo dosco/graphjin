@@ -1,0 +1,1106 @@
+//nolint:errcheck
+
+package psql
+
+import (
+	"bytes"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/dosco/graphjin/core/v3/internal/dialect"
+	"github.com/dosco/graphjin/core/v3/internal/graph"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+)
+
+func (co *Compiler) compileMutation(
+	w *bytes.Buffer,
+	qc *qcode.QCode,
+	md *Metadata,
+) error {
+	c := compilerContext{
+		md:          md,
+		w:           w,
+		qc:          qc,
+		isJSON:      qc.Mutates[0].IsJSON,
+		mutation:    true,
+		columnScope: qc.Mutates[0].Ti,
+		Compiler:    co,
+	}
+	if qc.InsertConflictAction == qcode.ConflictGet {
+		renderer, ok := co.dialect.(dialect.InsertConflictGetRenderer)
+		if !ok {
+			return fmt.Errorf("on_conflict: get is not supported by the %s dialect", co.dialect.Name())
+		}
+		mode := renderer.InsertConflictGetMode()
+		if (co.dialect.SupportsLinearExecution() && mode != dialect.InsertConflictGetLinear) ||
+			(!co.dialect.SupportsLinearExecution() && mode == dialect.InsertConflictGetLinear) {
+			return fmt.Errorf("on_conflict: get is not supported by the %s mutation path", co.dialect.Name())
+		}
+	}
+
+	if co.dialect.Name() == "redshift" {
+		if err := c.validateRedshiftMutation(); err != nil {
+			return err
+		}
+		if qc.SType == qcode.QTDelete {
+			c.compileRedshiftDeleteMutation()
+			return c.err
+		}
+	}
+
+	// Check if the dialect wants to handle the entire mutation compilation itself
+	// This is used by MongoDB which generates JSON mutation DSL, not SQL
+	if fmc, ok := co.dialect.(dialect.FullMutationCompiler); ok {
+		if fmc.CompileFullMutation(&c, qc) {
+			return c.err
+		}
+	}
+
+	if co.dialect.SupportsLinearExecution() {
+		c.compileLinearMutation()
+		return c.err
+	}
+
+	if qc.SType != qcode.QTDelete {
+		if c.isJSON {
+			co.dialect.RenderMutationInput(&c, qc)
+			c.w.WriteString(`, `)
+		} else {
+			c.w.WriteString(`WITH `)
+		}
+	}
+
+	switch qc.SType {
+	case qcode.QTInsert:
+		c.renderInsert()
+	case qcode.QTUpdate:
+		c.renderUpdate()
+	case qcode.QTUpsert:
+		c.renderUpsert()
+	case qcode.QTDelete:
+		c.renderDelete()
+	default:
+		return c.err
+	}
+
+	co.dialect.RenderMutationPostamble(&c, qc)
+	c.w.WriteString(` `)
+	co.CompileQuery(w, qc, c.md)
+	return c.err
+
+}
+
+func (c *compilerContext) validateRedshiftMutation() error {
+	if c.qc.SType == qcode.QTUpsert {
+		return fmt.Errorf("redshift mutations do not support upsert in v1")
+	}
+
+	var mutations []qcode.Mutate
+	for _, m := range c.qc.Mutates {
+		if m.Type == qcode.MTNone || m.Type == qcode.MTKeyword {
+			continue
+		}
+		mutations = append(mutations, m)
+	}
+	if len(mutations) != 1 {
+		return fmt.Errorf("redshift mutations support one single-table root mutation in v1")
+	}
+
+	m := mutations[0]
+	if m.ParentID != -1 || len(m.DependsOn) != 0 || len(m.RCols) != 0 {
+		return fmt.Errorf("redshift mutations do not support nested relationship mutations in v1")
+	}
+	if m.Type == qcode.MTConnect || m.Type == qcode.MTDisconnect {
+		return fmt.Errorf("redshift mutations do not support connect/disconnect in v1")
+	}
+	if m.Type != qcode.MTInsert && m.Type != qcode.MTUpdate && m.Type != qcode.MTDelete {
+		return fmt.Errorf("redshift mutation type is not supported in v1")
+	}
+	if len(m.Ti.PrimaryCols) != 1 {
+		return fmt.Errorf("redshift mutations require a single-column primary key in v1")
+	}
+	if m.Array || m.Multi {
+		return fmt.Errorf("redshift mutations do not support bulk or multi-row mutation payloads in v1")
+	}
+	if m.Type == qcode.MTInsert && !redshiftMutationHasExplicitPK(m) {
+		return fmt.Errorf("redshift insert result selection requires a client-supplied primary key in v1")
+	}
+	if (m.Type == qcode.MTUpdate || m.Type == qcode.MTDelete) && !c.redshiftMutationHasPKFilter(m) {
+		return fmt.Errorf("redshift update/delete mutations require a primary-key filter in v1")
+	}
+	return nil
+}
+
+func redshiftMutationHasExplicitPK(m qcode.Mutate) bool {
+	for _, col := range m.Cols {
+		if m.Ti.IsPKCol(col.Col.Name) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *compilerContext) redshiftMutationHasPKFilter(m qcode.Mutate) bool {
+	if m.SelID < 0 || int(m.SelID) >= len(c.qc.Selects) || len(m.Ti.PrimaryCols) == 0 {
+		return false
+	}
+	return redshiftExpHasPKFilter(c.qc.Selects[m.SelID].Where.Exp, m.Ti.PrimaryCols[0].Name)
+}
+
+func redshiftExpHasPKFilter(ex *qcode.Exp, pk string) bool {
+	if ex == nil {
+		return false
+	}
+	if ex.Op == qcode.OpEquals && (redshiftOperandIsPK(ex.Left.Col, ex.Left.ColName, pk) ||
+		redshiftOperandIsPK(ex.Right.Col, ex.Right.ColName, pk)) {
+		return true
+	}
+	for _, child := range ex.Children {
+		if redshiftExpHasPKFilter(child, pk) {
+			return true
+		}
+	}
+	return false
+}
+
+func redshiftOperandIsPK(col sdata.DBColumn, colName, pk string) bool {
+	if col.Name != "" && strings.EqualFold(col.Name, pk) {
+		return true
+	}
+	return colName != "" && strings.EqualFold(colName, pk)
+}
+
+func (c *compilerContext) compileRedshiftDeleteMutation() {
+	m, ok := c.redshiftSingleMutation()
+	if !ok {
+		c.SetError(fmt.Errorf("redshift delete mutation missing root mutation"))
+		return
+	}
+	sel := c.qc.Selects[m.SelID]
+	pk := m.Ti.PrimaryCols[0]
+	snapshot := "_gj_redshift_deleted_" + m.Ti.Name + "_" + strconv.Itoa(int(m.ID))
+
+	c.w.WriteString(`CREATE TEMP TABLE `)
+	c.quoted(snapshot)
+	c.w.WriteString(` AS SELECT * FROM `)
+	c.renderRedshiftMutationTableRef(m.Ti.Schema, m.Ti.Name)
+	c.w.WriteString(` AS `)
+	c.quoted(m.Ti.SQLName())
+	c.w.WriteString(` WHERE `)
+	c.renderExp(sel.Ti, sel.Where.Exp, false)
+	c.w.WriteString(`; `)
+
+	c.w.WriteString(`DELETE FROM `)
+	c.renderRedshiftMutationTableRef(m.Ti.Schema, m.Ti.Name)
+	c.w.WriteString(` WHERE `)
+	c.quoted(pk.SQLName())
+	c.w.WriteString(` IN (SELECT `)
+	c.quoted(pk.SQLName())
+	c.w.WriteString(` FROM `)
+	c.quoted(snapshot)
+	c.w.WriteString(`); `)
+
+	qc := *c.qc
+	qc.Type = qcode.QTQuery
+	qc.SType = qcode.QTQuery
+	qc.Mutates = nil
+	qc.Selects = append([]qcode.Select(nil), c.qc.Selects...)
+	for i := range qc.Selects {
+		s := &qc.Selects[i]
+		if s.ID != sel.ID {
+			continue
+		}
+		s.Table = snapshot
+		s.Schema = ""
+		s.Ti.Name = snapshot
+		s.Ti.Schema = ""
+		s.Where.Exp = nil
+		for j := range s.Fields {
+			if s.Fields[j].Col.Table == m.Ti.Name {
+				s.Fields[j].Col.Table = snapshot
+			}
+		}
+		for j := range s.BCols {
+			if s.BCols[j].Col.Table == m.Ti.Name {
+				s.BCols[j].Col.Table = snapshot
+			}
+		}
+	}
+	c.dialect.RenderQueryPrefix(c, &qc)
+	if err := c.Compiler.CompileQuery(c.w, &qc, c.md); err != nil {
+		c.SetError(err)
+	}
+	c.w.WriteString(`; DROP TABLE IF EXISTS `)
+	c.quoted(snapshot)
+}
+
+func (c *compilerContext) renderRedshiftMutationTableRef(schema, table string) {
+	c.dialect.RenderTableName(c, nil, schema, table)
+}
+
+func (c *compilerContext) redshiftSingleMutation() (qcode.Mutate, bool) {
+	for _, m := range c.qc.Mutates {
+		if m.Type == qcode.MTNone || m.Type == qcode.MTKeyword {
+			continue
+		}
+		return m, true
+	}
+	return qcode.Mutate{}, false
+}
+
+func (c *compilerContext) compileLinearMutation() {
+	// Linear execution: Flat script of statements
+
+	// Setup (e.g. Create Temp Table)
+	c.dialect.RenderSetup(c)
+
+	// 1. Sort mutations by dependency
+	//    Naive approach: Sort by ID? No.
+	//    Use m.DependsOn.
+
+	ordered := c.sortMutations()
+
+	for _, mid := range ordered {
+		m := c.qc.Mutates[mid]
+		// Skip if not needing variable? Or just declare all?
+		// We use variable for Primary Key capture.
+		vName := c.getVarName(m)
+		// Declare a variable for each PK column
+		for i, pkCol := range m.Ti.PrimaryCols {
+			n := vName
+			if i > 0 {
+				n = vName + "_pk" + strconv.Itoa(i)
+			}
+			c.dialect.RenderVarDeclaration(c, n, pkCol.Type)
+		}
+
+		// For MSSQL/MySQL/MariaDB: declare additional variables for all columns
+		// when there are child mutations that need FK values
+		dialectName := c.dialect.Name()
+		if dialectName == "mysql" || dialectName == "mariadb" || dialectName == "mssql" || dialectName == "oracle" {
+			hasChildMutations := false
+			for _, otherM := range c.qc.Mutates {
+				if otherM.ParentID == m.ID {
+					hasChildMutations = true
+					break
+				}
+			}
+			if hasChildMutations {
+				for _, col := range m.Ti.Columns {
+					colVarName := vName + "_" + col.Name
+					c.dialect.RenderVarDeclaration(c, colVarName, col.Type)
+				}
+			}
+		}
+	}
+
+	c.dialect.RenderBegin(c)
+
+	for _, mid := range ordered {
+		m := c.qc.Mutates[mid]
+		c.columnScope = m.Ti
+
+		if m.Type == qcode.MTNone || m.Type == qcode.MTKeyword {
+			continue
+		}
+
+		vName := c.getVarName(m)
+		renderColVal := func(col qcode.MColumn) {
+			c.renderColumnValue(m, col)
+		}
+
+		switch m.Type {
+		case qcode.MTInsert:
+			c.dialect.RenderLinearInsert(c, &m, c.qc, vName, renderColVal)
+		case qcode.MTUpdate:
+			renderWhere := func() {
+				// renderWhere needs to handle:
+				// implicit joins (handled by dialect if needed)
+				// m.Where (path args)
+				// join conditions (parent/child)
+				// m.Where.Exp
+
+				// Wait, `RenderLinearUpdate` in SQLite/MySQL implementation calls `renderWhere`.
+				// In SQLite I added logic to `renderWhere` closure to call `c.renderExp` and handle parent join.
+				// In MySQL I called `c.renderExp`.
+				// But `c.renderExp` is not exported.
+				// Oh, `c` IS `compilerContext` here. It has `renderExp` method.
+
+				// The Dialect `RenderLinearUpdate` logic I wrote calls `renderWhere()` inside `RunUpdate`.
+				// It handles its own `hasWhere` logic for JSON joins.
+				// So here I should just render the standard filters.
+
+				hasWhere := false
+				if m.IsJSON {
+					if c.dialect.Name() == "postgres" {
+						for i, pkCol := range m.Ti.PrimaryCols {
+							if i > 0 {
+								c.w.WriteString(" AND ")
+							}
+							c.colWithTable(m.Ti.Name, pkCol.Name)
+							c.w.WriteString(" = ")
+							c.colWithTable("t", pkCol.Name)
+						}
+						if len(m.Ti.PrimaryCols) > 0 {
+							hasWhere = true
+						}
+					} else if c.dialect.Name() == "snowflake" {
+						for i, pkCol := range m.Ti.PrimaryCols {
+							pkAlias := ""
+							for _, col := range m.Cols {
+								if col.Col.Name == pkCol.Name {
+									pkAlias = col.FieldName
+									break
+								}
+							}
+							// Snowflake JSON updates should only join on PK when the PK is explicitly present
+							// in the input payload. Root updates by where/id usually don't include id in payload.
+							if pkAlias != "" {
+								if i > 0 && hasWhere {
+									c.w.WriteString(" AND ")
+								}
+								c.colWithTable(m.Ti.Name, pkCol.Name)
+								c.w.WriteString(" = ")
+								c.colWithTable("t", pkAlias)
+								hasWhere = true
+							}
+						}
+					} else if c.dialect.Name() == "mysql" || c.dialect.Name() == "mariadb" {
+						// For child updates (m.ParentID != -1), the JSON input doesn't contain the child's PK.
+						// The row to update is determined by the parent's FK, not by JSON table join.
+						// Only add JSON table join for root updates that need it.
+						if m.ParentID == -1 && (len(c.qc.Selects) == 0 || c.qc.Selects[m.SelID].Where.Exp == nil) {
+							for i, pkCol := range m.Ti.PrimaryCols {
+								if i > 0 {
+									c.w.WriteString(" AND ")
+								}
+								c.colWithTable(m.Ti.Name, pkCol.Name)
+								c.w.WriteString(" = ")
+								c.colWithTable("t", pkCol.Name)
+							}
+							if len(m.Ti.PrimaryCols) > 0 {
+								hasWhere = true
+							}
+						}
+					}
+				}
+
+				if m.ParentID == -1 {
+					if hasWhere {
+						c.w.WriteString(" AND ")
+					}
+					if len(c.qc.Selects) > 0 && c.qc.Selects[m.SelID].Where.Exp != nil {
+						c.renderExp(m.Ti, c.qc.Selects[m.SelID].Where.Exp, false)
+						hasWhere = true
+					}
+				}
+
+				if m.Where.Exp != nil {
+					if hasWhere {
+						c.w.WriteString(" AND ")
+					}
+				}
+				c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+
+				// Handle parent join for child updates
+				if m.ParentID != -1 {
+					dialectName := c.dialect.Name()
+					if dialectName == "sqlite" || dialectName == "snowflake" || dialectName == "mysql" || dialectName == "mariadb" || dialectName == "mssql" || dialectName == "oracle" {
+						if m.Where.Exp != nil || hasWhere { // Check if anything was rendered before
+							c.w.WriteString(" AND ")
+						}
+						var childCol, parentCol string
+						if m.Rel.Left.Ti.Name == m.Ti.Name {
+							childCol = m.Rel.Left.Col.Name
+							parentCol = m.Rel.Right.Col.Name
+						} else {
+							childCol = m.Rel.Right.Col.Name
+							parentCol = m.Rel.Left.Col.Name
+						}
+						pm := c.qc.Mutates[m.ParentID]
+
+						if dialectName == "sqlite" {
+							c.colWithTable(m.Ti.Name, childCol)
+							c.w.WriteString(" = ")
+							c.w.WriteString("(SELECT ")
+							c.quoted(parentCol)
+							c.w.WriteString(" FROM ")
+							c.quoted(pm.Ti.SQLName())
+							c.w.WriteString(" WHERE ")
+							c.renderPKWhereVars(pm)
+							c.w.WriteString(")")
+						} else if dialectName == "snowflake" {
+							// Snowflake child mutation WHERE: look up the
+							// FK value from the parent via a scalar subquery
+							// against the captured parent ID. This avoids
+							// unqualified table refs inside EXISTS that the
+							// Snowflake emulator cannot resolve.
+							if pm.Ti.IsPKCol(parentCol) {
+								c.colWithTable(m.Ti.Name, childCol)
+								c.w.WriteString(" = ")
+								c.dialect.RenderVar(c, c.getVarName(pm))
+							} else {
+								c.colWithTable(m.Ti.Name, childCol)
+								c.w.WriteString(" = (SELECT ")
+								c.colWithTable(pm.Ti.Name, parentCol)
+								c.w.WriteString(" FROM ")
+								if pm.Ti.Schema != "" {
+									c.quoted(pm.Ti.SQLSchema())
+									c.w.WriteString(".")
+								}
+								c.quoted(pm.Ti.SQLName())
+								c.w.WriteString(" WHERE ")
+								c.renderPKWhereVarsWithTable(pm, pm.Ti.Name)
+								c.w.WriteString(")")
+							}
+						} else {
+							// MySQL/MariaDB/MSSQL/Oracle use captured variable with FK column name
+							// Variable format: @parentTable_parentID_fkColumn (or v_ for Oracle)
+							c.colWithTable(m.Ti.Name, childCol)
+							c.w.WriteString(" = ")
+							parentVarName := c.getVarName(pm) + "_" + parentCol
+							c.dialect.RenderVar(c, parentVarName)
+						}
+					}
+				}
+			}
+			c.dialect.RenderLinearUpdate(c, &m, c.qc, vName, renderColVal, renderWhere)
+		case qcode.MTDelete:
+			renderWhere := func() {
+				if m.ParentID == -1 && m.SelID >= 0 && int(m.SelID) < len(c.qc.Selects) {
+					sel := c.qc.Selects[m.SelID]
+					if sel.Where.Exp != nil {
+						c.renderExp(m.Ti, sel.Where.Exp, false)
+						return
+					}
+				}
+				if c.dialect.Name() == "postgres" {
+					c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+				} else {
+					c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+				}
+			}
+			c.dialect.RenderDelete(c, &m, renderWhere)
+		case qcode.MTConnect:
+			renderFilter := func() {
+				if c.dialect.Name() == "postgres" {
+					c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+				} else {
+					c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+				}
+			}
+			c.dialect.RenderLinearConnect(c, &m, c.qc, vName, renderFilter)
+
+		case qcode.MTDisconnect:
+			renderFilter := func() {
+				if c.dialect.Name() == "postgres" {
+					c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+				} else {
+					c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+				}
+			}
+			c.dialect.RenderLinearDisconnect(c, &m, c.qc, vName, renderFilter)
+		}
+		c.w.WriteString(`; `)
+	}
+
+	if c.qc.Selects != nil {
+		c.dialect.ModifySelectsForMutation(c.qc)
+		c.dialect.RenderQueryPrefix(c, c.qc)
+		c.Compiler.CompileQuery(c.w, c.qc, c.md)
+	}
+
+	// Teardown (e.g. Drop Temp Table)
+	c.dialect.RenderTeardown(c)
+
+}
+
+func (c *compilerContext) sortMutations() []int {
+	if len(c.qc.Mutates) == 0 {
+		return nil
+	}
+
+	// DFS topological sort
+	// Check qc.Mutates for graph
+	visited := make(map[int]bool)
+	var stack []int
+
+	var visit func(int)
+	visit = func(id int) {
+		if visited[id] {
+			return
+		}
+		visited[id] = true
+
+		m := c.qc.Mutates[id]
+		// Visit dependencies first
+		for depID := range m.DependsOn {
+			visit(int(depID))
+		}
+		stack = append(stack, id)
+	}
+
+	for i := range c.qc.Mutates {
+		visit(i)
+	}
+	return stack
+}
+
+func (c *compilerContext) getVarName(m qcode.Mutate) string {
+	return m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
+}
+
+// Removed renderLinearInsert, renderLinearUpdate, renderLinearConnect, renderLinearDisconnect which are now handled by dialect
+// Removed renderUnionStmt which is now handled by dialect
+
+func (c *compilerContext) renderInsertUpdateValues(m qcode.Mutate) int {
+	i := 0
+	for _, col := range m.Cols {
+		if i != 0 {
+			c.w.WriteString(`, `)
+		}
+		c.renderColumnValue(m, col)
+		i++
+	}
+
+	return i
+}
+
+func (c *compilerContext) renderColumnValue(m qcode.Mutate, col qcode.MColumn) {
+	var vk, v string
+	isVar := false
+	var listItems []string
+
+	isEmptyList := false
+	if col.Set {
+		v = col.Value
+		if v != "" && v[0] == '$' {
+			vk = v[1:]
+			isVar = true
+		}
+	} else {
+		field := m.Data.CMap[col.FieldName]
+		v = field.Val
+		vk = v
+
+		if field.Type == graph.NodeVar {
+			isVar = true
+		}
+
+		if field.Type == graph.NodeList {
+			listItems = make([]string, 0, len(field.Children))
+			for _, c := range field.Children {
+				if c.Type == graph.NodeNum {
+					listItems = append(listItems, c.Val)
+				} else {
+					listItems = append(listItems, (`'` + c.Val + `'`))
+				}
+			}
+			// Mark as empty list if NodeList but no children
+			if len(listItems) == 0 {
+				isEmptyList = true
+			}
+		}
+	}
+
+	if isVar {
+		if v1, ok := c.svars[vk]; ok {
+			v = v1
+			isVar = false
+		}
+	}
+
+	valFunc := func() {
+		switch {
+		case isVar:
+			c.renderParam(Param{Name: vk, Type: col.Col.Type, IsArray: col.Col.Array, IsNotNull: col.Col.NotNull})
+
+		case col.Set && strings.HasPrefix(v, "sql:"):
+			c.w.WriteString(`(`)
+			c.renderVar(v[4:])
+			c.w.WriteString(`)`)
+
+		case col.Set:
+			c.squoted(v)
+
+		case m.IsJSON:
+			// MSSQL and Oracle in linear execution use parameters for UPDATE, not "t" table reference
+			// But INSERT operations need "t" reference for JSON_TABLE to get different values per row
+			dialectName := c.dialect.Name()
+			if (dialectName == "mssql" || dialectName == "oracle") && m.Type == qcode.MTUpdate {
+				// Render the value as a literal for MSSQL/Oracle UPDATE
+				c.squoted(v)
+			} else {
+				c.colWithTable("t", col.FieldName)
+			}
+
+		case isEmptyList:
+			// Render empty array literal for the dialect
+			c.dialect.RenderArray(c, []string{})
+
+		case len(listItems) > 0:
+			c.dialect.RenderArray(c, listItems)
+
+		default:
+			c.squoted(v)
+		}
+	}
+	c.dialect.RenderCast(c, valFunc, col.Col.Type)
+}
+
+func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate) int {
+	i := 0
+
+	for _, col := range m.Cols {
+		if i != 0 {
+			c.w.WriteString(`, `)
+		}
+		i++
+
+		// if !values {
+		c.quoted(col.Col.Name)
+		// 	continue
+		// }
+	}
+
+	/*
+			v := col.Value
+			isVar := false
+
+			if v != "" && v[0] == '$' {
+				if v1, ok := c.svars[v[1:]]; ok {
+					v = v1
+				} else {
+					isVar = true
+				}
+			}
+
+			switch {
+			case isVar:
+				c.renderParam(Param{Name: v[1:], Type: col.Col.Type})
+
+			case strings.HasPrefix(v, "sql:"):
+				c.w.WriteString(`(`)
+				c.renderVar(v[4:])
+				c.w.WriteString(`)`)
+
+			case m.IsJSON:
+				needsJSON = true
+				c.colWithTable("t", col.FieldName)
+
+			default:
+				c.squoted(v)
+
+			}
+
+			c.w.WriteString(` :: `)
+			c.w.WriteString(col.Col.Type)
+		}
+	*/
+
+	return i
+}
+
+func (c *compilerContext) willBeArray(index int) bool {
+	m1 := c.qc.Mutates[index]
+
+	if m1.Type == qcode.MTConnect || m1.Type == qcode.MTDisconnect {
+		return true
+	}
+	return false
+}
+
+func (c *compilerContext) renderNestedRelColumns(m qcode.Mutate, values bool, prefix bool, n int) {
+	for i, col := range m.RCols {
+		if n != 0 || i != 0 {
+			c.w.WriteString(`, `)
+		}
+		if values {
+			if col.Col.Array {
+				if !c.willBeArray(i) {
+					if c.dialect.Name() == "postgres" {
+						c.w.WriteString(`ARRAY(SELECT `)
+					} else if c.dialect.Name() == "snowflake" {
+						c.w.WriteString(`(SELECT array_agg(`)
+					} else {
+						// MariaDB/MySQL/SQLite use JSON_ARRAYAGG
+						c.w.WriteString(`(SELECT JSON_ARRAYAGG(`)
+					}
+				} else {
+					c.w.WriteString(`(SELECT `)
+				}
+				c.quoted(col.VCol.Name)
+				if c.dialect.Name() == "snowflake" && !c.willBeArray(i) {
+					c.w.WriteString(`) FROM `)
+				} else {
+					c.w.WriteString(` FROM `)
+				}
+				c.quoted(col.VCol.Table)
+				c.w.WriteString(`)`)
+			} else {
+				if prefix {
+					c.colWithTable(("_x_" + col.VCol.Table), col.VCol.Name)
+				} else {
+					c.colWithTable(col.VCol.Table, col.VCol.Name)
+				}
+			}
+		} else {
+			c.quoted(col.Col.Name)
+		}
+	}
+}
+
+func (c *compilerContext) renderNestedRelTables(m qcode.Mutate, prefix bool, n int) int {
+	if n != 0 {
+		c.w.WriteString(`, `)
+	}
+	i := 0
+	for id := range m.DependsOn {
+		if i != 0 {
+			c.w.WriteString(`, `)
+		}
+		d := c.qc.Mutates[id]
+
+		if d.Multi || d.Type == qcode.MTConnect || d.Type == qcode.MTDisconnect {
+			c.renderCteNameWithID(d)
+		} else {
+			c.quoted(d.Ti.Name)
+		}
+
+		if prefix {
+			c.w.WriteString(` _x_`)
+			c.w.WriteString(d.Ti.Name)
+		} else if d.Multi || d.Type == qcode.MTConnect || d.Type == qcode.MTDisconnect {
+			c.w.WriteString(` `)
+			c.quoted(d.Ti.Name)
+		}
+
+		i++
+	}
+	return i
+}
+
+func (c *compilerContext) renderUpsert() {
+	m := c.qc.Mutates[0]
+
+	c.dialect.RenderUpsert(c, &m, func() {
+		c.renderInsert()
+	}, func() {
+		for i, col := range m.Cols {
+			if i != 0 {
+				c.w.WriteString(`, `)
+			}
+			c.dialect.RenderAssign(c, col.Col.Name, "EXCLUDED."+col.Col.Name)
+		}
+	})
+
+	c.w.WriteString(` WHERE `)
+	c.renderExp(m.Ti, c.qc.Selects[m.SelID].Where.Exp, false)
+	c.dialect.RenderReturning(c, &m)
+}
+
+func (c *compilerContext) renderDelete() {
+	deleteCount := 0
+	for _, m := range c.qc.Mutates {
+		if m.Type != qcode.MTDelete {
+			continue
+		}
+		sel := c.qc.Selects[m.SelID]
+
+		if deleteCount == 0 {
+			c.w.WriteString(`WITH `)
+		} else {
+			c.w.WriteString(`, `)
+		}
+		if m.Multi {
+			c.renderCteNameWithID(m)
+		} else {
+			c.quoted(sel.Table)
+		}
+		c.w.WriteString(` AS (`)
+		c.dialect.RenderDelete(c, &m, func() {
+			c.renderExp(sel.Ti, sel.Where.Exp, false)
+		})
+		c.dialect.RenderReturning(c, &m)
+		c.w.WriteString(`)`)
+		deleteCount++
+	}
+}
+
+func (c *compilerContext) renderOneToManyConnectStmt(m qcode.Mutate) {
+	// Render only for parent-to-child relationship of one-to-one
+	// For this to work the json child needs to found first so it's primary key
+	// can be set in the related column on the parent object.
+	// Eg. Create product and connect a user to it.
+	c.renderCteName(m)
+	c.w.WriteString(` AS (SELECT `)
+
+	rel := m.Rel
+	if rel.Right.Col.Array {
+		c.dialect.RenderArrayAggPrefix(c, true)
+		c.quoted(rel.Left.Col.Name)
+		c.w.WriteString(`) AS `)
+		c.quoted(rel.Left.Col.Name)
+	} else {
+		c.quoted(rel.Left.Col.Name)
+	}
+
+	if m.IsJSON {
+		c.w.WriteString(` FROM `)
+		c.quoted("_sg_input")
+		c.w.WriteString(` i, `)
+	} else {
+		c.w.WriteString(` FROM `)
+	}
+	c.quoted(m.Ti.Name)
+
+	c.w.WriteString(` WHERE `)
+	if c.dialect.Name() == "postgres" {
+		c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+	} else {
+		c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+	}
+	c.w.WriteString(` LIMIT 1)`)
+}
+
+func (c *compilerContext) renderOneToOneConnectStmt(m qcode.Mutate) {
+	c.renderCteName(m)
+	c.w.WriteString(` AS ( UPDATE `)
+
+	c.table(nil, m.Ti.Schema, m.Ti.Name, false)
+	c.w.WriteString(` SET `)
+	c.quoted(m.Rel.Left.Col.Name)
+	c.w.WriteString(` = `)
+	c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
+
+	if m.IsJSON {
+		c.w.WriteString(` FROM `)
+		c.quoted("_sg_input")
+		c.w.WriteString(` i`)
+		c.renderNestedRelTables(m, true, 1)
+	} else {
+		c.w.WriteString(` FROM `)
+		c.renderNestedRelTables(m, true, 0)
+	}
+
+	c.w.WriteString(` WHERE `)
+	if c.dialect.Name() == "postgres" {
+		c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+	} else {
+		c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+	}
+	c.renderReturning(m)
+	c.w.WriteString(`)`)
+}
+
+func (c *compilerContext) renderOneToManyDisconnectStmt(m qcode.Mutate) {
+	c.renderCteName(m)
+	c.w.WriteString(` AS (`)
+
+	rel := m.Rel
+	if rel.Left.Col.Array {
+		c.w.WriteString(`SELECT NULL AS `)
+		c.quoted(rel.Left.Col.Name)
+	} else {
+		c.w.WriteString(`SELECT `)
+		c.quoted(rel.Left.Col.Name)
+
+		if m.IsJSON {
+			c.w.WriteString(` FROM `)
+			c.quoted("_sg_input")
+			c.w.WriteString(` i, `)
+		} else {
+			c.w.WriteString(` FROM `)
+		}
+		c.quoted(m.Ti.Name)
+
+		c.w.WriteString(` WHERE `)
+		if c.dialect.Name() == "postgres" {
+			c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+		} else {
+			c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+		}
+	}
+
+	c.w.WriteString(` LIMIT 1))`)
+}
+
+func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
+	// Render only for parent-to-child relationship of one-to-one
+	// For this to work the child needs to found first so it's
+	// null value can beset in the related column on the parent object.
+	// Eg. Update product and diconnect the user from it.
+	c.renderCteName(m)
+	c.w.WriteString(` AS ( UPDATE `)
+
+	c.table(nil, m.Ti.Schema, m.Ti.Name, false)
+	c.w.WriteString(` SET `)
+	c.quoted(m.Rel.Left.Col.Name)
+	c.w.WriteString(` = `)
+
+	if m.Rel.Left.Col.Array {
+		if c.dialect.Name() == "postgres" {
+			c.w.WriteString(` array_remove(`)
+			c.quoted(m.Rel.Left.Col.Name)
+			c.w.WriteString(`, `)
+			c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
+			c.w.WriteString(`)`)
+		} else if c.dialect.Name() == "mysql" || c.dialect.Name() == "mariadb" {
+			// MySQL/MariaDB use JSON_REMOVE with JSON_SEARCH
+			c.w.WriteString(` JSON_REMOVE(`)
+			c.quoted(m.Rel.Left.Col.Name)
+			c.w.WriteString(`, JSON_UNQUOTE(JSON_SEARCH(`)
+			c.quoted(m.Rel.Left.Col.Name)
+			c.w.WriteString(`, 'one', `)
+			c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
+			c.w.WriteString(`)))`)
+		} else if c.dialect.Name() == "oracle" {
+			// Oracle: Use JSON_TABLE to unpack, filter, and re-aggregate
+			c.w.WriteString(` (SELECT JSON_ARRAYAGG(j."VALUE") FROM JSON_TABLE(`)
+			c.quoted(m.Rel.Left.Col.Name)
+			c.w.WriteString(`, '$[*]' COLUMNS("VALUE" NUMBER PATH '$')) j WHERE j."VALUE" != `)
+			c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
+			c.w.WriteString(`)`)
+		} else {
+			c.w.WriteString(` NULL`)
+		}
+	} else {
+		c.w.WriteString(` NULL`)
+	}
+
+	if m.IsJSON {
+		c.w.WriteString(` FROM `)
+		c.quoted("_sg_input")
+		c.w.WriteString(` i`)
+		c.renderNestedRelTables(m, true, 1)
+	} else {
+		c.w.WriteString(` FROM `)
+		c.renderNestedRelTables(m, true, 0)
+	}
+
+	c.w.WriteString(` WHERE ((`)
+	c.colWithTable(m.Rel.Left.Col.Table, m.Rel.Left.Col.Name)
+	c.w.WriteString(`) = (`)
+	c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
+	c.w.WriteString(`)`)
+
+	if m.Rel.Type == sdata.RelOneToOne {
+		c.w.WriteString(` AND `)
+		if c.dialect.Name() == "postgres" {
+			c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+		} else {
+			c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+		}
+	}
+	c.w.WriteString(`)`)
+	c.renderReturning(m)
+	c.w.WriteString(`)`)
+}
+
+func (c *compilerContext) renderOneToManyModifiers(m qcode.Mutate) int {
+	i := 0
+	for id := range m.DependsOn {
+		m1 := c.qc.Mutates[id]
+
+		switch m1.Type {
+		case qcode.MTConnect:
+			if i != 0 {
+				c.w.WriteString(`, `)
+			}
+			c.renderOneToManyConnectStmt(m1)
+			i++
+		case qcode.MTDisconnect:
+			if i != 0 {
+				c.w.WriteString(`, `)
+			}
+			c.renderOneToManyDisconnectStmt(m1)
+			i++
+		}
+	}
+	return i
+}
+
+func (c *compilerContext) renderCteName(m qcode.Mutate) {
+	if m.Multi || m.Type == qcode.MTConnect || m.Type == qcode.MTDisconnect {
+		c.renderCteNameWithID(m)
+	} else {
+		c.quoted(m.Ti.Name)
+	}
+}
+
+func (c *compilerContext) renderCteNameWithID(m qcode.Mutate) {
+	c.w.WriteString(m.Ti.Name)
+	c.w.WriteString(`_`)
+	int32String(c.w, m.ID)
+}
+
+func (c *compilerContext) renderValues(m qcode.Mutate, prefix bool) {
+	c.w.WriteString(` SELECT `)
+	n := c.renderInsertUpdateValues(m)
+	c.renderNestedRelColumns(m, true, prefix, n)
+
+	if m.IsJSON {
+		c.w.WriteString(` FROM `)
+		c.quoted("_sg_input")
+		c.w.WriteString(` i`)
+		n = c.renderNestedRelTables(m, prefix, 1)
+		c.renderMutateToRecordSet(m, n)
+
+	} else if len(m.DependsOn) != 0 {
+		c.w.WriteString(` FROM `)
+		c.renderNestedRelTables(m, prefix, 0)
+	}
+}
+
+func (c *compilerContext) renderMutateToRecordSet(m qcode.Mutate, n int) {
+	c.dialect.RenderMutateToRecordSet(c, &m, n, func() {
+		if c.dialect.SupportsLinearExecution() {
+			if m.IsJSON { // should be true here anyway
+				// MySQL/MariaDB need JSON wrapped in array for JSON_TABLE '$[*]' path
+				wrapInArray := c.dialect.Name() == "mysql" || c.dialect.Name() == "mariadb"
+				c.renderParam(Param{Name: c.qc.ActionVar, Type: "json", WrapInArray: wrapInArray})
+			}
+		} else {
+			c.w.WriteString("i.j")
+		}
+	})
+}
+
+func (c *compilerContext) renderReturning(m qcode.Mutate) {
+	c.dialect.RenderReturning(c, &m)
+}
+
+func (c *compilerContext) renderComma(i int) int {
+	if i != 0 {
+		c.w.WriteString(`, `)
+	}
+	return i + 1
+}
+
+// renderPKWhereVars renders: pk_col1 = @var AND pk_col2 = @var_pk1 ...
+// Used for parent lookups in child mutation WHERE clauses.
+func (c *compilerContext) renderPKWhereVars(m qcode.Mutate) {
+	c.renderPKWhereVarsWithTable(m, "")
+}
+
+func (c *compilerContext) renderPKWhereVarsWithTable(m qcode.Mutate, table string) {
+	vName := c.getVarName(m)
+	for i, pkCol := range m.Ti.PrimaryCols {
+		if i > 0 {
+			c.w.WriteString(" AND ")
+		}
+		if table != "" {
+			c.colWithTable(table, pkCol.Name)
+		} else {
+			c.quoted(pkCol.SQLName())
+		}
+		c.w.WriteString(" = ")
+		n := vName
+		if i > 0 {
+			n = vName + "_pk" + strconv.Itoa(i)
+		}
+		c.dialect.RenderVar(c, n)
+	}
+}

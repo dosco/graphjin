@@ -1,0 +1,105 @@
+app_name: SaaS Ops Demo
+mode: dev
+host_port: 0.0.0.0:8083
+web_ui: true
+log_level: "info"
+log_format: "plain"
+http_compress: true
+server_timing: true
+production: false
+auth_fail_block: false
+enable_tracing: true
+reload_on_config_change: false
+enable_schema: false
+secret_key: saas-ops-demo-secret
+cors_allowed_origins: ["*"]
+default_block: false
+default_limit: 50
+
+artifacts:
+  locked: ["runbook"]
+
+identity:
+  role_claims: ["roles"]
+  admin_roles: ["admin"]
+
+auth:
+  type: none
+  development: true
+
+mcp:
+  allow_config_updates: false
+  allow_workflow_updates: false
+  allow_schema_reload: false
+  allow_schema_updates: false
+
+sources:
+  - name: app
+    kind: database
+    default: true
+    type: sqlite
+    access:
+      read: public
+      write: authenticated
+      delete: blocked
+      missing_namespace_column: allow
+    capabilities:
+      data.read: true
+      data.write: true
+      schema.read: true
+      schema.write: false
+
+  - name: sla_policies
+    kind: file
+    backend: local
+    root: files
+    read_only: true
+    max_list_page_size: 25
+    capabilities:
+      files.list: true
+      files.read: true
+      files.write: false
+      files.delete: false
+      files.watch: false
+
+  - name: account_health_api
+    kind: api
+    specs_dir: specs
+    specs:
+      account-health:
+        base_url: http://127.0.0.1:18094
+        joins:
+          getAccountHealth:
+            parent_table: app:main.accounts
+            parent_column: id
+            param: account_id
+            expose_as: account_health
+        concurrency:
+          max_concurrent: 4
+          rate_limit_per_second: 20
+    capabilities:
+      api.read: true
+      api.write: false
+
+system:
+  root_access:
+    gj_config: admin
+  capabilities:
+    catalog.read: true
+    security.read: true
+    config.read: true
+    config.write: false
+    runtime.read: true
+    raw_graphql.query: true
+    raw_graphql.mutate: true
+    schema.reload: false
+    schema.write: false
+    dev_tools.read: true
+    legacy_discovery.read: false
+
+workflows:
+  path: workflows
+  capabilities:
+    execute: true
+    read: true
+    write: false

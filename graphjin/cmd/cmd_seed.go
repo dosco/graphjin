@@ -1,0 +1,997 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/csv"
+	"encoding/json"
+	"fmt"
+	"io"
+	"math/rand"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/brianvoe/gofakeit/v6"
+	"github.com/dop251/goja"
+	"github.com/dosco/graphjin/core/v3"
+	"github.com/gosimple/slug"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
+	babel "github.com/jvatic/goja-babel"
+	"github.com/spf13/cobra"
+	"golang.org/x/crypto/bcrypt"
+)
+
+// cmdSeed is the cobra CLI for the seed subcommand
+func cmdDBSeed(cmd *cobra.Command, args []string) {
+	setup(cpath)
+	prepareSeedConfig()
+
+	if isMultiDBMode() {
+		connections, err := openMultiDBConnections()
+		if err != nil {
+			log.Fatalf("Failed to connect to databases: %s", err)
+		}
+		defer closeSeedConnections(connections)
+
+		if ran, err := runSourceSeedJSFiles(connections); err != nil {
+			log.Fatalf("Failed to execute source seed script: %s", err)
+		} else if ran {
+			log.Infof("Seed script completed")
+			return
+		}
+		if ran, err := runSourceSeedSQLFiles(connections); err != nil {
+			log.Fatalf("Failed to execute source seed SQL: %s", err)
+		} else if ran {
+			log.Infof("Seed SQL completed")
+			return
+		}
+
+		seed := filepath.Join(cpath, "seed.js")
+		if _, err := os.Stat(seed); os.IsNotExist(err) {
+			log.Fatalf("No seed.js or seed/<source>.js found")
+		}
+
+		log.Infof("Seed script started (please wait)")
+		if err := compileAndRunJSWithContext(seed, seedJSContext{
+			Databases:     connections,
+			ConfigPath:    cpath,
+			DefaultSource: seedDefaultSource(),
+		}); err != nil {
+			log.Fatalf("Failed to execute seed file %s: %s", seed, err)
+		}
+
+		log.Infof("Seed script completed")
+		return
+	}
+
+	initDB(true)
+
+	if ran, err := runSourceSeedJSFiles(nil); err != nil {
+		log.Fatalf("Failed to execute source seed script: %s", err)
+	} else if ran {
+		log.Infof("Seed script completed")
+		return
+	}
+	if ran, err := runSourceSeedSQLFiles(nil); err != nil {
+		log.Fatalf("Failed to execute source seed SQL: %s", err)
+	} else if ran {
+		log.Infof("Seed SQL completed")
+		return
+	}
+
+	if conf.DB.Type == "mysql" {
+		log.Fatalf("Seed scripts not support with MySQL")
+	}
+
+	seed := filepath.Join(cpath, "seed.js")
+	log.Infof("Seed script started (please wait)")
+	if err := compileAndRunJS(seed, db, cpath); err != nil {
+		log.Fatalf("Failed to execute seed file %s: %s", seed, err)
+	}
+
+	log.Infof("Seed script completed")
+}
+
+func closeSeedConnections(connections map[string]*sql.DB) {
+	for _, conn := range connections {
+		if conn != nil {
+			conn.Close() //nolint:errcheck
+		}
+	}
+}
+
+func runSourceSeedJSFiles(connections map[string]*sql.DB) (bool, error) {
+	files, err := sourceSeedFiles(".js")
+	if err != nil || len(files) == 0 {
+		return false, err
+	}
+
+	var ran bool
+	for _, file := range files {
+		conn, err := seedConnectionForSource(connections, file.Source, len(files) == 1)
+		if err != nil {
+			return ran, err
+		}
+		log.Infof("Running seed script from %s", file.Path)
+		if err := compileAndRunJSWithContext(file.Path, seedJSContext{
+			DB:            conn,
+			Databases:     connections,
+			ConfigPath:    cpath,
+			DefaultSource: file.Source,
+		}); err != nil {
+			return ran, err
+		}
+		ran = true
+	}
+	return ran, nil
+}
+
+func runSourceSeedSQLFiles(connections map[string]*sql.DB) (bool, error) {
+	files, err := sourceSeedFiles(".sql")
+	if err != nil || len(files) == 0 {
+		return false, err
+	}
+
+	var ran bool
+	for _, file := range files {
+		conn, err := seedConnectionForSource(connections, file.Source, len(files) == 1)
+		if err != nil {
+			return ran, err
+		}
+		log.Infof("Running seed SQL from %s", file.Path)
+		if err := execSeedSQLFile(conn, file.Path); err != nil {
+			return ran, err
+		}
+		ran = true
+	}
+	return ran, nil
+}
+
+type sourceSeedFile struct {
+	Source string
+	Path   string
+}
+
+func sourceSeedFiles(ext string) ([]sourceSeedFile, error) {
+	dir := filepath.Join(cpath, "seed")
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var files []sourceSeedFile
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ext) {
+			continue
+		}
+		source := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+		files = append(files, sourceSeedFile{
+			Source: source,
+			Path:   filepath.Join(dir, entry.Name()),
+		})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Source < files[j].Source })
+	return files, nil
+}
+
+func seedConnectionForSource(connections map[string]*sql.DB, source string, singleFile bool) (*sql.DB, error) {
+	source = strings.TrimSpace(source)
+	if len(connections) != 0 {
+		dbConf, ok := conf.Databases[source]
+		if !ok {
+			return nil, fmt.Errorf("seed source %q is not configured", source)
+		}
+		if dbConf.ReadOnly {
+			return nil, fmt.Errorf("seed source %q is read-only", source)
+		}
+		conn := connections[source]
+		if conn == nil {
+			return nil, fmt.Errorf("seed source %q has no open SQL connection", source)
+		}
+		return conn, nil
+	}
+	if db != nil && (singleFile || source == "" || source == core.DefaultDBName || source == "default" || source == "db") {
+		return db, nil
+	}
+	return nil, fmt.Errorf("seed source %q has no open SQL connection", source)
+}
+
+func execSeedSQLFile(conn *sql.DB, path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		return nil
+	}
+	_, err = conn.ExecContext(context.Background(), string(data))
+	return err
+}
+
+// compileAndRunJS compiles and runs the seed script
+func compileAndRunJS(seed string, db *sql.DB, configPath string) error {
+	return compileAndRunJSWithContext(seed, seedJSContext{
+		DB:         db,
+		ConfigPath: configPath,
+	})
+}
+
+type seedJSContext struct {
+	DB            *sql.DB
+	Databases     map[string]*sql.DB
+	ConfigPath    string
+	DefaultSource string
+}
+
+func (ctx seedJSContext) primaryDB() *sql.DB {
+	if ctx.DB != nil {
+		return ctx.DB
+	}
+	if len(ctx.Databases) == 0 {
+		return nil
+	}
+	if ctx.DefaultSource != "" {
+		if db, ok := ctx.Databases[ctx.DefaultSource]; ok {
+			return db
+		}
+	}
+	names := make([]string, 0, len(ctx.Databases))
+	for name := range ctx.Databases {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if db := ctx.Databases[name]; db != nil {
+			return db
+		}
+	}
+	return nil
+}
+
+func (ctx seedJSContext) sourceDB(source string) *sql.DB {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = ctx.DefaultSource
+	}
+	if source != "" && len(ctx.Databases) != 0 {
+		return ctx.Databases[source]
+	}
+	return ctx.primaryDB()
+}
+
+func (ctx seedJSContext) validateSource(source string) error {
+	source = strings.TrimSpace(source)
+	if source == "" || len(ctx.Databases) == 0 {
+		return nil
+	}
+	if _, ok := ctx.Databases[source]; !ok {
+		return fmt.Errorf("seed source %q is not an open writable database", source)
+	}
+	return nil
+}
+
+func compileAndRunJSWithContext(seed string, seedCtx seedJSContext) error {
+	b, err := os.ReadFile(seed)
+	if err != nil {
+		return fmt.Errorf("failed to read seed file %s: %s", seed, err)
+	}
+
+	configPath := seedCtx.ConfigPath
+	if configPath == "" {
+		configPath = cpath
+	}
+	var gj *core.GraphJin
+	var gjErr error
+	getGraphJin := func() (*core.GraphJin, error) {
+		if gj != nil || gjErr != nil {
+			return gj, gjErr
+		}
+		var opts []core.Option
+		if len(seedCtx.Databases) != 0 {
+			opts = append(opts, core.OptionSetDatabases(seedCtx.Databases))
+		}
+		primaryDB := seedCtx.primaryDB()
+		if len(seedCtx.Databases) != 0 {
+			primaryDB = nil
+		}
+		coreConf := seedCoreConfig(seedCtx)
+		gj, gjErr = core.NewGraphJinWithFS(&coreConf, primaryDB, core.NewOsFS(configPath), opts...)
+		return gj, gjErr
+	}
+	defer func() {
+		if gj != nil {
+			gj.Close()
+		}
+	}()
+
+	graphQLFn := func(query string, data interface{}, opt map[string]string) map[string]interface{} {
+		gj, err := getGraphJin()
+		if err != nil {
+			log.Fatalf("Failed to initialize GraphJin for seed script: %s", err)
+		}
+		return graphQLFunc(gj, query, data, opt, seedCtx)
+	}
+
+	seedInsertFn := func(table string, rows interface{}, opt map[string]string) int64 {
+		return seedInsertRows(seedCtx, table, rows, opt)
+	}
+
+	importCSVFn := func(table, filename string, sep string) int64 {
+		importDB := seedCtx.sourceDB("")
+		if importDB == nil {
+			log.Fatalf("Error importing CSV: no database connection available")
+		}
+		return importCSV(table, filename, sep, importDB)
+	}
+
+	importCSVSourceFn := func(source, table, filename string, sep string) int64 {
+		importDB := seedCtx.sourceDB(source)
+		if importDB == nil {
+			log.Fatalf("Error importing CSV: no database connection available for source %q", source)
+		}
+		return importCSV(table, filename, sep, importDB)
+	}
+
+	vm := goja.New()
+	if err := vm.Set("graphql", graphQLFn); err != nil {
+		return err
+	}
+
+	if err := vm.Set("import_csv", importCSVFn); err != nil {
+		return err
+	}
+	if err := vm.Set("import_csv_source", importCSVSourceFn); err != nil {
+		return err
+	}
+
+	console := vm.NewObject()
+	console.Set("log", logFunc) //nolint:errcheck
+	if err := vm.Set("console", console); err != nil {
+		return err
+	}
+
+	fake := vm.NewObject()
+	setFakeFuncs(fake)
+	if err := vm.Set("fake", fake); err != nil {
+		return err
+	}
+
+	util := vm.NewObject()
+	setUtilFuncs(util)
+	if err := vm.Set("util", util); err != nil {
+		return err
+	}
+
+	seedObj := vm.NewObject()
+	seedObj.Set("insert", seedInsertFn) //nolint:errcheck
+	if err := vm.Set("seed", seedObj); err != nil {
+		return err
+	}
+
+	babelOptions := map[string]interface{}{
+		"plugins": []string{
+			"proposal-async-generator-functions",
+			"proposal-class-properties",
+			"proposal-json-strings",
+			"proposal-nullish-coalescing-operator",
+			"proposal-numeric-separator",
+			"proposal-object-rest-spread",
+			"proposal-optional-catch-binding",
+			"proposal-optional-chaining",
+			"proposal-private-methods",
+			"proposal-unicode-property-regex",
+			"syntax-async-generators",
+			"syntax-class-properties",
+			// "syntax-dynamic-import",
+			// "syntax-json-strings",
+			// "syntax-nullish-coalescing-operator",
+			// "syntax-numeric-separator",
+			"syntax-object-rest-spread",
+			"syntax-optional-catch-binding",
+			// "syntax-optional-chaining",
+			"syntax-top-level-await",
+			"transform-arrow-functions",
+			"transform-async-to-generator",
+			"transform-block-scoped-functions",
+			"transform-block-scoping",
+			"transform-classes",
+			"transform-computed-properties",
+			"transform-destructuring",
+			"transform-dotall-regex",
+			"transform-duplicate-keys",
+			"transform-exponentiation-operator",
+			"transform-for-of",
+			"transform-function-name",
+			"transform-literals",
+			"transform-member-expression-literals",
+			// "transform-modules-amd",
+			"transform-modules-commonjs",
+			// "transform-modules-systemjs",
+			// "transform-modules-umd",
+			"transform-named-capturing-groups-regex",
+			"transform-new-target",
+			"transform-object-super",
+			"transform-parameters",
+			"transform-property-literals",
+			"transform-regenerator",
+			"transform-reserved-words",
+			"transform-shorthand-properties",
+			"transform-spread",
+			"transform-sticky-regex",
+			"transform-template-literals",
+			"transform-typeof-symbol",
+			"transform-unicode-escapes",
+			"transform-unicode-regex",
+		},
+
+		"retainLines": true,
+	}
+
+	es5, err := babel.Transform(bytes.NewReader(b), babelOptions)
+	if err != nil {
+		return err
+	}
+
+	es5Code := new(strings.Builder)
+	if _, err := io.Copy(es5Code, es5); err != nil {
+		return err
+	}
+
+	_, err = vm.RunScript(filepath.Base(seed), es5Code.String())
+	return err
+}
+
+func seedInsertRows(seedCtx seedJSContext, table string, rows interface{}, opt map[string]string) int64 {
+	source := ""
+	if opt != nil {
+		source = opt["source"]
+	}
+	insertDB := seedCtx.sourceDB(source)
+	if insertDB == nil {
+		log.Fatalf("Seed insert failed: no database connection available for source %q", source)
+	}
+
+	normalized, err := normalizeSeedRows(rows)
+	if err != nil {
+		log.Fatalf("Seed insert failed: %s", err)
+	}
+	if len(normalized) == 0 {
+		return 0
+	}
+
+	if seedDBType(seedCtx, source) == "mongodb" {
+		return seedInsertMongoRows(insertDB, table, normalized)
+	}
+	dbType := seedDBType(seedCtx, source)
+
+	cols := seedInsertColumns(normalized)
+	if len(cols) == 0 {
+		return 0
+	}
+
+	quotedCols := make([]string, len(cols))
+	placeholders := make([]string, len(cols))
+	for i, col := range cols {
+		quotedCols[i] = seedQuoteIdent(dbType, col)
+		placeholders[i] = "?"
+	}
+	stmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		seedQuoteIdent(dbType, table),
+		strings.Join(quotedCols, ", "),
+		strings.Join(placeholders, ", "))
+
+	var total int64
+	for _, row := range normalized {
+		args := make([]interface{}, len(cols))
+		for i, col := range cols {
+			args[i] = row[col]
+		}
+		res, err := insertDB.ExecContext(context.Background(), stmt, args...)
+		if err != nil {
+			log.Fatalf("Seed insert failed: %s\nSQL: %s", err, stmt)
+		}
+		if n, err := res.RowsAffected(); err == nil {
+			total += n
+		}
+	}
+	return total
+}
+
+func seedDBType(seedCtx seedJSContext, source string) string {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = seedCtx.DefaultSource
+	}
+	if source == "" {
+		return strings.ToLower(strings.TrimSpace(conf.DB.Type))
+	}
+	if dbConf, ok := conf.Databases[source]; ok {
+		return strings.ToLower(strings.TrimSpace(dbConf.Type))
+	}
+	return strings.ToLower(strings.TrimSpace(conf.DB.Type))
+}
+
+func seedInsertMongoRows(db *sql.DB, collection string, rows []map[string]interface{}) int64 {
+	payload := map[string]interface{}{
+		"operation":  "insertMany",
+		"collection": collection,
+		"documents":  rows,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		log.Fatalf("Seed insert failed: %s", err)
+	}
+	res, err := db.ExecContext(context.Background(), string(data))
+	if err != nil {
+		log.Fatalf("Seed insert failed: %s\nMongoDB DSL: %s", err, string(data))
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return int64(len(rows))
+	}
+	return n
+}
+
+func normalizeSeedRows(rows interface{}) ([]map[string]interface{}, error) {
+	data, err := json.Marshal(rows)
+	if err != nil {
+		return nil, err
+	}
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
+		return nil, nil
+	}
+	if data[0] == '[' {
+		var out []map[string]interface{}
+		if err := json.Unmarshal(data, &out); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	var row map[string]interface{}
+	if err := json.Unmarshal(data, &row); err != nil {
+		return nil, err
+	}
+	return []map[string]interface{}{row}, nil
+}
+
+func seedInsertColumns(rows []map[string]interface{}) []string {
+	seen := make(map[string]bool)
+	for _, row := range rows {
+		for col := range row {
+			seen[col] = true
+		}
+	}
+	cols := make([]string, 0, len(seen))
+	for col := range seen {
+		cols = append(cols, col)
+	}
+	sort.Strings(cols)
+	return cols
+}
+
+func seedQuoteIdent(dbType, ident string) string {
+	ident = strings.TrimSpace(ident)
+	switch strings.ToLower(strings.TrimSpace(dbType)) {
+	case "mysql", "mariadb", "bigquery":
+		return "`" + strings.ReplaceAll(ident, "`", "``") + "`"
+	default:
+		return `"` + strings.ReplaceAll(ident, `"`, `""`) + `"`
+	}
+}
+
+// graphQLFunc is a helper function to run a GraphQL query
+func graphQLFunc(gj *core.GraphJin, query string, data interface{}, opt map[string]string, seedCtx seedJSContext) map[string]interface{} {
+	ct := context.Background()
+
+	if v, ok := opt["user_id"]; ok && v != "" {
+		ct = context.WithValue(ct, core.UserIDKey, v)
+	}
+
+	if v, ok := opt["role"]; ok && v != "" {
+		ct = context.WithValue(ct, core.UserRoleKey, v)
+	}
+	if v, ok := opt["source"]; ok && v != "" {
+		if err := seedCtx.validateSource(v); err != nil {
+			log.Fatalf("Seed query failed: %s\nQuery: %s", err, query)
+		}
+	}
+
+	var vars []byte
+	var err error
+
+	if vars, err = json.Marshal(data); err != nil {
+		log.Fatalf("Failed parsing seed query variables: %s\nQuery: %s", err, query)
+	}
+
+	res, err := gj.GraphQL(ct, query, vars, nil)
+	if err != nil {
+		log.Fatalf("Seed query failed: %s\nQuery: %s", err, query)
+	}
+
+	val := make(map[string]interface{})
+
+	if err = json.Unmarshal(res.Data, &val); err != nil {
+		log.Fatalf("Seed query failed: %s\nQuery: %s", err, query)
+	}
+
+	return val
+}
+
+type csvSource struct {
+	rows [][]string
+	i    int
+}
+
+func seedCoreConfig(seedCtx seedJSContext) core.Config {
+	coreConf := conf.Core
+	if len(seedCtx.Databases) == 0 || len(coreConf.Databases) == 0 {
+		return coreConf
+	}
+
+	filtered := make(map[string]core.DatabaseConfig)
+	for name, conn := range seedCtx.Databases {
+		if conn == nil {
+			continue
+		}
+		dbConf, ok := coreConf.Databases[name]
+		if !ok || strings.EqualFold(dbConf.Type, "codesql") {
+			continue
+		}
+		filtered[name] = dbConf
+	}
+	coreConf.Databases = filtered
+	return coreConf
+}
+
+// NewCSVSource creates a new CSV source
+func NewCSVSource(filename string, sep rune) (*csvSource, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close() //nolint:errcheck
+
+	if sep == 0 {
+		sep = ','
+	}
+
+	r := csv.NewReader(f)
+	r.ReuseRecord = true
+	r.Comma = sep
+
+	rows, err := r.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	return &csvSource{rows: rows}, nil
+}
+
+func (c *csvSource) Next() bool {
+	return c.i < len(c.rows)
+}
+
+func (c *csvSource) Values() ([]interface{}, error) {
+	var vals []interface{}
+	var err error
+
+	for _, v := range c.rows[c.i] {
+		switch {
+		case v == "":
+			vals = append(vals, "")
+		case isDigit(v):
+			var n int
+			if n, err = strconv.Atoi(v); err == nil {
+				vals = append(vals, n)
+			}
+		case strings.EqualFold(v, "true") || strings.EqualFold(v, "false"):
+			var b bool
+			if b, err = strconv.ParseBool(v); err == nil {
+				vals = append(vals, b)
+			}
+		default:
+			vals = append(vals, v)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("%w (line no %d)", err, c.i)
+		}
+	}
+	c.i++
+
+	return vals, nil
+}
+
+// isDigit checks if a string is a digit
+func isDigit(v string) bool {
+	for i := range v {
+		if v[i] < '0' || v[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *csvSource) Err() error {
+	return nil
+}
+
+// importCSV imports a CSV file into a table
+func importCSV(table, filename string, sep string, db *sql.DB) int64 {
+	log.Infof("Seeding table: %s, From file: %s", table, filename)
+
+	if filename[0] != '/' && filename[0] != '.' {
+		filename = filepath.Join(cpath, filename)
+	}
+
+	var sepRune rune
+
+	if sep != "" {
+		sepRune = rune(sep[0])
+	}
+
+	s, err := NewCSVSource(filename, sepRune)
+	if err != nil {
+		log.Fatalf("Error reading CSV file: %s", err)
+	}
+
+	var cols []string
+	colval, _ := s.Values()
+
+	for _, c := range colval {
+		cols = append(cols, c.(string))
+	}
+
+	c := context.Background()
+	conn, err := db.Conn(c)
+	if err != nil {
+		log.Fatalf("Error connecting to database: %s", err)
+	}
+	//nolint:errcheck
+	defer conn.Close()
+
+	var n int64
+
+	err = conn.Raw(func(driverConn interface{}) error {
+		conn := driverConn.(*stdlib.Conn).Conn()
+		n, err = conn.CopyFrom(c,
+			pgx.Identifier{table},
+			cols,
+			s)
+		if err != nil {
+			err = fmt.Errorf("%w (line no %d)", err, s.i)
+			log.Fatalf("Error with copy-from: %s", err)
+		}
+		return nil
+	})
+
+	return n
+}
+
+// nolint:errcheck
+func logFunc(args ...interface{}) {
+	for _, arg := range args {
+		if _, ok := arg.(map[string]interface{}); ok {
+			j, err := json.MarshalIndent(arg, "", "  ")
+			if err != nil {
+				continue
+			}
+			os.Stdout.Write(j)
+		} else {
+			io.WriteString(os.Stdout, fmt.Sprintf("%v", arg))
+		}
+
+		io.WriteString(os.Stdout, "\n")
+	}
+}
+
+// avatarURL returns a random avatar URL
+func avatarURL(size int) string {
+	if size == 0 {
+		size = 200
+	}
+	// #nosec G404
+	return fmt.Sprintf("https://i.pravatar.cc/%d?%d", size, rand.Intn(5000))
+}
+
+func imageURL(width, height int) string {
+	// #nosec G404
+	return fmt.Sprintf("https://picsum.photos/%d/%d?%d", width, height, rand.Intn(5000))
+}
+
+func getRandValue(values []string) string {
+	// #nosec G404
+	return values[rand.Intn(len(values))]
+}
+
+// nolint:errcheck
+func setFakeFuncs(f *goja.Object) {
+	gofakeit.Seed(0)
+
+	// Person
+	f.Set("person", gofakeit.Person)
+	f.Set("name", gofakeit.Name)
+	f.Set("name_prefix", gofakeit.NamePrefix)
+	f.Set("name_suffix", gofakeit.NameSuffix)
+	f.Set("first_name", gofakeit.FirstName)
+	f.Set("last_name", gofakeit.LastName)
+	f.Set("gender", gofakeit.Gender)
+	f.Set("ssn", gofakeit.SSN)
+	f.Set("contact", gofakeit.Contact)
+	f.Set("email", gofakeit.Email)
+	f.Set("phone", gofakeit.Phone)
+	f.Set("phone_formatted", gofakeit.PhoneFormatted)
+	f.Set("username", gofakeit.Username)
+	f.Set("password", gofakeit.Password)
+
+	// Address
+	f.Set("address", gofakeit.Address)
+	f.Set("city", gofakeit.City)
+	f.Set("country", gofakeit.Country)
+	f.Set("country_abr", gofakeit.CountryAbr)
+	f.Set("state", gofakeit.State)
+	f.Set("state_abr", gofakeit.StateAbr)
+	f.Set("street", gofakeit.Street)
+	f.Set("street_name", gofakeit.StreetName)
+	f.Set("street_number", gofakeit.StreetNumber)
+	f.Set("street_prefix", gofakeit.StreetPrefix)
+	f.Set("street_suffix", gofakeit.StreetSuffix)
+	f.Set("zip", gofakeit.Zip)
+	f.Set("latitude", gofakeit.Latitude)
+	f.Set("latitude_in_range", gofakeit.LatitudeInRange)
+	f.Set("longitude", gofakeit.Longitude)
+	f.Set("longitude_in_range", gofakeit.LongitudeInRange)
+
+	// Beer
+	f.Set("beer_alcohol", gofakeit.BeerAlcohol)
+	f.Set("beer_hop", gofakeit.BeerHop)
+	f.Set("beer_ibu", gofakeit.BeerIbu)
+	f.Set("beer_blg", gofakeit.BeerBlg)
+	f.Set("beer_malt", gofakeit.BeerMalt)
+	f.Set("beer_name", gofakeit.BeerName)
+	f.Set("beer_style", gofakeit.BeerStyle)
+	f.Set("beer_yeast", gofakeit.BeerYeast)
+
+	// Cars
+	f.Set("car", gofakeit.Car)
+	f.Set("car_type", gofakeit.CarType)
+	f.Set("car_maker", gofakeit.CarMaker)
+	f.Set("car_model", gofakeit.CarModel)
+
+	// Text
+	f.Set("word", gofakeit.Word)
+	f.Set("sentence", gofakeit.Sentence)
+	f.Set("paragraph", gofakeit.Paragraph)
+	f.Set("question", gofakeit.Question)
+	f.Set("quote", gofakeit.Quote)
+
+	// Misc
+	f.Set("generate", gofakeit.Generate)
+	f.Set("boolean", gofakeit.Bool)
+	f.Set("uuid", gofakeit.UUID)
+
+	// Colors
+	f.Set("color", gofakeit.Color)
+	f.Set("hex_color", gofakeit.HexColor)
+	f.Set("rgb_color", gofakeit.RGBColor)
+	f.Set("safe_color", gofakeit.SafeColor)
+
+	// Internet
+	f.Set("url", gofakeit.URL)
+	f.Set("image_url", imageURL)
+	f.Set("avatar_url", avatarURL)
+	f.Set("domain_name", gofakeit.DomainName)
+	f.Set("domain_suffix", gofakeit.DomainSuffix)
+	f.Set("ipv4_address", gofakeit.IPv4Address)
+	f.Set("ipv6_address", gofakeit.IPv6Address)
+	f.Set("http_method", gofakeit.HTTPMethod)
+	f.Set("user_agent", gofakeit.UserAgent)
+	f.Set("user_agent_firefox", gofakeit.FirefoxUserAgent)
+	f.Set("user_agent_chrome", gofakeit.ChromeUserAgent)
+	f.Set("user_agent_opera", gofakeit.OperaUserAgent)
+	f.Set("user_agent_safari", gofakeit.SafariUserAgent)
+
+	// Date / Time
+	f.Set("date", gofakeit.Date)
+	f.Set("date_range", gofakeit.DateRange)
+	f.Set("nano_second", gofakeit.NanoSecond)
+	f.Set("second", gofakeit.Second)
+	f.Set("minute", gofakeit.Minute)
+	f.Set("hour", gofakeit.Hour)
+	f.Set("month", gofakeit.Month)
+	f.Set("day", gofakeit.Day)
+	f.Set("weekday", gofakeit.WeekDay)
+	f.Set("year", gofakeit.Year)
+	f.Set("timezone", gofakeit.TimeZone)
+	f.Set("timezone_abv", gofakeit.TimeZoneAbv)
+	f.Set("timezone_full", gofakeit.TimeZoneFull)
+	f.Set("timezone_offset", gofakeit.TimeZoneOffset)
+
+	// Payment
+	f.Set("price", gofakeit.Price)
+	f.Set("credit_card", gofakeit.CreditCard)
+	f.Set("credit_card_cvv", gofakeit.CreditCardCvv)
+	f.Set("credit_card_number", gofakeit.CreditCardNumber)
+	f.Set("credit_card_type", gofakeit.CreditCardType)
+	f.Set("currency", gofakeit.Currency)
+	f.Set("currency_long", gofakeit.CurrencyLong)
+	f.Set("currency_short", gofakeit.CurrencyShort)
+
+	// Company
+	f.Set("bs", gofakeit.BS)
+	f.Set("buzzword", gofakeit.BuzzWord)
+	f.Set("company", gofakeit.Company)
+	f.Set("company_suffix", gofakeit.CompanySuffix)
+	f.Set("job", gofakeit.Job)
+	f.Set("job_description", gofakeit.JobDescriptor)
+	f.Set("job_level", gofakeit.JobLevel)
+	f.Set("job_title", gofakeit.JobTitle)
+
+	// Hacker
+	f.Set("hacker_abbreviation", gofakeit.HackerAbbreviation)
+	f.Set("hacker_adjective", gofakeit.HackerAdjective)
+	f.Set("hacker_noun", gofakeit.HackerNoun)
+	f.Set("hacker_phrase", gofakeit.HackerPhrase)
+	f.Set("hacker_verb", gofakeit.HackerVerb)
+
+	// Hipster
+	f.Set("hipster_word", gofakeit.HipsterWord)
+	f.Set("hipster_paragraph", gofakeit.HipsterParagraph)
+	f.Set("hipster_sentence", gofakeit.HipsterSentence)
+
+	// File
+	f.Set("file_extension", gofakeit.FileExtension)
+	f.Set("file_mine_type", gofakeit.FileMimeType)
+
+	// Numbers
+	f.Set("number", gofakeit.Number)
+	f.Set("numerify", gofakeit.Numerify)
+	f.Set("int8", gofakeit.Int8)
+	f.Set("int16", gofakeit.Int16)
+	f.Set("int32", gofakeit.Int32)
+	f.Set("int64", gofakeit.Int64)
+	f.Set("uint8", gofakeit.Uint8)
+	f.Set("uint16", gofakeit.Uint16)
+	f.Set("uint32", gofakeit.Uint32)
+	f.Set("uint64", gofakeit.Uint64)
+	f.Set("float32", gofakeit.Float32)
+	f.Set("float32_range", gofakeit.Float32Range)
+	f.Set("float64", gofakeit.Float64)
+	f.Set("float64_range", gofakeit.Float64Range)
+	f.Set("shuffle_ints", gofakeit.ShuffleInts)
+	f.Set("mac_address", gofakeit.MacAddress)
+
+	// String
+	f.Set("digit", gofakeit.Digit)
+	f.Set("letter", gofakeit.Letter)
+	f.Set("lexify", gofakeit.Lexify)
+	f.Set("rand_string", getRandValue)
+	f.Set("numerify", gofakeit.Numerify)
+}
+
+// nolint:errcheck
+func setUtilFuncs(f *goja.Object) {
+	// Slugs
+	f.Set("make_slug", slug.Make)
+	f.Set("make_slug_lang", slug.MakeLang)
+	f.Set("shuffle_strings", gofakeit.ShuffleStrings)
+	f.Set("hash_password", hashPassword)
+}
+
+// hashPassword hashes a password using bcrypt
+func hashPassword(password string) string {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		log.Fatalf("Failed to hash password: %s", err)
+	}
+	return string(hash)
+}

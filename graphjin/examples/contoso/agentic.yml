@@ -1,0 +1,9 @@
+inherits: dev
+mode: agentic
+
+# Agentic mode refuses header-trust dev identity; callers authenticate with HS256 JWTs
+auth:
+  type: jwt
+  development: false
+  jwt:
+    secret: contoso-retail-demo-secret

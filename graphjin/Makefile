@@ -1,0 +1,227 @@
+BUILD         ?= $(shell git rev-parse --short HEAD)
+BUILD_DATE    ?= $(shell git log -1 --format=%ci)
+BUILD_BRANCH  ?= $(shell git rev-parse --abbrev-ref HEAD)
+BUILD_VERSION ?= $(shell git describe --always --tags)
+
+GOPATH  ?= $(shell go env GOPATH)
+GOROOT ?= $(shell go env GOROOT)
+
+PACKAGES ?= ./core ./plugin/otel ./serv ./auth ./cmd ./conf ./examples
+DEMO_PATH ?= examples/coffee-roastery
+
+ifndef GOPATH
+override GOPATH = $(HOME)/go
+endif
+
+# Build-time Go variables
+BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commit=${BUILD}" -X "main.date=${BUILD_DATE}" -X "github.com/dosco/graphjin/serv/v3.version=${BUILD_VERSION}"'
+
+.PHONY: all download-tools build wasm-build gen config-schema clean tidy test test-parallel-dbs test-sequential test-norace run demo demo-agent demo-smoke demo-agent-smoke smoke-all smoke-default env-image env-image-smoke run-github-actions lint changlog release version help test-mongodb test-cassandra test-clickhouse $(PLATFORMS)
+
+tidy:
+	@find . -name "go.mod" -execdir go mod tidy \;
+
+# -timeout matches the per-database targets below. Without it the package suite
+# inherits Go's 600s default, and cmd/ alone boots enough real instances to sit
+# at ~556s under -race — so the default was 43 seconds from failing a green
+# build, and any test added anywhere tipped it over.
+GO_TEST_TIMEOUT ?= 30m
+
+test: test-parallel-dbs
+	@go test -v -race -timeout $(GO_TEST_TIMEOUT) $(PACKAGES)
+
+test-parallel-dbs:
+	@bash scripts/test-parallel.sh
+
+test-sequential: test-postgres test-mysql test-mariadb test-sqlite test-oracle test-mssql test-mongodb test-cassandra test-clickhouse
+	@go test -v -race -timeout $(GO_TEST_TIMEOUT) $(PACKAGES)
+
+test-postgres:
+	@echo "Running Postgres tests..."
+	@cd tests; go test -v -timeout 30m -race -db=postgres .
+
+test-mysql:
+	@echo "Running MySQL tests..."
+	@cd tests; go test -v -timeout 30m -race -db=mysql -tags mysql .
+
+test-mariadb:
+	@echo "Running MariaDB tests..."
+	@cd tests; go test -v -timeout 30m -race -db=mariadb -tags mariadb .
+
+test-sqlite:
+	@echo "Running SQLite tests..."
+	@cd tests; go test -v -timeout 30m -race -db=sqlite -tags "sqlite fts5" .
+
+test-oracle:
+	@echo "Running Oracle tests..."
+	@cd tests; go test -v -timeout 30m -race -db=oracle .
+
+test-mssql:
+	@echo "Running MSSQL tests..."
+	@cd tests; go test -v -timeout 30m -race -db=mssql -tags mssql .
+
+test-mongodb:
+	@echo "Running MongoDB tests..."
+	@cd tests; go test -v -timeout 30m -race -db=mongodb .
+
+test-cassandra:
+	@echo "Running Cassandra tests..."
+	@cd tests; go test -v -timeout 30m -race -db=cassandra -run Test .
+
+test-clickhouse:
+	@echo "Running ClickHouse tests..."
+	@cd tests; go test -v -timeout 30m -race -db=clickhouse -run Test .
+
+test-large:
+	@echo "Running large-scale tests..."
+	@echo "See tests-large/ for manual AdventureWorks tests"
+
+BIN_DIR := $(GOPATH)/bin
+WEB_BUILD_DIR := ./serv/web/build/manifest.json
+
+# @echo Installing tools from tools.go
+# @cat tools.go | grep _ | awk -F'"' '{print $$2}' | xargs -tI % go install %
+download-tools:
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@go install golang.org/x/perf/cmd/benchstat@latest
+	@go install golang.org/x/tools/cmd/stringer@latest
+
+$(WEB_BUILD_DIR):
+	@echo "First install Yarn and create a build of the web UI then re-run make install"
+	@echo "Run this command: yarn --cwd serv/web/ build"
+	@exit 1
+
+lint: download-tools
+	@golangci-lint run ./tests $(PACKAGES) 
+
+BINARY := graphjin
+WASM := ./wasm/graphjin.wasm
+LDFLAGS := -s -w
+PLATFORMS := linux/amd64 windows/amd64 darwin/amd64
+
+temp = $(subst /, ,$@)
+os = $(word 1, $(temp))
+arch = $(word 2, $(temp))
+
+$(PLATFORMS): lint test 
+	@mkdir -p release
+	@CGO_ENABLED=0 GOOS=$(os) GOARCH=$(arch) go build $(BUILD_FLAGS) -o release/$(BINARY)-$(BUILD_VERSION)-$(os) main.go
+
+release: linux/amd64 windows/amd64 darwin/amd64
+
+all: lint test $(BINARY)
+
+build: $(BINARY)
+
+wasm-build: $(WASM)
+
+config-schema:
+	@cd serv && go run ./internal/tools -o config.schema.json
+	@echo "wrote serv/config.schema.json"
+
+gen: download-tools
+	@cd core && go generate ./...
+	@cd serv && go generate ./...
+	@cd auth && go generate ./...
+	@cd cmd && go generate ./...
+	@cd conf && go generate ./...
+	@cd plugin/otel && go generate ./...
+	@cd tests && go generate ./...
+	@cd wasm && go generate ./...
+
+$(BINARY):
+	@CGO_ENABLED=0 GOTOOLCHAIN=auto go build $(BUILD_FLAGS) -o $(BINARY) ./cmd
+$(WASM):
+	@if [ -f "$(GOROOT)/lib/wasm/wasm_exec.js" ]; then \
+		cp "$(GOROOT)/lib/wasm/wasm_exec.js" ./wasm/js/; \
+	elif [ -f "$(GOROOT)/misc/wasm/wasm_exec.js" ]; then \
+		cp "$(GOROOT)/misc/wasm/wasm_exec.js" ./wasm/js/; \
+	else \
+		echo "Error: wasm_exec.js not found in Go installation"; exit 1; \
+	fi
+	@GOOS=js GOARCH=wasm GOTOOLCHAIN=auto go build -o ./wasm/graphjin.wasm ./wasm/*.go
+
+clean:
+	@rm -f $(BINARY)
+	@rm -f $(WASM)
+
+run: clean
+	@GOTOOLCHAIN=auto go run $(BUILD_FLAGS) ./cmd $(ARGS)
+
+demo:
+	@GOTOOLCHAIN=auto go run $(BUILD_FLAGS) ./cmd serve --demo --path $(DEMO_PATH)
+
+demo-agent:
+	@GO_ENV=agentic GOTOOLCHAIN=auto go run $(BUILD_FLAGS) ./cmd serve --demo --path $(DEMO_PATH)
+
+demo-smoke:
+	@$(DEMO_PATH)/scripts/smoke.sh
+
+demo-agent-smoke:
+	@$(DEMO_PATH)/scripts/smoke.sh --agent
+
+smoke-all:
+	@scripts/demo-smoke-all.sh $(SMOKE_ALL_ARGS)
+
+# The agent environment as a container. Builds locally with ko and publishes
+# nothing; env-image-smoke additionally boots it and drives it.
+env-image:
+	@KO_DOCKER_REPO=ko.local ko build --local --bare \
+		--ldflags '-s -w -X "main.version=$(BUILD_VERSION)" -X "main.commit=$(BUILD)" -X "main.date=$(BUILD_DATE)" -X "main.imageRole=env"' \
+		./cmd
+
+env-image-smoke:
+	@scripts/env-image-smoke.sh
+
+# Ground-truth agent data-accuracy eval loop (boots saas-ops itself).
+# Baseline before a change, candidate (gated) after; trend shows history.
+agent-data-eval-baseline:
+	@scripts/agent-data-eval.sh --phase baseline $(AGENT_EVAL_ARGS)
+
+agent-data-eval:
+	@scripts/agent-data-eval.sh --phase candidate --baseline $(BASELINE) $(AGENT_EVAL_ARGS)
+
+agent-data-eval-trend:
+	@cd agent && go run ./cmd/skill-eval -trend ../.graphjin-evals
+
+# Smoke the bare `graphjin serve --demo` flow (CGO-free binary, built-in demo)
+smoke-default:
+	@scripts/demo-smoke-all.sh --only default
+
+run-github-actions:
+	@act push --job linter
+
+install: clean build
+	@echo "Commit Hash: `git rev-parse HEAD`"
+	@echo "Old Hash: `shasum $(GOPATH)/bin/$(BINARY) 2>/dev/null | cut -c -32`"
+	@mv $(BINARY) $(GOPATH)/bin/$(BINARY)
+	@echo "New Hash:" `shasum $(GOPATH)/bin/$(BINARY) 2>/dev/null | cut -c -32`
+
+uninstall: clean
+	@go clean -i -x
+
+version:
+	@echo GraphJin ${BUILD_VERSION}
+	@echo Build: ${BUILD}
+	@echo Build date: ${BUILD_DATE}
+	@echo Branch: ${BUILD_BRANCH}
+	@echo Go version: $(shell go version)
+
+help:
+	@echo
+	@echo Build commands:
+	@echo " make build         		- Build graphjin binary"
+	@echo " make install       		- Install graphjin binary"
+	@echo " make uninstall     		- Uninstall graphjin binary"
+	@echo " make [platform]    		- Build for platform [linux|darwin|windows]"
+	@echo " make release       		- Build all platforms"
+	@echo " make run           		- Run graphjin (eg. make run ARGS=\"help\")"
+	@echo " make demo          		- Run the demo app (DEMO_PATH defaults to examples/coffee-roastery)"
+	@echo " make demo-agent    		- Run the demo app with GO_ENV=agentic"
+	@echo " make demo-smoke    		- Run the coffee roastery smoke suite"
+	@echo " make demo-agent-smoke		- Run the coffee roastery agent smoke suite"
+	@echo " make test          		- Run all tests (DB suites in parallel)"
+	@echo " make test-sequential		- Run all tests (DB suites sequentially)"
+	@echo " make run-github-actions	- Run Github Actions locally (brew install act)"
+	@echo " make help          		- This help"
+	@echo

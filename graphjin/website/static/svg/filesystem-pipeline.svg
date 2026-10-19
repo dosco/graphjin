@@ -1,0 +1,10 @@
+<svg viewBox="0 0 860 300" role="img" aria-label="Filesystem tables pipeline" xmlns="http://www.w3.org/2000/svg">
+  <rect class="diag-bg" width="860" height="300" rx="16"/>
+  <defs><marker id="fs-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 10 5 0 10Z" fill="var(--accent-readable)"/></marker></defs>
+  <rect class="diag-node" x="40" y="70" width="150" height="76" rx="10"/><text class="diag-text" x="115" y="104" text-anchor="middle">Local/S3/GCS</text><text class="diag-sub" x="115" y="126" text-anchor="middle">object roots</text>
+  <rect class="diag-node-accent" x="258" y="54" width="192" height="108" rx="12"/><text class="diag-text" x="354" y="94" text-anchor="middle">Filesystem table</text><text class="diag-sub" x="354" y="118" text-anchor="middle">key · size · etag · url</text><text class="diag-sub" x="354" y="138" text-anchor="middle">data when selected</text>
+  <rect class="diag-node" x="520" y="70" width="132" height="76" rx="10"/><text class="diag-text" x="586" y="104" text-anchor="middle">GraphQL</text><text class="diag-sub" x="586" y="126" text-anchor="middle">list · read</text>
+  <rect class="diag-node" x="708" y="70" width="112" height="76" rx="10"/><text class="diag-text" x="764" y="104" text-anchor="middle">Upload</text><text class="diag-sub" x="764" y="126" text-anchor="middle">multipart</text>
+  <path class="diag-line" marker-end="url(#fs-arrow)" d="M190 108H258"/><path class="diag-line" marker-end="url(#fs-arrow)" d="M450 108H520"/><path class="diag-line" marker-end="url(#fs-arrow)" d="M652 108H708"/>
+  <rect class="diag-node" x="142" y="212" width="576" height="46" rx="10"/><text class="diag-sub" x="430" y="240" text-anchor="middle">Read-only capability defaults let agents discover files without granting writes unless policy allows it.</text>
+</svg>

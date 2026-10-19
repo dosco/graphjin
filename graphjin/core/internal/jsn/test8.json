@@ -1,0 +1,7 @@
+{
+  "data": {
+    "slug": "javapackage-mainimport-nethttp-strings-githubcomgi-2786",
+    "published": true,
+    "body": "# \n\n```java\npackage main\n\nimport (\n        \"net/http\"\n        \"strings\"\n\n        \"github.com/gin-gonic/gin\"\n)\n\nfunc main() {\n        r := gin.Default()\n        r.LoadHTMLGlob(\"templates/*\")\n\n        r.GET(\"/\", handleIndex)\n        r.GET(\"/to/:name\", handleIndex)\n        r.Run()\n}\n\n// Hello is page data for the template\ntype Hello struct {\n        Name string\n}\n\nfunc handleIndex(c *gin.Context) {\n        name := c.Param(\"name\")\n        if name != \"\" {\n                name = strings.TrimPrefix(c.Param(\"name\"), \"/\")\n        }\n        c.HTML(http.StatusOK, \"hellofly.tmpl\", gin.H{\"Name\": name})\n}\n```\n\n\\"
+  }
+}

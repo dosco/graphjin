@@ -1,0 +1,22 @@
+<svg viewBox="0 0 900 360" role="img" aria-label="MCP discovery to governed action loop" xmlns="http://www.w3.org/2000/svg">
+  <rect class="diag-bg" x="0" y="0" width="900" height="360" rx="16"/>
+  <text class="diag-text" x="450" y="58" text-anchor="middle">GraphJin MCP</text>
+  <text class="diag-sub" x="450" y="80" text-anchor="middle">discovery to governed action</text>
+  <rect class="diag-node-accent" x="64" y="132" width="176" height="92" rx="12"/>
+  <text class="diag-text" x="152" y="174" text-anchor="middle">Discover</text>
+  <text class="diag-sub" x="152" y="196" text-anchor="middle">gj_catalog</text>
+  <rect class="diag-node" x="290" y="132" width="150" height="92" rx="12"/>
+  <text class="diag-text" x="365" y="174" text-anchor="middle">Validate</text>
+  <text class="diag-sub" x="365" y="196" text-anchor="middle">where-clause</text>
+  <rect class="diag-node" x="490" y="132" width="150" height="92" rx="12"/>
+  <text class="diag-text" x="565" y="174" text-anchor="middle">Check</text>
+  <text class="diag-sub" x="565" y="196" text-anchor="middle">gj_security</text>
+  <rect class="diag-node" x="686" y="132" width="176" height="92" rx="12"/>
+  <text class="diag-text" x="774" y="174" text-anchor="middle">Act</text>
+  <text class="diag-sub" x="774" y="196" text-anchor="middle">governed graph</text>
+  <path class="diag-line" d="M240 178 L 290 178"/>
+  <path class="diag-line" d="M440 178 L 490 178"/>
+  <path class="diag-line" d="M640 178 L 686 178"/>
+  <path class="diag-rel" d="M774 224 C 774 322, 152 322, 152 224"/>
+  <text class="diag-sub" x="463" y="312" text-anchor="middle">observe &amp; refresh</text>
+</svg>

@@ -1,0 +1,14 @@
+<div class="database-strip" aria-label="Supported databases and sources">
+  {{ range index hugo.Data "databases" }}
+    <span class="database-logo-item">
+      <span class="database-logo-mark">
+        {{ if .logo }}
+          <img src="{{ printf "/logos/%s" .logo | relURL }}" alt="" loading="lazy">
+        {{ else }}
+          <em aria-hidden="true">{{ .label }}</em>
+        {{ end }}
+      </span>
+      <strong>{{ .name }}</strong>
+    </span>
+  {{ end }}
+</div>

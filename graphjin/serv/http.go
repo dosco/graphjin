@@ -1,0 +1,572 @@
+package serv
+
+import (
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/dosco/graphjin/auth/v3"
+	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/fstable"
+	"github.com/dosco/graphjin/serv/v3/internal/etags"
+	"github.com/klauspost/compress/gzhttp"
+	"github.com/rs/cors"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
+	"go.opentelemetry.io/otel/trace"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+)
+
+const (
+	maxReadBytes = 100000 // 100Kb
+)
+
+var errUnauthorized = errors.New("not authorized")
+
+type extensions struct {
+	Persisted apqExt `json:"persistedQuery"`
+}
+
+type apqExt struct {
+	Version    int    `json:"version"`
+	Sha256Hash string `json:"sha256Hash"`
+}
+
+type gqlReq struct {
+	OpName string          `json:"operationName"`
+	Query  string          `json:"query"`
+	Vars   json.RawMessage `json:"variables"`
+	Ext    extensions      `json:"extensions"`
+}
+
+type errorResp struct {
+	Errors []string `json:"errors"`
+}
+
+// apiV1Handler is the main handler for all API requests
+func apiV1Handler(s1 *HttpService, ns *string, h http.Handler, ah auth.HandlerFunc) http.Handler {
+	var zlog *zap.Logger
+	s := s1.Load().(*graphjinService)
+
+	if s.conf.Debug {
+		zlog = s.zlog
+	}
+
+	next := h
+	h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		current := s1.Load().(*graphjinService)
+		w, r = current.withOpenAPIRequestHeaders(w, r)
+		next.ServeHTTP(w, r)
+	})
+
+	if ah != nil {
+		ah = s.observeAuthHandler(ah)
+		authOpt := auth.Options{AuthFailBlock: s.conf.AuthFailBlock}
+		useAuth, err := auth.NewAuth(s.conf.Auth, zlog, authOpt, ah)
+		if err != nil {
+			s.log.Fatalf("api: error with auth: %s", err)
+		}
+		h = useAuth(h)
+	}
+
+	if len(s.conf.AllowedOrigins) != 0 {
+		allowedHeaders := []string{
+			"Origin", "Accept", "Content-Type", "X-Requested-With", "Authorization",
+		}
+
+		if len(s.conf.AllowedHeaders) != 0 {
+			allowedHeaders = s.conf.AllowedHeaders
+		}
+
+		c := cors.New(cors.Options{
+			AllowedOrigins:   s.conf.AllowedOrigins,
+			AllowedHeaders:   allowedHeaders,
+			AllowCredentials: true,
+			Debug:            s.conf.DebugCORS,
+		})
+		h = c.Handler(h)
+	}
+
+	h = etags.Handler(h, false)
+
+	if s.conf.rateLimiterEnable() {
+		h = rateLimiter(s1, h)
+	}
+
+	if s.conf.HTTPGZip {
+		gz, err := gzhttp.NewWrapper(
+			gzhttp.CompressionLevel(6),
+			gzhttp.ExceptContentTypes([]string{"text/event-stream"}),
+		)
+		if err != nil {
+			s.log.Fatalf("api: error with compression: %s", err)
+		}
+		h = gz(h)
+	}
+
+	return h
+}
+
+// apiV1GraphQLHandler handles the GraphQL API requests
+func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handler {
+	dtrace := otel.GetTextMapPropagator()
+
+	h := func(w http.ResponseWriter, r *http.Request) {
+		var err error
+
+		start := time.Now()
+		s := s1.Load().(*graphjinService)
+
+		w.Header().Set("Content-Type", "application/json")
+
+		if isWebSocketUpgrade(r) {
+			s.apiV1Ws(w, r, ah)
+			return
+		}
+
+		var req gqlReq
+
+		ctx, opts := newDTrace(dtrace, r)
+		ctx, span := s.spanStart(ctx, "GraphQL Request", opts...)
+		defer span.End()
+
+		switch r.Method {
+		case "POST":
+			if isMultipartRequest(r) {
+				if !s.conf.Uploads.Enabled {
+					err = errMultipartDisabled
+					break
+				}
+				var backend fstable.Backend
+				if name := s.conf.Uploads.Storage; name != "" {
+					b, ok := s.gj.FilesystemBackend(name)
+					if !ok {
+						err = fmt.Errorf("uploads: storage filesystem %q not configured", name)
+						break
+					}
+					backend = b
+				}
+				req, err = parseMultipartGraphQL(r, s.conf.Uploads, backend)
+				break
+			}
+			var b []byte
+			b, err = io.ReadAll(io.LimitReader(r.Body, maxReadBytes))
+			if err == nil {
+				defer r.Body.Close() //nolint:errcheck
+				err = json.Unmarshal(b, &req)
+			}
+
+		case "GET":
+			q := r.URL.Query()
+			req.Query = q.Get("query")
+			req.OpName = q.Get("operationName")
+			req.Vars = json.RawMessage(q.Get("variables"))
+
+			if ext := q.Get("extensions"); ext != "" {
+				err = json.Unmarshal([]byte(ext), &req.Ext)
+			}
+		}
+
+		if err != nil {
+			spanError(span, err)
+			renderErr(w, err)
+			return
+		}
+
+		var rc core.RequestConfig
+
+		if req.apqEnabled() {
+			rc.APQKey = (req.OpName + req.Ext.Persisted.Sha256Hash)
+		}
+
+		if rc.Vars == nil && len(s.conf.HeaderVars) != 0 {
+			rc.Vars = s.setHeaderVars(r)
+		}
+
+		if ns != nil {
+			rc.SetNamespace(*ns)
+		}
+		ctx = s.applyIdentityContext(ctx)
+
+		if isSSERequest(r) {
+			s.apiV1SSE(ctx, w, r, req, &rc)
+			return
+		}
+
+		if req.OpName == "subscription" {
+			err := errors.New("use websockets or SSE (Accept: text/event-stream) for subscriptions")
+			spanError(span, err)
+			renderErr(w, err)
+			return
+		}
+
+		if err := s.checkGraphJinInitialized(); err != nil {
+			renderErr(w, err)
+			return
+		}
+
+		extendDeadlineForConfigMutation(w, s.conf, req.Query)
+
+		res, err := s.gj.GraphQL(ctx, req.Query, req.Vars, &rc)
+		s.recordGraphQLAccessFailures(ctx, req.Query, res, err)
+		if res == nil && err != nil {
+			renderErr(w, err)
+			return
+		}
+
+		s.responseHandler(
+			ctx,
+			w,
+			r,
+			start,
+			rc,
+			res,
+			err)
+
+		if span.IsRecording() {
+			span.SetAttributes(
+				attribute.String("http.path", r.RequestURI),
+				attribute.String("http.method", r.Method),
+				attribute.Bool("query.apq", req.apqEnabled()))
+		}
+
+		if err != nil {
+			spanError(span, err)
+		}
+	}
+	return http.HandlerFunc(h)
+}
+
+// defaultConfigUpdateTimeout is used when mcp.config_update_timeout is unset.
+const defaultConfigUpdateTimeout = 60 * time.Minute
+
+var configMutationRoot = regexp.MustCompile(`\bgj_config\s*[({]`)
+
+// configUpdateTimeout is mcp.config_update_timeout, or the default.
+func configUpdateTimeout(conf *Config) time.Duration {
+	if conf != nil && conf.MCP.ConfigUpdateTimeout > 0 {
+		return time.Duration(conf.MCP.ConfigUpdateTimeout) * time.Second
+	}
+	return defaultConfigUpdateTimeout
+}
+
+// extendDeadlineForConfigMutation lifts the per-request deadlines for a
+// gj_config mutation to mcp.config_update_timeout.
+func extendDeadlineForConfigMutation(w http.ResponseWriter, conf *Config, query string) {
+	if !isMutation(query) || !configMutationRoot.MatchString(query) {
+		return
+	}
+	extendDeadlineForConfigUpdate(w, conf)
+}
+
+func extendDeadlineForConfigUpdate(w http.ResponseWriter, conf *Config) {
+	deadline := time.Now().Add(configUpdateTimeout(conf))
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(deadline); err != nil {
+		return
+	}
+	_ = rc.SetReadDeadline(deadline)
+}
+
+// apiV1Rest returns a handler that handles the REST API requests
+func (s1 *HttpService) apiV1Rest(ns *string, ah auth.HandlerFunc) http.Handler {
+	rLen := len(routeREST)
+	dtrace := otel.GetTextMapPropagator()
+
+	h := func(w http.ResponseWriter, r *http.Request) {
+		var err error
+
+		start := time.Now()
+		s := s1.Load().(*graphjinService)
+
+		w.Header().Set("Content-Type", "application/json")
+
+		if isWebSocketUpgrade(r) {
+			s.apiV1Ws(w, r, ah)
+			return
+		}
+
+		var vars json.RawMessage
+		var span trace.Span
+
+		ctx, opts := newDTrace(dtrace, r)
+		ctx, span = s.spanStart(ctx, "REST Request", opts...)
+		defer span.End()
+
+		if len(r.RequestURI) <= rLen {
+			err := errors.New("no query name defined")
+			spanError(span, err)
+			renderErr(w, err)
+			return
+		}
+
+		queryName := r.RequestURI[rLen:]
+		if n := strings.IndexRune(queryName, '?'); n != -1 {
+			queryName = queryName[:n]
+		}
+
+		switch r.Method {
+		case "POST":
+			vars, err = parseBody(r)
+
+		case "GET":
+			vars = json.RawMessage(r.URL.Query().Get("variables"))
+		}
+
+		if err != nil {
+			spanError(span, err)
+			renderErr(w, err)
+			return
+		}
+
+		var rc core.RequestConfig
+
+		if rc.Vars == nil && len(s.conf.HeaderVars) != 0 {
+			rc.Vars = s.setHeaderVars(r)
+		}
+
+		if ns != nil {
+			rc.SetNamespace(*ns)
+		}
+		ctx = s.applyIdentityContext(ctx)
+
+		if err := s.checkGraphJinInitialized(); err != nil {
+			renderErr(w, err)
+			return
+		}
+
+		res, err := s.executeSavedQueryByName(ctx, queryName, vars, &rc)
+		s.responseHandler(
+			ctx,
+			w,
+			r,
+			start,
+			rc,
+			res,
+			err)
+
+		if span.IsRecording() {
+			span.SetAttributes(
+				attribute.String("http.path", r.RequestURI),
+				attribute.String("http.method", r.Method))
+		}
+
+		if err != nil {
+			spanError(span, err)
+		}
+	}
+	return http.HandlerFunc(h)
+}
+
+// responseHandler handles the response from the GraphQL API
+func (s *graphjinService) responseHandler(ct context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	start time.Time,
+	rc core.RequestConfig,
+	res *core.Result,
+	err error,
+) {
+	if s.hook != nil {
+		s.hook(res)
+	}
+
+	if err == nil && r.Method == "GET" && res.Operation() == core.OpQuery && w.Header().Get("Cache-Control") != "private, no-store" {
+		switch {
+		case res.CacheControl() != "":
+			w.Header().Set("Cache-Control", res.CacheControl())
+
+		case s.conf.CacheControl != "":
+			w.Header().Set("Cache-Control", s.conf.CacheControl)
+		}
+
+		w.Header().Set("ETag", hex.EncodeToString(res.Hash[:]))
+	}
+
+	if err := json.NewEncoder(w).Encode(res); err != nil {
+		renderErr(w, err)
+		return
+	}
+
+	rt := time.Since(start).Milliseconds()
+
+	if s.logLevel >= logLevelInfo {
+		s.reqLog(res, rc, rt, err)
+	}
+
+	if s.conf.ServerTiming {
+		b := []byte("DB;dur=")
+		b = strconv.AppendInt(b, rt, 10)
+		w.Header().Set("Server-Timing", string(b))
+	}
+}
+
+// reqLog logs the request details
+func (s *graphjinService) reqLog(res *core.Result, rc core.RequestConfig, resTimeMs int64, err error) {
+	var fields []zapcore.Field
+	var sql string
+
+	if res != nil {
+		sql = res.SQL()
+		fields = []zapcore.Field{
+			zap.String("op", res.OperationName()),
+			zap.String("name", res.QueryName()),
+			zap.String("role", res.Role()),
+			zap.Int64("responseTimeMs", resTimeMs),
+			zap.Bool("cacheHit", res.CacheHit()),
+		}
+	}
+
+	if ns, ok := rc.GetNamespace(); ok {
+		fields = append(fields, zap.String("namespace", ns))
+	}
+
+	if res != nil && res.Vars != nil && s.conf.LogVars {
+		var vars map[string]interface{}
+		err := json.Unmarshal(res.Vars, &vars)
+		if err != nil {
+			s.log.Error("failed to unmarshal sql vars", zap.Error(err))
+		}
+		fields = append(fields, zap.Any("vars", vars))
+	}
+
+	if sql != "" && s.logLevel >= logLevelDebug {
+		fields = append(fields, zap.String("sql", sql))
+	}
+
+	if err != nil {
+		fields = append(fields, zap.Error(err))
+		s.zlog.Error("query failed", fields...)
+	} else {
+		s.zlog.Info("query", fields...)
+	}
+}
+
+// setHeaderVars sets the header variables
+func (s *graphjinService) setHeaderVars(r *http.Request) map[string]interface{} {
+	vars := make(map[string]interface{})
+	for k, v := range s.conf.HeaderVars {
+		vars[k] = func() string {
+			if v1, ok := r.Header[v]; ok {
+				return v1[0]
+			}
+			return ""
+		}
+	}
+	return vars
+}
+
+// apqEnabled checks if the APQ is enabled
+func (r gqlReq) apqEnabled() bool {
+	return r.Ext.Persisted.Sha256Hash != ""
+}
+
+// renderErr renders the error response
+func renderErr(w http.ResponseWriter, err error) {
+	if err == errUnauthorized {
+		w.WriteHeader(http.StatusUnauthorized)
+	}
+
+	err1 := json.NewEncoder(w).Encode(errorResp{[]string{err.Error()}})
+	if err1 != nil {
+		panic(fmt.Errorf("%s: %w", err, err1))
+	}
+}
+
+// parseBody parses the request body
+func parseBody(r *http.Request) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r.Body, maxReadBytes))
+	if err != nil {
+		return nil, err
+	}
+	defer r.Body.Close() //nolint:errcheck
+	return b, nil
+}
+
+// newDTrace creates a new DTrace
+func newDTrace(dtrace propagation.TextMapPropagator, r *http.Request) (context.Context, []trace.SpanStartOption) {
+	ctx := dtrace.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+
+	atrr := []attribute.KeyValue{
+		semconv.ServiceName("Graphjin"),
+	}
+
+	if v := r.Header.Get("User-Agent"); v != "" {
+		atrr = append(atrr, semconv.HTTPUserAgent(v))
+	}
+	if v := r.Method; v != "" {
+		atrr = append(atrr, semconv.HTTPMethod(v))
+	}
+	if v := r.URL.Path; v != "" {
+		atrr = append(atrr, semconv.HTTPURL(v))
+	}
+	if v := r.URL.Scheme; v != "" {
+		atrr = append(atrr, semconv.HTTPScheme(v))
+	}
+
+	opts := []trace.SpanStartOption{
+		trace.WithAttributes(atrr...),
+		trace.WithSpanKind(trace.SpanKindServer),
+	}
+
+	return ctx, opts
+}
+
+// openAPIHandler generates and serves the OpenAPI specification
+func (s1 *HttpService) openAPIHandler(ns *string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s := s1.Load().(*graphjinService)
+
+		// Set content type for JSON
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Only allow GET requests
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Generate OpenAPI specification
+		spec, err := s.gj.GetOpenAPISpec()
+		if err != nil {
+			s.log.Error("Failed to generate OpenAPI spec", zap.Error(err))
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		// Add namespace info if applicable
+		if ns != nil {
+			// Note: In a real implementation, you might want to modify the spec
+			// to reflect the namespace in paths or descriptions
+			s.log.Debug("Serving OpenAPI spec for namespace", zap.String("namespace", *ns))
+		}
+
+		// Write the specification
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(spec); err != nil {
+			s.log.Error("Failed to write OpenAPI spec", zap.Error(err))
+		}
+	})
+}

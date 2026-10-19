@@ -1,0 +1,9 @@
+goos: darwin
+goarch: amd64
+pkg: github.com/dosco/graphjin/jsn
+BenchmarkGet-8       	   13310	     88437 ns/op	    3328 B/op	       2 allocs/op
+BenchmarkFilter-8    	  182232	      6922 ns/op	     448 B/op	       1 allocs/op
+BenchmarkStrip-8     	  162709	      6560 ns/op	     224 B/op	       1 allocs/op
+BenchmarkReplace-8   	   85846	     13996 ns/op	     416 B/op	       1 allocs/op
+PASS
+ok  	github.com/dosco/graphjin/jsn	5.913s

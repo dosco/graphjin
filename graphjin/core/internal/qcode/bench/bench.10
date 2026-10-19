@@ -1,0 +1,11 @@
+goos: darwin
+goarch: amd64
+pkg: github.com/dosco/graphjin/core/internal/qcode
+BenchmarkQCompile-16        	  120888	      9236 ns/op	    3755 B/op	      28 allocs/op
+BenchmarkQCompileP-16       	  502248	      2620 ns/op	    3795 B/op	      28 allocs/op
+BenchmarkParse-16           	  128370	      9294 ns/op	    3902 B/op	      18 allocs/op
+BenchmarkParseP-16          	  575752	      2340 ns/op	    3903 B/op	      18 allocs/op
+BenchmarkSchemaParse-16     	  212048	      5779 ns/op	    3968 B/op	      57 allocs/op
+BenchmarkSchemaParseP-16    	  630918	      1686 ns/op	    3968 B/op	      57 allocs/op
+PASS
+ok  	github.com/dosco/graphjin/core/internal/qcode	7.710s

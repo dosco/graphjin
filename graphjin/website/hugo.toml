@@ -1,0 +1,53 @@
+baseURL = "https://graphjin.com/"
+locale = "en-us"
+title = "GraphJin"
+disableKinds = ["taxonomy", "term"]
+enableGitInfo = false
+relativeURLs = false
+canonifyURLs = false
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+  [markup.highlight]
+    noClasses = false
+    style = "github"
+  [markup.tableOfContents]
+    startLevel = 2
+    endLevel = 3
+    ordered = false
+
+[params]
+  description = "GraphJin gives AI agents one governed graph — compiling GraphQL into optimized, policy-enforced access to databases, APIs, files, and code."
+  home_seo_title = "GraphJin — One Governed Graph for AI Agents: GraphQL + MCP over your databases, files, APIs, and code"
+  github = "https://github.com/dosco/graphjin"
+  install = "curl -fsSL https://graphjin.com/install.sh | bash"
+
+[[module.mounts]]
+  source = "content"
+  target = "content"
+
+[[module.mounts]]
+  source = "layouts"
+  target = "layouts"
+
+[[module.mounts]]
+  source = "static"
+  target = "static"
+
+[[module.mounts]]
+  source = "../VISION.md"
+  target = "assets/root-docs/vision.md"
+
+[[module.mounts]]
+  source = "../SECURITY.md"
+  target = "assets/root-docs/security.md"
+
+[[module.mounts]]
+  source = "../AGENTIC.md"
+  target = "assets/root-docs/agentic.md"
+
+[[module.mounts]]
+  source = "assets"
+  target = "assets"
