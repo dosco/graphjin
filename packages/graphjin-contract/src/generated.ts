@@ -220,6 +220,8 @@ export type GraphjinConfigAgentConfig = {
   return_trace?: boolean;
   /** Agent Seed Catalog Limit */
   seed_limit?: number;
+  /** Agent Discovery Preparation */
+  selection?: GraphjinConfigSelectionConfig;
   /** Agent Service Tier: Portable inference service tier; auto delegates to the provider */
   service_tier?: "auto" | "standard" | "flex" | "priority";
   /** Return Model Reasoning: Return the provider's reasoning text in the chat log for debugging */
@@ -364,6 +366,8 @@ export type GraphjinConfigColumn = {
   array?: boolean;
   /** Full Text Search */
   full_text?: boolean;
+  /** Merge On Update */
+  merge_on_update?: boolean;
   name?: string;
   primary?: boolean;
   /** Related To */
@@ -613,6 +617,8 @@ export type GraphjinConfigKeystoreConfig = {
   key?: string;
   /** Keystore Path */
   path?: string;
+  /** Previous Keystore Keys: Earlier keystore keys; values sealed with them are re-sealed under key at start */
+  previous_keys?: string[];
 };
 
 export type GraphjinConfigMCPConfig = {
@@ -632,6 +638,8 @@ export type GraphjinConfigMCPConfig = {
   allow_workflow_execution?: boolean;
   /** Allow Workflow Updates: AllowWorkflowUpdates enables workflow writes through gj_workflow. Saved workflows are discoverable via workflow catalog items. Execution through gj_workflow_execution is controlled by normal read_only table/source configuration because it is an insert-shaped managed mutation. Auto-enabled in dev mode. Default: false */
   allow_workflow_updates?: boolean;
+  /** Config Update Timeout (seconds): ConfigUpdateTimeout in seconds bounds a gj_config mutation or an update_current_config call. An update that changes an API source rediscovers every database source, which on a large schema takes as long as a restart. Default: 3600 */
+  config_update_timeout?: number;
   /** Cursor Cache Size: CursorCacheSize max entries for in-memory cursor cache fallback (default: 10000) */
   cursor_cache_size?: number;
   /** Cursor Cache TTL: CursorCacheTTL in seconds for cursor ID cache (default: 1800 = 30 min) Cursors are cached to allow short numeric IDs for LLM-friendly pagination */
@@ -781,6 +789,18 @@ export type GraphjinConfigRuntimeEventsConfig = {
 export type GraphjinConfigSecretsConfig = {
   /** Encrypted Keystore */
   keystore?: GraphjinConfigKeystoreConfig;
+};
+
+export type GraphjinConfigSelectionConfig = {
+  api_key_env?: string;
+  base_url?: string;
+  concurrency?: number;
+  context_bytes?: number;
+  enabled?: boolean;
+  mode?: "both" | "catalog" | "skills";
+  model?: string;
+  provider?: string;
+  startup_budget_ms?: number;
 };
 
 export type GraphjinConfigSemanticCatalogSearchConfig = {
@@ -934,6 +954,8 @@ export type GraphjinConfigSpecConfig = {
   auth?: GraphjinConfigAuthConfig;
   base_url?: string;
   concurrency?: GraphjinConfigConcurrencyConfig;
+  /** OpenAPI Document */
+  document?: string;
   joins?: Record<string, GraphjinConfigJoinConfig>;
   max_request_bytes?: number;
   max_response_bytes?: number;

@@ -249,3 +249,47 @@ func TestPlaintextSecretUpdatePathsDetectsModelSuppliedSecrets(t *testing.T) {
 		t.Fatalf("missing plaintext secret paths: %v (got %v)", want, paths)
 	}
 }
+
+func TestLocalKeystoreRekeysValuesSealedWithAPreviousKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "secrets.enc.yml")
+	oldKey := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32))
+	newKey := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32))
+	confWith := func(key string, previous ...string) *Config {
+		return &Config{Serv: Serv{Secrets: SecretsConfig{Keystore: KeystoreConfig{Key: key, Path: path, PreviousKeys: previous}}}}
+	}
+
+	old, err := newLocalKeystore(confWith(oldKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := old.Seal("gjsecret://sources/api/token", "secret-value"); err != nil {
+		t.Fatal(err)
+	}
+	if err := old.Save(nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := mustOpen(t, confWith(newKey)); err == nil {
+		t.Fatal("the new key opened a value sealed with the old key")
+	}
+	if got, err := mustOpen(t, confWith(newKey, oldKey)); err != nil || got != "secret-value" {
+		t.Fatalf("rekeyed value = %q, %v", got, err)
+	}
+	// The keystore now opens with the new key alone.
+	if got, err := mustOpen(t, confWith(newKey)); err != nil || got != "secret-value" {
+		t.Fatalf("value after rekey = %q, %v", got, err)
+	}
+	if _, err := newLocalKeystore(confWith(newKey, "not-base64!")); err == nil {
+		t.Fatal("an invalid previous key was accepted")
+	}
+}
+
+func mustOpen(t *testing.T, conf *Config) (string, error) {
+	t.Helper()
+	ks, err := newLocalKeystore(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ks.Open("gjsecret://sources/api/token")
+}

@@ -6,7 +6,9 @@ import { join } from "node:path";
 
 import {
   atomicWriteFile,
+  graphjinKeystoreHasValues,
   migrateGraphjinSystemSource,
+  patchGraphjinKeystoreKey,
   patchGraphjinSourcesJwtSecret,
   reconcileGraphjinWritePolicy,
 } from "./sources-config.ts";
@@ -122,15 +124,27 @@ if (!CONFIG_PATH) {
 
 // token.ts is dependency-light (node:crypto + @neko/secret-crypt); importing
 // it here keeps the secret derivation single-sourced with the worker's.
-const { graphjinSigningSecretB64 } = await import("./token.ts");
+const { graphjinKeystoreKeyB64, graphjinSigningSecretB64 } = await import("./token.ts");
 const secret = graphjinSigningSecretB64(orgId);
 
 const raw = await readFile(CONFIG_PATH, "utf8");
 const migrated = migrateGraphjinSystemSource(raw);
 const patched = patchGraphjinSourcesJwtSecret(migrated.content, secret);
 const policy = reconcileGraphjinWritePolicy(patched.content);
-if (migrated.changed || patched.changed || policy.changed) {
-  await atomicWriteFile(CONFIG_PATH, policy.content);
+// GraphJin is not running yet, so this is the one safe moment to change its
+// keystore key. A replaced key moves to previous_keys and GraphJin re-seals.
+const keystore = patchGraphjinKeystoreKey(
+  policy.content,
+  graphjinKeystoreKeyB64(),
+  await graphjinKeystoreHasValues(CONFIG_PATH, policy.content),
+);
+if (migrated.changed || patched.changed || policy.changed || keystore.changed) {
+  await atomicWriteFile(CONFIG_PATH, keystore.content);
+}
+if (keystore.changed) {
+  console.log(
+    `[graphjin-secret-init] set the GraphJin keystore key derived from the OpenNeko secret key in ${CONFIG_PATH}`,
+  );
 }
 if (policy.changed) {
   console.log(

@@ -41,6 +41,15 @@ export function graphjinSigningSecretB64(orgId: string): string {
 }
 
 /**
+ * The base64 32-byte key for GraphJin's `secrets.keystore.key`. It is derived
+ * from the OpenNeko secret key, like the JWT secrets, so one key root, one
+ * backup and one rotation cover both OpenNeko's and GraphJin's secrets.
+ */
+export function graphjinKeystoreKeyB64(): string {
+  return deriveSigningSecret("graphjin-keystore:v1").toString("base64");
+}
+
+/**
  * The HMAC key for token signing. GraphJin uses the config string
  * LITERALLY as the key (it does not base64-decode `auth.jwt.secret`),
  * so both sides key off the base64 STRING — verified live against

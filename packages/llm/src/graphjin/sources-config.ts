@@ -1,5 +1,5 @@
-import { rename, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { readFile, rename, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { isMap, isSeq, parseDocument, YAMLSeq } from "yaml";
 
 /**
@@ -231,6 +231,55 @@ export function migrateGraphjinSystemSource(
   }
 
   return { content: document.toString(), changed: true };
+}
+
+export const KEYSTORE_KEY_PLACEHOLDER = "REPLACE_WITH_BASE64_32_BYTE_KEY";
+
+/**
+ * Sets `secrets.keystore.key` to the key OpenNeko derives from its secret key.
+ * When the config held a different key and the keystore may hold values sealed
+ * with it (keystoreHasValues), that key moves to `secrets.keystore.previous_keys`,
+ * so GraphJin re-seals those values under the derived key at start.
+ */
+export function patchGraphjinKeystoreKey(
+  raw: string,
+  key: string,
+  keystoreHasValues: boolean,
+): { content: string; changed: boolean } {
+  const document = parseDocument(raw);
+  if (document.errors.length > 0 || !isMap(document.contents)) {
+    throw new Error("GraphJin config is not valid YAML");
+  }
+  const current = document.getIn(["secrets", "keystore", "key"]);
+  const currentKey = typeof current === "string" ? current.trim() : "";
+  if (currentKey === key) return { content: raw, changed: false };
+  if (currentKey && currentKey !== KEYSTORE_KEY_PLACEHOLDER && keystoreHasValues) {
+    const previous = document.getIn(["secrets", "keystore", "previous_keys"]);
+    const keys = isSeq(previous)
+      ? previous.items.map((item) => String((item as { value?: unknown }).value ?? item))
+      : [];
+    if (!keys.includes(currentKey)) keys.push(currentKey);
+    document.setIn(["secrets", "keystore", "previous_keys"], keys);
+  }
+  document.setIn(["secrets", "keystore", "key"], key);
+  return { content: document.toString(), changed: true };
+}
+
+/**
+ * Whether the GraphJin keystore next to configPath (secrets.keystore.path,
+ * default secrets.enc.yml) holds any sealed value.
+ */
+export async function graphjinKeystoreHasValues(configPath: string, raw: string): Promise<boolean> {
+  const document = parseDocument(raw);
+  const configured = document.getIn(["secrets", "keystore", "path"]);
+  const path = typeof configured === "string" && configured.trim() ? configured.trim() : "secrets.enc.yml";
+  try {
+    const text = await readFile(isAbsolute(path) ? path : join(dirname(configPath), path), "utf8");
+    return text.includes("ciphertext:");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 export function patchGraphjinSourcesJwtSecret(

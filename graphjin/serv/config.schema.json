@@ -112,6 +112,10 @@
 					"type": "integer",
 					"title": "Agent Catalog Default Limit",
 					"default": 20
+				},
+				"selection": {
+					"$ref": "#/$defs/SelectionConfig",
+					"title": "Agent Discovery Preparation"
 				}
 			},
 			"additionalProperties": false,
@@ -504,6 +508,10 @@
 						"other_table.id_column",
 						"users.id"
 					]
+				},
+				"merge_on_update": {
+					"type": "boolean",
+					"title": "Merge On Update"
 				}
 			},
 			"additionalProperties": false,
@@ -1141,6 +1149,15 @@
 				"path": {
 					"type": "string",
 					"title": "Keystore Path"
+				},
+				"previous_keys": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Previous Keystore Keys",
+					"description": "Earlier keystore keys; values sealed with them are re-sealed under key at start",
+					"x-graphjin-sensitive": "secret"
 				}
 			},
 			"additionalProperties": false,
@@ -1258,6 +1275,12 @@
 					"title": "Workflow Timeout (seconds)",
 					"description": "WorkflowTimeout in seconds for JavaScript workflow execution.\nWorkflows that exceed this duration are interrupted. Default: 5",
 					"default": 5
+				},
+				"config_update_timeout": {
+					"type": "integer",
+					"title": "Config Update Timeout (seconds)",
+					"description": "ConfigUpdateTimeout in seconds bounds a gj_config mutation or an\nupdate_current_config call. An update that changes an API source\nrediscovers every database source, which on a large schema takes as\nlong as a restart. Default: 3600",
+					"default": 3600
 				}
 			},
 			"additionalProperties": false,
@@ -1613,6 +1636,53 @@
 			"additionalProperties": false,
 			"type": "object",
 			"description": "SecretsConfig configures secret storage for write-only config inputs."
+		},
+		"SelectionConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"default": false
+				},
+				"mode": {
+					"type": "string",
+					"enum": [
+						"both",
+						"catalog",
+						"skills"
+					],
+					"default": "both"
+				},
+				"provider": {
+					"type": "string"
+				},
+				"model": {
+					"type": "string"
+				},
+				"api_key_env": {
+					"type": "string"
+				},
+				"base_url": {
+					"type": "string"
+				},
+				"startup_budget_ms": {
+					"type": "integer",
+					"minimum": 1,
+					"default": 2000
+				},
+				"concurrency": {
+					"type": "integer",
+					"maximum": 16,
+					"minimum": 1,
+					"default": 4
+				},
+				"context_bytes": {
+					"type": "integer",
+					"minimum": 1024,
+					"default": 98304
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
 		},
 		"SemanticCatalogSearchConfig": {
 			"properties": {
@@ -2001,6 +2071,10 @@
 				},
 				"max_response_bytes": {
 					"type": "integer"
+				},
+				"document": {
+					"type": "string",
+					"title": "OpenAPI Document"
 				}
 			},
 			"additionalProperties": false,

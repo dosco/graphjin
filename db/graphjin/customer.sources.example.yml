@@ -7,8 +7,9 @@
 # AdventureWorks source.
 #
 # The worker replaces the JWT placeholder with the deployment/org-derived
-# signing secret at boot. The config initializer replaces the keystore
-# placeholder with a random 32-byte key before GraphJin starts.
+# signing secret at boot. Before GraphJin starts, graphjin-secret-init sets
+# the keystore key to one derived from the OpenNeko secret key; a key that
+# sealed values moves to secrets.keystore.previous_keys and GraphJin re-seals.
 
 app_name: OpenNeko Customer Data
 mode: agentic

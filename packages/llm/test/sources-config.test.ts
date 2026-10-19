@@ -2,13 +2,16 @@ import { mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 
 import {
   SOURCES_SECRET_PLACEHOLDER,
   assertDatabaseSourcesReadOnly,
   assertGraphjinMutationAllowed,
   atomicWriteFile,
+  graphjinKeystoreHasValues,
   migrateGraphjinSystemSource,
+  patchGraphjinKeystoreKey,
   patchGraphjinSourcesJwtSecret,
   reconcileGraphjinWritePolicy,
   shouldReconcileDemoSourceAuthMode,
@@ -271,5 +274,37 @@ sources: []
     expect(sparse.content).toContain("name: service");
     const legacy = reconcileGraphjinWritePolicy("database:\n  type: postgres\n");
     expect(legacy.changed).toBe(false);
+  });
+});
+
+describe("patchGraphjinKeystoreKey", () => {
+  const derived = Buffer.alloc(32, 2).toString("base64");
+  const random = Buffer.alloc(32, 1).toString("base64");
+  const config = (key: string) => `# GraphJin\nsecrets:\n  keystore:\n    key: "${key}"\n`;
+
+  it("replaces the placeholder or an unused key with the derived key", () => {
+    for (const raw of [config("REPLACE_WITH_BASE64_32_BYTE_KEY"), config(random)]) {
+      const out = patchGraphjinKeystoreKey(raw, derived, false);
+      expect(out.changed).toBe(true);
+      expect(parse(out.content).secrets.keystore).toEqual({ key: derived });
+      expect(out.content).toContain("# GraphJin");
+    }
+  });
+
+  it("keeps a key that sealed values as a previous key, once", () => {
+    const first = patchGraphjinKeystoreKey(config(random), derived, true);
+    expect(parse(first.content).secrets.keystore).toEqual({ key: derived, previous_keys: [random] });
+    expect(patchGraphjinKeystoreKey(first.content, derived, true)).toEqual({ content: first.content, changed: false });
+  });
+});
+
+describe("graphjinKeystoreHasValues", () => {
+  it("reads the keystore next to the config", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "gj-keystore-"));
+    const path = join(dir, "agentic.yml");
+    expect(await graphjinKeystoreHasValues(path, "secrets: {}\n")).toBe(false);
+    await writeFile(join(dir, "secrets.enc.yml"), "version: 1\nsecrets:\n  gjsecret://a:\n    ciphertext: abc\n");
+    expect(await graphjinKeystoreHasValues(path, "secrets: {}\n")).toBe(true);
+    expect(await graphjinKeystoreHasValues(path, "secrets:\n  keystore:\n    path: other.yml\n")).toBe(false);
   });
 });

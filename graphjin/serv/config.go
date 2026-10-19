@@ -186,6 +186,10 @@ type SecretsConfig struct {
 type KeystoreConfig struct {
 	Key  string `mapstructure:"key" jsonschema:"title=Keystore Key" jsonschema_extras:"x-graphjin-sensitive=secret"`
 	Path string `mapstructure:"path" jsonschema:"title=Keystore Path"`
+	// PreviousKeys are keys the keystore used before Key. At start GraphJin
+	// re-seals every value that one of them opens under Key, so a key can be
+	// rotated by moving it here and setting a new Key.
+	PreviousKeys []string `mapstructure:"previous_keys" jsonschema:"title=Previous Keystore Keys,description=Earlier keystore keys; values sealed with them are re-sealed under key at start" jsonschema_extras:"x-graphjin-sensitive=secret"`
 }
 
 // AuthLogin configures the built-in OIDC sign-in flow that issues local JWTs

@@ -5,6 +5,19 @@ per-operator OAuth credentials. By default everything is encrypted at rest with
 the local `enc:v1` cipher (AES-256-GCM, keyed from
 `~/.config/openneko/secret-key`).
 
+## One key root
+
+GraphJin's keystore (`gjsecret://` references in its config, sealed in
+`secrets.enc.yml`) uses a key that OpenNeko derives from the same
+`secret-key`, as it already does for GraphJin's JWT secrets. One backup of
+`secret-key` and one rotation cover both.
+
+`graphjin-secret-init` sets the derived key before GraphJin starts. On an
+install that used a random keystore key, that key moves to
+`secrets.keystore.previous_keys`, and GraphJin re-seals every value under the
+derived key at its next start. Keep the old key with any backup taken before
+this change.
+
 ## External vault (Infisical)
 
 Deployments can keep deployment-wide secret
