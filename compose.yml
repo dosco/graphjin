@@ -437,34 +437,49 @@ services:
       - openneko-graphjin-cli:/config/graphjin
     restart: "no"
 
+  # The customer GraphJin and the agent runtime in one process: `openneko
+  # serve --path /config` serves GraphJin's HTTP API on :8080 and runs each
+  # agent turn web and the worker send over /run/openneko/serve.sock. A turn
+  # asks GraphJin's agent in this process, as the run's user. Terminal
+  # commands go to agent-sandbox; model keys arrive only with each turn.
   graphjin:
-    # Use the same locally built, pinned runtime as the records data planes.
-    # Released installs use the matching released image in the embedded
-    # Compose file; this source Compose file must exercise the current pin.
+    image: ${OPENNEKO_AGENT_IMAGE:-openneko-agent:dev}
     build:
       context: .
-      target: records-graphjin
+      target: agent
     user: "1001:999"
-    entrypoint: ["/sbin/tini", "--", "graphjin"]
+    group_add: ["1001"]
+    init: true
+    entrypoint: ["openneko"]
     restart: unless-stopped
     depends_on:
       graphjin-config-init:
         condition: service_completed_successfully
       # The per-org JWT secret is reconciled into agentic.yml by the
-      # graphjin-secret-init one-shot. GraphJin 3.18 does not hot-reload
-      # auth keys, so start only after that reconciliation has completed.
+      # graphjin-secret-init one-shot. GraphJin does not hot-reload auth
+      # keys, so start only after that reconciliation has completed.
       graphjin-secret-init:
         condition: service_completed_successfully
+      agent-sandbox:
+        condition: service_started
     ports:
       - "127.0.0.1:${GRAPHJIN_PORT:-8080}:8080"
     environment:
       GO_ENV: agentic
       GRAPHJIN_AGENT_API_KEY: ${GRAPHJIN_AGENT_API_KEY:-}
+      OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      OPENNEKO_SANDBOX_SOCKET: /run/openneko/sandbox.sock
     volumes:
       - openneko-graphjin-cli:/config
+      - openneko-run:/run/openneko
+      - openneko-agent-runs:/var/lib/openneko/agent-runs
     command: ["serve", "--path", "/config"]
     healthcheck:
-      test: ["CMD", "curl", "-sS", "-o", "/dev/null", "http://127.0.0.1:8080/api/v1/graphql"]
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('fs').statSync('/run/openneko/serve.sock');require('http').get('http://127.0.0.1:8080/api/v1/graphql',()=>process.exit(0)).on('error',()=>process.exit(1))"
       interval: 5s
       timeout: 3s
       retries: 20
@@ -638,33 +653,6 @@ services:
       retries: 10
       start_period: 60s
 
-  # Agent runtime. Web and worker run each agent run's runner as a child
-  # process; the runner sends every turn to agent-serve over a Unix socket,
-  # and agent-serve sends the agent's terminal commands to agent-sandbox.
-  # Model keys reach serve only with each turn; the sandbox holds no secrets.
-  # Run workspaces live in openneko-agent-runs, shared through group 1001.
-  agent-serve:
-    image: ${OPENNEKO_AGENT_IMAGE:-openneko-agent:dev}
-    build:
-      context: .
-      target: agent
-    user: "1001:1001"
-    command: ["openneko", "serve", "--socket", "/run/openneko/serve.sock"]
-    restart: unless-stopped
-    depends_on:
-      agent-sandbox:
-        condition: service_started
-    environment:
-      OPENNEKO_SANDBOX_SOCKET: /run/openneko/sandbox.sock
-    volumes:
-      - openneko-run:/run/openneko
-      - openneko-agent-runs:/var/lib/openneko/agent-runs
-    healthcheck:
-      test: ["CMD", "test", "-S", "/run/openneko/serve.sock"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
   # Runs terminal commands as a per-turn user (uid 20000 and up, group 1001)
   # in the run's staged workspace. It needs root to switch users, so every
   # other capability is dropped. It sits only on the agent-sandbox network:
@@ -711,15 +699,13 @@ services:
         condition: service_completed_successfully
       neko-graphjin:
         condition: service_started
-      graphjin:
-        condition: service_started
       graphjin-secret-init:
         condition: service_completed_successfully
       # Web is the user-facing readiness boundary. Do not serve the temporary
       # recovery screen while the control plane is still starting.
       worker:
         condition: service_healthy
-      agent-serve:
+      graphjin:
         condition: service_healthy
     environment:
       <<: *neko-app-env
@@ -732,9 +718,11 @@ services:
       OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
       # The agent runtime: runs stage under OPENNEKO_AGENT_RUNS_DIR and the
-      # runner (OPENNEKO_AGENT_ENTRY) talks to agent-serve's socket. The
+      # runner (OPENNEKO_AGENT_ENTRY) talks to serve's socket in graphjin. The
       # runner is a child process, so it reaches the broker on loopback.
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      # serve hosts the customer GraphJin, so runs ask its agent in-process.
+      OPENNEKO_SERVE_GRAPHJIN: "1"
       OPENNEKO_AGENT_RUNS_DIR: /var/lib/openneko/agent-runs
       OPENNEKO_AGENT_ENTRY: /opt/openneko-agent/entry.js
     ports:
@@ -780,7 +768,7 @@ services:
         condition: service_healthy
       embedding:
         condition: service_healthy
-      agent-serve:
+      graphjin:
         condition: service_healthy
     environment:
       <<: *neko-app-env
@@ -800,9 +788,11 @@ services:
       # document is retried — there is no in-worker fallback.
       NEKO_LIBRARIAN_URL: http://librarian:5001
       # The agent runtime: runs stage under OPENNEKO_AGENT_RUNS_DIR and the
-      # runner (OPENNEKO_AGENT_ENTRY) talks to agent-serve's socket. The
+      # runner (OPENNEKO_AGENT_ENTRY) talks to serve's socket in graphjin. The
       # runner is a child process, so it reaches the broker on loopback.
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      # serve hosts the customer GraphJin, so runs ask its agent in-process.
+      OPENNEKO_SERVE_GRAPHJIN: "1"
       OPENNEKO_AGENT_RUNS_DIR: /var/lib/openneko/agent-runs
       OPENNEKO_AGENT_ENTRY: /opt/openneko-agent/entry.js
       NEKO_LIBRARIAN_FINGERPRINT: neko-librarian:dev:docling-slim-2.124.0:layout-8f39ad3:tableformer-fc0f2d4:digital-text-v1

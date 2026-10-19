@@ -65,8 +65,11 @@ type Turn struct {
 	// Bridge carries the OpenNeko tools as MCP over a stream, in place of
 	// the bridge process that OPENNEKO_MCP_BRIDGE names.
 	Bridge io.ReadWriteCloser
-	In     io.Reader
-	Out    io.Writer
+	// GraphJinAsk, when set, gives the turn GraphJin's agent in-process as
+	// the data tool, in place of the bridge's neko_graphjin_agent server.
+	GraphJinAsk GraphJinAsk
+	In          io.Reader
+	Out         io.Writer
 }
 
 // RunTurn runs turn; see Run.
@@ -173,6 +176,9 @@ func RunTurn(ctx context.Context, turn Turn) (int, error) {
 		if tools.Skills, err = skills.Skills(); err != nil {
 			return failed(fmt.Errorf("staged skills unavailable: %w", err))
 		}
+	}
+	if turn.GraphJinAsk != nil {
+		tools.Capabilities = append(tools.Capabilities, graphJinAskCapability(turn.GraphJinAsk))
 	}
 	if child := getenv("OPENNEKO_HARNESS_CHILD_TOOLS"); child != "" {
 		tools.ChildTools = strings.Split(child, ",")

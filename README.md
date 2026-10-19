@@ -92,7 +92,8 @@ frozen AdventureWorks snapshot, each graded against a GraphQL oracle. See
 CLI deploys. Every mode shares the same core: app + records Postgres, migrations,
 backup/restore, web, worker, three internal GraphJin instances (app
 subscriptions, records, records-watch), plus the customer-facing GraphJin in
-sources (agentic) mode. The agent runtime (`agent-serve` and `agent-sandbox`)
+sources (agentic) mode, which `openneko serve` hosts together with the agent
+runtime. The agent runtime (`openneko serve` and `agent-sandbox`)
 is part of the core — it is the only way agents run, in every mode.
 
 | Mode | Layers on top of core | What's different |

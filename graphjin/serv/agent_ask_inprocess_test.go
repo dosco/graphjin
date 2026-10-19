@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
+	"github.com/dosco/graphjin/auth/v3"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/dosco/graphjin/core/v3"
 	"go.uber.org/zap"
 )
@@ -53,5 +55,37 @@ func TestAskAgentInProcessCarriesClaimsObserverAndHistory(t *testing.T) {
 	hs.Load().(*graphjinService).conf.Agent.Enabled = false
 	if _, err := hs.AskAgent(context.Background(), map[string]any{"sub": "u"}, req); !errors.Is(err, ErrAgentDisabled) {
 		t.Fatalf("disabled agent err = %v", err)
+	}
+}
+
+func TestAskAgentWithTokenVerifiesTheJWT(t *testing.T) {
+	runner := &scriptedAgentRunner{resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "ok"}}
+	withScriptedAgentRunner(t, runner)
+	const secret = "a-secret-that-is-long-enough-for-hs256"
+	logger := zap.NewNop()
+	hs := &HttpService{}
+	conf := &Config{
+		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
+		Serv: Serv{Agent: AgentConfig{Enabled: true}},
+	}
+	conf.Auth = auth.Auth{Type: "jwt"}
+	conf.Auth.JWT.Secret = secret
+	hs.Store(&graphjinService{conf: conf, log: logger.Sugar(), zlog: logger})
+
+	sign := func(key string) string {
+		tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": "user-9", "role": "member"}).SignedString([]byte(key))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	if _, err := hs.AskAgentWithToken(context.Background(), sign(secret), gjagent.Request{Instruction: "q"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := runner.ctx.Value(core.UserIDKey); got != "user-9" {
+		t.Fatalf("user id = %v, want user-9 from the verified token", got)
+	}
+	if _, err := hs.AskAgentWithToken(context.Background(), sign("a-different-secret-of-sufficient-length"), gjagent.Request{Instruction: "q"}); err == nil {
+		t.Fatal("a token signed with another key was accepted")
 	}
 }

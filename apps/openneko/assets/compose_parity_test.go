@@ -120,19 +120,19 @@ func TestPackagedGraphJinReusesReleasedRuntime(t *testing.T) {
 	if !ok {
 		t.Fatal("packaged core is missing graphjin")
 	}
-	if !strings.Contains(graphjin.Image, "ghcr.io/open-neko/records-graphjin:") {
-		t.Fatalf("packaged graphjin image = %q, want the shared records-graphjin runtime", graphjin.Image)
+	// openneko serve hosts the customer GraphJin and the agent runtime in one
+	// process, from the agent image.
+	if !strings.Contains(graphjin.Image, "ghcr.io/open-neko/agent:") {
+		t.Fatalf("packaged graphjin image = %q, want the agent image that runs openneko serve", graphjin.Image)
 	}
-	// Config changes apply live through gj_config, so GraphJin runs directly.
-	if want := []string{"/sbin/tini", "--", "graphjin"}; !reflect.DeepEqual(graphjin.Entrypoint, want) {
+	if want := []string{"openneko"}; !reflect.DeepEqual(graphjin.Entrypoint, want) {
 		t.Fatalf("packaged graphjin entrypoint = %v, want %v", graphjin.Entrypoint, want)
 	}
-	wantHealthcheck := []string{
-		"CMD", "curl", "-sS", "-o", "/dev/null",
-		"http://127.0.0.1:8080/api/v1/graphql",
+	if want := []string{"serve", "--path", "/config"}; !reflect.DeepEqual(graphjin.Command, want) {
+		t.Fatalf("packaged graphjin command = %v, want %v", graphjin.Command, want)
 	}
-	if got := composeHealthcheckTest(t, "packaged", "graphjin", graphjin); !reflect.DeepEqual(got, wantHealthcheck) {
-		t.Fatalf("packaged graphjin readiness check = %v, want %v", got, wantHealthcheck)
+	if got := strings.Join(composeHealthcheckTest(t, "packaged", "graphjin", graphjin), " "); !strings.Contains(got, "http://127.0.0.1:8080/api/v1/graphql") || !strings.Contains(got, "/run/openneko/serve.sock") {
+		t.Fatalf("packaged graphjin readiness check = %v, want GraphJin's HTTP API and the serve socket", got)
 	}
 	configInit, ok := core.Services["graphjin-config-init"]
 	if !ok {

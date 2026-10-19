@@ -180,6 +180,26 @@ describe("runAgentBackend", () => {
 
     expect(captured?.mcpServers).toHaveProperty("neko_graphjin_agent");
     expect(captured?.mcpServers).not.toHaveProperty("neko_graphjin");
+    expect(captured?.hostedGraphjin).toBeUndefined();
+
+    // With GraphJin hosted in openneko serve, the turn asks it there.
+    await runAgentBackend({
+      backend,
+      prompt: "prompt",
+      userMessage: "How many orders?",
+      orgId: "org-1",
+      threadId: "thread-1",
+      runId: "run-1",
+      workspace,
+      controlPlane,
+      pluginActions: [],
+      graphjinDataPath: "agent",
+      hostedGraphjin: { token: "run-jwt" },
+      emit: async () => {},
+    });
+    expect(captured?.mcpServers).not.toHaveProperty("neko_graphjin_agent");
+    expect(captured?.mcpServers).not.toHaveProperty("neko_graphjin");
+    expect(captured?.hostedGraphjin).toEqual({ token: "run-jwt", threadId: "thread-1" });
   });
 
   it("does not mount customer data-source tools in records mode", async () => {

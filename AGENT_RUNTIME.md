@@ -21,12 +21,13 @@ through the per-run broker.
             │ start the runner: node /opt/openneko-agent/entry.js
             ▼
         runner  ── one turn per connection ──▶  openneko serve
-        (child process,                          (agent-serve container,
-         broker token, model key                  model key only for the turn)
-         for this run)                                 │ terminal commands
-            ▲                                          ▼
-            │ MCP tools over the serve socket     openneko sandbox
-            └──────── broker (loopback) ◀──       (agent-sandbox container,
+        (child process,                          (graphjin container; it also
+         broker token, model key                  hosts the customer GraphJin,
+         for this run)                            model key only for the turn)
+            ▲                                          │ terminal commands
+            │ MCP tools over the serve socket          ▼
+            └──────── broker (loopback) ◀──       openneko sandbox
+                                                  (agent-sandbox container,
                                                    per-run user, no secrets)
 ```
 
@@ -43,6 +44,11 @@ through the per-run broker.
    that turn's model calls and keeps it nowhere else. The agent's MCP tools
    (records, GraphJin, memory, actions) travel back over the same socket to
    the runner, which calls the broker on loopback.
+   When the org uses GraphJin's agent for data, the turn asks it in serve's
+   own process: the host mints the run's GraphJin JWT into the job, and
+   GraphJin verifies it exactly as its `/api/v1/agent` route would. Its steps
+   show as status lines, the thread's earlier data questions go along as
+   history, and its tokens count against the turn's budget.
 4. Serve sends terminal commands to `openneko sandbox` over
    `OPENNEKO_SANDBOX_SOCKET`. The sandbox runs each command in the run's
    workspace, as a user of the turn's own. When the turn ends, serve tells the
@@ -61,7 +67,7 @@ host; only the agent loop runs in the runner.
 | Piece | Runs as | Holds | Network |
 |---|---|---|---|
 | Runner | web/worker user (`neko`, 1001) | the run's broker token and the org's model key, for this run only | web/worker's |
-| `openneko serve` (`agent-serve`) | `neko`, 1001:1001 | a turn's model key, only while the turn runs | the stack's default network, for model APIs |
+| `openneko serve --path /config` (`graphjin`) | `1001:999`, plus group 1001 | a turn's model key, only while the turn runs; GraphJin's own config and data source credentials, as the graphjin service always held | the stack's default network, for model APIs and data sources |
 | `openneko sandbox` (`agent-sandbox`) | root, to give each turn's commands their own user | **no secrets**; commands get only `PATH`, `HOME`, `TMPDIR`, `LANG` and `SKILL_DIR` | only the `agent-sandbox` network |
 
 Model keys exist only in the runner and in serve, and in serve only for the
@@ -71,8 +77,8 @@ passes on, so neither the agent's tools nor its terminal can read them.
 ## The sandbox
 
 `openneko sandbox` gives each turn's terminal a user ID from
-`OPENNEKO_SANDBOX_BASE_UID` (default 20000) upward, in the shared group
-`OPENNEKO_SANDBOX_GID` (1001). It runs a command only when the workspace lies
+`OPENNEKO_SANDBOX_BASE_UID` (default 20000) upward, with a group of the same
+number. Turn users are not in the shared group `OPENNEKO_SANDBOX_GID` (1001). It runs a command only when the workspace lies
 under `OPENNEKO_SANDBOX_WORKSPACES`, gives the user a home under
 `OPENNEKO_SANDBOX_HOMES`, and passes the command no other environment. Two
 turns running at once never share a user, and ending a turn kills every
@@ -93,33 +99,32 @@ The agent image carries the document toolchain (Python, LibreOffice, Poppler,
 qpdf, Tesseract, the Node document libraries) that bundled skills run from the
 terminal.
 
-## The shared runs folder and group
+## The shared runs folder and per-run groups
 
-The runner, serve and the sandbox's turn users all work on the same run folder,
-so they share it through a group:
+The runner and serve work on a run's folder through the shared group 1001;
+the run's terminal user works on it through its own group:
 
 - `openneko-agent-runs` → `/var/lib/openneko/agent-runs`, owned by
-  `1001:1001`, mode `2770` (setgid, so new files keep the group). The launcher
-  makes each run folder group-readable and -writable; the runner and serve
-  write group-writable files.
+  `1001:1001`. The sandbox makes it crossable but not listable by others, so
+  a turn user can reach the folder it is given but cannot see the others.
+- On a turn's first command the sandbox sets POSIX ACLs on that run's
+  folder: rwx for group 1001 and for the turn's own group, nothing for
+  others, and the same as the default for files created later. A turn's
+  terminal therefore reaches only its own run's folder, and what it writes
+  stays readable by web and the worker, which copy artifacts back.
+- When the turn ends the sandbox takes the turn's group off the folder
+  again, so a later turn that is given the same ID cannot reach it.
 - `openneko-run` → `/run/openneko`, `1001:1001`, mode `0770`, holds
   `serve.sock` and `sandbox.sock`. The sandbox hands its socket to group 1001
   (mode `0660`) so serve can connect.
 - `openneko-sandbox-homes` → `/var/lib/openneko/sandbox-homes`, root, `0711`,
-  mounted only in the sandbox.
+  mounted only in the sandbox; each turn's home belongs to its user.
 
 The web, worker and agent images create user and group `neko` (1001) and
 pre-create these folders, so fresh named volumes start with this ownership.
-
-### Known limit
-
-Every run on one install shares group 1001, and the run folders are
-group-accessible. A turn's terminal can therefore read and write other runs'
-staged workspaces while they exist. That is acceptable for the supported shape
-of one organization per install, where every run already acts for the same
-organization; it is not isolation between tenants. Run separate installs (for
-example named instances, `openneko setup --instance`) for separate
-organizations.
+The runs folder's filesystem must support POSIX ACLs (ext4, xfs and Docker's
+default volumes do); the sandbox refuses a turn rather than share a folder
+it cannot restrict.
 
 ## Configuration
 
@@ -130,6 +135,7 @@ Compose sets all of these; they matter only for custom deployments.
 | `OPENNEKO_SERVE_SOCKET` | web, worker | serve's socket (`/run/openneko/serve.sock`) |
 | `OPENNEKO_AGENT_RUNS_DIR` | web, worker | where runs are staged |
 | `OPENNEKO_AGENT_ENTRY` | web, worker | the runner (`/opt/openneko-agent/entry.js`; a `.ts` path runs with tsx) |
+| `OPENNEKO_SERVE_GRAPHJIN` | web, worker | `1` when serve hosts the customer GraphJin, so runs ask its agent in-process |
 | `OPENNEKO_SANDBOX_SOCKET` | serve | the sandbox's socket |
 | `OPENNEKO_SANDBOX_WORKSPACES` | sandbox | the folder every run workspace must lie under |
 | `OPENNEKO_SANDBOX_HOMES` | sandbox | per-run homes |

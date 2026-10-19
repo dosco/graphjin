@@ -57,6 +57,52 @@ type Frame struct {
 	Message     json.RawMessage   `json:"message,omitempty"`
 	Code        *int              `json:"code,omitempty"`
 	Error       string            `json:"error,omitempty"`
+	// GraphJin, on a start frame, lets the turn ask the GraphJin agent that
+	// serve hosts, as the user the token names.
+	GraphJin *GraphJinIdentity `json:"graphjin,omitempty"`
+}
+
+// GraphJinIdentity is who a turn asks GraphJin as: the JWT the host minted
+// for the run, which GraphJin verifies, and the thread whose earlier data
+// questions go along as history.
+type GraphJinIdentity struct {
+	Token    string `json:"token"`
+	OrgID    string `json:"org_id"`
+	ThreadID string `json:"thread_id,omitempty"`
+}
+
+// AskRequest is one data question for GraphJin's agent.
+type AskRequest struct {
+	Instruction string
+	MaxSteps    int
+	History     []HistoryTurn
+	// OnStep receives each step the agent takes.
+	OnStep func(text string)
+}
+
+// HistoryTurn is one earlier question or answer in a thread.
+type HistoryTurn struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+	Status  string `json:"status,omitempty"`
+}
+
+// AskResult is GraphJin's agent response and what it spent.
+type AskResult struct {
+	Response json.RawMessage
+	Answer   string
+	Status   string
+	Tokens   int64
+}
+
+// Asker asks the GraphJin agent serve hosts, verifying token as GraphJin's
+// /api/v1/agent route would.
+type Asker func(ctx context.Context, token string, req AskRequest) (AskResult, error)
+
+// Options configure Main.
+type Options struct {
+	// Ask, when set, is the GraphJin agent this serve hosts.
+	Ask Asker
 }
 
 // Server runs turns for connections on a listener.
@@ -67,14 +113,22 @@ type Server struct {
 	MaxTurns int
 	// Run runs one turn; tests replace it.
 	Run func(context.Context, harness.Turn) (int, error)
+	// Ask is the GraphJin agent serve hosts; nil leaves turns on the bridge.
+	Ask Asker
 
 	mu      sync.Mutex
 	running int
 	wg      sync.WaitGroup
+	history historyStore
 }
 
 // Main parses args and serves until SIGINT or SIGTERM.
 func Main(args []string) {
+	MainWith(args, Options{})
+}
+
+// MainWith is Main for a host that gives serve more to offer turns.
+func MainWith(args []string, opts Options) {
 	flags := flag.NewFlagSet("serve", flag.ExitOnError)
 	socket := flags.String("socket", envOr("OPENNEKO_SERVE_SOCKET", DefaultSocket), "Unix socket to listen on")
 	_ = flags.Parse(args)
@@ -89,7 +143,7 @@ func Main(args []string) {
 		os.Exit(2)
 	}
 	fmt.Fprintf(os.Stderr, "openneko serve: listening on %s\n", *socket)
-	server := &Server{Getenv: os.Getenv, MaxTurns: intEnv("OPENNEKO_SERVE_MAX_TURNS", defaultTurns)}
+	server := &Server{Getenv: os.Getenv, MaxTurns: intEnv("OPENNEKO_SERVE_MAX_TURNS", defaultTurns), Ask: opts.Ask}
 	if err := server.Serve(ctx, listener); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -189,6 +243,9 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 		Secrets: s.secrets(start.ModelKeyEnv, start.ModelKeys),
 		In:      bytes.NewReader(start.Spec),
 		Out:     &lineWriter{emit: func(line []byte) error { return out.write(Frame{Type: "event", Event: line}) }},
+	}
+	if s.Ask != nil && start.GraphJin != nil && start.GraphJin.Token != "" {
+		turn.GraphJinAsk = s.graphJinAsk(*start.GraphJin)
 	}
 	var toHarness *io.PipeWriter
 	if start.Bridge {

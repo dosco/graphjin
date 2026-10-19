@@ -4,6 +4,7 @@ import type {
   AgentReasoningEffort,
   AgentRunResult,
   AgentWorkspace,
+ HostedGraphjin,
 } from "../agent-backend";
 import type { AllowedLibrary } from "../library/staging";
 import type { AgentControlPlane } from "../work/control-plane";
@@ -35,6 +36,8 @@ export interface RunWorkflowAgentBackendInput {
   triggeredByObservationId?: string | null;
   /** "agent" when the org opted in to GraphJin's server-side agent. */
   graphjinDataPath?: GraphjinDataPath;
+  /** Set when openneko serve hosts GraphJin; replaces the data agent server. */
+  hostedGraphjin?: HostedGraphjin;
   workspace: AgentWorkspace;
   /** Skill names the run's actor holds. Undefined means every skill. */
   allowedSkills?: readonly string[];
@@ -79,6 +82,7 @@ export async function runWorkflowAgentBackend(
     triggeredByObservationId,
     networkHosts,
     graphjinDataPath = "direct",
+    hostedGraphjin,
     workspace,
     controlPlane,
     emit,
@@ -95,7 +99,9 @@ export async function runWorkflowAgentBackend(
   const mcpServers = mcp
     ? {
         ...(graphjinDataPath === "agent"
-          ? { neko_graphjin_agent: buildGraphjinAgentServer({ orgId, runId, controlPlane }) }
+          ? hostedGraphjin
+            ? {}
+            : { neko_graphjin_agent: buildGraphjinAgentServer({ orgId, runId, controlPlane }) }
           : { neko_graphjin: buildGraphjinMcpServer({ orgId, runId, controlPlane }) }),
         neko_workflow_output: buildWorkflowOutputServer({
           orgId,
@@ -168,6 +174,7 @@ export async function runWorkflowAgentBackend(
       workspace,
       onEvent: turnEmit,
       mcpServers,
+      ...(graphjinDataPath === "agent" && hostedGraphjin ? { hostedGraphjin: { ...hostedGraphjin, threadId } } : {}),
       mcpBridgeEnv: mcp
         ? {
             OPENNEKO_MCP_MODE: "workflow",

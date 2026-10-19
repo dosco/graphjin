@@ -204,7 +204,8 @@ events.
 ### Agent sandboxing
 
 Each agent run runs in a runner process started by web or the worker. Its
-turns run in `agent-serve` (`openneko serve`), which holds the model key only
+turns run in `openneko serve` (the `graphjin` service, which also hosts the
+customer GraphJin), which holds the model key only
 for the turn, and its terminal commands run in `agent-sandbox`
 (`openneko sandbox`) as a user of the turn's own, with no secrets in their
 environment. The sandbox is only on its own `agent-sandbox` network: commands

@@ -4,7 +4,9 @@
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestOrg, dbReachable, deleteTestOrg, seedDataSource, uniqueOrgId } from "@neko/db/test-helpers";
-import { inProcessControlPlane } from "../../src/work/control-plane";
+import { hostedGraphjinToken, inProcessControlPlane } from "../../src/work/control-plane";
+import { verifyGraphjinToken } from "../../src/graphjin/token";
+import { app_user, builtinGroupId, db, revokeItem } from "@neko/db";
 import { createWorkRun, createWorkThread } from "../../src/work/store";
 import { dataAgentStepMessage } from "../../src/work/broker";
 
@@ -86,6 +88,26 @@ const reachable = await dbReachable();
       await inProcessControlPlane.askGraphjinDataAgent({ orgId, runId: otherRun.id, threadId: other.id, instruction: "Revenue?" });
       expect(requests[2]!.history).toBeUndefined();
       expect(accepts[2]).toBe("application/json");
+    } finally {
+      await deleteTestOrg(orgId);
+    }
+  });
+
+  it("mints the hosted GraphJin token for the run's user and budget, and none without a data source", async () => {
+    const orgId = uniqueOrgId("hosted-gj");
+    await createTestOrg(orgId);
+    try {
+      await db().insert(app_user).values({ id: `${orgId}-ann`, org_id: orgId, role: "member", email: "ann@example.test" });
+      const thread = await createWorkThread(orgId, "t");
+      const run = await createWorkRun(orgId, thread.id, "ax", { userId: `${orgId}-ann`, role: "member" });
+      const token = await hostedGraphjinToken(orgId, run.id, 3600);
+      expect(token).toBeTruthy();
+      const claims = verifyGraphjinToken(token!, orgId);
+      expect(claims).toMatchObject({ sub: `${orgId}-ann`, role: "member", org_id: orgId });
+      expect(claims!.exp - claims!.iat).toBe(3600);
+
+      await revokeItem(orgId, { groupId: await builtinGroupId(orgId, "everyone"), itemType: "data_source", itemId: "*" });
+      expect(await hostedGraphjinToken(orgId, run.id, 3600)).toBeNull();
     } finally {
       await deleteTestOrg(orgId);
     }

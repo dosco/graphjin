@@ -60,6 +60,8 @@ interface SandboxJob {
   dataSurface?: RunAgentBackendInput["dataSurface"];
   graphjinToolPolicy?: RunAgentBackendInput["graphjinToolPolicy"];
   graphjinDataPath?: RunAgentBackendInput["graphjinDataPath"];
+  /** Set when openneko serve hosts GraphJin; the data agent is asked there. */
+  hostedGraphjin?: { token: string };
   nativeDelegation?: RunAgentBackendInput["nativeDelegation"];
   wantsCards?: boolean;
   cardSchema?: "rich" | "core";
@@ -232,7 +234,7 @@ async function runJob(
                   }),
                 }
               : {}),
-            ...(graphjinAgent
+            ...(graphjinAgent && !job.hostedGraphjin
               ? {
                   neko_graphjin_agent: buildGraphjinAgentServer({
                     orgId: job.orgId,
@@ -259,6 +261,7 @@ async function runJob(
       workspace: job.workspace,
       onEvent: emit,
       mcpServers,
+      ...(graphjinAgent && job.hostedGraphjin ? { hostedGraphjin: job.hostedGraphjin } : {}),
       wantsCards: false,
       mcpBridgeEnv:
         graphjinRead || graphjinAgent || memorySearch
@@ -292,6 +295,7 @@ async function runJob(
       mode: job.mode ?? "headless",
       networkHosts: job.networkHosts ?? [],
       ...(job.graphjinDataPath ? { graphjinDataPath: job.graphjinDataPath } : {}),
+      ...(job.hostedGraphjin ? { hostedGraphjin: job.hostedGraphjin } : {}),
       triggeredByObservationId: job.triggeredByObservationId ?? null,
       workspace: job.workspace,
       controlPlane,
@@ -330,6 +334,7 @@ async function runJob(
         ? { graphjinToolPolicy: job.graphjinToolPolicy }
         : {}),
       ...(job.graphjinDataPath ? { graphjinDataPath: job.graphjinDataPath } : {}),
+      ...(job.hostedGraphjin ? { hostedGraphjin: job.hostedGraphjin } : {}),
       ...(job.nativeDelegation
         ? { nativeDelegation: job.nativeDelegation }
         : {}),

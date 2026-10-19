@@ -13,7 +13,6 @@ import (
 	"github.com/open-neko/lazy-service/lazy"
 	"github.com/open-neko/openneko/apps/ax-harness/harness"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
-	"github.com/open-neko/openneko/apps/ax-harness/serve"
 
 	"github.com/open-neko/neko/apps/openneko/internal/graphjinconfig"
 	"github.com/open-neko/neko/apps/openneko/internal/version"
@@ -51,7 +50,7 @@ func Run(args []string) bool {
 	case GraphJinConfig:
 		graphjinconfig.Main(rest)
 	case Serve:
-		serve.Main(rest)
+		runServe(rest)
 	case Sandbox:
 		sandbox.Main(rest)
 	}

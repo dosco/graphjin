@@ -500,6 +500,13 @@ function makeSandboxCore(
       ? jobInput?.run.userMessage ?? ""
       : (input as RunAgentBackendInput | RunWorkflowAgentBackendInput).userMessage;
 
+    // Must outlive the runner's turn budget with margin, so a long turn dies
+    // as the backend's honest timeout error — not an opaque kill from out here.
+    const execBudgetMs =
+      opts.execTimeoutMs ??
+      (kind === "workflow"
+        ? workflowExecBudgetMs(input as RunWorkflowAgentBackendInput)
+        : (jobInput?.run.timeoutMs ?? agentTurnTimeoutMs())) + 120_000;
     let child: ChildProcess | undefined;
     // Unknown (timeout, crash) must preserve partial artifacts.
     let artifactsPresent: boolean | undefined;
@@ -539,8 +546,21 @@ function makeSandboxCore(
         for (const file of personal) skillBaseline.set(file.path, skillFileHash(file.content));
       }
 
+      // When serve hosts GraphJin, the run asks its agent there as the run's
+      // user; the host mints the token GraphJin will verify.
+      const dataAgentPath =
+        (kind === "work" && (input as RunAgentBackendInput).graphjinDataPath === "agent") ||
+        (kind === "workflow" && (input as RunWorkflowAgentBackendInput).graphjinDataPath === "agent") ||
+        (isJob && jobInput?.access.graphjinAgent === true);
+      const hostedGraphjinToken =
+        dataAgentPath && process.env.OPENNEKO_SERVE_GRAPHJIN === "1" && process.env.OPENNEKO_SERVE_SOCKET
+          ? await import("./control-plane").then(({ hostedGraphjinToken }) =>
+              hostedGraphjinToken(input.orgId, isJob ? null : input.runId, execBudgetMs / 1000 + 600))
+          : null;
+
       const job = {
         kind,
+        ...(hostedGraphjinToken ? { hostedGraphjin: { token: hostedGraphjinToken } } : {}),
         orgId: input.orgId,
         threadId,
         runId: input.runId,
@@ -652,13 +672,7 @@ function makeSandboxCore(
           if (event.type === "tool_start") skillToolCalls.push({ name: event.name, input: event.input });
           return input.emit(event);
         },
-        // Must outlive the runner's turn budget with margin, so a long turn
-        // dies as the backend's honest timeout error — not an opaque kill
-        // from out here.
-        opts.execTimeoutMs ??
-          (kind === "workflow"
-            ? workflowExecBudgetMs(input as RunWorkflowAgentBackendInput)
-            : (jobInput?.run.timeoutMs ?? agentTurnTimeoutMs())) + 120_000,
+        execBudgetMs,
         signal,
         (present) => { artifactsPresent = present; },
         () => { skillEvidenceUnreadable = true; },

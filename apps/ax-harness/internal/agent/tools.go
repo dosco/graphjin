@@ -154,3 +154,17 @@ func (c admittedTool) input(value any) (string, error) {
 func (c admittedTool) invoke(ctx context.Context, instruction string) (json.RawMessage, error) {
 	return c.Call(ctx, json.RawMessage(instruction))
 }
+
+type toolProgressKey struct{}
+
+func withToolProgress(ctx context.Context, report func(string)) context.Context {
+	return context.WithValue(ctx, toolProgressKey{}, report)
+}
+
+// ToolProgress reports a step a running tool took, such as one GraphJin's
+// agent made answering a data question. The run shows it as a status line.
+func ToolProgress(ctx context.Context, text string) {
+	if report, ok := ctx.Value(toolProgressKey{}).(func(string)); ok && text != "" {
+		report(text)
+	}
+}

@@ -268,6 +268,9 @@ export type { AgentReasoningEffort } from "./agent-limits";
 /** Per-run policy for a backend's own sub-agent primitive. */
 export type AgentNativeDelegationPolicy = "enabled" | "disabled";
 
+/** The run's identity for the GraphJin agent openneko serve hosts. */
+export type HostedGraphjin = { token: string; threadId?: string };
+
 export type AgentRunOptions = {
   prompt: string;
   userMessage?: string;
@@ -287,6 +290,12 @@ export type AgentRunOptions = {
    *  entry (OPENNEKO_MCP_BRIDGE) rebuilds each named server from this env;
    *  broker coords are copied into the clean bridge-child env only. */
   mcpBridgeEnv?: Record<string, string>;
+  /**
+   * When openneko serve hosts GraphJin, the turn asks GraphJin's agent in
+   * serve's process as the user this token names, in place of the
+   * neko_graphjin_agent bridge server.
+   */
+  hostedGraphjin?: HostedGraphjin;
   /**
    * Whether the backend may expose its own sub-agent primitive for this run.
    * Omitted means the production default (`enabled`). Backends without native

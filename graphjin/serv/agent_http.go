@@ -260,14 +260,37 @@ var ErrAgentDisabled = errors.New("GraphJin agent is disabled")
 // step and req.History carries earlier turns. The response is sanitized as
 // the REST response is; err is non-nil when the run failed.
 func (s1 *HttpService) AskAgent(ctx context.Context, claims map[string]any, req gjagent.Request) (gjagent.Response, error) {
-	start := time.Now()
 	s := s1.Load().(*graphjinService)
+	return s.askAgent(ctx, req, func(ctx context.Context) (context.Context, error) {
+		return auth.ContextWithClaims(ctx, s.conf.Auth, claims)
+	})
+}
+
+// AgentReadOnly reports whether GraphJin's agent is forced read-only, which
+// OpenNeko requires before it delegates a data question.
+func (s1 *HttpService) AgentReadOnly() bool {
+	s := s1.Load().(*graphjinService)
+	return s.conf.agentEnabled() && s.conf.Agent.ReadOnly
+}
+
+// AskAgentWithToken is AskAgent for a caller that holds the JWT it would send
+// to /api/v1/agent: GraphJin verifies the token as the HTTP route does, so an
+// in-process caller gets no more authority than an HTTP one.
+func (s1 *HttpService) AskAgentWithToken(ctx context.Context, token string, req gjagent.Request) (gjagent.Response, error) {
+	s := s1.Load().(*graphjinService)
+	return s.askAgent(ctx, req, func(ctx context.Context) (context.Context, error) {
+		return auth.ContextWithToken(ctx, s.conf.Auth, token)
+	})
+}
+
+func (s *graphjinService) askAgent(ctx context.Context, req gjagent.Request, identify func(context.Context) (context.Context, error)) (gjagent.Response, error) {
+	start := time.Now()
 	if !s.conf.agentEnabled() {
 		return gjagent.Response{}, ErrAgentDisabled
 	}
 	ctx, span := s.spanStart(ctx, "Agent Ask")
 	defer span.End()
-	ctx, err := auth.ContextWithClaims(ctx, s.conf.Auth, claims)
+	ctx, err := identify(ctx)
 	if err != nil {
 		return gjagent.Response{}, err
 	}

@@ -45,27 +45,36 @@ func JwtHandler(ac Auth) (HandlerFunc, error) {
 			return nil, fmt.Errorf("no jwt token found in cookie or authorization header")
 		}
 
-		keyFunc := jwtProvider.KeyFunc()
-		token, err := jwt.ParseWithClaims(tok, jwt.MapClaims{}, keyFunc) // jwt.MapClaims is already passed by reference
-		if err != nil {
-			return nil, err
-		}
-
-		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			ctx := r.Context()
-
-			if !jwtProvider.VerifyAudience(claims) {
-				return nil, fmt.Errorf("invalid aud claim")
-			}
-
-			if !jwtProvider.VerifyIssuer(claims) {
-				return nil, fmt.Errorf("invalid iss claim")
-			}
-
-			return withVerifiedClaims(ctx, jwtProvider, claims)
-		}
-		return nil, fmt.Errorf("invalid claims")
+		return verifyToken(r.Context(), jwtProvider, tok)
 	}, nil
+}
+
+// ContextWithToken verifies a JWT as JwtHandler does and attaches its claims
+// to ctx, for in-process callers that hold a token instead of a request.
+func ContextWithToken(ctx context.Context, ac Auth, tok string) (context.Context, error) {
+	jwtProvider, err := provider.NewProvider(ac.JWT)
+	if err != nil {
+		return ctx, err
+	}
+	return verifyToken(ctx, jwtProvider, tok)
+}
+
+func verifyToken(ctx context.Context, jwtProvider provider.JWTProvider, tok string) (context.Context, error) {
+	token, err := jwt.ParseWithClaims(tok, jwt.MapClaims{}, jwtProvider.KeyFunc()) // jwt.MapClaims is already passed by reference
+	if err != nil {
+		return nil, err
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, fmt.Errorf("invalid claims")
+	}
+	if !jwtProvider.VerifyAudience(claims) {
+		return nil, fmt.Errorf("invalid aud claim")
+	}
+	if !jwtProvider.VerifyIssuer(claims) {
+		return nil, fmt.Errorf("invalid iss claim")
+	}
+	return withVerifiedClaims(ctx, jwtProvider, claims)
 }
 
 // ContextWithClaims attaches claims to ctx as JwtHandler does after it

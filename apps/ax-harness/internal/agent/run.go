@@ -341,7 +341,12 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 					finished.DurationMS = time.Since(startedAt).Milliseconds()
 					events.send(finished)
 				}()
-				raw, err := capability.invoke(ctx, instruction)
+				raw, err := capability.invoke(withToolProgress(ctx, func(text string) {
+					payload, _ := json.Marshal(struct {
+						Text string `json:"text"`
+					}{runePrefix(text, 500)})
+					events.progress(Event{Type: "actor.step", Data: payload})
+				}), instruction)
 				if err != nil || ctx.Err() != nil {
 					finished.Error = name + "_failed"
 				}

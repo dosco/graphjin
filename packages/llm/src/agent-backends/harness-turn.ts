@@ -99,6 +99,8 @@ export function serveHarnessTurn(opts: {
   modelKey: string;
   servers: string[];
   bridgeEnv?: Record<string, string>;
+  /** The run's identity for the GraphJin agent serve hosts. */
+  graphjin?: { token: string; org_id: string; thread_id?: string };
   debug?: boolean;
 }): HarnessTurn {
   const conn = createConnection(opts.socket);
@@ -158,6 +160,7 @@ export function serveHarnessTurn(opts: {
         spec: opts.spec,
         bridge: Boolean(transport),
         model_key_env: opts.modelKeyEnv,
+        ...(opts.graphjin ? { graphjin: opts.graphjin } : {}),
         model_keys: opts.modelKey ? { [opts.modelKeyEnv]: opts.modelKey } : {},
       });
     })();

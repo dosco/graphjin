@@ -4,6 +4,7 @@ import type {
   AgentNativeDelegationPolicy,
   AgentRunResult,
   AgentWorkspace,
+ HostedGraphjin,
 } from "../agent-backend";
 import type { AllowedLibrary } from "../library/staging";
 import { buildWorkflowBuilderServer } from "../workflows/builder-server";
@@ -66,6 +67,8 @@ export interface RunAgentBackendInput {
   graphjinToolPolicy?: GraphjinMcpToolPolicy;
   /** "agent" when the org opted in to GraphJin's server-side agent. */
   graphjinDataPath?: GraphjinDataPath;
+  /** Set when openneko serve hosts GraphJin; replaces the data agent server. */
+  hostedGraphjin?: HostedGraphjin;
   /** Optional per-run restriction on the backend's own sub-agent primitive. */
   nativeDelegation?: AgentNativeDelegationPolicy;
   /** In-process on the host; broker-backed inside the agent sandbox. */
@@ -106,6 +109,7 @@ export async function runAgentBackend(
     dataSurface = "customer",
     graphjinToolPolicy,
     graphjinDataPath = "direct",
+    hostedGraphjin,
     nativeDelegation,
     controlPlane,
     wantsCards = true,
@@ -177,7 +181,9 @@ export async function runAgentBackend(
         // GraphJin is brokered through the trusted host. No binary, source
         // URL, or credential enters the box.
         ...(graphjinDataPath === "agent"
-          ? { neko_graphjin_agent: buildGraphjinAgentServer({ orgId, runId, controlPlane }) }
+          ? hostedGraphjin
+            ? {}
+            : { neko_graphjin_agent: buildGraphjinAgentServer({ orgId, runId, controlPlane }) }
           : {
               neko_graphjin: buildGraphjinMcpServer({
                 orgId,
@@ -250,6 +256,7 @@ export async function runAgentBackend(
     threadState,
     onEvent: emit,
     mcpServers,
+    ...(graphjinDataPath === "agent" && hostedGraphjin ? { hostedGraphjin: { ...hostedGraphjin, threadId } } : {}),
     // ACP backends mount the same servers as stdio bridge children — ship the
     // per-run context the bridge needs to rebuild them (broker coords ride the
     // process env; see apps/worker/src/agent-sandbox/mcp-bridge.ts).

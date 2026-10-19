@@ -248,12 +248,13 @@ func TestAgentSandboxIsIsolated(t *testing.T) {
 			t.Fatalf("%s agent-sandbox workspace settings = %v", file, sandbox.Environment)
 		}
 
-		serve := doc.Services["agent-serve"]
-		if serve.User != "1001:1001" {
-			t.Fatalf("%s agent-serve user = %q, want 1001:1001", file, serve.User)
+		// openneko serve runs in the graphjin service.
+		serve := doc.Services["graphjin"]
+		if serve.User == "" || strings.HasPrefix(serve.User, "0") || strings.HasPrefix(serve.User, "root") {
+			t.Fatalf("%s graphjin (openneko serve) user = %q, want a non-root user", file, serve.User)
 		}
-		if serve.Environment["OPENNEKO_SANDBOX_SOCKET"] != "/run/openneko/sandbox.sock" {
-			t.Fatalf("%s agent-serve does not reach the sandbox socket", file)
+		if serve.Environment["OPENNEKO_SANDBOX_SOCKET"] != "/run/openneko/sandbox.sock" || serve.Environment["OPENNEKO_SERVE_SOCKET"] != "/run/openneko/serve.sock" {
+			t.Fatalf("%s graphjin (openneko serve) socket settings = %v", file, serve.Environment)
 		}
 		for _, name := range []string{"web", "worker"} {
 			service := doc.Services[name]
@@ -262,8 +263,11 @@ func TestAgentSandboxIsIsolated(t *testing.T) {
 				service.Environment["OPENNEKO_AGENT_ENTRY"] != "/opt/openneko-agent/entry.js" {
 				t.Fatalf("%s %s agent runtime settings = %v", file, name, service.Environment)
 			}
-			if _, ok := service.DependsOn["agent-serve"]; !ok {
-				t.Fatalf("%s %s does not wait for agent-serve", file, name)
+			if _, ok := service.DependsOn["graphjin"]; !ok {
+				t.Fatalf("%s %s does not wait for openneko serve (graphjin)", file, name)
+			}
+			if service.Environment["OPENNEKO_SERVE_GRAPHJIN"] != "1" {
+				t.Fatalf("%s %s does not ask the hosted GraphJin in-process", file, name)
 			}
 			for _, want := range []string{"openneko-run:/run/openneko", "openneko-agent-runs:/var/lib/openneko/agent-runs"} {
 				found := false

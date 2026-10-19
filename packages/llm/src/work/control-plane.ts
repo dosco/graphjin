@@ -166,7 +166,7 @@ async function graphjinAgentKnowledge(orgId: string): Promise<{ knowledge_pack?:
   }
 }
 
-async function runGraphjinToken(orgId: string, runId: string | null | undefined): Promise<string> {
+async function runGraphjinToken(orgId: string, runId: string | null | undefined, ttlSeconds?: number): Promise<string> {
   const { mintGraphjinToken } = await import("../graphjin/token");
   const { getWorkRunActor } = await import("./personas");
   const principal = runId ? graphjinReadPrincipal(await getWorkRunActor(runId, orgId)) : { userId: null, role: "service" as const };
@@ -180,7 +180,26 @@ async function runGraphjinToken(orgId: string, runId: string | null | undefined)
     userId: principal.userId,
     role: principal.role,
     ...(claims ? { groupRoles: claims.roles, groups: claims.groups } : {}),
+    ...(ttlSeconds ? { ttlSeconds } : {}),
   });
+}
+
+/**
+ * The run's token for the GraphJin agent openneko serve hosts, valid for the
+ * run's whole budget, or null when the run holds no data source. GraphJin
+ * verifies it as it would on /api/v1/agent.
+ */
+export async function hostedGraphjinToken(
+  orgId: string,
+  runId: string | null | undefined,
+  ttlSeconds: number,
+): Promise<string | null> {
+  try {
+    await assertRunHoldsDataSource(orgId, runId);
+  } catch {
+    return null;
+  }
+  return runGraphjinToken(orgId, runId, Math.min(Math.max(Math.ceil(ttlSeconds), 300), 6 * 3600));
 }
 
 export function graphjinReadPrincipal(actor: {

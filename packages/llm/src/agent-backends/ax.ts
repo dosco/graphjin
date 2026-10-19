@@ -227,6 +227,9 @@ export class AxBackend implements AgentBackend {
           modelKey: modelKey(this.ax.route),
           servers,
           ...(opts.mcpBridgeEnv ? { bridgeEnv: { ...opts.mcpBridgeEnv, OPENNEKO_MCP_SERVERS: servers.join(",") } } : {}),
+          ...(opts.hostedGraphjin
+            ? { graphjin: { token: opts.hostedGraphjin.token, org_id: opts.orgId ?? "", ...(opts.hostedGraphjin.threadId ? { thread_id: opts.hostedGraphjin.threadId } : {}) } }
+            : {}),
           debug: opts.debug === true,
         })
       : spawnHarnessTurn({ spec, env, cwd, debug: opts.debug === true });
