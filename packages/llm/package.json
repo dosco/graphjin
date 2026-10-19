@@ -50,6 +50,7 @@
     "@neko/secret-crypt": "workspace:*",
     "@neko/telemetry": "workspace:*",
     "@open-neko/plugin-install": "workspace:*",
+    "@opentelemetry/api": "^1.9.0",
     "cron-parser": "^4.9.0",
     "google-auth-library": "^10.6.2",
     "pg": "^8.20.0",

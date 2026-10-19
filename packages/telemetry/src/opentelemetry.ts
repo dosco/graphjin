@@ -44,6 +44,21 @@ export type OpenTelemetryObservationSinkOptions = {
   shutdown?: () => Promise<void>;
 };
 
+// Root span of each run in progress, across sinks, so code that runs on a
+// run's behalf (for example a GraphJin call) can join the run's trace.
+const runSpans = new Map<string, Span>();
+
+/**
+ * Run fn with the run's root span as the active OpenTelemetry context, so
+ * outgoing requests carry the run's trace context. Without telemetry, or for
+ * a run that has no root span, fn runs unchanged.
+ */
+export function withRunTraceContext<T>(runId: string, fn: () => T): T {
+  const span = runSpans.get(runId);
+  if (!span) return fn();
+  return context.with(trace.setSpan(context.active(), span), fn);
+}
+
 type ActiveSpan = {
   span: Span;
   runId: string;
@@ -87,6 +102,9 @@ export class OpenTelemetryObservationSink implements ObservationSink {
       active.span.end();
     }
     this.active.clear();
+    for (const [runId, span] of this.roots) {
+      if (runSpans.get(runId) === span) runSpans.delete(runId);
+    }
     this.roots.clear();
     await this.options.forceFlush?.();
     await this.options.shutdown?.();
@@ -120,7 +138,10 @@ export class OpenTelemetryObservationSink implements ObservationSink {
       runId: observation.runId,
       operationId: observation.operationId,
     });
-    if (observation.kind === "run.start") this.roots.set(observation.runId, span);
+    if (observation.kind === "run.start") {
+      this.roots.set(observation.runId, span);
+      runSpans.set(observation.runId, span);
+    }
   }
 
   private end(observation: HarnessObservation): void {
@@ -139,7 +160,10 @@ export class OpenTelemetryObservationSink implements ObservationSink {
     applyStatus(resolved.span, observation);
     resolved.span.end(new Date(observation.timestamp));
     this.active.delete(observation.operationId);
-    if (observation.kind === "run.end") this.roots.delete(observation.runId);
+    if (observation.kind === "run.end") {
+      this.roots.delete(observation.runId);
+      if (runSpans.get(observation.runId) === resolved.span) runSpans.delete(observation.runId);
+    }
   }
 
   private addEvent(observation: HarnessObservation): void {

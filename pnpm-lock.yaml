@@ -360,6 +360,9 @@ importers:
       '@open-neko/plugin-install':
         specifier: workspace:*
         version: link:../plugin-install
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.1
       cron-parser:
         specifier: ^4.9.0
         version: 4.9.0

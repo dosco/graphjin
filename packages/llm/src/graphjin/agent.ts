@@ -6,6 +6,7 @@ import type {
   AgentTurn,
 } from "@neko/graphjin-contract";
 import { packUserConnectionHeaders } from "./pack-user-connections";
+import { graphjinTraceHeaders } from "./trace-headers";
 /** Steps per GraphJin agent call: the cap OpenNeko writes and the default it asks for. */
 export const GRAPHJIN_AGENT_MAX_STEPS = 12;
 
@@ -66,6 +67,7 @@ export async function askGraphjinAgent(input: {
   const res = await fetch(graphjinAgentEndpoint(input.baseUrl), {
     method: "POST",
     headers: await packUserConnectionHeaders(input.baseUrl, {
+      ...graphjinTraceHeaders(),
       accept: "application/json",
       "content-type": "application/json",
       authorization: `Bearer ${input.token}`,

@@ -1,4 +1,5 @@
 import { packUserConnectionHeaders, type ConnectionBinding } from "./pack-user-connections";
+import { graphjinTraceHeaders } from "./trace-headers";
 import { randomUUID } from "node:crypto";
 import { Agent } from "undici";
 
@@ -48,6 +49,7 @@ export async function graphjinQuery<T = unknown>(
 ): Promise<GraphjinQueryResult<T>> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...graphjinTraceHeaders(),
     ...(opts.role ? { "X-Role": opts.role } : {}),
     ...(opts.headers ?? {}),
   };

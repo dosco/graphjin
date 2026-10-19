@@ -6,6 +6,7 @@ import {
 } from "node:http";
 import { randomUUID } from "node:crypto";
 import { graphjinAgentEnabledForOrg } from "@neko/db";
+import { withRunTraceContext } from "@neko/telemetry";
 import type { AgentEvent } from "../agent-backend";
 import { inProcessControlPlane, type AgentControlPlane } from "./control-plane";
 import { sandboxBrokerHost } from "./sandbox-net";
@@ -104,6 +105,16 @@ async function handle(
   const binding = deps.resolveRun(token);
   if (!binding) return send(res, 401, { error: "unauthorized" });
   if (req.method !== "POST") return send(res, 405, { error: "method_not_allowed" });
+  // GraphJin calls made for this run join the run's trace.
+  return withRunTraceContext(binding.runId, () => handleRunRequest(deps, req, res, binding));
+}
+
+async function handleRunRequest(
+  deps: AgentBrokerDeps,
+  req: IncomingMessage,
+  res: ServerResponse,
+  binding: NonNullable<ReturnType<AgentBrokerDeps["resolveRun"]>>,
+): Promise<void> {
 
   const body = (await readJson(req)) as Record<string, unknown>;
   const path = (req.url ?? "").split("?")[0];
