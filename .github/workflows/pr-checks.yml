@@ -110,7 +110,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version-file: apps/openneko/go.mod
+          go-version-file: go.work
           cache-dependency-path: apps/openneko/go.sum
 
       - name: Migrate visual-test database

@@ -1,0 +1,65 @@
+name: graphjin (go)
+
+# GraphJin lives under graphjin/ and is exported to dosco/graphjin.
+# These jobs run GraphJin's own build, lint, and tests for changes there.
+# graphjin/.github/workflows stay as they are for the mirror.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "graphjin/**"
+      - "!graphjin/**.md"
+      - "!graphjin/docs/**"
+      - "!graphjin/website/**"
+      - ".github/workflows/graphjin.yml"
+  pull_request:
+    paths:
+      - "graphjin/**"
+      - "!graphjin/**.md"
+      - "!graphjin/docs/**"
+      - "!graphjin/website/**"
+      - ".github/workflows/graphjin.yml"
+
+jobs:
+  lint-and-test:
+    name: build and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: graphjin
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: graphjin/go.work
+          cache-dependency-path: graphjin/**/go.sum
+
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: make test
+
+  codeql:
+    name: codeql
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: graphjin/go.work
+          cache-dependency-path: graphjin/**/go.sum
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: go
+          build-mode: manual
+      - name: Build
+        working-directory: graphjin
+        run: go build ./cmd/... ./serv/... ./core/... ./agent/... ./auth/... ./conf/...
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: graphjin

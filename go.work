@@ -1,0 +1,27 @@
+go 1.25.5
+
+// One Go workspace for the OpenNeko apps and the GraphJin modules under
+// graphjin/, so every shared dependency resolves to one version.
+// graphjin/go.work stays for the dosco/graphjin mirror and is used when
+// Go commands run inside graphjin/.
+use (
+	./apps/ax-harness
+	./apps/lazy-service
+	./apps/openneko
+	./graphjin/agent
+	./graphjin/auth
+	./graphjin/cassandradriver
+	./graphjin/clickhousedriver
+	./graphjin/cmd
+	./graphjin/codesql
+	./graphjin/conf
+	./graphjin/core
+	./graphjin/examples
+	./graphjin/examples/pcb-fab/mockapi
+	./graphjin/hostedemu
+	./graphjin/mongodriver
+	./graphjin/plugin/otel
+	./graphjin/serv
+	./graphjin/tests
+	./graphjin/wasm
+)

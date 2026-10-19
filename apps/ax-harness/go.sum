@@ -2,6 +2,8 @@ github.com/Masterminds/semver/v3 v3.2.1 h1:RN9w6+7QoMeJVGyfmbcgs28Br8cvmnucEXnY0
 github.com/Masterminds/semver/v3 v3.2.1/go.mod h1:qvl/7zhW3nngYb5+80sSMF+FG2BjYrf8m9wsX0PNOMQ=
 github.com/ax-llm/ax/packages/go v0.0.0-20261008025325-987328ccf984 h1:IfG1HNL2rhadxpKPFXZBfnPNQDf0N0rWhvBSiOEKtsA=
 github.com/ax-llm/ax/packages/go v0.0.0-20261008025325-987328ccf984/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
+github.com/ax-llm/ax/packages/go v0.0.0-20261013031334-36aa1a5e415d h1:9F3h6PRIkfH0RS5AZHASlOGmGHo1j7gE7s7kTCatXzY=
+github.com/ax-llm/ax/packages/go v0.0.0-20261013031334-36aa1a5e415d/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
 github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/dlclark/regexp2 v1.11.4 h1:rPYF9/LECdNymJufQKmri9gV604RvvABwgOA8un7yAo=

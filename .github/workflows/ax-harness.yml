@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "apps/ax-harness/**"
+      - "go.work"
       - ".github/workflows/ax-harness.yml"
   pull_request:
     paths:
       - "apps/ax-harness/**"
+      - "go.work"
       - ".github/workflows/ax-harness.yml"
 
 jobs:
@@ -21,7 +23,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version-file: apps/ax-harness/go.mod
+          go-version-file: go.work
           cache-dependency-path: apps/ax-harness/go.sum
 
       - name: gofmt

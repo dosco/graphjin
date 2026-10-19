@@ -1,5 +1,5 @@
 {
-  "version": "v0.0.0-20261008025325-987328ccf984",
+  "version": "v0.0.0-20261013031334-36aa1a5e415d",
   "providers": {
     "anthropic": {
       "claude-2.1": {

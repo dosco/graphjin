@@ -59,3 +59,9 @@ apps/*/openneko.plugins.json
 .local/
 dev-volumes/
 compose.dev-overrides.yml
+
+# graphjin/ keeps its own .gitignore files. Re-include what it tracks that
+# the rules above would hide.
+!graphjin/serv/web/build/
+!graphjin/.claude/
+!graphjin/.codex/
