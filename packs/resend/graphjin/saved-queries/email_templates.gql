@@ -1,5 +1,5 @@
 query ResendEmailTemplates {
-  resend_list_templates(limit: 20) {
+  resend_list_templates {
     id
     alias
     name

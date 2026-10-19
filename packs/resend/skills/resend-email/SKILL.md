@@ -64,7 +64,7 @@ preview.
 
 | GraphJin query | Use it to |
 |---|---|
-| `resend_list_templates(limit: 20) { id alias name status }` | Find a template the team designed in Resend |
+| `resend_list_templates { id alias name status }` | Find a template the team designed in Resend |
 | `resend_get_template(template_id: "daily-ops-summary") { subject variables { key type fallback_value } }` | Read a template's subject and variable keys |
 | `resend_get_email(email_id: "…") { last_event to subject created_at }` | Check if an email was delivered, bounced, or opened |
 

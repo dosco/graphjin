@@ -186,7 +186,7 @@ describe.skipIf(!enabled)("Resend pack through GraphJin", () => {
     const persisted = await pool().query("select config from pack_install where org_id=$1", [org]);
     expect(JSON.stringify(persisted.rows)).not.toContain(apiKey);
 
-    const templates = await query("query { resend_list_templates(limit: 5) { id alias name status } }");
+    const templates = await query("query { resend_list_templates { id alias name status } }");
     expect(templates.errors).toBeUndefined();
     expect(templates.data).toEqual({
       resend_list_templates: [{ id: "tpl_1", alias: "daily-ops-summary", name: "Daily ops", status: "published" }],
