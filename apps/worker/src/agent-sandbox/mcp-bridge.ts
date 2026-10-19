@@ -77,6 +77,7 @@ export type BridgeServerContext = {
   wantsCards?: boolean;
   cardSchema?: string;
   graphjinToolPolicy?: GraphjinMcpToolPolicy;
+  memoryReadOnly?: boolean;
 };
 
 export function buildBridgeServer(
@@ -117,7 +118,7 @@ export function buildBridgeServer(
         { orgId, threadId, runId },
         {
           controlPlane,
-          exposeSave: process.env.OPENNEKO_MCP_MEMORY_READ_ONLY !== "1",
+          exposeSave: !(ctx.memoryReadOnly ?? process.env.OPENNEKO_MCP_MEMORY_READ_ONLY === "1"),
         },
       );
     case "neko_guides":
@@ -352,6 +353,51 @@ async function warmUpBroker(baseUrl: string, name: string): Promise<void> {
   }
 }
 
+/** Reads a bridge context from the OPENNEKO_MCP_* variables of env. */
+export function bridgeContextFromEnv(
+  env: Record<string, string | undefined>,
+  controlPlane: BrokerControlPlane,
+  broker: { brokerUrl?: string; brokerToken?: string } = {},
+): BridgeServerContext {
+  const required = (name: string): string => {
+    const value = env[name];
+    if (!value) throw new Error(`mcp-bridge: missing required env ${name}`);
+    return value;
+  };
+  return {
+    runKind:
+      env.OPENNEKO_MCP_MODE === "workflow"
+        ? "workflow"
+        : env.OPENNEKO_MCP_MODE === "agent-job"
+          ? "agent-job"
+          : "work",
+    orgId: required("OPENNEKO_MCP_ORG_ID"),
+    threadId: required("OPENNEKO_MCP_THREAD_ID"),
+    runId: required("OPENNEKO_MCP_RUN_ID"),
+    skillsRoot: required("OPENNEKO_MCP_SKILLS_ROOT"),
+    pluginActions: JSON.parse(
+      env.OPENNEKO_MCP_PLUGIN_ACTIONS ?? "[]",
+    ) as PluginActionDescriptor[],
+    packActions: JSON.parse(
+      env.OPENNEKO_MCP_PACK_ACTIONS ?? "[]",
+    ) as PackActionDescriptor[],
+    controlPlane,
+    ...broker,
+    workflowRunId: env.OPENNEKO_MCP_WORKFLOW_RUN_ID,
+    triggeredByObservationId: env.OPENNEKO_MCP_TRIGGERED_BY_OBSERVATION_ID ?? null,
+    recordScope: env.OPENNEKO_MCP_RECORD_SCOPE
+      ? (JSON.parse(env.OPENNEKO_MCP_RECORD_SCOPE) as {
+          appId: string;
+          objectApiName: string;
+        })
+      : undefined,
+    wantsCards: env.OPENNEKO_MCP_WANTS_CARDS === "1",
+    cardSchema: env.OPENNEKO_MCP_CARD_SCHEMA,
+    memoryReadOnly: env.OPENNEKO_MCP_MEMORY_READ_ONLY === "1",
+    graphjinToolPolicy: parseGraphjinMcpToolPolicy(env[GRAPHJIN_TOOL_POLICY_ENV]),
+  };
+}
+
 async function main(): Promise<void> {
   const names = [...new Set((process.argv[2] ?? "").split(",").filter(Boolean))];
   if (names.length === 0) throw new Error("mcp-bridge: missing server-name argument");
@@ -362,41 +408,10 @@ async function main(): Promise<void> {
     brokerUrl,
     brokerToken,
   );
-  const server = await buildMultiplexedBridgeServer(names, {
-    runKind:
-      process.env.OPENNEKO_MCP_MODE === "workflow"
-        ? "workflow"
-        : process.env.OPENNEKO_MCP_MODE === "agent-job"
-          ? "agent-job"
-          : "work",
-    orgId: requireEnv("OPENNEKO_MCP_ORG_ID"),
-    threadId: requireEnv("OPENNEKO_MCP_THREAD_ID"),
-    runId: requireEnv("OPENNEKO_MCP_RUN_ID"),
-    skillsRoot: requireEnv("OPENNEKO_MCP_SKILLS_ROOT"),
-    pluginActions: JSON.parse(
-      process.env.OPENNEKO_MCP_PLUGIN_ACTIONS ?? "[]",
-    ) as PluginActionDescriptor[],
-    packActions: JSON.parse(
-      process.env.OPENNEKO_MCP_PACK_ACTIONS ?? "[]",
-    ) as PackActionDescriptor[],
-    controlPlane,
-    brokerUrl,
-    brokerToken,
-    workflowRunId: process.env.OPENNEKO_MCP_WORKFLOW_RUN_ID,
-    triggeredByObservationId:
-      process.env.OPENNEKO_MCP_TRIGGERED_BY_OBSERVATION_ID ?? null,
-    recordScope: process.env.OPENNEKO_MCP_RECORD_SCOPE
-      ? (JSON.parse(process.env.OPENNEKO_MCP_RECORD_SCOPE) as {
-          appId: string;
-          objectApiName: string;
-        })
-      : undefined,
-    wantsCards: process.env.OPENNEKO_MCP_WANTS_CARDS === "1",
-    cardSchema: process.env.OPENNEKO_MCP_CARD_SCHEMA,
-    graphjinToolPolicy: parseGraphjinMcpToolPolicy(
-      process.env[GRAPHJIN_TOOL_POLICY_ENV],
-    ),
-  });
+  const server = await buildMultiplexedBridgeServer(
+    names,
+    bridgeContextFromEnv(process.env, controlPlane, { brokerUrl, brokerToken }),
+  );
   await server.instance.connect(new StdioServerTransport());
 }
 

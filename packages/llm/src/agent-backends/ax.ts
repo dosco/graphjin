@@ -1,11 +1,9 @@
-// Ax backend: one ax-harness process per turn. Protocol: apps/ax-harness/docs/RUN-PROTOCOL.md.
+// Ax backend: one ax-harness turn, as a child process or in openneko serve. Protocol: apps/ax-harness/docs/RUN-PROTOCOL.md.
 
 import { axCatalogPricingVersion, estimateTokenCost, hasPriceOverride } from "../spend/model-prices";
-import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
 import { agentLimits, axLimitEnv, axRunLimits, type AgentReasoningEffort } from "../agent-limits";
 import {
   agentTurnTimeoutMs,
@@ -16,13 +14,18 @@ import {
   type AgentRunResult,
   type AgentTokenUsage,
 } from "../agent-backend";
-import { AX_HARNESS_BINARY } from "../agent-runtime-contract";
 import { registerAgentCanceller } from "../agent-shutdown";
 import type { AxModelRoute } from "../provider-runtime";
 import { A2UI_RENDER_ACP_TITLE, A2UI_RENDER_SERVER_NAME } from "../work/a2ui-contract";
 import { splitStablePrompt } from "../prompts/stable-prefix";
 import { extractMarkdownText, outsideFenceText } from "./output";
 import { extractCardFences, extractSurfaceMessages } from "./surface";
+import { serveHarnessTurn, serveSocket, spawnHarnessTurn } from "./harness-turn";
+
+/** The run's model key: a stored key the worker loaded, or a key in the environment. */
+function modelKey(route: AxModelRoute): string {
+  return (route.keyEnv && process.env[route.keyEnv]) || process.env.MODEL_API_KEY || "";
+}
 
 /** The org prompt goes in `instructions` and the per-turn rest in `prompt`, so providers cache the org prompt on its own. */
 export function axRunPrompt(prompt: string, userMessage?: string): { instructions?: string; prompt: string } {
@@ -79,19 +82,6 @@ type AxEvent = {
 
 const KILL_GRACE_MS = 15_000;
 
-function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
-  if (!child.pid) return;
-  try {
-    process.kill(-child.pid, signal);
-  } catch {
-    // Already exited, or not a group leader.
-  }
-  try {
-    child.kill(signal);
-  } catch {
-    // ignore
-  }
-}
 
 export function normalizeAxUsage(usage: AxUsage | undefined, route?: { provider: string; model: string }): AgentTokenUsage {
   if (!usage) return { coverage: "unavailable", missingReasons: ["Ax Harness reported no usage"] };
@@ -226,26 +216,29 @@ export class AxBackend implements AgentBackend {
       ...(opts.debug ? { debug: true } : {}),
     };
 
-    const child = spawn(AX_HARNESS_BINARY, [], { stdio: ["pipe", "pipe", "pipe"], cwd, env, detached: true });
-    const stderr: Buffer[] = [];
-    child.stderr?.on("data", (c: Buffer) => {
-      stderr.push(c);
-      if (opts.debug) process.stderr.write(c);
-    });
-    let spawnError: Error | undefined;
-    child.on("error", (e) => {
-      spawnError = new Error(`ax-harness spawn failed: ${e.message}`);
-    });
-    const exited = new Promise<number | null>((resolve) => child.on("close", (code) => resolve(code)));
-    const unregister = registerAgentCanceller(() => killProcessGroup(child, "SIGKILL"));
+    const servers = this.bridgeServers(opts);
+    const socket = serveSocket();
+    const turn = socket
+      ? serveHarnessTurn({
+          socket,
+          spec,
+          env,
+          modelKeyEnv: this.ax.route.keyEnv || "MODEL_API_KEY",
+          modelKey: modelKey(this.ax.route),
+          servers,
+          ...(opts.mcpBridgeEnv ? { bridgeEnv: { ...opts.mcpBridgeEnv, OPENNEKO_MCP_SERVERS: servers.join(",") } } : {}),
+          debug: opts.debug === true,
+        })
+      : spawnHarnessTurn({ spec, env, cwd, debug: opts.debug === true });
+    const unregister = registerAgentCanceller(() => turn.stop(true));
     let cancelled = false;
     const onAbort = () => {
       cancelled = true;
-      killProcessGroup(child, "SIGTERM");
+      turn.stop();
     };
     signal?.addEventListener("abort", onAbort, { once: true });
-    // The harness enforces timeout_ms itself; this only reaps a stuck process.
-    const reaper = setTimeout(() => killProcessGroup(child, "SIGKILL"), timeoutMs + KILL_GRACE_MS);
+    // The harness enforces timeout_ms itself; this only reaps a stuck turn.
+    const reaper = setTimeout(() => turn.stop(true), timeoutMs + KILL_GRACE_MS);
 
     let queue = Promise.resolve();
     let eventError: unknown;
@@ -262,12 +255,8 @@ export class AxBackend implements AgentBackend {
     let result: AxResult | undefined;
     let protocolError: string | undefined;
     try {
-      // An early exit (invalid configuration) closes stdin; the result check reports it.
-      child.stdin?.on("error", () => {});
-      child.stdin?.end(JSON.stringify(spec));
-      const lines = createInterface({ input: child.stdout! });
       let last = 0;
-      for await (const line of lines) {
+      for await (const line of turn.lines) {
         if (!line.trim()) continue;
         let event: AxEvent;
         try {
@@ -284,13 +273,12 @@ export class AxBackend implements AgentBackend {
         if (event.type === "run.finished") result = event.result;
         else mapper.handle(event);
       }
-      const code = await exited;
+      const code = await turn.exited;
       await queue;
       if (eventError) throw eventError;
-      if (spawnError) throw spawnError;
       if (cancelled || signal?.aborted) return { finalText: "", status: "cancelled" };
       if (!result) {
-        const tail = Buffer.concat(stderr).toString("utf8").trim().split("\n").slice(-6).join("\n").slice(-600);
+        const tail = turn.diagnostics().trim().split("\n").slice(-6).join("\n").slice(-600);
         return {
           finalText: "",
           error: protocolError ?? `ax-harness exited (code=${code ?? "null"}) without a result${tail ? `: ${tail}` : ""}`,
@@ -303,7 +291,7 @@ export class AxBackend implements AgentBackend {
       const answer = result.answer ?? "";
       if (result.status !== "completed" || !answer.trim()) {
         const reason = result.code ?? "no answer";
-        const tail = Buffer.concat(stderr).toString("utf8").trim().slice(-600);
+        const tail = turn.diagnostics().trim().slice(-600);
         return {
           finalText: "",
           errorCode: result.code ?? "empty_output",
@@ -339,9 +327,15 @@ export class AxBackend implements AgentBackend {
       clearTimeout(reaper);
       signal?.removeEventListener("abort", onAbort);
       unregister();
-      if (child.exitCode == null) killProcessGroup(child, "SIGTERM");
+      if (turn.running) turn.stop();
       await cleanupScratch?.();
     }
+  }
+
+  private bridgeServers(opts: AgentRunOptions): string[] {
+    return Object.keys(opts.mcpServers ?? {}).filter(
+      (name) => /^neko_[a-z0-9_]+$/.test(name) && (name !== A2UI_RENDER_SERVER_NAME || opts.wantsCards),
+    );
   }
 
   private environment(opts: AgentRunOptions, cwd: string, limitEnv: Record<string, string>): NodeJS.ProcessEnv {
@@ -349,8 +343,7 @@ export class AxBackend implements AgentBackend {
     const { workspace } = opts;
     const env: NodeJS.ProcessEnv = { ...process.env };
     if (workspace) env.PATH = `${workspace.binRoot}:${process.env.PATH || ""}`;
-    // The key is an OpenShell placeholder; only the harness may hold it.
-    const key = (route.keyEnv && process.env[route.keyEnv]) || process.env.MODEL_API_KEY || "none";
+    const key = modelKey(route) || "none";
     for (const name of ["MODEL_API_KEY", route.keyEnv, "HARNESS_MODEL_ROUTES"]) if (name) delete env[name];
     Object.assign(env, {
       HARNESS_MODEL_PROVIDER: route.provider,
@@ -361,9 +354,7 @@ export class AxBackend implements AgentBackend {
     });
     Object.assign(env, limitEnv);
 
-    const names = Object.keys(opts.mcpServers ?? {}).filter(
-      (name) => /^neko_[a-z0-9_]+$/.test(name) && (name !== A2UI_RENDER_SERVER_NAME || opts.wantsCards),
-    );
+    const names = this.bridgeServers(opts);
     const bridge = Boolean(process.env.OPENNEKO_MCP_BRIDGE && opts.mcpBridgeEnv && names.length > 0);
     if (bridge) {
       Object.assign(env, opts.mcpBridgeEnv, { OPENNEKO_MCP_SERVERS: names.join(",") });

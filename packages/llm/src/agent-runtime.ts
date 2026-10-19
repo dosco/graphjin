@@ -5,8 +5,9 @@ import type {
 import { AxBackend, type AxBackendConfig } from "./agent-backends/ax";
 
 export type { AxBackendConfig };
+export { registerServeToolBridge, serveSocket, type ServeToolBridge } from "./agent-backends/harness-turn";
 
-/** Pure runtime factory used inside the OpenShell agent image. */
+/** Pure runtime factory for the agent runner process. */
 export function makeAgentBackend(cfg: {
   id: AgentBackendId;
   ax?: AxBackendConfig;

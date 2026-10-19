@@ -6,7 +6,12 @@ import {
   type AgentRunResult,
   type AgentWorkspace,
 } from "@neko/llm";
-import { makeAgentBackend, type AxBackendConfig } from "@neko/llm/agent-runtime";
+import {
+  makeAgentBackend,
+  registerServeToolBridge,
+  serveSocket,
+  type AxBackendConfig,
+} from "@neko/llm/agent-runtime";
 import {
   buildGraphjinAgentServer,
   buildGraphjinMcpServer,
@@ -19,6 +24,7 @@ import {
   type RunWorkflowAgentBackendInput,
 } from "@neko/llm/sandbox-runtime";
 import { BrokerControlPlane } from "./broker-client";
+import { bridgeContextFromEnv, buildMultiplexedBridgeServer } from "./mcp-bridge";
 import { ARTIFACTS_MARKER, EVENT_MARKER, RESULT_MARKER } from "./protocol";
 import { configureAgentRuntime } from "./runtime-contract";
 import { hasArtifacts } from "./artifacts";
@@ -135,6 +141,18 @@ export async function main(job = loadJob()): Promise<void> {
     emitLine(EVENT_MARKER, event);
     return Promise.resolve();
   };
+
+  // In openneko serve the harness reaches the run's tools over serve's
+  // socket, served from this process instead of a bridge child.
+  if (serveSocket() && controlPlane) {
+    registerServeToolBridge(async (servers, env) => {
+      const server = await buildMultiplexedBridgeServer(
+        servers,
+        bridgeContextFromEnv(env, controlPlane, { brokerUrl, brokerToken }),
+      );
+      return server.instance;
+    });
+  }
 
   const kind = job.kind ?? "work";
   if (kind !== "agent-job" && !controlPlane) {
