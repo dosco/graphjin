@@ -1,0 +1,49 @@
+apiVersion: openneko.app/v1
+kind: SolutionPack
+metadata:
+  id: shopify
+  name: Shopify
+  version: 0.1.0
+  publisher: openneko
+  category: commerce
+
+compatibility:
+  openneko: ">=4.9.0 <5.0.0"
+  graphjin:
+    analytics: ">=3.21.0 <4.0.0"
+    operator: ">=3.21.0 <4.0.0"
+  applications:
+    - id: shopify
+      editions: [cloud]
+      versions: "2026-01"
+  databases: []
+
+inputs:
+  - key: shopify.store_url
+    type: url
+    required: true
+    description: The store's permanent myshopify.com address, for example https://acme.myshopify.com. Use it even if the storefront has a custom domain; the Admin API answers only on myshopify.com.
+
+secrets:
+  - key: shopify.access_token
+    purpose: graphjin_api_auth
+    required: true
+
+artifacts:
+  graphjin:
+    sources: graphjin/sources.yaml
+    relationships: graphjin/relationships.yaml
+    specs:
+      - graphjin/specs/shopify.yaml
+    savedQueries: graphjin/saved-queries
+  actions: actions
+  policies: policies
+  skills:
+    - skills/shopify-orders
+
+health:
+  requiredPreflight: []
+  readiness:
+    orders: []
+  postInstall: []
+  postWriteCanary: []

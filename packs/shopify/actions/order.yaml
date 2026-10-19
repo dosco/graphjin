@@ -1,0 +1,36 @@
+key: action.shopify_order
+targetRef: shopify.order
+kind: shopify.order
+description: Set the internal note or the tags of one Shopify order. The note is visible in Shopify admin only, never to the customer.
+readiness:
+  capability: operator
+  unavailableReasons: [secret_not_configured, graphjin_restart_required]
+inputSchema:
+  type: object
+  additionalProperties: false
+  required: [operation, path, body]
+  properties:
+    operation: { type: string, enum: [update_order_note] }
+    path: { type: object }
+    body: { type: object }
+example:
+  operation: update_order_note
+  path: { order_id: 1234567890 }
+  body:
+    order:
+      id: 1234567890
+      note: "Flagged for review by ops."
+      tags: "vip, review"
+# The policy engine reads the order id, so a policy can limit which orders an
+# action may change.
+targets:
+  fields: [path.order_id]
+  as: value
+adapter:
+  kind: graphjin_api_operation
+  source: shopify
+  spec: shopify
+  operations:
+    update_order_note: { operationId: updateOrder, mutationRoot: shopify_update_order, reversible: false }
+  ambiguousOutcome: reconcile_required
+  retry: never

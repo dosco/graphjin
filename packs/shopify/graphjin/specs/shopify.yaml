@@ -1,0 +1,161 @@
+openapi: 3.0.3
+info:
+  title: Shopify Admin REST API, orders
+  version: 2026-01
+  description: The Shopify Admin REST order operations this pack uses, pinned to API version 2026-01. Updating an order is a reviewed action; the rest are reads.
+servers:
+  - url: https://store.myshopify.com
+security:
+  - accessToken: []
+paths:
+  /admin/api/2026-01/orders.json:
+    get:
+      operationId: listOrders
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [open, closed, cancelled, any] } }
+        - { name: financial_status, in: query, schema: { type: string, enum: [authorized, pending, paid, partially_paid, refunded, voided, partially_refunded, any, unpaid] } }
+        - { name: fulfillment_status, in: query, schema: { type: string, enum: [shipped, partial, unshipped, any, unfulfilled] } }
+        - { name: created_at_min, in: query, schema: { type: string } }
+        - { name: created_at_max, in: query, schema: { type: string } }
+        - { name: updated_at_min, in: query, schema: { type: string } }
+        - { name: since_id, in: query, schema: { type: integer } }
+        - { name: name, in: query, schema: { type: string }, description: "Order name, such as 1001" }
+        - { name: fields, in: query, schema: { type: string }, description: "Comma-separated fields to return" }
+      responses:
+        "200":
+          description: Orders
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items: { $ref: "#/components/schemas/Order" }
+  /admin/api/2026-01/orders/count.json:
+    get:
+      operationId: countOrders
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [open, closed, cancelled, any] } }
+        - { name: financial_status, in: query, schema: { type: string } }
+        - { name: fulfillment_status, in: query, schema: { type: string } }
+        - { name: created_at_min, in: query, schema: { type: string } }
+        - { name: created_at_max, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Order count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+  /admin/api/2026-01/orders/{order_id}.json:
+    get:
+      operationId: getOrder
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - { name: fields, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: One order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order: { $ref: "#/components/schemas/Order" }
+    put:
+      operationId: updateOrder
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateOrderRequest" }
+      responses:
+        "200":
+          description: The updated order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order: { $ref: "#/components/schemas/Order" }
+components:
+  securitySchemes:
+    accessToken: { type: apiKey, in: header, name: X-Shopify-Access-Token }
+  parameters:
+    OrderId:
+      name: order_id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+  schemas:
+    # Only the internal note and tags. Customer-facing fields, prices, and
+    # addresses cannot change through this pack.
+    UpdateOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [order]
+      properties:
+        order:
+          type: object
+          additionalProperties: false
+          required: [id]
+          minProperties: 2
+          properties:
+            id: { type: integer, minimum: 1 }
+            note: { type: string, maxLength: 5000 }
+            tags: { type: string, maxLength: 4000, description: The complete comma-separated tag list. It replaces the current tags. }
+    Money: { type: string }
+    Order:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        order_number: { type: integer }
+        email: { type: string, nullable: true }
+        financial_status: { type: string, nullable: true }
+        fulfillment_status: { type: string, nullable: true }
+        cancelled_at: { type: string, nullable: true }
+        cancel_reason: { type: string, nullable: true }
+        closed_at: { type: string, nullable: true }
+        total_price: { $ref: "#/components/schemas/Money" }
+        subtotal_price: { $ref: "#/components/schemas/Money" }
+        total_tax: { $ref: "#/components/schemas/Money" }
+        total_discounts: { $ref: "#/components/schemas/Money" }
+        currency: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        processed_at: { type: string }
+        tags: { type: string }
+        note: { type: string, nullable: true }
+        customer:
+          type: object
+          nullable: true
+          properties:
+            id: { type: integer }
+            email: { type: string, nullable: true }
+            first_name: { type: string, nullable: true }
+            last_name: { type: string, nullable: true }
+        line_items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              title: { type: string }
+              quantity: { type: integer }
+              sku: { type: string, nullable: true }
+              price: { $ref: "#/components/schemas/Money" }
+              fulfillment_status: { type: string, nullable: true }
+        shipping_address: { type: object, nullable: true, additionalProperties: true }
+        billing_address: { type: object, nullable: true, additionalProperties: true }
+        refunds:
+          type: array
+          items: { type: object, additionalProperties: true }
+        fulfillments:
+          type: array
+          items: { type: object, additionalProperties: true }

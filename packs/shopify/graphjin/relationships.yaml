@@ -1,0 +1,4 @@
+key: relationships.shopify
+targetRef: shopify
+source: shopify
+relationships: []
