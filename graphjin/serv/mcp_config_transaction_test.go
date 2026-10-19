@@ -1243,3 +1243,40 @@ func (s *trackingRuntimeStore) Close() error {
 	s.closed = true
 	return nil
 }
+
+func TestHandleUpdateCurrentConfig_IdentityPatchAppliesLive(t *testing.T) {
+	mainPath := createSQLiteDBFile(t, "main.sqlite3", true)
+	ms := newSourceModeConfigMCPServer(t, map[string]string{"main": mainPath})
+
+	out := applySourceModeConfigUpdate(t, ms, map[string]any{
+		"identity": map[string]any{"role_mode": "union", "role_claims": []any{"role", "roles"}, "group_claims": []any{"groups"}},
+		"roles":    []any{map[string]any{"name": "og_sales"}},
+	})
+	if !out.Success {
+		t.Fatalf("expected identity update to succeed, got %+v", out)
+	}
+	identity := ms.service.conf.Core.Identity
+	if identity.RoleMode != "union" || len(identity.RoleClaims) != 2 || len(identity.GroupClaims) != 1 || identity.GroupClaims[0] != "groups" {
+		t.Fatalf("identity after update = %+v", identity)
+	}
+
+	out = applySourceModeConfigUpdate(t, ms, map[string]any{
+		"identity":     map[string]any{"role_mode": "first", "group_claims": nil},
+		"remove_roles": []any{"og_sales"},
+	})
+	if !out.Success {
+		t.Fatalf("expected identity revert to succeed, got %+v", out)
+	}
+	if got := ms.service.conf.Core.Identity; got.RoleMode != "first" || len(got.GroupClaims) != 0 || len(got.RoleClaims) != 2 {
+		t.Fatalf("identity after revert = %+v", got)
+	}
+
+	bad := applyConfigUpdate(t, ms, map[string]any{
+		"mode":                      "preview",
+		"expected_catalog_revision": ms.currentConfigCatalogRevision(context.Background()),
+		"identity":                  map[string]any{"role_mode": "all"},
+	})
+	if bad.Success && bad.Valid {
+		t.Fatalf("expected an invalid role_mode to be rejected, got %+v", bad)
+	}
+}

@@ -470,6 +470,8 @@ func configNanoColumns() []core.NanoColumn {
 		{Name: "relationships", Type: "json"},
 		{Name: "tables", Type: "json"},
 		{Name: "roles", Type: "json"},
+		{Name: "remove_roles", Type: "json"},
+		{Name: "identity", Type: "json"},
 		{Name: "blocklist", Type: "json"},
 		{Name: "functions", Type: "json"},
 		{Name: "resolvers", Type: "json"},

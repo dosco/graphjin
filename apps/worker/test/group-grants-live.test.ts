@@ -30,12 +30,12 @@ import {
   upsertDataAccessRule,
   user_group,
 } from "@neko/db";
-import { graphjinSigningSecretB64, mintGraphjinToken } from "@neko/llm/graphjin";
+import { applyGraphjinConfigUpdate, graphjinSigningSecretB64, mintGraphjinToken } from "@neko/llm/graphjin";
 import { disableGroupGrants, enableGroupGrants, fetchGraphjinColumnCatalog } from "../src/graphjin/group-grants-service";
 
 /**
  * Plan step 3 against a GraphJin binary with source grants (dosco/graphjin#640):
- * database rules, the enable flow, config generation, restart and the run
+ * database rules, the enable flow, config generation, the live gj_config apply and the run
  * token claims. Set OPENNEKO_TEST_GRAPHJIN_BIN to run it.
  */
 const bin = process.env.OPENNEKO_TEST_GRAPHJIN_BIN;
@@ -84,11 +84,15 @@ async function freePort(): Promise<number> {
     });
   }
 
+  // Changes reach the running GraphJin through gj_config; nothing restarts.
   const deps = {
     configFile,
-    restart: async () => {
-      await stopGraphjin();
-      await startGraphjin();
+    applyLive: async (update: Record<string, unknown>) => {
+      await applyGraphjinConfigUpdate({
+        endpoint,
+        headers: { authorization: `Bearer ${mintGraphjinToken({ orgId, userId: "group-grants", role: "admin", ttlSeconds: 120 })}` },
+        update,
+      });
     },
     catalog: (sources: string[]) => fetchGraphjinColumnCatalog(orgId, endpoint, sources),
   };
@@ -117,6 +121,23 @@ host_port: 127.0.0.1:${port}
 production: true
 disable_production_security: true
 log_level: warn
+mcp:
+  allow_config_updates: true
+artifacts:
+  enabled: false
+watches:
+  enabled: false
+  runner: off
+tasks:
+  enabled: false
+system:
+  capabilities:
+    catalog.read: true
+    config.read: true
+    config.write: true
+  root_access:
+    gj_catalog: authenticated
+    gj_config: admin
 auth:
   type: jwt
   jwt:

@@ -18,6 +18,11 @@ export function currentRevisionFromConflict(messages: Array<string | null | unde
   return null;
 }
 
+/** gj_config answers with a list of rows; older GraphJins answered with one row. */
+function firstRow<T>(value: T | T[] | undefined | null): T | undefined {
+  return Array.isArray(value) ? value[0] : (value ?? undefined);
+}
+
 type ConfigRow = {
   valid?: boolean;
   applied?: boolean;
@@ -44,13 +49,13 @@ export async function applyGraphjinConfigUpdate(input: {
     if (!revision) {
       // A unique operation name keeps GraphJin's response cache out of the read.
       const name = `ConfigRevision_${randomUUID().replaceAll("-", "")}`;
-      const current = await graphjinQuery<{ gj_config?: { catalog_revision?: string } }>({
+      const current = await graphjinQuery<{ gj_config?: { catalog_revision?: string } | Array<{ catalog_revision?: string }> }>({
         baseUrl: input.endpoint,
         configurationOnly: true,
         headers: input.headers,
         query: `query ${name} { gj_config(id: "current") { catalog_revision } }`,
       });
-      revision = current.data?.gj_config?.catalog_revision ?? null;
+      revision = firstRow(current.data?.gj_config)?.catalog_revision ?? null;
       if (!revision) {
         throw new Error(`GraphJin config revision unavailable: ${current.errors?.map((e) => e.message).join("; ") ?? "no revision"}`);
       }
@@ -62,7 +67,7 @@ export async function applyGraphjinConfigUpdate(input: {
         expected_catalog_revision: revision,
         ...input.update,
       });
-      const result = await graphjinQuery<{ gj_config?: ConfigRow }>({
+      const result = await graphjinQuery<{ gj_config?: ConfigRow | ConfigRow[] }>({
         baseUrl: input.endpoint,
         configurationOnly: true,
         longRunning: true,
@@ -70,7 +75,7 @@ export async function applyGraphjinConfigUpdate(input: {
         query: `mutation${request.variableDefinitions} { gj_config(id: "current", update: ${request.literal}) { valid applied preview_id catalog_revision errors_json } }`,
         variables: request.variables,
       });
-      const row = result.data?.gj_config;
+      const row = firstRow(result.data?.gj_config);
       const messages = [...(result.errors?.map((error) => error.message) ?? []), row?.errors_json];
       return { row, messages, failed: Boolean(result.errors?.length) };
     };

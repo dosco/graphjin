@@ -259,3 +259,72 @@ export function removeGroupGrantsFromConfig(raw: string, previousReadModes: Reco
   const content = document.toString();
   return { content, changed: content !== raw };
 }
+
+type PlainConfig = {
+  identity?: Record<string, unknown>;
+  roles?: Array<Record<string, unknown>>;
+  sources?: Array<Record<string, unknown>>;
+};
+
+function plain(raw: string): PlainConfig {
+  const value = parseDocument(raw).toJSON() as PlainConfig | null;
+  return value && typeof value === "object" ? value : {};
+}
+
+/** after, with null for each key that before had and after dropped (a merge patch). */
+function mergePatch(before: Record<string, unknown> | undefined, after: Record<string, unknown> | undefined): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...(after ?? {}) };
+  for (const key of Object.keys(before ?? {})) if (!(key in out)) out[key] = null;
+  return out;
+}
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/**
+ * The gj_config update that makes a running GraphJin match a config file that
+ * applyGroupGrantsToConfig or removeGroupGrantsFromConfig changed from
+ * `before` to `after`: the identity block, the og_* roles, and each source's
+ * access and API operation allowed_roles. GraphJin applies it live, so the
+ * change needs no restart. Returns null when nothing differs.
+ */
+export function groupGrantsLivePatch(before: string, after: string): Record<string, unknown> | null {
+  const old = plain(before);
+  const next = plain(after);
+  const update: Record<string, unknown> = {};
+
+  if (!same(old.identity, next.identity)) update.identity = mergePatch(old.identity, next.identity);
+
+  const oldGroupRoles = (old.roles ?? []).filter((role) => isGroupRole(role.name));
+  const nextGroupRoles = (next.roles ?? []).filter((role) => isGroupRole(role.name));
+  const changedRoles = nextGroupRoles.filter((role) => !oldGroupRoles.some((o) => same(o, role)));
+  if (changedRoles.length > 0) update.roles = changedRoles;
+  const removed = oldGroupRoles.map((role) => String(role.name)).filter((name) => !nextGroupRoles.some((role) => role.name === name));
+  if (removed.length > 0) update.remove_roles = removed;
+
+  const patches: Array<Record<string, unknown>> = [];
+  for (const source of next.sources ?? []) {
+    const name = String(source.name ?? "");
+    const prior = (old.sources ?? []).find((item) => String(item.name ?? "") === name);
+    if (!prior) continue;
+    const patch: Record<string, unknown> = { name };
+    if (!same(prior.access, source.access)) {
+      patch.access = source.access === undefined ? null : mergePatch(prior.access as Record<string, unknown>, source.access as Record<string, unknown>);
+    }
+    const specs: Record<string, unknown> = {};
+    for (const [specName, spec] of Object.entries((source.specs ?? {}) as Record<string, { operations?: Record<string, { allowed_roles?: unknown }> }>)) {
+      const priorOps = ((prior.specs ?? {}) as Record<string, { operations?: Record<string, { allowed_roles?: unknown }> }>)[specName]?.operations ?? {};
+      const operations: Record<string, unknown> = {};
+      for (const [operationName, operation] of Object.entries(spec?.operations ?? {})) {
+        if (!same(priorOps[operationName]?.allowed_roles, operation?.allowed_roles)) {
+          operations[operationName] = { allowed_roles: operation?.allowed_roles ?? null };
+        }
+      }
+      if (Object.keys(operations).length > 0) specs[specName] = { operations };
+    }
+    if (Object.keys(specs).length > 0) patch.specs = specs;
+    if (Object.keys(patch).length > 1) patches.push(patch);
+  }
+  if (patches.length > 0) update.source_patches = patches;
+
+  return Object.keys(update).length > 0 ? update : null;
+}

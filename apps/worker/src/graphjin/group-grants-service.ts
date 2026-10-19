@@ -15,15 +15,16 @@ import {
 } from "@neko/db";
 import {
   acquireGraphjinConfigLock,
+  applyGraphjinConfigUpdate,
   applyGroupGrantsToConfig,
   buildGroupGrantsModel,
   graphjinQuery,
   listConfigApiOperations,
   mintGraphjinToken,
+  groupGrantsLivePatch,
   readDatabaseSourceReadModes,
   removeGroupGrantsFromConfig,
 } from "@neko/llm/graphjin";
-import { requestGraphjinRestart } from "../packs/graphjin-config.js";
 
 export type GroupGrantsApplyResult = { enabled: boolean; changed: boolean; roles: string[] };
 
@@ -31,7 +32,8 @@ export type ColumnCatalog = Map<string, Array<{ schema: string; table: string; c
 
 export type GroupGrantsDeps = {
   configFile: string | null;
-  restart: (configFile: string) => Promise<void>;
+  /** Applies a gj_config update to the running GraphJin, with no restart. */
+  applyLive: (update: Record<string, unknown>) => Promise<void>;
   /** Tables and columns GraphJin exposes for each database source. */
   catalog?: (sources: string[]) => Promise<ColumnCatalog>;
 };
@@ -82,9 +84,14 @@ export async function fetchGraphjinColumnCatalog(orgId: string, endpoint: string
 export function defaultGroupGrantsDeps(orgId: string): GroupGrantsDeps {
   return {
     configFile: process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim() || null,
-    restart: async (configFile) => {
+    applyLive: async (update) => {
       const endpoint = await defaultEndpoint(orgId);
-      if (endpoint) await requestGraphjinRestart(configFile, endpoint);
+      if (!endpoint) return;
+      await applyGraphjinConfigUpdate({
+        endpoint,
+        headers: { authorization: `Bearer ${mintGraphjinToken({ orgId, userId: "group-grants", role: "admin", ttlSeconds: 120 })}` },
+        update,
+      });
     },
     catalog: async (sources) => {
       const endpoint = await defaultEndpoint(orgId);
@@ -123,27 +130,32 @@ export async function disableGroupGrants(
   const configFile = deps.configFile;
   await setGroupGrantsEnabled(orgId, false, actorUserId);
   const release = await acquireGraphjinConfigLock({ configFile });
-  let changed = false;
+  let patch: Record<string, unknown> | null = null;
   try {
-    const restored = removeGroupGrantsFromConfig(await readFile(configFile, "utf8"), await getPreviousReadModes(orgId));
+    const raw = await readFile(configFile, "utf8");
+    const restored = removeGroupGrantsFromConfig(raw, await getPreviousReadModes(orgId));
     if (restored.changed) {
-      const mode = (await stat(configFile)).mode & 0o777;
-      const temporary = `${configFile}.${randomUUID()}.group-grants`;
-      await writeFile(temporary, restored.content, { mode });
-      await rename(temporary, configFile);
-      changed = true;
+      patch = groupGrantsLivePatch(raw, restored.content);
+      await writeConfig(configFile, restored.content);
     }
   } finally {
     await release();
   }
-  if (changed) await deps.restart(configFile);
-  return { changed };
+  if (patch) await deps.applyLive(patch);
+  return { changed: patch !== null };
+}
+
+async function writeConfig(configFile: string, content: string): Promise<void> {
+  const mode = (await stat(configFile)).mode & 0o777;
+  const temporary = `${configFile}.${randomUUID()}.group-grants`;
+  await writeFile(temporary, content, { mode });
+  await rename(temporary, configFile);
 }
 
 /**
- * Writes the org's group roles and grants into the GraphJin config file and
- * restarts GraphJin when the file changed. Does nothing while group grants
- * are off.
+ * Writes the org's group roles and grants into the GraphJin config file, for
+ * GraphJin's next start, and applies the same change to the running GraphJin
+ * through gj_config. Does nothing while group grants are off.
  */
 export async function applyGroupGrants(orgId: string, deps: GroupGrantsDeps = defaultGroupGrantsDeps(orgId)): Promise<GroupGrantsApplyResult> {
   if (!(await getGroupGrantsEnabled(orgId))) return { enabled: false, changed: false, roles: [] };
@@ -151,6 +163,7 @@ export async function applyGroupGrants(orgId: string, deps: GroupGrantsDeps = de
   const configFile = deps.configFile;
   const release = await acquireGraphjinConfigLock({ configFile });
   let result: GroupGrantsApplyResult;
+  let patch: Record<string, unknown> | null = null;
   try {
     const raw = await readFile(configFile, "utf8");
     const inputs = await loadGroupGrantInputs(orgId, listConfigApiOperations(raw));
@@ -162,16 +175,14 @@ export async function applyGroupGrants(orgId: string, deps: GroupGrantsDeps = de
     if (Object.keys(unseen).length > 0) await recordPreviousReadModes(orgId, unseen);
     const patched = applyGroupGrantsToConfig(raw, model, { ...unseen, ...stored });
     if (patched.changed) {
-      const mode = (await stat(configFile)).mode & 0o777;
-      const temporary = `${configFile}.${randomUUID()}.group-grants`;
-      await writeFile(temporary, patched.content, { mode });
-      await rename(temporary, configFile);
+      patch = groupGrantsLivePatch(raw, patched.content);
+      await writeConfig(configFile, patched.content);
     }
     result = { enabled: true, changed: patched.changed, roles: model.roles.map((r) => r.role) };
   } finally {
     await release();
   }
-  if (result.changed) await deps.restart(configFile);
+  if (patch) await deps.applyLive(patch);
   return result;
 }
 

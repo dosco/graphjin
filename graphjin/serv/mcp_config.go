@@ -114,6 +114,11 @@ func (ms *mcpServer) registerConfigTools() {
 							"admin_tables_remove":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 							"blocked_tables_add":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 							"blocked_tables_remove":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"grants": map[string]any{
+								"type":        []string{"array", "null"},
+								"description": "Replaces the source's role grants; null clears them. Each grant is {role, tables: [{name, columns, filter}]}. The role must be defined or added in the same update.",
+								"items":       map[string]any{"type": "object"},
+							},
 						},
 					},
 				},
@@ -121,6 +126,9 @@ func (ms *mcpServer) registerConfigTools() {
 		),
 		mcp.WithObject("system",
 			mcp.Description("Merge-patch built-in system capabilities and root_access. Omitted values are preserved; null removes an override and restores the mode default."),
+		),
+		mcp.WithObject("identity",
+			mcp.Description("Merge-patch request identity: role_claims, group_claims, role_mode (first or union), namespace_claim, user_id_claim, admin_roles, query. Arrays replace; omitted values are preserved."),
 		),
 		mcp.WithObject("workflows",
 			mcp.Description("Merge-patch built-in workflow path and execute/read/write capabilities. The JavaScript runtime is fixed to Goja."),
@@ -371,6 +379,7 @@ type MCPConfigResponse struct {
 	Sources        any                  `json:"sources,omitempty"`
 	System         core.SystemConfig    `json:"system,omitempty"`
 	Workflows      core.WorkflowsConfig `json:"workflows,omitempty"`
+	Identity       core.IdentityConfig  `json:"identity,omitempty"`
 	Databases      any                  `json:"databases,omitempty"`
 	Relationships  any                  `json:"relationships,omitempty"`
 	Metadata       core.MetadataConfig  `json:"metadata,omitempty"`
@@ -412,6 +421,8 @@ func (ms *mcpServer) handleGetCurrentConfig(ctx context.Context, req mcp.CallToo
 		result.System = conf.System
 	case "workflows":
 		result.Workflows = conf.Workflows
+	case "identity":
+		result.Identity = conf.Identity
 	case "relationships":
 		result.Relationships = redactedConfigValue(conf.Relationships)
 	case "databases":
@@ -1010,15 +1021,6 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		}
 	}
 
-	if sourcePatches, ok := args["source_patches"].([]any); ok {
-		patchChanges, err := applySourceAccessConfigPatches(conf, sourcePatches)
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("source_patches: %v", err))
-		} else {
-			changes = append(changes, patchChanges...)
-		}
-	}
-
 	if patch, ok := args["system"].(map[string]interface{}); ok {
 		var next core.SystemConfig
 		if err := mergeConfigSection(conf.System, patch, &next); err != nil {
@@ -1026,6 +1028,17 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		} else {
 			conf.System = next
 			changes = append(changes, "updated system feature configuration")
+		}
+	}
+	if patch, ok := args["identity"].(map[string]interface{}); ok {
+		var next core.IdentityConfig
+		if err := mergeConfigSection(conf.Identity, patch, &next); err != nil {
+			errors = append(errors, fmt.Sprintf("identity: %v", err))
+		} else if next.RoleMode != "" && next.RoleMode != "first" && next.RoleMode != "union" {
+			errors = append(errors, fmt.Sprintf("identity: role_mode must be first or union, got %q", next.RoleMode))
+		} else {
+			conf.Identity = next
+			changes = append(changes, "updated identity configuration")
 		}
 	}
 	if patch, ok := args["workflows"].(map[string]interface{}); ok {
@@ -1341,6 +1354,17 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 					}
 				}
 			}
+		}
+	}
+
+	// Source patches run after roles so that a grant can name a role added
+	// in the same update.
+	if sourcePatches, ok := args["source_patches"].([]any); ok {
+		patchChanges, err := applySourceAccessConfigPatches(conf, sourcePatches)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("source_patches: %v", err))
+		} else {
+			changes = append(changes, patchChanges...)
 		}
 	}
 
@@ -2115,6 +2139,8 @@ type sourceAccessConfigPatch struct {
 	BlockedTablesRemove    []string          `json:"blocked_tables_remove,omitempty"`
 	RootsSet               map[string]string `json:"roots_set,omitempty"`
 	RootsRemove            []string          `json:"roots_remove,omitempty"`
+	// Grants replaces the source's role grants. null clears them.
+	Grants json.RawMessage `json:"grants,omitempty"`
 }
 
 func applySourceAccessConfigPatches(conf *core.Config, items []any) ([]string, error) {
@@ -2263,6 +2289,14 @@ func applySourceAccessPatch(source *core.SourceConfig, patch sourceAccessConfigP
 		return changes, err
 	}
 	changes = append(changes, classChanges...)
+	if len(patch.Grants) != 0 {
+		var grants []core.SourceAccessGrant
+		if err := json.Unmarshal(patch.Grants, &grants); err != nil {
+			return changes, fmt.Errorf("grants: %w", err)
+		}
+		source.Access.Grants = grants
+		changes = append(changes, fmt.Sprintf("updated source %s access.grants", source.Name))
+	}
 
 	if len(patch.RootsSet) != 0 || len(patch.RootsRemove) != 0 {
 		return changes, fmt.Errorf("roots_set and roots_remove were removed from source_patches; use system.root_access")
@@ -4498,6 +4532,7 @@ func (ms *mcpServer) syncConfigToViper(v *viper.Viper) {
 	if conf.Roles != nil {
 		v.Set("roles", conf.Roles)
 	}
+	v.Set("identity", conf.Identity)
 	if conf.Blocklist != nil {
 		v.Set("blocklist", conf.Blocklist)
 	}
