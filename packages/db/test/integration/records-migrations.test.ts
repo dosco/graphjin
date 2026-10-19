@@ -57,15 +57,15 @@ describeIfRecordsDb("records migration stream", () => {
         "0005_import_batch_durability.sql",
         "0006_recycle_index.sql",
         "0007_identity_mapping.sql",
-        "0008_graphjin_watch_store.sql",
         "0009_change_log_owner_scope.sql",
         "0010_subject_entitlements.sql",
+        "0011_record_documents.sql",
       ],
-      current: "0010_subject_entitlements.sql",
+      current: "0011_record_documents.sql",
     });
     await expect(runRecordsMigrations({ pool: testPool })).resolves.toEqual({
       applied: [],
-      current: "0010_subject_entitlements.sql",
+      current: "0011_record_documents.sql",
     });
 
     const tables = await testPool.query<{ table_name: string }>(
@@ -98,7 +98,7 @@ describeIfRecordsDb("records migration stream", () => {
     const auditVersion = await testPool.query<{ version: number }>(
       "select version from engine.substrate_version where name = 'record_audit_trigger'",
     );
-    expect(auditVersion.rows).toEqual([{ version: 4 }]);
+    expect(auditVersion.rows).toEqual([{ version: 5 }]);
     const migration = await testPool.query<{ checksum_sha256: string }>(
       "select checksum_sha256 from engine.schema_migrations where name = '0001_engine_registry.sql'",
     );
@@ -118,6 +118,30 @@ describeIfRecordsDb("records migration stream", () => {
        where name = '0001_engine_registry.sql'`,
       [diskMigration?.checksumSha256],
     );
+  });
+
+  it("runs GraphJin's store SQL after the migrations, idempotently", async () => {
+    const storeSql = `
+      CREATE SCHEMA IF NOT EXISTS "_graphjin";
+      CREATE TABLE IF NOT EXISTS "_graphjin"."watches" (id TEXT PRIMARY KEY);
+      ALTER TABLE "_graphjin"."watches" ADD COLUMN IF NOT EXISTS lifecycle TEXT NOT NULL DEFAULT 'durable';
+    `;
+    const logs: string[] = [];
+    for (let run = 0; run < 2; run++) {
+      await expect(
+        runRecordsMigrations({ pool: testPool, graphjinStoreSql: async () => storeSql, log: (m) => logs.push(m) }),
+      ).resolves.toEqual({ applied: [], current: "0011_record_documents.sql" });
+    }
+    const columns = await testPool.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+       where table_schema = '_graphjin' and table_name = 'watches' order by column_name`,
+    );
+    expect(columns.rows.map((row) => row.column_name)).toEqual(["id", "lifecycle"]);
+    expect(logs.filter((m) => m.includes("GraphJin store is current"))).toHaveLength(2);
+
+    await expect(
+      runRecordsMigrations({ pool: testPool, graphjinStoreSql: async () => "select broken(" }),
+    ).rejects.toThrow();
   });
 
   it("enforces org consistency through composite foreign keys", async () => {
@@ -158,7 +182,7 @@ describeIfRecordsDb("records migration stream", () => {
           applied_at timestamptz not null default now()
         )
       `);
-      for (const migration of migrations.slice(0, -1)) {
+      for (const migration of migrations.filter((m) => m.name < "0010_subject_entitlements.sql")) {
         await upgradePool.query(migration.sql);
         await upgradePool.query(
           `insert into engine.schema_migrations (name, checksum_sha256)
@@ -189,8 +213,8 @@ describeIfRecordsDb("records migration stream", () => {
       `);
 
       await expect(runRecordsMigrations({ pool: upgradePool })).resolves.toEqual({
-        applied: ["0010_subject_entitlements.sql"],
-        current: "0010_subject_entitlements.sql",
+        applied: ["0010_subject_entitlements.sql", "0011_record_documents.sql"],
+        current: "0011_record_documents.sql",
       });
       const objectGrant = await upgradePool.query(
         `select can_read, can_create, can_update, can_delete

@@ -26,6 +26,7 @@ import {
   recordIdentifier,
   recordsGraphjinCursorSecret,
   recordsGraphjinSigningSecret,
+  recordsGraphjinStoreSql,
   recordsWatchGraphjinCursorSecret,
   recordsWatchGraphjinSigningSecret,
   recordsWatchWebhookSecret,
@@ -233,7 +234,14 @@ export async function createRecordsSchemaRuntime(options: {
   validateConfig?: RecordsGraphjinConfigValidator;
   projectMetadata?: RecordsMetadataAppStateProjector;
 }): Promise<RecordsSchemaRuntime> {
-  await runRecordsMigrations({ pool: options.pool });
+  const binary =
+    options.graphjinBinary ??
+    process.env.OPENNEKO_RECORDS_GRAPHJIN_BINARY ??
+    "graphjin";
+  await runRecordsMigrations({
+    pool: options.pool,
+    graphjinStoreSql: () => recordsGraphjinStoreSql(binary),
+  });
 
   const graphjinBaseUrl =
     options.graphjinBaseUrl ??
@@ -244,10 +252,6 @@ export async function createRecordsSchemaRuntime(options: {
     process.env.OPENNEKO_RECORDS_GRAPHJIN_CONFIG_DIR ??
     "/tmp/openneko-records-graphjin";
   const configFile = join(configDirectory, RECORDS_GRAPHJIN_CONFIG_FILENAME);
-  const binary =
-    options.graphjinBinary ??
-    process.env.OPENNEKO_RECORDS_GRAPHJIN_BINARY ??
-    "graphjin";
   const controller =
     options.controller ??
     new RecordsDataPlaneController({

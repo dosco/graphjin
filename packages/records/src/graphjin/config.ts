@@ -467,6 +467,18 @@ export function buildRecordsWatchGraphjinConfig(
   return stringify(config, { lineWidth: 0, sortMapEntries: false });
 }
 
+/**
+ * GraphJin's artifact and watch store DDL for the records database. GraphJin
+ * owns these _graphjin tables; the records migration step runs this SQL.
+ */
+export async function recordsGraphjinStoreSql(binary = "graphjin"): Promise<string> {
+  const { stdout } = await runGraphjin(binary, ["serve", "db", "store-sql", "--schema", "_graphjin", "--watches"]);
+  if (!stdout.includes("CREATE SCHEMA IF NOT EXISTS")) {
+    throw new Error(`GraphJin store SQL is empty: ${binary} serve db store-sql`);
+  }
+  return stdout;
+}
+
 function runGraphjin(
   binary: string,
   args: string[],

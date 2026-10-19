@@ -103,6 +103,13 @@ export async function runRecordsMigrations(options: {
   pool?: Pool;
   directory?: string;
   log?: (message: string) => void;
+  /**
+   * GraphJin's artifact and watch store DDL (`graphjin serve db store-sql
+   * --watches`). GraphJin owns those tables; running its idempotent SQL here,
+   * after the records migrations and under the same lock, creates them
+   * before the policy projection or GraphJin can serve.
+   */
+  graphjinStoreSql?: () => Promise<string>;
 } = {}): Promise<RecordsMigrationResult> {
   const ownedPool = options.pool ? null : new pg.Pool(buildRecordsPoolConfig());
   const pool = options.pool ?? ownedPool!;
@@ -157,6 +164,19 @@ export async function runRecordsMigrations(options: {
         throw error;
       }
       applied.push(migration.name);
+    }
+
+    if (options.graphjinStoreSql) {
+      const sql = await options.graphjinStoreSql();
+      await client.query("begin");
+      try {
+        await client.query(sql);
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      }
+      log("[records-migrate] GraphJin store is current");
     }
 
     const current = migrations.at(-1)?.name ?? null;
