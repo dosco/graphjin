@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -17,35 +16,6 @@ import (
 type composeParityDocument struct {
 	Services map[string]composeParityService `yaml:"services"`
 	Volumes  map[string]any                  `yaml:"volumes"`
-}
-
-func TestOpenShellReleaseUsesOneVersion(t *testing.T) {
-	root := repoRootForTest(t)
-	dockerfile, err := os.ReadFile(filepath.Join(root, "Dockerfile"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	versionMatch := regexp.MustCompile(`(?m)^ARG OPENSHELL_VERSION=([0-9]+\.[0-9]+\.[0-9]+)$`).FindSubmatch(dockerfile)
-	if len(versionMatch) != 2 {
-		t.Fatal("Dockerfile must pin an OpenShell client version")
-	}
-	want := string(versionMatch[1])
-	defaultPattern := regexp.MustCompile(`\$\{OPENSHELL_VERSION:-([^}]+)\}`)
-	for _, name := range []string{"compose.openshell.yml", "apps/openneko/assets/compose/openshell.yml", ".github/workflows/release-binaries.yml"} {
-		raw, err := os.ReadFile(filepath.Join(root, name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		matches := defaultPattern.FindAllSubmatch(raw, -1)
-		if len(matches) == 0 {
-			t.Fatalf("%s does not pin an OpenShell default", name)
-		}
-		for _, match := range matches {
-			if string(match[1]) != want {
-				t.Fatalf("%s defaults to OpenShell %s; Dockerfile CLI uses %s", name, match[1], want)
-			}
-		}
-	}
 }
 
 type composeParityService struct {
@@ -67,40 +37,6 @@ type composeParityService struct {
 	Ports       []string                           `yaml:"ports"`
 	Command     []string                           `yaml:"command"`
 	Healthcheck map[string]any                     `yaml:"healthcheck"`
-}
-
-func TestOpenShellReaperIsIsolatedAndPresentInBothComposeVariants(t *testing.T) {
-	rootRaw, err := os.ReadFile("../../../compose.openshell.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	packagedRaw, err := ComposeFS.ReadFile("compose/openshell.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for label, document := range map[string]composeParityDocument{
-		"source":   loadComposeParityDocument(t, rootRaw),
-		"packaged": loadComposeParityDocument(t, packagedRaw),
-	} {
-		reaper, ok := document.Services["neko-reaper"]
-		if !ok {
-			t.Fatalf("%s OpenShell overlay has no reaper", label)
-		}
-		if reaper.Image != "ghcr.io/open-neko/neko-cli:${OPENNEKO_VERSION:-latest}" ||
-			!reflect.DeepEqual(reaper.Command, []string{"reaper"}) ||
-			reaper.Restart != "unless-stopped" || !reaper.ReadOnly || reaper.NetworkMode != "none" ||
-			!reflect.DeepEqual(reaper.Volumes, []string{"/var/run/docker.sock:/var/run/docker.sock"}) {
-			t.Fatalf("%s reaper contract is incomplete: %+v", label, reaper)
-		}
-		if !strings.Contains(fmt.Sprint(reaper.Healthcheck["test"]), "reaper --check") {
-			t.Fatalf("%s reaper has no Docker socket healthcheck", label)
-		}
-		for _, consumer := range []string{"web", "worker"} {
-			if document.Services[consumer].DependsOn["neko-reaper"].Condition != "service_healthy" {
-				t.Fatalf("%s %s can start without a healthy reaper", label, consumer)
-			}
-		}
-	}
 }
 
 func TestLibrarianIsVendoredBoundedAndRequired(t *testing.T) {
@@ -373,11 +309,11 @@ func TestProductionDeployRequiresAuthenticatedDatasourceQuery(t *testing.T) {
 }
 
 func TestVendoredAgentBinaryCannotBeOverridden(t *testing.T) {
-	rootRaw, err := os.ReadFile("../../../compose.openshell.yml")
+	rootRaw, err := os.ReadFile("../../../compose.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	packagedRaw, err := ComposeFS.ReadFile("compose/openshell.yml")
+	packagedRaw, err := ComposeFS.ReadFile("compose/core.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,13 +360,6 @@ func TestStorageReconciliationGatesEveryDatabaseConsumer(t *testing.T) {
 			if _, ok := reconcile.Environment[key]; !ok {
 				t.Fatalf("%s storage-reconcile is missing %s", label, key)
 			}
-		}
-		migrate := document.Services["neko-migrate"]
-		if _, ok := migrate.Environment["OPENNEKO_OPENSHELL_DB_PASSWORD"]; !ok {
-			t.Fatalf("%s neko-migrate is missing the propagated OpenShell credential", label)
-		}
-		if got := migrate.Environment["OPENNEKO_REQUIRE_EXPLICIT_OPENSHELL_DB_PASSWORD"]; got != "1" {
-			t.Fatalf("%s neko-migrate explicit-credential guard = %v, want 1", label, got)
 		}
 		for _, consumer := range []string{
 			"neko-migrate", "neko-backup", "records-graphjin", "records-watch-graphjin",

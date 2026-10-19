@@ -148,7 +148,7 @@ describeIfDb("/settings/finish", () => {
     expect(mockRequireAgentRuntimeReady).toHaveBeenCalledWith(orgId);
   });
 
-  it("does not finish setup when the secure agent runtime is unavailable", async () => {
+  it("does not finish setup when the agent runtime is unavailable", async () => {
     const { AgentRuntimeUnavailableError } = await import(
       "@/lib/agent-runtime-readiness"
     );
@@ -167,6 +167,7 @@ describeIfDb("/settings/finish", () => {
 
     expect(res.status).toBe(503);
     expect(res.body).toMatchObject({ code: "agent_runtime_unavailable" });
+    expect((res.body as { error: string }).error).toContain("openneko serve");
     expect(await readSetupCompleteAt(orgId)).toBeNull();
   });
 });

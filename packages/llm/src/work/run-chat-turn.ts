@@ -136,8 +136,8 @@ export type RunChatTurnDeps = {
   getThreadBot: typeof getThreadBot;
   syncSkillIndex: typeof syncSkillIndex;
   /**
-   * Runs the agent loop. Production hosts inject the OpenShell sandbox
-   * impl (agentRuntimeDepsFromConfig) — SEC9: the only runtime. The default
+   * Runs the agent loop. Production hosts inject the runner launcher
+   * (agentRuntimeDepsFromConfig) — SEC9: the only runtime. The default
    * (runAgentBackend in-process) exists for tests, which exercise the
    * core without a sandbox. The DB-bound prologue/epilogue stay host-side.
    */
@@ -206,15 +206,29 @@ function collectStrings(value: unknown, depth = 0): string[] {
 }
 
 /**
- * OpenShell returns policy denials inside tool output JSON. Convert that
- * implementation detail into a channel-neutral event while the exact host is
- * still available. Exported for focused regression tests.
+ * A tool reports a network denial inside its output: the harness's web_fetch
+ * names a host that is not on the run's allowlist, and older runtimes wrote a
+ * "not permitted by policy" line. Convert either into a channel-neutral event
+ * while the exact host is still available. Exported for focused regression
+ * tests.
  */
 export function extractNetworkPolicyDenial(
   event: AgentEvent,
 ): Extract<AgentEvent, { type: "capability_denied" }> | null {
   if (event.type !== "tool_end") return null;
   const text = [event.error ?? "", ...collectStrings(event.result)].join("\n");
+  const allowlist = text.match(/\bhost ([a-z0-9.-]+)(?::(\d+))? is not on the web allowlist/i);
+  if (allowlist) {
+    const port = allowlist[2] ? Number(allowlist[2]) : undefined;
+    return {
+      type: "capability_denied",
+      capability: "network_egress",
+      reason: "policy_denied",
+      host: allowlist[1].toLowerCase(),
+      ...(Number.isFinite(port) ? { port } : {}),
+      method: "GET",
+    };
+  }
   if (!/policy_denied|not permitted by policy/i.test(text)) return null;
   const match = text.match(
     /\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+([a-z0-9.-]+)(?::(\d+))?(\/[^\s"'\\]*)?\s+not permitted by policy/i,
@@ -623,8 +637,8 @@ async function runChatTurnTraced(
       return await finishNeedsInput();
     }
 
-    // OpenShell has pulled the run artifact directory back to the host before
-    // runCore resolves. Publish every regular, non-symlink file from that
+    // The launcher has copied the run artifact directory back to the host
+    // before runCore resolves. Publish every regular, non-symlink file from that
     // directory as an explicit event; the web download route authorizes only
     // these emitted paths.
     if (result.status === "completed") {

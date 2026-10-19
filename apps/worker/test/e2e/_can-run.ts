@@ -6,15 +6,17 @@
  * primary provider) combinations the host can exercise.
  *
  * Plan matrix:
- *   - Ax × Google Gemini (GEMINI_API_KEY + `openshell` CLI)
- *   - Ax × Anthropic     (ANTHROPIC_API_KEY + `openshell` CLI)
+ *   - Ax × Google Gemini (GEMINI_API_KEY)
+ *   - Ax × Anthropic     (ANTHROPIC_API_KEY)
  *
  * Both keys are independently optional — set one or both. The suite
- * blocks (skips entirely) only when GraphJin or `graphjin` CLI is missing,
- * since those are required by every plan.
+ * blocks (skips entirely) when GraphJin, the `graphjin` CLI or the agent
+ * runtime (`openneko serve` at OPENNEKO_SERVE_SOCKET, started by
+ * `pnpm dev:agent`) is missing, since every plan needs them.
  */
 
 import { spawnSync } from "node:child_process";
+import { statSync } from "node:fs";
 
 export type AgentBackendId = "ax";
 export type PrimaryProviderId = "anthropic" | "google-gemini";
@@ -37,8 +39,6 @@ type PlanSpec = {
   primaryProvider: PrimaryProviderId;
   primaryModel: string;
   envVar: "GEMINI_API_KEY" | "ANTHROPIC_API_KEY";
-  /** Extra binary the run needs. `graphjin` is checked separately. */
-  binary: "openshell";
 };
 
 const PLAN_SPECS: PlanSpec[] = [
@@ -48,7 +48,6 @@ const PLAN_SPECS: PlanSpec[] = [
     primaryProvider: "google-gemini",
     primaryModel: "gemini-3.6-flash",
     envVar: "GEMINI_API_KEY",
-    binary: "openshell",
   },
   {
     id: "ax+anthropic",
@@ -56,12 +55,23 @@ const PLAN_SPECS: PlanSpec[] = [
     primaryProvider: "anthropic",
     primaryModel: "claude-opus-4-7",
     envVar: "ANTHROPIC_API_KEY",
-    binary: "openshell",
   },
 ];
 
 function hasOnPath(cmd: string): boolean {
   return spawnSync("which", [cmd], { stdio: "ignore" }).status === 0;
+}
+
+/** The agent runner sends every turn to `openneko serve` over this socket. */
+function serveSocketReason(): string | null {
+  const socket = process.env.OPENNEKO_SERVE_SOCKET?.trim();
+  if (!socket) return "OPENNEKO_SERVE_SOCKET is not set (source scripts/dev-env.sh)";
+  try {
+    if (statSync(socket).isSocket()) return null;
+  } catch {
+    // Reported below.
+  }
+  return `openneko serve is not listening on ${socket} (start it with pnpm dev:agent)`;
 }
 
 function readEnv(name: string): string | null {
@@ -115,6 +125,9 @@ export async function detectRunnablePlans(): Promise<CanRunResult> {
     blocking.push("`graphjin` CLI not on PATH (brew install dosco/tap/graphjin)");
   }
 
+  const serve = serveSocketReason();
+  if (serve) blocking.push(serve);
+
   if (blocking.length > 0) {
     return { runnable: [], blockingReasons: blocking, graphqlUrl };
   }
@@ -125,12 +138,6 @@ export async function detectRunnablePlans(): Promise<CanRunResult> {
     if (!apiKey) {
       console.warn(
         `[e2e] ${spec.envVar} not set — skipping plan ${spec.id}`,
-      );
-      continue;
-    }
-    if (!hasOnPath(spec.binary)) {
-      console.warn(
-        `[e2e] \`${spec.binary}\` CLI not on PATH — skipping plan ${spec.id}`,
       );
       continue;
     }
@@ -145,7 +152,7 @@ export async function detectRunnablePlans(): Promise<CanRunResult> {
 
   if (runnable.length === 0) {
     console.warn(
-      "[e2e] no runnable plans — set GEMINI_API_KEY and/or ANTHROPIC_API_KEY with OpenShell installed",
+      "[e2e] no runnable plans — set GEMINI_API_KEY and/or ANTHROPIC_API_KEY",
     );
   }
 

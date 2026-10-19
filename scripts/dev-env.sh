@@ -1,7 +1,7 @@
 # Environment for host web and worker processes against `pnpm dev:up`.
 # Source from the repository root: `. scripts/dev-env.sh`.
 #
-# OPENNEKO_DEV_CONFIG_HOME: config home for OpenNeko and OpenShell state
+# OPENNEKO_DEV_CONFIG_HOME: config home for OpenNeko state
 #   (default: your XDG config home). Set it per worktree to keep stacks apart.
 # OPENNEKO_DEV_STATE: GraphJin config directories shared with Docker
 #   (default: .openneko/dev in this checkout).
@@ -20,7 +20,6 @@ fi
 COMPOSE_PROJECT_NAME="$(printf '%s' "${COMPOSE_PROJECT_NAME:-$(basename "$PWD")}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-')"
 export COMPOSE_PROJECT_NAME
 export OPENNEKO_CONFIG_VOLUME="${OPENNEKO_CONFIG_VOLUME:-${XDG_CONFIG_HOME:-$HOME/.config}/openneko}"
-export OPENSHELL_STATE_DIR="${OPENSHELL_STATE_DIR:-$PWD/.openneko/openshell}"
 # `pnpm dev:up` installs the pinned GraphJin CLI here.
 export PATH="$OPENNEKO_DEV_STATE/bin:$PATH"
 
@@ -29,9 +28,6 @@ export PATH="$OPENNEKO_DEV_STATE/bin:$PATH"
 export OPENNEKO_PG_ENV_OVERRIDE=1
 export NEKO_PG_HOST=127.0.0.1
 export NEKO_PG_PORT="${OPENNEKO_DB_PORT:-5432}"
-# The gateway container reads this password from compose. Host migrations do
-# not provision the role, so dev-up.sh sets the role to the same value.
-export OPENNEKO_OPENSHELL_DB_PASSWORD="${OPENNEKO_OPENSHELL_DB_PASSWORD:-openneko-openshell-development-password}"
 export RECORDS_PG_HOST=127.0.0.1
 export RECORDS_PG_PORT="${OPENNEKO_RECORDS_DB_PORT:-5434}"
 
@@ -47,13 +43,15 @@ export OPENNEKO_RECORDS_GRAPHJIN_DB_HOST="${OPENNEKO_RECORDS_GRAPHJIN_DB_HOST:-r
 export OPENNEKO_RECORDS_GRAPHJIN_DB_PORT="${OPENNEKO_RECORDS_GRAPHJIN_DB_PORT:-5432}"
 export OPENNEKO_RECORDS_GRAPHJIN_BINARY="${OPENNEKO_RECORDS_GRAPHJIN_BINARY:-$PWD/scripts/dev-records-graphjin.sh}"
 
-export OPENNEKO_AGENT_IMAGE="${OPENNEKO_AGENT_IMAGE:-openneko-agent:dev}"
-export OPENSHELL_GATEWAY="${OPENSHELL_GATEWAY:-openneko-dev}"
-export OPENNEKO_SANDBOX_SHARED_NETWORK=0
-if [ -z "${OPENNEKO_BROKER_HOST_ALIAS:-}" ] && [ -s "$OPENNEKO_DEV_STATE/broker-host" ]; then
-  OPENNEKO_BROKER_HOST_ALIAS="$(cat "$OPENNEKO_DEV_STATE/broker-host")"
-  export OPENNEKO_BROKER_HOST_ALIAS
-fi
+# Agent runtime. `pnpm dev` runs `openneko serve` and `openneko sandbox` on
+# the host (scripts/dev-agent.sh); web and worker start each run's runner from
+# source with tsx, and the runner reaches the broker on loopback. Sockets
+# live under /tmp because a Unix socket path must stay short.
+export OPENNEKO_DEV_RUN="${OPENNEKO_DEV_RUN:-/tmp/openneko-$COMPOSE_PROJECT_NAME}"
+export OPENNEKO_SERVE_SOCKET="$OPENNEKO_DEV_RUN/serve.sock"
+export OPENNEKO_SANDBOX_SOCKET="$OPENNEKO_DEV_RUN/sandbox.sock"
+export OPENNEKO_AGENT_RUNS_DIR="${OPENNEKO_AGENT_RUNS_DIR:-$OPENNEKO_DEV_STATE/agent-runs}"
+export OPENNEKO_AGENT_ENTRY="${OPENNEKO_AGENT_ENTRY:-$PWD/apps/worker/src/agent-sandbox/entry.ts}"
 
 export OPENNEKO_PUBLIC_URL="${OPENNEKO_PUBLIC_URL:-http://localhost:${OPENNEKO_PORT:-3000}}"
 export WORKER_ADMIN_URL="${WORKER_ADMIN_URL:-http://127.0.0.1:4100}"

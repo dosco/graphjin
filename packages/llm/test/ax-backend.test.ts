@@ -114,8 +114,8 @@ describe("AxBackend", () => {
   });
 
   it("gives the harness its model, limits and tools, and keeps credentials from it", async () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "openshell:resolve:env:MODEL_API_KEY");
-    vi.stubEnv("MODEL_API_KEY", "openshell:resolve:env:MODEL_API_KEY");
+    vi.stubEnv("ANTHROPIC_API_KEY", "org-stored-key");
+    vi.stubEnv("MODEL_API_KEY", "org-stored-key");
     vi.stubEnv("OPENNEKO_BROKER_TOKEN", "broker-secret");
     vi.stubEnv("OPENNEKO_MCP_BRIDGE", "/app/mcp-bridge.js");
     script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
@@ -133,7 +133,7 @@ describe("AxBackend", () => {
     expect(env).toMatchObject({
       HARNESS_MODEL_PROVIDER: "anthropic",
       HARNESS_MODEL: "claude-sonnet-5-5",
-      HARNESS_MODEL_API_KEY: "openshell:resolve:env:MODEL_API_KEY",
+      HARNESS_MODEL_API_KEY: "org-stored-key",
       OPENNEKO_MCP_SERVERS: "neko_graphjin_agent",
       OPENNEKO_MCP_ORG_ID: "org-1",
       OPENNEKO_BROKER_TOKEN: "broker-secret",

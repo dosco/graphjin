@@ -32,16 +32,16 @@ import { installDataClient } from "./data-client";
 import { startDataSocket, type DataSocket } from "./data-socket";
 
 /**
- * Runs INSIDE the agent's OpenShell sandbox (Phase 3). The launcher (work-run)
- * does the DB-bound prologue on the host, uploads the job + workspace, and
- * exec's this. We reconstruct the backend (with a PLACEHOLDER key — the real
- * key is injected by the OpenShell egress proxy, never here), run the agent
- * loop, and STREAM events back as tagged stdout lines that the launcher relays
- * to the host (which scrubs + persists). The model key never enters the box.
+ * The agent runner: one child process of web or the worker per run. The
+ * launcher does the DB-bound prologue on the host, stages the job and
+ * workspace, and starts this. We reconstruct the backend, run the agent loop
+ * (each turn in openneko serve, which gets the model key with the turn), and
+ * STREAM events back as tagged stdout lines that the launcher relays to the
+ * host (which scrubs + persists). Terminal commands run in the sandbox
+ * service, which holds no key.
  *
- * Events go over stdout because `openshell sandbox exec` streams stdout to the
- * host in real time. The agent's MCP tools use BrokerControlPlane only when the
- * run grants brokered control-plane capabilities.
+ * The agent's MCP tools use BrokerControlPlane only when the run grants
+ * brokered control-plane capabilities.
  */
 interface SandboxJob {
   kind?: "work" | "workflow" | "agent-job";

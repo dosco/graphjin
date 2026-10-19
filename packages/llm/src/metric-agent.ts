@@ -234,7 +234,7 @@ async function runMetricAgentTraced(
       : basePrompt;
 
     console.log(
-      `[metric-agent] org=${input.orgId} slug=${input.slug} backend=${backend.id} graphjinPath=${graphjinPath} runtime=openshell`,
+      `[metric-agent] org=${input.orgId} slug=${input.slug} backend=${backend.id} graphjinPath=${graphjinPath} runtime=serve`,
     );
 
     promptChars = prompt.length;

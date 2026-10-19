@@ -2,7 +2,7 @@
 // seed scripts. The directory layout matches what the compose supervisor and
 // db migrator expect:
 //
-//	compose/core.yml, dev.yml, demo.yml, openshell.yml
+//	compose/core.yml, dev.yml, demo.yml
 //	migrations/*.sql
 //	env/.env.example
 package assets

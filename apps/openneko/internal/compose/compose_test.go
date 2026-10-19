@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,10 +18,9 @@ func isolateConfig(t *testing.T) {
 
 func sampleFS() fstest.MapFS {
 	return fstest.MapFS{
-		"compose/core.yml":      {Data: []byte("services: { web: {} }\n")},
-		"compose/dev.yml":       {Data: []byte("services: { dev: {} }\n")},
-		"compose/demo.yml":      {Data: []byte("services: { demo: {} }\n")},
-		"compose/openshell.yml": {Data: []byte("services: { openshell-gateway: {} }\n")},
+		"compose/core.yml": {Data: []byte("services: { web: {} }\n")},
+		"compose/dev.yml":  {Data: []byte("services: { dev: {} }\n")},
+		"compose/demo.yml": {Data: []byte("services: { demo: {} }\n")},
 	}
 }
 
@@ -36,8 +36,7 @@ func TestMaterializeProd(t *testing.T) {
 	for _, f := range files {
 		got = append(got, filepath.Base(f))
 	}
-	// SEC9: OpenShell is the only runtime — its overlay always applies.
-	want := []string{"core.yml", "openshell.yml"}
+	want := []string{"core.yml"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("got %v want %v", got, want)
 	}
@@ -55,30 +54,25 @@ func TestMaterializeDemo(t *testing.T) {
 	for _, f := range files {
 		got = append(got, filepath.Base(f))
 	}
-	want := []string{"core.yml", "demo.yml", "openshell.yml"}
+	want := []string{"core.yml", "demo.yml"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("unexpected order: %v", got)
 	}
 }
 
-func TestMaterializeOpenShellAlwaysOn(t *testing.T) {
+func TestMaterializeRemovesTheOldOpenShellOverlay(t *testing.T) {
 	isolateConfig(t)
 	dir := t.TempDir()
-	for _, goos := range []string{"darwin", "linux"} {
-		s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, GOOS: goos}
-		files, err := s.Materialize(ModeProd)
-		if err != nil {
-			t.Fatal(err)
-		}
-		found := false
-		for _, f := range files {
-			if filepath.Base(f) == "openshell.yml" {
-				found = true
-			}
-		}
-		if !found {
-			t.Fatalf("openshell overlay must always apply (SEC9): %v", files)
-		}
+	stale := filepath.Join(dir, "openshell.yml")
+	if err := os.WriteFile(stale, []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, GOOS: "linux"}
+	if _, err := s.Materialize(ModeProd); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("the old overlay is still in the runtime dir: %v", err)
 	}
 }
 

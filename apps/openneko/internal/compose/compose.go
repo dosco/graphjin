@@ -45,7 +45,6 @@ type Supervisor struct {
 	//   compose/core.yml
 	//   compose/dev.yml
 	//   compose/demo.yml
-	//   compose/openshell.yml
 	AssetsFS fs.FS
 	// RuntimeDir is where compose files are written. Defaults to
 	// $OPENNEKO_WORKSPACE_ROOT/.openneko/runtime/ when that variable is set,
@@ -109,8 +108,9 @@ func (s *Supervisor) Materialize(mode Mode) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("compose: unknown mode %q (want prod|dev|demo)", mode)
 	}
-	// SEC9: OpenShell is the only runtime — its overlay always applies.
-	files = append(files, "compose/openshell.yml")
+	// Releases before the agent runtime moved into core.yml also wrote an
+	// OpenShell overlay here; drop it so nothing passes it to compose again.
+	_ = os.Remove(filepath.Join(rt, "openshell.yml"))
 	var out []string
 	for _, name := range files {
 		raw, err := fs.ReadFile(s.AssetsFS, name)
@@ -386,22 +386,4 @@ func (s *Supervisor) Run(ctx context.Context, projectName string, files, args []
 			return 0, nil
 		}
 	}
-}
-
-// EnsureImage pulls image unless it's already present locally. Used to warm the
-// agent sandbox image at install time so the gateway's first sandbox-create
-// (i.e. the user's first chat) doesn't block on a multi-hundred-MB pull.
-func (s *Supervisor) EnsureImage(ctx context.Context, image string, stdout, stderr *os.File) error {
-	if exec.CommandContext(ctx, "docker", "image", "inspect", image).Run() == nil {
-		return nil // already local
-	}
-	return s.PullImage(ctx, image, stdout, stderr)
-}
-
-// PullImage always asks Docker for the image ref, even if a local tag exists.
-func (s *Supervisor) PullImage(ctx context.Context, image string, stdout, stderr *os.File) error {
-	cmd := exec.CommandContext(ctx, "docker", "pull", image)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	return cmd.Run()
 }

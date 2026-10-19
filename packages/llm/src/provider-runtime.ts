@@ -12,7 +12,7 @@ export type ProviderRuntime = {
   /** The model id the provider's API expects (an Azure deployment name for Azure). */
   model: string;
   baseUrl: string;
-  /** The env var the agent reads the key from; OpenShell injects it on egress. */
+  /** The env var the agent reads the key from; the launcher loads it per run. */
   keyEnv?: string;
   credentialSource: ProviderCredentialSource;
   endpoint: ProviderEndpoint;
@@ -91,8 +91,8 @@ function ollamaBaseUrl(config: Record<string, unknown>): string {
     throw new Error("Ollama Base URL must use http or https.");
   }
 
-  // The model runs in an OpenShell sandbox, so loopback points at the
-  // sandbox itself. Route host-local Ollama through Docker's host gateway.
+  // openneko serve calls the model from its own container, where loopback is
+  // not the host. Route host-local Ollama through Docker's host gateway.
   if (["localhost", "127.0.0.1", "[::1]", "::1"].includes(url.hostname)) {
     url.hostname = "host.docker.internal";
   }
@@ -166,7 +166,7 @@ export function resolveProviderRuntime(args: {
   }
 }
 
-/** Non-secret Ax Harness model route. The key reaches the box as an OpenShell placeholder in keyEnv. */
+/** Non-secret Ax Harness model route. The key, loaded per run, goes to serve under keyEnv. */
 export type AxModelRoute = {
   /** An Ax provider profile, or openai-compatible. */
   provider: string;

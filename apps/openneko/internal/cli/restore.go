@@ -66,10 +66,6 @@ func runRestore(ctx context.Context, cmd *cobra.Command, target string) error {
 	if err != nil {
 		return err
 	}
-	if err := configureOpenShellStateDir(); err != nil {
-		return err
-	}
-	configureOpenShellDBURL()
 	if err := requireFreshVerifiedBackupFor(ctx, project, files, time.Now(), "restore"); err != nil {
 		return err
 	}
@@ -81,7 +77,6 @@ func runRestore(ctx context.Context, cmd *cobra.Command, target string) error {
 		"neko-graphjin",
 		"records-graphjin",
 		"records-watch-graphjin",
-		"openshell-gateway",
 		"neko-backup",
 		"neko-db",
 		"records-db",

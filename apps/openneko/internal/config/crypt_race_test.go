@@ -8,8 +8,8 @@ import (
 )
 
 // Two overlapping CLI invocations (a deploy `upgrade` racing a cron
-// `status`) must never mint different secret keys: the derived openshell
-// DB-role password and every enc:v1 value hang off this one file.
+// `status`) must never mint different secret keys: every enc:v1 value hangs
+// off this one file.
 func TestLoadOrCreateKeyConcurrent(t *testing.T) {
 	dir := t.TempDir()
 

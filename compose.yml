@@ -494,13 +494,6 @@ services:
       NEKO_PG_USER: neko
       NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
       NEKO_PG_DATABASE: neko
-      # Direct source Compose has no host supervisor process to inject the
-      # per-install derived gateway password. Keep migration + gateway on one
-      # stable development-only value; packaged installs derive a unique one.
-      OPENNEKO_OPENSHELL_DB_PASSWORD: ${OPENNEKO_OPENSHELL_DB_PASSWORD:-openneko-openshell-development-password}
-      # A managed migration must never fall back to a container-local key and
-      # rotate the role independently of the gateway credential.
-      OPENNEKO_REQUIRE_EXPLICIT_OPENSHELL_DB_PASSWORD: "1"
       OPENNEKO_SKIP_MIGRATE: ${OPENNEKO_SKIP_MIGRATE:-}
       XDG_CONFIG_HOME: /config
     volumes:
@@ -645,6 +638,69 @@ services:
       retries: 10
       start_period: 60s
 
+  # Agent runtime. Web and worker run each agent run's runner as a child
+  # process; the runner sends every turn to agent-serve over a Unix socket,
+  # and agent-serve sends the agent's terminal commands to agent-sandbox.
+  # Model keys reach serve only with each turn; the sandbox holds no secrets.
+  # Run workspaces live in openneko-agent-runs, shared through group 1001.
+  agent-serve:
+    image: ${OPENNEKO_AGENT_IMAGE:-openneko-agent:dev}
+    build:
+      context: .
+      target: agent
+    user: "1001:1001"
+    command: ["openneko", "serve", "--socket", "/run/openneko/serve.sock"]
+    restart: unless-stopped
+    depends_on:
+      agent-sandbox:
+        condition: service_started
+    environment:
+      OPENNEKO_SANDBOX_SOCKET: /run/openneko/sandbox.sock
+    volumes:
+      - openneko-run:/run/openneko
+      - openneko-agent-runs:/var/lib/openneko/agent-runs
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/openneko/serve.sock"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Runs terminal commands as a per-turn user (uid 20000 and up, group 1001)
+  # in the run's staged workspace. It needs root to switch users, so every
+  # other capability is dropped. It sits only on the agent-sandbox network:
+  # commands can reach the internet but not neko-db, records-db, GraphJin,
+  # the broker or any other service of this stack.
+  agent-sandbox:
+    image: ${OPENNEKO_AGENT_IMAGE:-openneko-agent:dev}
+    build:
+      context: .
+      target: agent
+    user: "0:0"
+    command: ["openneko", "sandbox", "--socket", "/run/openneko/sandbox.sock"]
+    restart: unless-stopped
+    environment:
+      OPENNEKO_SANDBOX_WORKSPACES: /var/lib/openneko/agent-runs
+      OPENNEKO_SANDBOX_HOMES: /var/lib/openneko/sandbox-homes
+      OPENNEKO_SANDBOX_GID: "1001"
+    volumes:
+      - openneko-run:/run/openneko
+      - openneko-agent-runs:/var/lib/openneko/agent-runs
+      - openneko-sandbox-homes:/var/lib/openneko/sandbox-homes
+    networks:
+      - agent-sandbox
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - KILL
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 1024
+
   web:
     build:
       context: .
@@ -663,6 +719,8 @@ services:
       # recovery screen while the control plane is still starting.
       worker:
         condition: service_healthy
+      agent-serve:
+        condition: service_healthy
     environment:
       <<: *neko-app-env
       WORKER_ADMIN_URL: http://worker:4100
@@ -673,6 +731,12 @@ services:
       OPENNEKO_MAP_STYLE: ${OPENNEKO_MAP_STYLE:-}
       OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
+      # The agent runtime: runs stage under OPENNEKO_AGENT_RUNS_DIR and the
+      # runner (OPENNEKO_AGENT_ENTRY) talks to agent-serve's socket. The
+      # runner is a child process, so it reaches the broker on loopback.
+      OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      OPENNEKO_AGENT_RUNS_DIR: /var/lib/openneko/agent-runs
+      OPENNEKO_AGENT_ENTRY: /opt/openneko-agent/entry.js
     ports:
       - "${OPENNEKO_WEB_BIND_ADDRESS:-0.0.0.0}:${OPENNEKO_PORT:-3000}:8080"
     volumes:
@@ -683,6 +747,8 @@ services:
       - openneko-graphjin-cli:/config/graphjin
       - openneko-agent-home:/tmp/openneko-home
       - openneko-agent-tmp:/tmp/openneko-tmp
+      - openneko-run:/run/openneko
+      - openneko-agent-runs:/var/lib/openneko/agent-runs
     restart: unless-stopped
 
   worker:
@@ -714,6 +780,8 @@ services:
         condition: service_healthy
       embedding:
         condition: service_healthy
+      agent-serve:
+        condition: service_healthy
     environment:
       <<: *neko-app-env
       OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
@@ -731,6 +799,12 @@ services:
       # if the librarian service is unreachable, extraction fails and the
       # document is retried — there is no in-worker fallback.
       NEKO_LIBRARIAN_URL: http://librarian:5001
+      # The agent runtime: runs stage under OPENNEKO_AGENT_RUNS_DIR and the
+      # runner (OPENNEKO_AGENT_ENTRY) talks to agent-serve's socket. The
+      # runner is a child process, so it reaches the broker on loopback.
+      OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      OPENNEKO_AGENT_RUNS_DIR: /var/lib/openneko/agent-runs
+      OPENNEKO_AGENT_ENTRY: /opt/openneko-agent/entry.js
       NEKO_LIBRARIAN_FINGERPRINT: neko-librarian:dev:docling-slim-2.124.0:layout-8f39ad3:tableformer-fc0f2d4:digital-text-v1
     expose:
       - "4100"
@@ -740,6 +814,8 @@ services:
       - openneko-records-graphjin:/config/records-graphjin
       - openneko-agent-home:/tmp/openneko-home
       - openneko-agent-tmp:/tmp/openneko-tmp
+      - openneko-run:/run/openneko
+      - openneko-agent-runs:/var/lib/openneko/agent-runs
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4100/health"]
       interval: 5s
@@ -759,3 +835,12 @@ volumes:
   openneko-records-graphjin:
   openneko-agent-home:
   openneko-agent-tmp:
+  # Agent runtime: sockets, staged run workspaces, per-run sandbox homes.
+  openneko-run:
+  openneko-agent-runs:
+  openneko-sandbox-homes:
+
+networks:
+  # The sandbox's only network. Terminal commands reach the internet through
+  # it and nothing else of the stack is attached.
+  agent-sandbox:

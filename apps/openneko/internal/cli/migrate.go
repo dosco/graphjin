@@ -16,15 +16,11 @@ func newMigrateCmd() *cobra.Command {
 	var skipSchema bool
 	cmd := &cobra.Command{
 		Use:   "migrate",
-		Short: "Prepare neko-db schema and the OpenShell gateway role",
+		Short: "Apply neko-db schema migrations",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
-			gatewayPassword, err := openShellDBPassword()
-			if err != nil {
-				return fmt.Errorf("resolve OpenShell gateway database credential: %w", err)
-			}
 			skip := skipSchema || envTruthy("OPENNEKO_SKIP_MIGRATE")
 			if !skip {
 				conn, err := pgx.Connect(ctx, defaultConn().DSN())
@@ -43,14 +39,10 @@ func newMigrateCmd() *cobra.Command {
 			} else {
 				fmt.Fprintln(out, "schema migrations skipped")
 			}
-			if err := ensureOpenShellGatewayRole(ctx, gatewayPassword); err != nil {
-				return err
-			}
-			fmt.Fprintln(out, "OpenShell database role ready")
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&skipSchema, "skip-schema", false, "Skip schema migrations but still prepare runtime database roles")
+	cmd.Flags().BoolVar(&skipSchema, "skip-schema", false, "Skip schema migrations")
 	return cmd
 }
 

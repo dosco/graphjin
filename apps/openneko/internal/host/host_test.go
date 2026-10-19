@@ -2,8 +2,8 @@ package host
 
 import "testing"
 
-// SEC9: the only runtime is OpenShell — containers, so the requirement
-// is Docker, not KVM, and amd64 macs are fine.
+// The whole stack runs as containers, so the requirement is Docker, not KVM,
+// and amd64 macs are fine.
 
 func TestDarwinArm64WithDocker(t *testing.T) {
 	r := checkWith("darwin", "arm64", func() bool { return true })

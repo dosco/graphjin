@@ -294,7 +294,7 @@ async function profile(
       access: agentPath ? { graphjinAgent: true } : { graphjinRead: true },
     });
     console.log(
-      `[profiler] org=${orgId} backend=${backend.id} runtime=openshell`,
+      `[profiler] org=${orgId} backend=${backend.id} runtime=serve`,
     );
 
     const prompt = buildProfilerPrompt({

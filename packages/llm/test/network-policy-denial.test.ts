@@ -3,7 +3,24 @@ import type { AgentEvent } from "../src/agent-backend";
 import { extractNetworkPolicyDenial } from "../src/work/run-chat-turn";
 
 describe("extractNetworkPolicyDenial", () => {
-  it("turns an OpenShell terminal denial into a structured capability event", () => {
+  it("turns a web_fetch allowlist refusal into a structured capability event", () => {
+    expect(
+      extractNetworkPolicyDenial({
+        type: "tool_end",
+        id: "t1",
+        name: "web_fetch",
+        error: "host api.example.com is not on the web allowlist",
+      } as never),
+    ).toEqual({
+      type: "capability_denied",
+      capability: "network_egress",
+      reason: "policy_denied",
+      host: "api.example.com",
+      method: "GET",
+    });
+  });
+
+  it("turns a legacy policy denial line into a structured capability event", () => {
     const event: AgentEvent = {
       type: "tool_end",
       id: "terminal-1",

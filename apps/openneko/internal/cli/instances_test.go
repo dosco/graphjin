@@ -16,8 +16,8 @@ func TestConfiguredInstallationsListsNamedInstances(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", base)
 	t.Setenv(instance.EnvName, "")
 	for _, settings := range []installation.Settings{
-		{Version: 1, Instance: "acme", Mode: "prod", WebPort: 3100, WebBindAddress: "127.0.0.1", OpenShellPort: 18100, DockerSubnet: "10.224.1.0/24"},
-		{Version: 1, Instance: "globex", Mode: "prod", WebPort: 3101, WebBindAddress: "127.0.0.1", OpenShellPort: 18101, DockerSubnet: "10.224.2.0/24"},
+		{Version: 1, Instance: "acme", Mode: "prod", WebPort: 3100, WebBindAddress: "127.0.0.1"},
+		{Version: 1, Instance: "globex", Mode: "prod", WebPort: 3101, WebBindAddress: "127.0.0.1"},
 	} {
 		dir := filepath.Join(config.RootDir(), "instances", settings.Instance)
 		if err := installation.Save(dir, settings); err != nil {
@@ -37,7 +37,7 @@ func TestInstancesCommandOutput(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
 	t.Setenv(instance.EnvName, "")
-	settings := installation.Settings{Version: 1, Instance: "acme", Mode: "prod", WebPort: 3100, WebBindAddress: "127.0.0.1", OpenShellPort: 18100, DockerSubnet: "10.224.1.0/24"}
+	settings := installation.Settings{Version: 1, Instance: "acme", Mode: "prod", WebPort: 3100, WebBindAddress: "127.0.0.1"}
 	if err := installation.Save(filepath.Join(config.RootDir(), "instances", "acme"), settings); err != nil {
 		t.Fatal(err)
 	}

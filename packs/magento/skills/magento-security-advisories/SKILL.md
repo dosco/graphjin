@@ -34,9 +34,8 @@ database.
    the connected pack status or approved Magento health evidence. If it cannot
    be verified, report the result as `unknown`.
 2. Fetch the Adobe bulletin index and inspect new or changed Magento bulletins.
-   Use Python 3's standard-library HTTPS client from the terminal so the
-   request is covered by the OpenShell host policy. This is an external
-   read-only request. If OpenShell denies the request, report that live
+   Use Python 3's standard-library HTTPS client from the terminal. This is an
+   external read-only request. If the request fails, report that live
    advisory data was unavailable.
 3. Compare the installed version with every applicable affected-version range.
    Give priority to bulletins marked critical or exploited in the wild.

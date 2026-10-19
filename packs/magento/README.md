@@ -114,10 +114,9 @@ investigation still works read-only when its optional private-note action is
 blocked.
 
 The security advisory workflow runs daily at 06:00 UTC. The pack declares the
-read-only Adobe hosts required by that workflow, and OpenShell applies those
-hosts only to its workflow sandbox. If an Adobe request is denied, the workflow
-reports that live advisory data is unavailable and does not guess the security
-status.
+read-only Adobe hosts required by that workflow. If an Adobe request fails, the
+workflow reports that live advisory data is unavailable and does not guess the
+security status.
 
 ## Optional Magento Integration token
 

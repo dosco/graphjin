@@ -9,7 +9,6 @@ import { graphjinAgentEnabledForOrg } from "@neko/db";
 import { withRunTraceContext } from "@neko/telemetry";
 import type { AgentEvent } from "../agent-backend";
 import { inProcessControlPlane, type AgentControlPlane } from "./control-plane";
-import { sandboxBrokerHost } from "./sandbox-net";
 import {
   traceActionPolicy,
   traceGraphjinQuery,
@@ -772,7 +771,8 @@ export async function startAgentBroker(
   await new Promise<void>((resolve, reject) => {
     const onErr = (e: Error) => reject(e);
     server.once("error", onErr);
-    server.listen(opts.port, "0.0.0.0", () => {
+    // Only the run's runner, a child of this process, dials the broker.
+    server.listen(opts.port, "127.0.0.1", () => {
       server.removeListener("error", onErr);
       resolve();
     });
@@ -780,7 +780,7 @@ export async function startAgentBroker(
 
   const addr = server.address();
   const port = typeof addr === "object" && addr ? addr.port : opts.port;
-  const host = opts.hostAlias ?? "host.openshell.internal";
+  const host = opts.hostAlias ?? "127.0.0.1";
 
   return {
     url: `http://${host}:${port}`,
@@ -809,9 +809,8 @@ export async function startAgentBroker(
 
 /**
  * Lazily start the per-process agent broker, bound to the in-process control
- * plane. SEC9: OpenShell is the only agent runtime, so every control-plane
- * host runs a broker. Packaged sandboxes dial the container's private Compose
- * IP; host-mode setups use host.openshell.internal.
+ * plane. Every control-plane host runs a broker; each run's runner, a child
+ * of this process, dials it on loopback.
  * Idempotent — one broker per process, shared by runWorkRun (channel runs)
  * and the web chat route.
  */
@@ -821,20 +820,18 @@ export function ensureAgentBroker(): Promise<AgentBrokerHandle | undefined> {
     const pinned = Number(process.env.OPENNEKO_BROKER_PORT) || 0;
     brokerState.starting = startAgentBroker({
       controlPlane: inProcessControlPlane,
-      hostAlias: sandboxBrokerHost(),
       port: pinned || 4199,
       onEvents: routeBrokerEvents,
     })
       .catch((e: NodeJS.ErrnoException) => {
         // Unpinned default only: web + worker on one host (dev) both reach
-        // for 4199 — fall back to an ephemeral port; sandboxes get the real
+        // for 4199 — fall back to an ephemeral port; runners get the real
         // port via the handle URL. A pinned port must fail loudly because the
-        // sandbox policy and Compose exposure both expect that exact port.
+        // operator asked for that exact port.
         if (pinned || e.code !== "EADDRINUSE") throw e;
         return startAgentBroker({
           controlPlane: inProcessControlPlane,
-          hostAlias: sandboxBrokerHost(),
-          port: 0,
+              port: 0,
           onEvents: routeBrokerEvents,
         });
       })

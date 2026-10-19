@@ -36,7 +36,7 @@ type Result struct {
 // OK is false only for a hard failure — a Warn is still OK to proceed past.
 func (r Result) OK() bool { return r.Level != Fail }
 
-// Host reports whether this OS/arch can run the OpenShell sandbox runtime,
+// Host reports whether this OS/arch can run the OpenNeko stack,
 // independent of docker (Docker covers that with a sharper message).
 func Host() Result {
 	h := host.Platform()
@@ -89,11 +89,10 @@ type PortSpec struct {
 }
 
 // DefaultPorts are the only host ports a packaged bring-up publishes. Web is
-// the intentional server boundary. OpenShell's Docker driver requires a
-// loopback-only callback port; databases, GraphJin, and brokers stay private.
+// the intentional server boundary; databases, GraphJin, brokers and the agent
+// runtime's sockets stay private.
 var DefaultPorts = []PortSpec{
 	{Label: "web", EnvVar: "OPENNEKO_PORT", Def: 3000, BindEnvVar: "OPENNEKO_WEB_BIND_ADDRESS", DefaultBind: "0.0.0.0"},
-	{Label: "OpenShell gateway (loopback only)", EnvVar: "OPENSHELL_PORT", Def: 18080, DefaultBind: "127.0.0.1"},
 }
 
 // Port resolves a spec's effective port from its env override.
@@ -118,8 +117,7 @@ func (s PortSpec) BindAddress() string {
 	return "127.0.0.1"
 }
 
-// Ports checks each spec's port on its configured bind address (the OpenShell
-// spec is always loopback). A bound port means something already holds it —
+// Ports checks each spec's port on its configured bind address. A bound port means something already holds it —
 // including a previous OpenNeko, so callers that might be re-running against a
 // live stack should skip this (see setup).
 func Ports(specs []PortSpec) []Result {

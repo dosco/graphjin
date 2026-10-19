@@ -32,8 +32,8 @@ export type AgentLimits = {
   };
 };
 
-// Every concurrent job can own an OpenShell sandbox. Keep the out-of-box
-// ceiling small; operators raise it after sizing their gateway and quota.
+// Every concurrent job runs its own runner and terminal user. Keep the
+// out-of-box ceiling small; operators raise it after sizing their host.
 export const AGENT_DEFAULT_GLOBAL_CAP = 3;
 // Two metric refreshes at a time leaves sandbox room for chat on a small host.
 export const METRIC_REFRESH_DEFAULT_CAP = 2;

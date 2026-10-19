@@ -35,7 +35,7 @@ Then run `openneko setup` (guided), or `openneko start` to bring the stack up wi
 
 1. Choose an admin database password.
 2. Confirm the pre-filled GraphJin URL (`--mode demo`) or enter your own (`--mode prod`).
-3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). The Ax agent runs inside the OpenShell sandbox with the full tool set, including the chat-first management tools.
+3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). The Ax agent runs with the full tool set, including the chat-first management tools; its terminal runs in the agent sandbox.
 4. Add your provider API key.
 5. Add an industry research provider, or skip.
 
@@ -48,23 +48,21 @@ The AdventureWorks seed pre-fills business onboarding (`AdventureWorks Cycles`, 
 ## Multiple customer instances on one host
 
 Give every customer a stable lowercase instance name. A named installation gets
-its own Compose project, databases and named volumes, encrypted config and
-secrets, OpenShell PKI/state, backup namespace, runtime markers, and Docker
-subnet.
+its own Compose project, databases and named volumes, Docker networks,
+encrypted config and secrets, agent runtime, backup namespace, and runtime
+markers.
 
 ```bash
 # Bind customer apps to loopback when Caddy, nginx, or another TLS proxy is
-# the public entry point. Ports and the subnet are persisted by setup.
+# the public entry point. The port and bind address are persisted by setup.
 openneko --instance acme setup \
   --mode prod \
   --port 3101 \
-  --openshell-port 18101 \
   --bind-address 127.0.0.1
 
 openneko --instance globex setup \
   --mode prod \
   --port 3102 \
-  --openshell-port 18102 \
   --bind-address 127.0.0.1
 ```
 
@@ -82,12 +80,12 @@ globex.example.com {
 ```
 
 Only the reverse proxy needs public `80`/`443` firewall access. The customer web
-ports above and each OpenShell gateway stay on host loopback; databases,
-GraphJin, brokers, and backup services stay inside their private Docker
-networks.
+ports above stay on host loopback; databases, GraphJin, brokers, the agent
+runtime, and backup services stay inside their private Docker networks.
 
-For named instances, omitting `--port`, `--openshell-port`, or
-`--docker-subnet` makes setup choose an available value and persist it. Inspect
+For named instances, omitting `--port` makes setup choose an available port and
+persist it; Docker assigns each instance its own networks. (`--openshell-port`
+and `--docker-subnet` are still accepted but do nothing.) Inspect
 the resulting inventory with:
 
 ```bash
@@ -105,8 +103,8 @@ openneko --instance acme stop
 ```
 
 Named settings live under
-`~/.config/openneko/instances/<name>/installation.json`; durable runtime and
-OpenShell state live under
+`~/.config/openneko/instances/<name>/installation.json`; durable runtime state
+lives under
 `${XDG_STATE_HOME:-$HOME/.local/state}/openneko/instances/<name>/`. Do not reuse
 an instance name for two customers on the same Docker daemon. Each customer is
 still a complete OpenNeko stack, so size VM memory, disk, and backup retention
@@ -135,7 +133,7 @@ openneko pack install magento
 openneko install https://github.com/<owner>/<repo>#<path/to/skill>   # community skill (admin opt-in)
 ```
 
-Packs add sources, actions, workflows and skills, and can turn on the built-in Slack, Telegram and HUD channels. See **[PACKS.md](PACKS.md)**. `openneko doctor` checks your host can run the OpenShell sandbox.
+Packs add sources, actions, workflows and skills, and can turn on the built-in Slack, Telegram and HUD channels. See **[PACKS.md](PACKS.md)**. `openneko doctor` checks your host can run the stack and its agent sandbox.
 
 ---
 
@@ -145,7 +143,7 @@ Packs add sources, actions, workflows and skills, and can turn on the built-in S
 
 ```bash
 openneko [--instance name] setup [--mode prod|dev|demo] [--port N] \
-  [--openshell-port N] [--bind-address IPv4] [--docker-subnet IPv4/24]
+  [--bind-address IPv4]
 openneko instances                 # configured host installations
 openneko start [--mode prod|dev|demo] [--detach]
 openneko upgrade [--version vX.Y.Z] [--mode auto|prod|dev|demo]
@@ -163,8 +161,8 @@ openneko version
 Modes:
 
 - **`prod`** (default) — the production control, records, customer-data,
-  backup/storage, and OpenShell services. Ten containers remain running after
-  the four startup jobs complete.
+  backup/storage, and agent runtime services. Thirteen containers remain
+  running after the six startup jobs complete.
 - **`dev`** — source-checkout workflow: use `pnpm dev:setup` for Docker-only dependencies plus AdventureWorks demo data, then `pnpm dev` for hot-reloaded web/worker from source.
 - **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
 
@@ -205,14 +203,15 @@ events.
 
 ### Agent sandboxing
 
-The agent loop always runs inside OpenShell policy
-sandboxes — default-deny egress, and the model API key never enters the
-sandbox (the gateway's egress proxy injects it on the wire; the box only
-ever holds an opaque placeholder). The containerized OpenShell gateway is
-part of the stack and the agent image is pre-pulled at install (never on
-the first chat). State dir is handled per-platform automatically (under
-`$HOME` on macOS/OrbStack, `/var/lib/openneko/openshell` on Linux). Needs
-Docker — already required to run OpenNeko.
+Each agent run runs in a runner process started by web or the worker. Its
+turns run in `agent-serve` (`openneko serve`), which holds the model key only
+for the turn, and its terminal commands run in `agent-sandbox`
+(`openneko sandbox`) as a user of the turn's own, with no secrets in their
+environment. The sandbox is only on its own `agent-sandbox` network: commands
+can reach the internet but none of the stack's databases or services. To
+restrict that internet access, firewall the `<project>_agent-sandbox` Docker
+network. Both services are part of the stack and their image is pulled with
+the rest at install. See [AGENT_RUNTIME.md](AGENT_RUNTIME.md).
 
 
 ## Upgrade
@@ -296,24 +295,21 @@ openneko reset --all      # wipes everything including secrets
 
 ## Ports
 
-The packaged stack publishes only two host ports:
+The packaged stack publishes one host port:
 
 - Web app: `3000` by default
-- OpenShell gateway: loopback-only `18080` by default
 
-Postgres, GraphJin, worker broker, backup API, and demo data services remain on
-the private Docker network. Web is the only port intended to be reachable from
-another machine; the OpenShell host mapping exists only for local sandbox
-callbacks.
+Postgres, GraphJin, worker broker, backup API, the agent runtime, and demo data
+services remain on private Docker networks.
 
-Configure and persist ports during guided installation:
+Configure and persist the port during guided installation:
 
 ```bash
-openneko setup --mode prod --port 3001 --openshell-port 18081
+openneko setup --mode prod --port 3001
 ```
 
-For the backward-compatible unnamed installation, `OPENNEKO_PORT` and
-`OPENSHELL_PORT` remain available as one-process environment overrides. Named
+For the backward-compatible unnamed installation, `OPENNEKO_PORT` remains
+available as a one-process environment override. Named
 instances use their persisted assignments; re-run setup with explicit flags to
 change them. `--bind-address 127.0.0.1` restricts the web listener to the host
 for a reverse-proxy deployment.
@@ -325,9 +321,8 @@ for a reverse-proxy deployment.
 ```bash
 git clone https://github.com/open-neko/openneko.git
 cd neko
-export OPENSHELL_STATE_DIR="$PWD/.openneko/openshell"
-docker compose -f compose.yml -f compose.openshell.yml -f compose.adventureworks.yml up -d --build
-docker compose -f compose.yml -f compose.openshell.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed
+docker compose -f compose.yml -f compose.adventureworks.yml up -d --build
+docker compose -f compose.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed
 ```
 
 ### Live trial data
@@ -336,7 +331,7 @@ The source compose trickles fresh sales orders into the sample DB every 10 minut
 
 ```bash
 AW_SIM_INTERVAL_SEC=300 AW_SIM_ORDERS_MIN=1 AW_SIM_ORDERS_MAX=5 \
-  docker compose -f compose.yml -f compose.openshell.yml -f compose.adventureworks.yml up -d
+  docker compose -f compose.yml -f compose.adventureworks.yml up -d
 ```
 
 Disable the trickle: `AW_SIM_ENABLED=0`.
@@ -352,7 +347,7 @@ The seed pre-loads three watchers:
 To see the loop without waiting for an organic dip, fire the Germany scenario (stops new orders for territory 8 for three hours):
 
 ```bash
-docker compose -f compose.yml -f compose.openshell.yml -f compose.adventureworks.yml \
+docker compose -f compose.yml -f compose.adventureworks.yml \
   exec adventureworks-scenario-injector \
   /scripts/scenario-injector.sh fire germany-revenue-drop
 ```
@@ -374,9 +369,9 @@ pnpm dev
 
 Web and worker run on the host with hot reload. Everything else runs in Docker.
 
-- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, `records-db`, both GraphJin data planes, `neko-graphjin`, `embedding`, `librarian`, the OpenShell gateway with the agent image, and AdventureWorks with its simulator. It installs the pinned GraphJin and OpenShell CLIs into `.openneko/dev/bin`, rebuilds a GraphJin image that reports another version than the pin, runs migrations from source, writes the GraphJin JWT secret, and registers the OpenShell gateway for host processes.
+- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, `records-db`, both GraphJin data planes, `neko-graphjin`, `embedding`, `librarian`, and AdventureWorks with its simulator. It builds the `openneko` binary (whose `graphjin`, `serve` and `sandbox` roles host processes use) into `.openneko/dev/bin`, rebuilds a GraphJin image that reports another version than the pin, runs migrations from source, and writes the GraphJin JWT secret.
 - `pnpm dev:seed` seeds demo workflows. `pnpm dev:setup` runs both steps.
-- `pnpm dev` runs `next dev` on port 3000 and `tsx watch` for the worker. Edits to `apps/web`, `apps/worker`, and workspace packages reload without an image build.
+- `pnpm dev` runs `openneko serve` and `openneko sandbox` on the host (`scripts/dev-agent.sh`; the sandbox runs commands as you, not as per-turn users), `next dev` on port 3000, and `tsx watch` for the worker. Edits to `apps/web`, `apps/worker`, and workspace packages reload without an image build.
 - `scripts/dev-env.sh` holds the host settings. Each service a host process calls has a loopback port; `pnpm dev:web` and `pnpm dev:worker` source the file.
 - The customer GraphJin runs in sources mode from `db/graphjin/dev.sources.example.yml`. Its config lives in `.openneko/dev/graphjin`, and the worker manages it like the core stack.
 - OpenNeko state uses your XDG config home. Set `OPENNEKO_DEV_CONFIG_HOME=$PWD/.openneko/dev/config` to keep a worktree's stack separate, and a distinct `COMPOSE_PROJECT_NAME` with its ports when two stacks run at once.
@@ -414,8 +409,8 @@ CI runs this with `--check` and fails on drift.
 
 **Docker not running.** Start Docker Desktop or the daemon; re-run `openneko start`.
 
-**Port in use.** Re-run setup with `--port` / `--openshell-port`, or use the
-equivalent `OPENNEKO_PORT` / `OPENSHELL_PORT` environment overrides.
+**Port in use.** Re-run setup with `--port`, or use the equivalent
+`OPENNEKO_PORT` environment override.
 
 **Image pull `unauthorized`.** Confirm packages are public at https://github.com/orgs/open-neko/packages.
 

@@ -33,9 +33,16 @@ func TestSetupRetainsAxOnlyBackendFlagCompatibility(t *testing.T) {
 
 func TestSetupExposesPersistentHostSettingsFlags(t *testing.T) {
 	cmd := newSetupCmd()
-	for _, name := range []string{"port", "openshell-port", "bind-address", "docker-subnet"} {
+	for _, name := range []string{"port", "bind-address"} {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Fatalf("setup is missing --%s", name)
+		}
+	}
+	// Retired with the agent sandbox gateway; older automation still passes them.
+	for _, name := range []string{"openshell-port", "docker-subnet"} {
+		flag := cmd.Flags().Lookup(name)
+		if flag == nil || flag.Deprecated == "" {
+			t.Fatalf("setup must keep --%s as a deprecated no-op", name)
 		}
 	}
 }

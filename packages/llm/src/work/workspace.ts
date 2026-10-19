@@ -162,7 +162,7 @@ export async function ensureWorkWorkspace(
  *
  * Job agents must never receive the durable org workspace: it can contain
  * member memories, uploads, prior run state, and client credentials from
- * unrelated turns. The OpenShell launcher uploads this empty tree instead,
+ * unrelated turns. The launcher stages this empty tree instead,
  * then the caller exposes only the current run's explicit brokered
  * capabilities. Source endpoints and service credentials stay host-side.
  */

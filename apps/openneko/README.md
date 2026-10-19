@@ -31,7 +31,7 @@ You also need Docker (Docker Desktop on macOS, Docker Engine on Linux).
 
 ```bash
 openneko [--instance name] setup [--mode prod|dev|demo] [--port N] \
-  [--openshell-port N] [--bind-address IPv4] [--docker-subnet IPv4/24]
+  [--bind-address IPv4]
 openneko instances                       # list configured installations
 openneko start [--mode prod|dev|demo] [--detach]
 openneko upgrade [--version vX.Y.Z] [--mode auto|prod|dev|demo] [--stack-only|--cli-only]
@@ -66,8 +66,8 @@ running production installation and applies the update through GraphJin's
 preview/apply path while preserving managed authentication and keystore settings.
 
 Named instances allow multiple production stacks on one Docker host. Setup
-persists the web/OpenShell ports and assigns an isolated Docker subnet; Compose
-resources use `openneko-<instance>-<mode>`. Always pass `--instance <name>` to
+persists the web port and bind address; Compose resources, networks included,
+use `openneko-<instance>-<mode>`. Always pass `--instance <name>` to
 lifecycle, pack and secrets commands for that customer.
 
 `openneko upgrade` resolves the latest stable release (or the exact

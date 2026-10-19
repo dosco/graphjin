@@ -157,7 +157,7 @@ async function writeBootstrapMetrics(
       access: {},
     });
     console.log(
-      `[bootstrap-metrics] org=${orgId} backend=${backend.id} runtime=openshell`,
+      `[bootstrap-metrics] org=${orgId} backend=${backend.id} runtime=serve`,
     );
 
     const prompt = buildPrompt({

@@ -80,7 +80,7 @@ describe("startAgentBroker token registry", () => {
       expect(handle.tokenFor({ runId: "r1", orgId: "o1", kind: "work" })).toBe(a); // reused
       expect(handle.tokenFor({ runId: "r2", orgId: "o1", kind: "work" })).not.toBe(a); // per-run
 
-      expect(handle.url).toBe(`http://host.openshell.internal:${handle.port}`);
+      expect(handle.url).toBe(`http://127.0.0.1:${handle.port}`);
 
       expect((await postEvents(handle.port, a)).status).toBe(200);
       expect((await postEvents(handle.port, "unknown")).status).toBe(401);

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -93,6 +94,36 @@ func TestSandboxRunsCommandsWithoutSecretsAsTheRunUser(t *testing.T) {
 	third := NewClient(socket, workspace)
 	if _, err := third.Exec(ctx, "true", "", 10, 10_000); err != nil {
 		t.Fatalf("an ended run's user was not freed: %v", err)
+	}
+}
+
+func TestSandboxSocketBelongsToTheSharedGroup(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("only root can hand the socket to another group")
+	}
+	root := t.TempDir()
+	server := &Server{Workspaces: root, Homes: filepath.Join(root, "homes"), BaseUID: 23000, Users: 1, GID: 23999, SwitchUsers: true, PATH: "/usr/bin:/bin"}
+	socket := filepath.Join(root, "sandbox.sock")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- server.ListenAndServe(ctx, socket) }()
+	defer func() {
+		cancel()
+		<-done
+	}()
+	var info os.FileInfo
+	for i := 0; i < 100; i++ {
+		if found, err := os.Stat(socket); err == nil && found.Sys().(*syscall.Stat_t).Gid == 23999 {
+			info = found
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if info == nil {
+		t.Fatal("the socket was not handed to the shared group")
+	}
+	if perm := info.Mode().Perm(); perm != 0o660 {
+		t.Fatalf("socket mode = %o, want 660", perm)
 	}
 }
 

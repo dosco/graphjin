@@ -47,7 +47,7 @@ provided Gemini API key and `gemini-3.7-flash`; see the continuation below.
   generated password is stored privately and encrypted in this installation.
 - Reused the existing valid `OpenNeko Magento Operator` integration token,
   recovered locally without printing it. No integration ACL was widened.
-- OpenShell gateway exists and the 2.39.1 agent image is pulled. Provisioning
+- The agent sandbox gateway of that release existed and the 2.39.1 agent image was pulled. Provisioning
   cannot finish until Google ADC is refreshed. All six watcher jobs reached
   the real queue. A follow-up live queue inspection confirmed that all six
   exhausted retries and are terminally failed; Google ADC refresh still fails.

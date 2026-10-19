@@ -134,14 +134,14 @@ restorable.
 
 ## Security you can verify
 
-The assistant is treated as untrusted by design: it runs in a locked-down
-sandbox, never holds your keys, and leaves a tamper-evident trail you can
-hand to an auditor.
+The assistant is treated as untrusted by design: its terminal runs in a
+locked-down sandbox that never holds your keys, and it leaves a tamper-evident
+trail you can hand to an auditor.
 
 | Feature | What it does for you | Shipped in |
 |---|---|---|
-| Always sandboxed | The AI agent runs inside isolation boxes with networking denied by default — this is the only mode, not an option you might forget to turn on. | #82, #96, #98 |
-| Your keys never enter the box | API keys are injected on the wire by a gateway outside the sandbox; the agent only ever holds a placeholder. Verifiably — you can grep the box and find nothing. | #82 |
+| Always sandboxed | The agent's terminal commands run in a separate sandbox container, each turn as a user of its own, on a network that reaches none of the stack's databases or services — this is the only mode, not an option you might forget to turn on. | #82, #96, #98 |
+| Your keys never enter the sandbox | Model keys reach only the run's runner and `openneko serve`, and serve holds them only for the turn; the terminal gets no secrets in its environment. | #82 |
 | Secrets encrypted at rest | Tokens, passwords, and keys are encrypted on disk everywhere they're stored. | #96 |
 | Bring your own vault | Plug in an external secrets manager (Infisical) instead of local files, with no change to how anything else works. | #96 |
 | Approval gates | Anything that changes the world — sending, installing, configuring, inviting — becomes a proposal a human approves first, governed by per-organisation policies. | #11, #96 |
@@ -172,13 +172,13 @@ truth when something is wrong — in language an operator can act on.
 | Feature | What it does for you | Shipped in |
 |---|---|---|
 | The `openneko` binary | One Go binary supervises everything: start/stop/status/logs, migrations, seeding, packs, secrets, doctor. No Node toolchain required to operate. | #26 |
-| One-command sandboxed install | `openneko start` brings up the full stack — agent sandbox gateway included — with migrations applied before anything that needs them. | #82, #49, #54 |
+| One-command sandboxed install | `openneko start` brings up the full stack — agent runtime and sandbox included — with migrations applied before anything that needs them. | #82, #49, #54 |
 | A demo with living data | The trial workspace ships with simulated sales trickling in and scripted scenarios firing, so briefings move and workflows have something real to find. | #47, #118, #121 |
 | Honest status | `openneko status` probes what's actually serving — failures read as what they are (transient, cosmetic, or real) instead of all looking fatal. | #86 |
 | Releases that gate themselves | Every release is installed and smoke-tested after it builds; a broken one is automatically demoted so installers always get the last good version. | #86, #105, #106, #107 |
 | Deploys follow smoked releases | Production updates only when a release has passed its smoke — never on raw merges. Disk is garbage-collected on the way. | #116, #124, #125, #127 |
 | Zero-click release cycle | Merge to main and the pipeline does the rest: version cut, binaries, images, smoke, deploy. | #16, #45, #92, #93 |
-| Setup wizard you can trust | Rotating the database password in the wizard propagates everywhere — seeds, gateway, agent runs all keep working. | #121, #125 |
+| Setup wizard you can trust | Rotating the database password in the wizard propagates everywhere — seeds and agent runs all keep working. | #121, #125 |
 | Survives flaky networks | Image builds retry through registry hiccups; channel polling backs off and dedupes instead of log-flooding. | #80, #84 |
 | Diagnosable agent failures | When an agent run dies, the error names the real cause — exit signal, memory state, the agent's own last log lines — and turn timeouts say "timeout", not mystery. | #129, #132 |
 

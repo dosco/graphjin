@@ -26,7 +26,7 @@ func runShell(t *testing.T, s *Shell, ctx context.Context, input string) (ExecRe
 
 func TestShellRunsInTheWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	s, err := OpenShell(dir, nil)
+	s, err := NewShell(dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestShellRunsInTheWorkspace(t *testing.T) {
 
 func TestShellTimeoutKillsChildProcesses(t *testing.T) {
 	dir := t.TempDir()
-	s, _ := OpenShell(dir, nil)
+	s, _ := NewShell(dir, nil)
 	start := time.Now()
 	result, err := runShell(t, s, context.Background(), `{"command":"sleep 30 & echo $! > child.pid; wait","timeout_seconds":1}`)
 	if err != nil || !result.TimedOut || time.Since(start) > 10*time.Second {
@@ -63,7 +63,7 @@ func TestShellTimeoutKillsChildProcesses(t *testing.T) {
 func TestShellStripsCredentials(t *testing.T) {
 	t.Setenv("HARNESS_SECRET_KEY", "do-not-leak")
 	t.Setenv("HARNESS_VISIBLE", "fine")
-	s, _ := OpenShell(t.TempDir(), []string{"HARNESS_SECRET_KEY"})
+	s, _ := NewShell(t.TempDir(), []string{"HARNESS_SECRET_KEY"})
 	result, err := runShell(t, s, context.Background(), `{"command":"echo \"[$HARNESS_SECRET_KEY][$HARNESS_VISIBLE]\""}`)
 	if err != nil || !strings.Contains(result.Output, "[][fine]") {
 		t.Fatalf("result=%+v err=%v", result, err)
@@ -71,7 +71,7 @@ func TestShellStripsCredentials(t *testing.T) {
 }
 
 func TestShellOutputIsCapped(t *testing.T) {
-	s, _ := OpenShell(t.TempDir(), nil)
+	s, _ := NewShell(t.TempDir(), nil)
 	result, err := runShell(t, s, context.Background(), `{"command":"echo START; head -c 300000 /dev/zero | tr '\\0' 'a'; echo; echo END"}`)
 	if err != nil || !result.Truncated || len([]rune(result.Output)) > maxShellOutput+100 ||
 		!strings.HasPrefix(result.Output, "START") || !strings.Contains(result.Output, "END") || !strings.Contains(result.Output, "output truncated") {
@@ -80,7 +80,7 @@ func TestShellOutputIsCapped(t *testing.T) {
 }
 
 func TestShellStopsOnCancel(t *testing.T) {
-	s, _ := OpenShell(t.TempDir(), nil)
+	s, _ := NewShell(t.TempDir(), nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		time.Sleep(200 * time.Millisecond)
@@ -93,19 +93,19 @@ func TestShellStopsOnCancel(t *testing.T) {
 }
 
 func TestShellRejectsBadInput(t *testing.T) {
-	s, _ := OpenShell(t.TempDir(), nil)
+	s, _ := NewShell(t.TempDir(), nil)
 	for _, input := range []string{`{"command":""}`, `{"command":"ls","timeout_seconds":601}`} {
 		if _, err := runShell(t, s, context.Background(), input); err == nil {
 			t.Fatalf("accepted %s", input)
 		}
 	}
-	if _, err := OpenShell("relative/dir", nil); err == nil {
+	if _, err := NewShell("relative/dir", nil); err == nil {
 		t.Fatal("accepted a relative workspace")
 	}
 }
 
 func TestShellHostLimits(t *testing.T) {
-	s, _ := OpenShell(t.TempDir(), nil)
+	s, _ := NewShell(t.TempDir(), nil)
 	if err := s.SetLimits(0, 50_000); err == nil {
 		t.Fatal("zero timeout was accepted")
 	}
@@ -139,7 +139,7 @@ func TestShellSetsSkillDirFromTheScriptPath(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	s, _ := OpenShell(t.TempDir(), nil)
+	s, _ := NewShell(t.TempDir(), nil)
 	s.SetSkillsRoot(skills)
 	for command, want := range map[string]string{
 		`echo \"[$SKILL_DIR]\" \"$SKILL_DIR/scripts/check.py\"`:                          "[" + filepath.Join(skills, "stock-check") + "]",

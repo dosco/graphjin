@@ -61,7 +61,7 @@ export interface RunWorkflowAgentBackendInput {
 /**
  * Sandbox-runnable workflow agent loop. The DB-bound prologue/epilogue stays in
  * runWorkflowTurn; this core only rebuilds workflow MCP tools and calls the
- * backend. Inside OpenShell, tools reach persistence through the broker-backed
+ * backend. In the runner, tools reach persistence through the broker-backed
  * control plane.
  */
 export async function runWorkflowAgentBackend(

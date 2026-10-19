@@ -2,24 +2,18 @@ package cli
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
-	"net/netip"
-	"net/url"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
-	"github.com/open-neko/neko/apps/openneko/internal/instance"
 	"github.com/open-neko/neko/apps/openneko/internal/setup"
 	"github.com/open-neko/neko/apps/openneko/internal/version"
 )
@@ -80,8 +74,8 @@ type bringUpOptions struct {
 }
 
 // bringUpStack runs the staged bring-up shared by `start` and `setup`:
-// reconcile both database volumes → private neko-migrate container → pre-pull
-// the agent image → compose up the rest. Extracted from newStartCmd so setup
+// reconcile both database volumes → private neko-migrate container → compose
+// up the rest. Extracted from newStartCmd so setup
 // reuses the exact same path.
 func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, opts bringUpOptions) error {
 	m := mode
@@ -121,23 +115,10 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 		return err
 	}
 
-	// SEC9: OpenShell is the only agent runtime.
-	if err := configureOpenShellStateDir(); err != nil {
-		return err
-	}
-	if err := configureOpenShellNetwork(m); err != nil {
-		return err
-	}
-
 	files, err := sup.Materialize(m)
 	if err != nil {
 		return err
 	}
-	reapBeforePull(ctx)
-
-	// Derive both the gateway URL and the dedicated role password before
-	// compose interpolates the one-shot migration service's environment.
-	configureOpenShellDBURL()
 	previousSkipMigrate, hadSkipMigrate := os.LookupEnv("OPENNEKO_SKIP_MIGRATE")
 	if opts.skipMigrate {
 		_ = os.Setenv("OPENNEKO_SKIP_MIGRATE", "1")
@@ -190,9 +171,8 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 	// migration is a fast no-op that exits before the separate `wait` can
 	// observe it, so `compose wait` reports "no containers for project" and
 	// exits non-zero — surfacing as a spurious "database preparation failed".
-	// A foreground `run` has no such race. The same command provisions the
-	// gateway's dedicated DB role even when --skip-migrate skips schema changes.
-	// No database port needs to cross the Docker network boundary.
+	// A foreground `run` has no such race. No database port needs to cross the
+	// Docker network boundary.
 	migrateArgs := append([]string{"run", "--rm", "-T", "--no-deps"}, pullFlag...)
 	migrateArgs = append(migrateArgs, quietPull...)
 	migrateArgs = append(migrateArgs, "neko-migrate")
@@ -202,24 +182,10 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 		return WithExit(code, fmt.Errorf("database preparation failed"))
 	}
 
-	// Pre-pull the sandbox images at install time so the gateway's first
-	// sandbox-create (the user's first chat) never blocks on a large pull
-	// inside the create timeout. Best-effort: a failure just falls back to
-	// a lazy pull.
-	for _, img := range []string{
-		agentImageRef(os.Getenv("OPENNEKO_AGENT_IMAGE"), os.Getenv("OPENNEKO_VERSION")),
-		supervisorImageRef(os.Getenv("OPENNEKO_SUPERVISOR_IMAGE"), os.Getenv("OPENNEKO_VERSION")),
-	} {
-		if !opts.quiet {
-			fmt.Fprintf(os.Stderr, "Pre-pulling sandbox image %s ...\n", img)
-		}
-		if err := sup.EnsureImage(ctx, img, os.Stdout, os.Stderr); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: image pre-pull failed for %s (%v); it will pull on first use\n", img, err)
-		}
-	}
-
-	// Stage 3: bring up the rest.
-	upArgs := []string{"up"}
+	// Stage 3: bring up the rest. --remove-orphans retires services a newer
+	// release dropped, such as the old agent gateway and its Docker-socket
+	// reaper.
+	upArgs := []string{"up", "--remove-orphans"}
 	if opts.detach {
 		upArgs = append(upArgs, "-d")
 	}
@@ -272,275 +238,6 @@ func configureLibrarianCPULimit(hostCPUs int) error {
 		hostCPUs = 4
 	}
 	return os.Setenv(librarianCPULimitEnv, strconv.Itoa(hostCPUs))
-}
-
-// agentImageRef resolves the agent sandbox image: an explicit override wins,
-// else the default repo at the running version.
-func agentImageRef(override, version string) string {
-	if override != "" {
-		return override
-	}
-	return "ghcr.io/open-neko/agent:" + version
-}
-
-// openShellStateDirOverride returns the OPENSHELL_STATE_DIR to set for goos, or
-// "" to keep the compose default. The containerized gateway bind-mounts its PKI
-// and the per-sandbox JWT from this dir into sandboxes; the in-VM docker daemon
-// must resolve the SAME host path. macOS/OrbStack only maps paths under the
-// user's home into its Linux VM — a /var/lib/... source comes back as an empty
-// mount and the sandbox crash-loops on a missing JWT — so on macOS the state
-// dir must live under $HOME. On Linux the compose default
-// (/var/lib/openneko/openshell) is correct and docker creates it. An
-// already-set value is always respected.
-func openShellStateDirOverride(goos, home, existing string) string {
-	if goos != "darwin" || existing != "" {
-		return ""
-	}
-	return filepath.Join(home, ".openneko", "openshell")
-}
-
-func configureOpenShellStateDir() error {
-	if stateDir, ok, err := instance.StateDir(); err != nil {
-		return err
-	} else if ok {
-		// A named stack's PKI and gateway state must never inherit a global
-		// OPENSHELL_STATE_DIR from another customer.
-		dir := filepath.Join(stateDir, "openshell")
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return err
-		}
-		return os.Setenv("OPENSHELL_STATE_DIR", dir)
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	dir := openShellStateDirOverride(runtime.GOOS, home, os.Getenv("OPENSHELL_STATE_DIR"))
-	if dir == "" {
-		return nil
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	return os.Setenv("OPENSHELL_STATE_DIR", dir)
-}
-
-const (
-	openShellNetworkSubnetEnv  = "OPENNEKO_DOCKER_SUBNET"
-	openShellNetworkGatewayEnv = "OPENNEKO_DOCKER_GATEWAY"
-	openShellNetworkIPRangeEnv = "OPENNEKO_DOCKER_IP_RANGE"
-	openShellGatewayIPEnv      = "OPENSHELL_GATEWAY_IP"
-)
-
-// configureOpenShellNetwork keeps each installation's private Compose network
-// and gateway address stable. The host-networked Docker supervisor can route
-// to the private service and broker IPs on this network.
-//
-// Each stack mode gets a distinct /24 so prod/dev/demo can coexist. Operators
-// with an overlapping host route can override OPENNEKO_DOCKER_SUBNET; when the
-// Docker bridge gateway or OpenShell gateway IP is omitted we derive the first
-// and second usable addresses from that subnet, respectively.
-func configureOpenShellNetwork(mode compose.Mode) error {
-	subnet := os.Getenv(openShellNetworkSubnetEnv)
-	if subnet == "" {
-		subnet = defaultOpenShellSubnet(mode)
-		if err := os.Setenv(openShellNetworkSubnetEnv, subnet); err != nil {
-			return err
-		}
-	}
-
-	prefix, err := netip.ParsePrefix(subnet)
-	if err != nil || !prefix.Addr().Is4() || prefix.Bits() > 24 {
-		return fmt.Errorf("%s must be an IPv4 /24 or larger subnet (got %q)", openShellNetworkSubnetEnv, subnet)
-	}
-	prefix = prefix.Masked()
-	dynamicRange := os.Getenv(openShellNetworkIPRangeEnv)
-	if dynamicRange == "" {
-		dynamicRange = upperHalfPrefix(prefix).String()
-		if err := os.Setenv(openShellNetworkIPRangeEnv, dynamicRange); err != nil {
-			return err
-		}
-	}
-	pool, err := netip.ParsePrefix(dynamicRange)
-	if err != nil || !pool.Addr().Is4() || pool != pool.Masked() ||
-		pool.Bits() < prefix.Bits() || !prefix.Contains(pool.Addr()) ||
-		!prefix.Contains(lastIPv4Address(pool)) {
-		return fmt.Errorf("%s must be contained by %s (got %q)", openShellNetworkIPRangeEnv, subnet, dynamicRange)
-	}
-
-	networkGateway := os.Getenv(openShellNetworkGatewayEnv)
-	if networkGateway == "" {
-		networkGateway = prefix.Addr().Next().String()
-		if err := os.Setenv(openShellNetworkGatewayEnv, networkGateway); err != nil {
-			return err
-		}
-	}
-	bridgeAddress, err := netip.ParseAddr(networkGateway)
-	if err != nil || !bridgeAddress.Is4() || !prefix.Contains(bridgeAddress) || pool.Contains(bridgeAddress) ||
-		bridgeAddress == prefix.Addr() || bridgeAddress == lastIPv4Address(prefix) {
-		return fmt.Errorf("%s must be a usable address in %s outside %s (got %q)", openShellNetworkGatewayEnv, subnet, dynamicRange, networkGateway)
-	}
-
-	gatewayIP := os.Getenv(openShellGatewayIPEnv)
-	if gatewayIP == "" {
-		// Docker reserves the first usable address for the network gateway.
-		gatewayIP = prefix.Addr().Next().Next().String()
-		if err := os.Setenv(openShellGatewayIPEnv, gatewayIP); err != nil {
-			return err
-		}
-	}
-	address, err := netip.ParseAddr(gatewayIP)
-	if err != nil || !address.Is4() || !prefix.Contains(address) || pool.Contains(address) ||
-		address == prefix.Addr() || address == bridgeAddress ||
-		address == lastIPv4Address(prefix) {
-		return fmt.Errorf("%s must be a usable address in %s outside %s (got %q)", openShellGatewayIPEnv, subnet, dynamicRange, gatewayIP)
-	}
-	return nil
-}
-
-func upperHalfPrefix(prefix netip.Prefix) netip.Prefix {
-	raw := prefix.Masked().Addr().As4()
-	value := binary.BigEndian.Uint32(raw[:])
-	value += uint32(1) << uint(31-prefix.Bits())
-	binary.BigEndian.PutUint32(raw[:], value)
-	return netip.PrefixFrom(netip.AddrFrom4(raw), prefix.Bits()+1)
-}
-
-func lastIPv4Address(prefix netip.Prefix) netip.Addr {
-	raw := prefix.Masked().Addr().As4()
-	value := binary.BigEndian.Uint32(raw[:])
-	value |= ^uint32(0) >> uint(prefix.Bits())
-	binary.BigEndian.PutUint32(raw[:], value)
-	return netip.AddrFrom4(raw)
-}
-
-func defaultOpenShellSubnet(mode compose.Mode) string {
-	switch mode {
-	case compose.ModeDev:
-		return "172.29.1.0/24"
-	case compose.ModeDemo:
-		return "172.29.2.0/24"
-	default:
-		return "172.29.0.0/24"
-	}
-}
-
-// configureOpenShellDBURL derives the gateway's database URL from the local
-// config. The gateway keeps its state in neko-db, and the compose default URL
-// carries the initial password — after the setup wizard rotates the neko
-// role, a stale URL strands every sandbox create ("fetch settings failed:
-// password authentication failed"), which kills all agent runs. The local
-// config is the single source of the rotated password (ReadLocal decrypts
-// it), so build the URL from it on every start. An operator-set
-// OPENSHELL_DB_URL remains available for the legacy unnamed installation;
-// named installations always derive their own internal database URL.
-// openShellDBRole is the gateway's dedicated neko-db login role. It exists so
-// the gateway's DB credential is independent of the `neko` admin password the
-// operator rotates during setup — rotating that password never strands the
-// gateway, so it needs no restart.
-const openShellDBRole = "openshell"
-
-const openShellDBPasswordEnv = "OPENNEKO_OPENSHELL_DB_PASSWORD"
-const requireExplicitOpenShellDBPasswordEnv = "OPENNEKO_REQUIRE_EXPLICIT_OPENSHELL_DB_PASSWORD"
-
-func configureOpenShellDBURL() {
-	if instance.Current() != "" {
-		// These values are derived from the selected instance's secret-key and
-		// internal Compose database. Do not let a host-wide override point one
-		// customer's gateway at another customer's credentials or database.
-		_ = os.Unsetenv(openShellDBPasswordEnv)
-		_ = os.Unsetenv("OPENSHELL_DB_URL")
-	}
-	if os.Getenv(openShellDBPasswordEnv) == "" {
-		if pw, err := config.OpenShellDBPassword(""); err == nil {
-			_ = os.Setenv(openShellDBPasswordEnv, pw)
-		}
-	}
-	if os.Getenv("OPENSHELL_DB_URL") != "" {
-		return
-	}
-	if u, ok := deriveOpenShellDBURL(); ok {
-		_ = os.Setenv("OPENSHELL_DB_URL", u)
-	}
-}
-
-// deriveOpenShellDBURL builds the gateway's neko-db URL for its dedicated role,
-// with the stable per-install password derived from the host secret-key. ok is
-// false only if that derivation fails (then the caller leaves the compose
-// default in place).
-func deriveOpenShellDBURL() (string, bool) {
-	pw, err := openShellDBPassword()
-	if err != nil {
-		return "", false
-	}
-	database := "neko"
-	if lc, _ := config.ReadLocal(""); lc.Pg != nil && lc.Pg.Database != "" {
-		database = lc.Pg.Database
-	}
-	// Host/port are the compose network's, not the local config's: the
-	// gateway dials neko-db inside the project network regardless of how
-	// host-side tools reach the DB.
-	u := url.URL{
-		Scheme: "postgres",
-		User:   url.UserPassword(openShellDBRole, pw),
-		Host:   "neko-db:5432",
-		Path:   "/" + database,
-	}
-	return u.String(), true
-}
-
-// ensureOpenShellGatewayRole provisions the gateway's dedicated DB login role
-// (idempotent — safe on every bring-up). The gateway shares the app's `public`
-// schema, so the role is a member of the app role and inherits its privileges
-// (it runs its own sqlx migrations and reads/writes without owning every
-// table); its password is the stable per-install value from the host
-// secret-key. Runs as the app superuser over the same connection migrations
-// use — which is reachable by the time this is called (stage 1 waited on it).
-func ensureOpenShellGatewayRole(ctx context.Context, password string) error {
-	cc := defaultConn()
-	conn, err := pgx.Connect(ctx, cc.DSN())
-	if err != nil {
-		return fmt.Errorf("connect to provision gateway DB role: %w", err)
-	}
-	defer conn.Close(ctx)
-
-	appRole := cc.User
-	if appRole == "" {
-		appRole = "neko"
-	}
-	// pw is hex (no quotes/backslashes), so the literal is safe; the role names
-	// are fixed/operator-owned identifiers, not request input.
-	stmts := []string{
-		fmt.Sprintf(`DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '%s') THEN CREATE ROLE %s LOGIN; END IF; END $$`, openShellDBRole, openShellDBRole),
-		fmt.Sprintf(`ALTER ROLE %s WITH LOGIN PASSWORD '%s'`, openShellDBRole, password),
-		fmt.Sprintf(`GRANT %s TO %s`, appRole, openShellDBRole),
-	}
-	for _, s := range stmts {
-		if _, err := conn.Exec(ctx, s); err != nil {
-			return fmt.Errorf("provision gateway DB role: %w", err)
-		}
-	}
-	return nil
-}
-
-func openShellDBPassword() (string, error) {
-	if pw := os.Getenv(openShellDBPasswordEnv); pw != "" {
-		return pw, nil
-	}
-	// Managed migration containers must receive the exact password that the
-	// host supervisor put in the gateway's OPENSHELL_DB_URL. Falling back to
-	// the container volume's secret-key can derive a different password from
-	// the host and silently ALTER ROLE underneath an already-running gateway.
-	if envTruthy(requireExplicitOpenShellDBPasswordEnv) {
-		return "", fmt.Errorf(
-			"%s is required for managed migrations; refusing to derive a replacement from container-local config",
-			openShellDBPasswordEnv,
-		)
-	}
-	// Standalone host-side `openneko migrate` keeps its historical behavior:
-	// derive from the host install's secret-key when no managed-container guard
-	// is present.
-	return config.OpenShellDBPassword("")
 }
 
 // defaultConn resolves the metadata-DB connection. Precedence: the local

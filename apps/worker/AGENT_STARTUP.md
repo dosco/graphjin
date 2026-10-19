@@ -1,85 +1,78 @@
 # Agent startup
 
-The agent image ships two JavaScript bundles and built-in skills. It does not
-ship the worker's Node dependency tree, tsx, database libraries, or embedding
-stack. The Ax Harness binary and the document tools are part of the agent image.
+The web and worker images carry the agent runner at `/opt/openneko-agent`: two
+JavaScript bundles (`entry.js` and `mcp-bridge.js`) and the built-in skills. It
+does not include the worker's Node dependency tree, tsx, database libraries or
+embedding stack. The agent image runs `openneko serve` and `openneko sandbox`
+and carries the document tools that terminal commands use. See
+[AGENT_RUNTIME.md](../../AGENT_RUNTIME.md) for how the three fit together.
 
-Each run creates a fresh OpenShell sandbox with its own provider and egress
-policy. Creation runs `true`; execution starts `/app/entry.js` once. The entry
-validates its bridge and skills before running the job. The same filesystem
-checks run during the image build on both release architectures.
+Each run stages its workspace in a fresh folder under `OPENNEKO_AGENT_RUNS_DIR`
+and starts `node /opt/openneko-agent/entry.js` as a child process in its own
+process group. The entry validates its bridge and skills before running the
+job; the worker image build runs the same check (`entry.js --preflight` and
+an import of `mcp-bridge.js`) as a non-root user on both release
+architectures. The runner sends each turn to `openneko serve`, which sends
+terminal commands to `openneko sandbox`. When the run ends, the launcher kills
+the runner's process group, copies artifacts back and deletes the folder.
 
 Measured image sizes, restart/readiness timings, single-agent and three-session
 results, and lazy document-service memory are recorded in the
 [12 September 2026 demo benchmark](benchmarks/2026-09-12-agent-startup.md).
-Later latency, preload and warm-pool experiments in [benchmarks](benchmarks/)
-measured the retired pre-Ax backend; the warm pool they evaluated was removed
-with it.
+That benchmark and the later latency, preload and warm-pool experiments in
+[benchmarks](benchmarks/) measured earlier runtimes; the per-run sandbox
+containers and warm pool they evaluated were removed.
 
 ## Resource limits
 
-`OPENNEKO_AGENT_CPUS` defaults to `2`; `OPENNEKO_AGENT_MEMORY` defaults to `1Gi`.
-The launcher passes these as OpenShell `--cpu` and `--memory` creation flags.
-The limits cover the sandbox's process tree, including the agent and tool children.
-The Compose overlays forward both variables to web and worker. Restart those
-hosts after changing them; existing sandboxes retain their creation limits.
-
-Ten sandboxes can consume at most 10 GiB at this default, leaving roughly 6 GiB
-on a 16 GiB host for the OS and services. This is a capacity budget, not proof
-that those services fit in the remainder.
-
-These are configurable starting limits, not measured workload peak requirements.
-Size them for the document/delegation workloads and maximum concurrent turns
-on the host. A memory cap is not a reservation or an aggregate admission limit.
+Runs share the agent-sandbox container's resources; there are no per-run CPU
+or memory limits. The sandbox container has a process limit (`pids_limit`)
+and each run's terminal commands run as their own user, so ending a run kills
+everything that user started. Size the host for the document/delegation
+workloads and the maximum number of concurrent turns.
 
 ## Timings
 
 Launcher logs contain JSON records with `type: "sandbox_phase"`, `runId`,
 `phase`, and `durationMs`. Individual operations also include `ok`:
 
-- `stage`: copy the selected workspace and skill overrides.
-- `create_upload`: OpenShell creation, image availability, policy setup,
-  upload, and the initial command. Each retry has its own record.
-- `exec`: execute the agent and drain streamed event handlers. This includes
-  agent startup, model time, tools, and the artifact scan.
-- `download`: recover artifacts when present or their state is unknown.
-- `delete`: destroy the sandbox and its remaining process tree.
-- `total`: the full launcher call, including staging, retries, and cleanup.
+- `stage`: copy the selected workspace and skill overrides into the run folder.
+- `exec`: run the runner and drain streamed event handlers. This includes
+  runner startup, model time, tools, and the artifact scan.
+- `download`: copy artifacts back when present or their state is unknown.
+- `skill_capture`: save skill edits the agent made, or record why it skipped.
+- `total`: the full launcher call, including staging and cleanup.
 
-Creation and upload share one CLI call, so the host does not claim separate
-gateway/provision/upload measurements.
 Do not interpret `exec` or total lifecycle duration as time to first answer.
 
 ## Artifact recovery
 
 After the agent finishes, including an ordinary agent error, the entry reports
 whether the artifact tree contains files or links. Only an explicit empty-tree
-report skips downloading. Old images, crashes, timeouts, or unreadable trees
-keep the existing recovery attempt. Background jobs and aborted runs retain
-their existing no-download behavior.
+report skips copying back. Crashes, timeouts, or unreadable trees keep the
+recovery attempt. Background jobs and aborted runs retain their existing
+no-copy behavior.
 
 ## Verification
 
 ```sh
 pnpm --filter @neko/worker exec vitest run test/agent-sandbox
 pnpm --filter @neko/llm exec vitest run test/sandbox-launcher.test.ts test/workflow-api-contract.test.ts
-docker build --target agent -t openneko-agent:startup .
+docker build --target worker -t openneko-worker:startup .
 ```
 
 The bundle test builds both executables into an isolated temporary directory,
 rejects host DB/records/telemetry and embedding imports, and checks boot with
 only the bundled assets and no inherited runtime overrides. Missing assets
-must fail. Launcher tests cover resource limits, cancellation, partial output,
-empty output, and cleanup. Real gateway/model acceptance remains the opt-in
-`packages/llm/test/sandbox-launcher-e2e.test.ts` suite.
+must fail. Launcher tests cover cancellation, partial output, empty output,
+and cleanup.
 
 Embedding computation now runs in the shared embedding service. Both it and
 Docling use the [lazy processing listener](../lazy-service/README.md), releasing
-model memory after idle time. Incremental upload caches remain out of scope:
-fresh boxes have no upload baseline and unchanged built-in skills are already omitted.
+model memory after idle time.
 
-Every run starts in a fresh sandbox (about 2.5 s with the current supervisor);
-there is no warm pool and no per-user sandbox reuse.
+Every run starts a fresh runner in a fresh folder; there is no warm pool and no
+per-user reuse.
 
 ## Knowledge cache
 
@@ -149,7 +142,7 @@ unversioned local images honestly report `unknown`.
 | Worker | queue wait, run lookup, provisioning, pack actions, broker readiness |
 | Shared turn | mark running, load thread, workspace, knowledge prefetch/read, identity, GraphJin config, compaction, memory, skills, persona, fallback plugin catalog |
 | Knowledge | snapshot read/age, hit/miss/coalesced wait, revision checks, individual catalog requests, rebuild, atomic publish, refresh failure and stale availability; 60-second background refresh |
-| Sandbox | staging, creation, workspace upload, provider readiness, execution, download, deletion |
+| Agent run | staging, runner execution, artifact copy-back, skill capture |
 | Streaming | SSE subscription, LISTEN setup, initial DB read, hello, first event and first assistant output enqueued |
 | Browser | submit through acknowledgement (including new-thread/upload preparation), stream open, first event, first assistant output and subsequent paint opportunity; terminal run without output |
 

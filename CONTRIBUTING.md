@@ -20,7 +20,7 @@ Setup commands — Node deps, migrations, `pnpm dev`, the two GraphJin services 
 ```text
 apps/
   web/                 Next.js UI and API routes
-  worker/              Background job runner, built-in channels and sign-in, OpenShell runtime
+  worker/              Background job runner, built-in channels and sign-in, agent runner
   openneko/            `openneko` CLI + stack supervisor (Go), distributed as a single binary
 packages/
   db/                  Drizzle ORM client, schema, migrations, job queue

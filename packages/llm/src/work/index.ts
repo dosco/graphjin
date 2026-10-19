@@ -1,6 +1,5 @@
 export * from "./workspace";
 export * from "./artifacts";
-export * from "./sandbox-net";
 export * from "./behavior-monitor";
 export * from "./deployment-profile";
 export * from "./data-surface";
