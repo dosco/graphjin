@@ -243,7 +243,7 @@
         "graphjin": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["sources", "relationships", "specs", "savedQueries"],
+          "required": ["sources", "relationships", "specs"],
           "properties": {
             "sources": { "$ref": "#/$defs/path" },
             "relationships": { "$ref": "#/$defs/path" },

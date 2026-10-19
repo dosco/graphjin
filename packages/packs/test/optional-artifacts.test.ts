@@ -14,3 +14,11 @@ it("accepts a skills-only pack but requires compatibility for GraphJin artifacts
     sources: "sources.yaml", relationships: "relationships.yaml", specs: [], savedQueries: "queries",
   } } })).toThrow("GraphJin artifacts require GraphJin compatibility");
 });
+it("accepts GraphJin artifacts without saved queries", () => {
+  const parsed = parseManifest({
+    ...manifest,
+    compatibility: { ...manifest.compatibility, graphjin: { analytics: ">=3.21.0", operator: ">=3.21.0" } },
+    artifacts: { ...manifest.artifacts, graphjin: { sources: "sources.yaml", relationships: "relationships.yaml", specs: ["specs/api.yaml"] } },
+  });
+  expect(parsed.artifacts.graphjin?.savedQueries).toBeUndefined();
+});

@@ -125,7 +125,7 @@ const graphjinArtifactsSchema = z
     sources: relativePath,
     relationships: relativePath,
     specs: z.array(relativePath),
-    savedQueries: relativePath,
+    savedQueries: relativePath.optional(),
   })
   .strict();
 
