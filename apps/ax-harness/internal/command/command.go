@@ -8,34 +8,28 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
-// MainWithToolsAndCleanup closes external tool sessions before exiting.
-func MainWithToolsAndCleanup(tools agent.Tools, cleanup func() error) {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	code, err := executeWithTools(ctx, os.Stdin, os.Stdout, tools)
+// Execute runs one turn: it reads the run specification from input, writes
+// NDJSON events to output and closes the tool sessions with cleanup. getenv
+// supplies the model routes. It returns the exit code the binary uses.
+func Execute(ctx context.Context, getenv func(string) string, input io.Reader, output io.Writer, tools agent.Tools, cleanup func() error) (int, error) {
+	code, err := executeWithTools(ctx, getenv, input, output, tools)
 	if cleanup != nil {
 		if closeErr := cleanup(); closeErr != nil {
-			code = 1
-			err = fmt.Errorf("tool session cleanup failed: %w", closeErr)
+			return 1, fmt.Errorf("tool session cleanup failed: %w", closeErr)
 		}
 	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-	}
-	os.Exit(code)
+	return code, err
 }
 
 func run(ctx context.Context, input io.Reader, output io.Writer) (int, error) {
-	return executeWithTools(ctx, input, output, agent.Tools{})
+	return executeWithTools(ctx, os.Getenv, input, output, agent.Tools{})
 }
 
-func executeWithTools(ctx context.Context, input io.Reader, output io.Writer, tools agent.Tools) (int, error) {
+func executeWithTools(ctx context.Context, getenv func(string) string, input io.Reader, output io.Writer, tools agent.Tools) (int, error) {
 	var spec agent.Spec
 	data, readErr := io.ReadAll(io.LimitReader(input, agent.MaxInputBytes+1))
 	if readErr != nil || len(data) > agent.MaxInputBytes {
@@ -50,7 +44,7 @@ func executeWithTools(ctx context.Context, input io.Reader, output io.Writer, to
 	if err := decoder.Decode(&extra); err != io.EOF {
 		return 2, fmt.Errorf("expected exactly one run specification")
 	}
-	client, err := loadModelClient(os.Getenv)
+	client, err := loadModelClient(getenv)
 	if err != nil {
 		return 2, err
 	}

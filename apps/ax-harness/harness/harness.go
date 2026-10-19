@@ -5,11 +5,14 @@ package harness
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/catalog"
@@ -28,77 +31,32 @@ func Main() {
 		exportCatalog()
 		return
 	}
-	if err := validateScope(os.Getenv("OPENNEKO_MCP_ORG_ID"), os.Getenv("OPENNEKO_MCP_THREAD_ID")); err != nil {
-		fail(err)
-	}
-	var tools agent.Tools
-	var closers []func() error
-	if bridge := os.Getenv("OPENNEKO_MCP_BRIDGE"); bridge != "" {
-		caps, closeBridge, err := mcp.Connect(context.Background(), bridgeCommand(bridge, os.Getenv("OPENNEKO_MCP_SERVERS"), os.Environ()), "mcp_neko_", bridgeEffects)
-		if err != nil {
-			fail(fmt.Errorf("OpenNeko bridge unavailable: %w", err))
-		}
-		tools.Capabilities = append(tools.Capabilities, caps...)
-		closers = append(closers, closeBridge)
-	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	environ := os.Environ()
 	// Only the bridge may reach the broker.
 	_ = os.Unsetenv("OPENNEKO_BROKER_URL")
 	_ = os.Unsetenv("OPENNEKO_BROKER_TOKEN")
-	workspace := os.Getenv("OPENNEKO_HARNESS_WORKSPACE_DIR")
-	if workspace != "" {
-		files, err := localtool.OpenFiles(workspace)
-		if err != nil {
-			fail(fmt.Errorf("file workspace unavailable: %w", err))
-		}
-		tools.Capabilities = append(tools.Capabilities, files.Capabilities()...)
-		closers = append(closers, files.Close)
+	code, err := Run(ctx, environ, os.Stdin, os.Stdout)
+	stop()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 	}
-	if enabled := os.Getenv("OPENNEKO_HARNESS_SHELL"); enabled != "" {
-		if enabled != "1" || workspace == "" {
-			fail(fmt.Errorf("the terminal needs OPENNEKO_HARNESS_SHELL=1 and OPENNEKO_HARNESS_WORKSPACE_DIR"))
-		}
-		shell, err := localtool.OpenShell(workspace, shellStripList(os.Getenv))
-		if err != nil {
-			fail(fmt.Errorf("terminal unavailable: %w", err))
-		}
-		shell.SetSkillsRoot(os.Getenv("OPENNEKO_MCP_SKILLS_ROOT"))
-		if err := shell.SetLimits(intEnv("OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS", 180), intEnv("OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT", 50_000)); err != nil {
-			fail(err)
-		}
-		tools.Capabilities = append(tools.Capabilities, shell.Capability())
+	os.Exit(code)
+}
+
+// Run runs one agent turn for a host that runs the harness in-process.
+// environ takes the place of the process environment: it binds the run's
+// scope, tools and model routes. Run reads the run specification from in,
+// writes NDJSON events to out and returns the exit code the binary would.
+// It reads no process state, so a host can run many turns at once.
+func Run(ctx context.Context, environ []string, in io.Reader, out io.Writer) (int, error) {
+	getenv := func(name string) string { return envValue(environ, name) }
+	if err := validateScope(getenv("OPENNEKO_MCP_ORG_ID"), getenv("OPENNEKO_MCP_THREAD_ID")); err != nil {
+		return 2, err
 	}
-	if hosts := os.Getenv("OPENNEKO_HARNESS_WEB_HOSTS"); hosts != "" {
-		web, err := localtool.OpenWeb(hosts)
-		if err != nil {
-			fail(err)
-		}
-		tools.Capabilities = append(tools.Capabilities, web.Capability())
-	}
-	if dir := os.Getenv("OPENNEKO_HARNESS_UPLOADS_DIR"); dir != "" {
-		uploads, err := localtool.OpenFiles(dir)
-		if err != nil {
-			fail(fmt.Errorf("upload workspace unavailable: %w", err))
-		}
-		tools.Capabilities = append(tools.Capabilities, uploads.UploadCapabilities()...)
-		closers = append(closers, uploads.Close)
-	}
-	if enabled := os.Getenv("OPENNEKO_HARNESS_SKILLS_READ"); enabled != "" {
-		if enabled != "1" {
-			fail(fmt.Errorf("invalid skill capability binding"))
-		}
-		skills, err := localtool.OpenFiles(os.Getenv("OPENNEKO_MCP_SKILLS_ROOT"))
-		if err != nil {
-			fail(fmt.Errorf("skill workspace unavailable: %w", err))
-		}
-		if tools.Skills, err = skills.Skills(); err != nil {
-			fail(fmt.Errorf("staged skills unavailable: %w", err))
-		}
-		closers = append(closers, skills.Close)
-	}
-	if child := os.Getenv("OPENNEKO_HARNESS_CHILD_TOOLS"); child != "" {
-		tools.ChildTools = strings.Split(child, ",")
-	}
-	command.MainWithToolsAndCleanup(tools, func() error {
+	var tools agent.Tools
+	var closers []func() error
+	closeAll := func() error {
 		var first error
 		for _, closeTool := range closers {
 			if err := closeTool(); err != nil && first == nil {
@@ -106,7 +64,93 @@ func Main() {
 			}
 		}
 		return first
-	})
+	}
+	failed := func(err error) (int, error) {
+		_ = closeAll()
+		return 2, err
+	}
+	if bridge := getenv("OPENNEKO_MCP_BRIDGE"); bridge != "" {
+		caps, closeBridge, err := mcp.Connect(ctx, bridgeCommand(bridge, getenv("OPENNEKO_MCP_SERVERS"), environ), "mcp_neko_", bridgeEffects)
+		if err != nil {
+			return failed(fmt.Errorf("OpenNeko bridge unavailable: %w", err))
+		}
+		tools.Capabilities = append(tools.Capabilities, caps...)
+		closers = append(closers, closeBridge)
+	}
+	workspace := getenv("OPENNEKO_HARNESS_WORKSPACE_DIR")
+	if workspace != "" {
+		files, err := localtool.OpenFiles(workspace)
+		if err != nil {
+			return failed(fmt.Errorf("file workspace unavailable: %w", err))
+		}
+		tools.Capabilities = append(tools.Capabilities, files.Capabilities()...)
+		closers = append(closers, files.Close)
+	}
+	if enabled := getenv("OPENNEKO_HARNESS_SHELL"); enabled != "" {
+		if enabled != "1" || workspace == "" {
+			return failed(fmt.Errorf("the terminal needs OPENNEKO_HARNESS_SHELL=1 and OPENNEKO_HARNESS_WORKSPACE_DIR"))
+		}
+		shell, err := localtool.OpenShell(workspace, shellStripList(getenv))
+		if err != nil {
+			return failed(fmt.Errorf("terminal unavailable: %w", err))
+		}
+		shell.SetEnviron(environ)
+		shell.SetSkillsRoot(getenv("OPENNEKO_MCP_SKILLS_ROOT"))
+		timeout, err := intEnv(getenv, "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS", 180)
+		if err != nil {
+			return failed(err)
+		}
+		maxOutput, err := intEnv(getenv, "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT", 50_000)
+		if err != nil {
+			return failed(err)
+		}
+		if err := shell.SetLimits(timeout, maxOutput); err != nil {
+			return failed(err)
+		}
+		tools.Capabilities = append(tools.Capabilities, shell.Capability())
+	}
+	if hosts := getenv("OPENNEKO_HARNESS_WEB_HOSTS"); hosts != "" {
+		web, err := localtool.OpenWeb(hosts)
+		if err != nil {
+			return failed(err)
+		}
+		tools.Capabilities = append(tools.Capabilities, web.Capability())
+	}
+	if dir := getenv("OPENNEKO_HARNESS_UPLOADS_DIR"); dir != "" {
+		uploads, err := localtool.OpenFiles(dir)
+		if err != nil {
+			return failed(fmt.Errorf("upload workspace unavailable: %w", err))
+		}
+		tools.Capabilities = append(tools.Capabilities, uploads.UploadCapabilities()...)
+		closers = append(closers, uploads.Close)
+	}
+	if enabled := getenv("OPENNEKO_HARNESS_SKILLS_READ"); enabled != "" {
+		if enabled != "1" {
+			return failed(fmt.Errorf("invalid skill capability binding"))
+		}
+		skills, err := localtool.OpenFiles(getenv("OPENNEKO_MCP_SKILLS_ROOT"))
+		if err != nil {
+			return failed(fmt.Errorf("skill workspace unavailable: %w", err))
+		}
+		closers = append(closers, skills.Close)
+		if tools.Skills, err = skills.Skills(); err != nil {
+			return failed(fmt.Errorf("staged skills unavailable: %w", err))
+		}
+	}
+	if child := getenv("OPENNEKO_HARNESS_CHILD_TOOLS"); child != "" {
+		tools.ChildTools = strings.Split(child, ",")
+	}
+	return command.Execute(ctx, getenv, in, out, tools, closeAll)
+}
+
+func envValue(environ []string, name string) string {
+	value := ""
+	for _, entry := range environ {
+		if key, v, ok := strings.Cut(entry, "="); ok && key == name {
+			value = v
+		}
+	}
+	return value
 }
 
 // bridgeCommand starts the bridge with a clean environment: PATH, the bridge
@@ -138,16 +182,16 @@ func shellStripList(getenv func(string) string) []string {
 }
 
 // intEnv reads a host limit; an unset variable keeps the default and a malformed one fails the run.
-func intEnv(name string, fallback int) int {
-	raw := os.Getenv(name)
+func intEnv(getenv func(string) string, name string, fallback int) (int, error) {
+	raw := getenv(name)
 	if raw == "" {
-		return fallback
+		return fallback, nil
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil {
-		fail(fmt.Errorf("invalid %s", name))
+		return 0, fmt.Errorf("invalid %s", name)
 	}
-	return n
+	return n, nil
 }
 
 func validateScope(orgID, threadID string) error {

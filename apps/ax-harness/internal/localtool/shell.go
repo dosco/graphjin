@@ -31,6 +31,7 @@ type Shell struct {
 	dir       string
 	skills    string
 	strip     map[string]bool
+	env       []string
 	timeout   int
 	maxOutput int
 }
@@ -60,6 +61,19 @@ func (s *Shell) SetLimits(timeoutSeconds, maxOutput int) error {
 	return nil
 }
 
+// SetEnviron replaces the process environment as the base of every command's
+// environment, for a host that runs the harness in-process.
+func (s *Shell) SetEnviron(environ []string) {
+	s.env = append([]string{}, environ...)
+}
+
+func (s *Shell) environ() []string {
+	if s.env != nil {
+		return s.env
+	}
+	return os.Environ()
+}
+
 // SetSkillsRoot names the staged skills, so a command can find its skill's folder.
 func (s *Shell) SetSkillsRoot(dir string) {
 	s.skills = dir
@@ -70,7 +84,7 @@ var skillDirPath = regexp.MustCompile(`\$\{?SKILL_DIR\}?(/[^\s"'$;|&()<>]+)`)
 // skillDir returns the one staged skill that holds every $SKILL_DIR path in the command.
 // SKILL_DIR differs per skill, so it cannot be set once for the run.
 func (s *Shell) skillDir(command string) string {
-	if s.skills == "" || os.Getenv("SKILL_DIR") != "" {
+	if s.skills == "" || envValue(s.environ(), "SKILL_DIR") != "" {
 		return ""
 	}
 	found := ""
@@ -125,7 +139,7 @@ func (s *Shell) run(ctx context.Context, raw json.RawMessage) (json.RawMessage, 
 	cmd := exec.Command("/bin/sh", "-c", input.Command)
 	cmd.Dir = s.dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	for _, entry := range os.Environ() {
+	for _, entry := range s.environ() {
 		name, _, _ := strings.Cut(entry, "=")
 		if !s.strip[name] {
 			cmd.Env = append(cmd.Env, entry)
@@ -210,4 +224,13 @@ func (c *capturedOutput) text() (string, bool) {
 		return all, false
 	}
 	return string(runes[:outputHalf]) + "\n[... output truncated ...]\n" + string(runes[len(runes)-outputHalf:]), true
+}
+
+func envValue(environ []string, name string) string {
+	for _, entry := range environ {
+		if key, value, ok := strings.Cut(entry, "="); ok && key == name {
+			return value
+		}
+	}
+	return ""
 }
