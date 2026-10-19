@@ -19,6 +19,7 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/internal/command"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/localtool"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/mcp"
+	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 // The bridge's ask tool ends the turn until the operator answers.
@@ -127,6 +128,10 @@ func RunTurn(ctx context.Context, turn Turn) (int, error) {
 			return failed(fmt.Errorf("terminal unavailable: %w", err))
 		}
 		shell.SetEnviron(environ)
+		if socket := getenv("OPENNEKO_SANDBOX_SOCKET"); socket != "" {
+			shell.SetExecutor(sandbox.NewClient(socket, workspace))
+			closers = append(closers, shell.Close)
+		}
 		shell.SetSkillsRoot(getenv("OPENNEKO_MCP_SKILLS_ROOT"))
 		timeout, err := intEnv(getenv, "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS", 180)
 		if err != nil {

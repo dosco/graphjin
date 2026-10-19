@@ -26,6 +26,7 @@ func TestPick(t *testing.T) {
 		{[]string{"openneko", "graphjin-config", "a", "b", "c", "d"}, GraphJinConfig, []string{"a", "b", "c", "d"}, true},
 		{[]string{"openneko", "serve", "--socket", "/tmp/s.sock"}, Serve, []string{"--socket", "/tmp/s.sock"}, true},
 		{[]string{"/usr/bin/serve"}, Serve, []string{}, true},
+		{[]string{"openneko", "sandbox"}, Sandbox, []string{}, true},
 	}
 	for _, c := range cases {
 		name, rest, ok := Pick(c.args)

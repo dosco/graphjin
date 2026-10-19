@@ -12,10 +12,10 @@ import (
 	"time"
 )
 
-func runShell(t *testing.T, s *Shell, ctx context.Context, input string) (shellResult, error) {
+func runShell(t *testing.T, s *Shell, ctx context.Context, input string) (ExecResult, error) {
 	t.Helper()
 	raw, err := s.Capability().Call(ctx, json.RawMessage(input))
-	var result shellResult
+	var result ExecResult
 	if err == nil {
 		if decodeErr := json.Unmarshal(raw, &result); decodeErr != nil {
 			t.Fatal(decodeErr)

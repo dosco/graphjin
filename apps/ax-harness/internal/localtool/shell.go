@@ -32,6 +32,7 @@ type Shell struct {
 	skills    string
 	strip     map[string]bool
 	env       []string
+	executor  Executor
 	timeout   int
 	maxOutput int
 }
@@ -117,11 +118,43 @@ func (s *Shell) Capability() agent.Capability {
 		Call:        s.run}
 }
 
-type shellResult struct {
+// ExecResult is a terminal command's outcome.
+type ExecResult struct {
 	ExitCode  int    `json:"exit_code"`
 	Output    string `json:"output"`
 	TimedOut  bool   `json:"timed_out"`
 	Truncated bool   `json:"truncated"`
+}
+
+// ExecRequest is one command for Exec.
+type ExecRequest struct {
+	Dir            string
+	Command        string
+	Env            []string
+	TimeoutSeconds int
+	MaxOutput      int
+	// Credential runs the command as another user; nil runs it as this one.
+	Credential *syscall.Credential
+}
+
+// Executor runs terminal commands somewhere other than this process, such as
+// the sandbox service.
+type Executor interface {
+	Exec(ctx context.Context, command, skillDir string, timeoutSeconds, maxOutput int) (ExecResult, error)
+	Close() error
+}
+
+// SetExecutor sends every command to executor instead of running it here.
+func (s *Shell) SetExecutor(executor Executor) {
+	s.executor = executor
+}
+
+// Close ends the executor's run, if commands go to one.
+func (s *Shell) Close() error {
+	if s.executor == nil {
+		return nil
+	}
+	return s.executor.Close()
 }
 
 func (s *Shell) run(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
@@ -136,27 +169,46 @@ func (s *Shell) run(ctx context.Context, raw json.RawMessage) (json.RawMessage, 
 	if input.TimeoutSeconds == 0 {
 		input.TimeoutSeconds = s.timeout
 	}
-	cmd := exec.Command("/bin/sh", "-c", input.Command)
-	cmd.Dir = s.dir
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	for _, entry := range s.environ() {
-		name, _, _ := strings.Cut(entry, "=")
-		if !s.strip[name] {
-			cmd.Env = append(cmd.Env, entry)
+	skillDir := s.skillDir(input.Command)
+	var result ExecResult
+	var err error
+	if s.executor != nil {
+		result, err = s.executor.Exec(ctx, input.Command, skillDir, input.TimeoutSeconds, s.maxOutput)
+	} else {
+		var env []string
+		for _, entry := range s.environ() {
+			name, _, _ := strings.Cut(entry, "=")
+			if !s.strip[name] {
+				env = append(env, entry)
+			}
 		}
+		if skillDir != "" {
+			env = append(env, "SKILL_DIR="+skillDir)
+		}
+		result, err = Exec(ctx, ExecRequest{Dir: s.dir, Command: input.Command, Env: env, TimeoutSeconds: input.TimeoutSeconds, MaxOutput: s.maxOutput})
 	}
-	if dir := s.skillDir(input.Command); dir != "" {
-		cmd.Env = append(cmd.Env, "SKILL_DIR="+dir)
+	if err != nil {
+		return nil, err
 	}
-	output := &capturedOutput{max: s.maxOutput}
+	return json.Marshal(result)
+}
+
+// Exec runs one command with /bin/sh in its own process group and kills the
+// group when the command ends, times out or ctx ends.
+func Exec(ctx context.Context, req ExecRequest) (ExecResult, error) {
+	cmd := exec.Command("/bin/sh", "-c", req.Command)
+	cmd.Dir = req.Dir
+	cmd.Env = req.Env
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Credential: req.Credential}
+	output := &capturedOutput{max: req.MaxOutput}
 	cmd.Stdout, cmd.Stderr = output, output
 	cmd.WaitDelay = 5 * time.Second
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("terminal command could not start")
+		return ExecResult{}, fmt.Errorf("terminal command could not start: %w", err)
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
-	timer := time.NewTimer(time.Duration(input.TimeoutSeconds) * time.Second)
+	timer := time.NewTimer(time.Duration(req.TimeoutSeconds) * time.Second)
 	defer timer.Stop()
 	var waitErr error
 	timedOut := false
@@ -169,11 +221,11 @@ func (s *Shell) run(ctx context.Context, raw json.RawMessage) (json.RawMessage, 
 	case <-ctx.Done():
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		<-done
-		return nil, ctx.Err()
+		return ExecResult{}, ctx.Err()
 	}
 	// Background children keep the group alive after the shell exits.
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	result := shellResult{TimedOut: timedOut}
+	result := ExecResult{TimedOut: timedOut}
 	var exitErr *exec.ExitError
 	switch {
 	case waitErr == nil:
@@ -183,7 +235,7 @@ func (s *Shell) run(ctx context.Context, raw json.RawMessage) (json.RawMessage, 
 		result.ExitCode = -1
 	}
 	result.Output, result.Truncated = output.text()
-	return json.Marshal(result)
+	return result, nil
 }
 
 // capturedOutput keeps the first and last halves of the output budget.

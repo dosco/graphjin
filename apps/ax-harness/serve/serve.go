@@ -223,7 +223,7 @@ func (s *Server) environ(in []string) []string {
 	hasPath := false
 	for _, entry := range in {
 		name, _, ok := strings.Cut(entry, "=")
-		if !ok || name == "" || name == "OPENNEKO_MCP_BRIDGE" || keyEnvName.MatchString(name) {
+		if !ok || name == "" || name == "OPENNEKO_MCP_BRIDGE" || name == "OPENNEKO_SANDBOX_SOCKET" || keyEnvName.MatchString(name) {
 			continue
 		}
 		hasPath = hasPath || name == "PATH"
@@ -231,6 +231,10 @@ func (s *Server) environ(in []string) []string {
 	}
 	if path := s.Getenv("PATH"); !hasPath && path != "" {
 		out = append(out, "PATH="+path)
+	}
+	// Terminal commands go to the sandbox when serve has one.
+	if socket := s.Getenv("OPENNEKO_SANDBOX_SOCKET"); socket != "" {
+		out = append(out, "OPENNEKO_SANDBOX_SOCKET="+socket)
 	}
 	return out
 }
