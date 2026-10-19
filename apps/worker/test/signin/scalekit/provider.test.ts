@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ConnectorCredential } from "@open-neko/plugin-install/secrets";
+import type { ConnectorCredential } from "@neko/secrets";
 import {
   beginScalekitAuth,
   beginScalekitConnect,

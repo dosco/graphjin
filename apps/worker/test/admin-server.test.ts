@@ -542,74 +542,34 @@ describe("worker native records-watch ingress", () => {
   });
 });
 
-describe("worker admin /admin/plugins/*", () => {
-  it("GET /admin/plugins/status returns the registry status", async () => {
+describe("worker admin /admin/action-descriptors", () => {
+  it("returns the built-in action descriptors", async () => {
     const srv = await startServer(
       createAdminHandler({
-        plugins: {
-          status: () => ({
-            loaded: ["@open-neko/plugin-slack"],
-            skipped: [{ name: "@open-neko/plugin-dupe", reason: "duplicate" }],
-            flagged: [
-              {
-                pluginName: "@open-neko/plugin-unverified",
-                reason: "unverified install",
-              },
-            ],
-            kinds: ["send_slack_message"],
-            vmsRunning: 1,
-            authProvider: null,
-            channels: [{ pluginId: "slack", providerLabel: "Slack" }],
-          }),
-          getRegisteredActionDescriptors: () => [],
+        actions: {
+          getActionDescriptors: () => [{ kind: "records.create", description: "Create a record", default_mode: "ask" }],
         },
       }),
     );
     try {
-      const res = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/plugins/status`,
-      );
+      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/action-descriptors`);
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({
-        status: {
-          loaded: ["@open-neko/plugin-slack"],
-          skipped: [{ name: "@open-neko/plugin-dupe", reason: "duplicate" }],
-          flagged: [
-            {
-              pluginName: "@open-neko/plugin-unverified",
-              reason: "unverified install",
-            },
-          ],
-          kinds: ["send_slack_message"],
-          vmsRunning: 1,
-          authProvider: null,
-          channels: [{ pluginId: "slack", providerLabel: "Slack" }],
-        },
+        descriptors: [{ kind: "records.create", description: "Create a record", default_mode: "ask" }],
       });
     } finally {
       await srv.close();
     }
   });
 
-  it("GET /admin/plugins/status returns an empty status when no surface is wired", async () => {
+  it("returns an empty list when no surface is wired, and the plugin routes are gone", async () => {
     const srv = await startServer(createAdminHandler());
     try {
-      const res = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/plugins/status`,
-      );
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({
-        status: {
-          loaded: [],
-          skipped: [],
-          flagged: [],
-          kinds: [],
-          vmsRunning: 0,
-          authProvider: null,
-          directoryProvider: null,
-          channels: [],
-        },
-      });
+      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/action-descriptors`);
+      expect(await res.json()).toEqual({ descriptors: [] });
+      for (const path of ["/admin/plugins/status", "/admin/plugins/settings", "/admin/plugins/action-descriptors"]) {
+        expect((await fetch(`http://127.0.0.1:${srv.port}${path}`)).status).toBe(404);
+      }
     } finally {
       await srv.close();
     }
@@ -1238,11 +1198,7 @@ describe("worker admin /admin/auth/*", () => {
     const srv = await startServer(
       createAdminHandler({
         installPolicy: {
-          getInstallPolicy: async () => ({
-            allowUnverified: true,
-            allowGitUrlInstalls: false,
-            allowedMarketplaces: ["https://x"],
-          }),
+          getInstallPolicy: async () => ({ allowGitUrlInstalls: true }),
         },
       }),
     );
@@ -1250,11 +1206,11 @@ describe("worker admin /admin/auth/*", () => {
       const res = await fetch(`http://127.0.0.1:${srv.port}/admin/install-policy`);
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
-        policy: { allowUnverified: boolean };
+        policy: { allowGitUrlInstalls: boolean };
         source: string;
       };
       expect(body.source).toBe("org");
-      expect(body.policy.allowUnverified).toBe(true);
+      expect(body.policy).toEqual({ allowGitUrlInstalls: true });
     } finally {
       await srv.close();
     }
@@ -1266,17 +1222,17 @@ describe("worker admin /admin/auth/*", () => {
       const res = await fetch(`http://127.0.0.1:${srv.port}/admin/install-policy`);
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
-        policy: { allowUnverified: boolean };
+        policy: { allowGitUrlInstalls: boolean };
         source: string;
       };
       expect(body.source).toBe("default");
-      expect(body.policy.allowUnverified).toBe(false);
+      expect(body.policy).toEqual({ allowGitUrlInstalls: false });
     } finally {
       await srv.close();
     }
   });
 
-  it("POST /admin/connect/begin propagates plugin errors as 500", async () => {
+  it("POST /admin/connect/begin propagates provider errors as 500", async () => {
     const srv = await startServer(
       createAdminHandler({
         connect: fakeConnect({

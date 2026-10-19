@@ -800,8 +800,7 @@ entries:
     disposition: declared
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: CHANNEL-WORKSPACE-ROUTE
     category: channels-plugins
     description: External workspace/conversation maps to the correct org and
@@ -810,8 +809,7 @@ entries:
     disposition: declared
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: CHANNEL-IDENTITY
     category: channels-plugins
     description: Sender linking by explicit approval or verified identity assigns
@@ -820,8 +818,7 @@ entries:
     disposition: declared
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: CHANNEL-DELIVERY
     category: channels-plugins
     description: Output messages, cards/degradation, receipts, errors, and
@@ -830,8 +827,7 @@ entries:
     disposition: eval
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: CHANNEL-BACKOFF
     category: channels-plugins
     description: Poll failures back off without duplicate delivery or log/run floods
@@ -839,8 +835,7 @@ entries:
     disposition: declared
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: ADMIN-USER
     category: channels-plugins
     description: Invite, role change, deactivate/reactivate, and authorization
@@ -849,8 +844,7 @@ entries:
     disposition: declared
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: ADMIN-SOURCE
     category: channels-plugins
     description: Source registry/config/role changes use secure forms for secrets
@@ -859,8 +853,7 @@ entries:
     disposition: declared
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: ADMIN-CHANNEL
     category: channels-plugins
     description: Workspace/member/link administration is scoped, attributable, and
@@ -869,8 +862,7 @@ entries:
     disposition: declared
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: ADMIN-PLUGIN
     category: channels-plugins
     description: Plugin list/install/remove/update surfaces permissions and enforces
@@ -879,8 +871,7 @@ entries:
     disposition: declared
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: PLUGIN-MANIFEST
     category: channels-plugins
     description: Manifest validation and declared capabilities/egress match runtime
@@ -889,8 +880,7 @@ entries:
     disposition: declared
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: PLUGIN-SANDBOX
     category: channels-plugins
     description: Each plugin receives only declared mounts, credentials, and network
@@ -899,8 +889,7 @@ entries:
     disposition: declared
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: PLUGIN-HOT-RELOAD
     category: channels-plugins
     description: Install/remove/secret rotation reconciles the live registry without
@@ -909,8 +898,7 @@ entries:
     disposition: declared
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: PLUGIN-ACTION
     category: channels-plugins
     description: Plugin actions become correctly described agent tools and execute
@@ -919,8 +907,7 @@ entries:
     disposition: declared
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: PLUGIN-CONNECT
     category: channels-plugins
     description: Connector discovery, per-user OAuth/token refresh, and source sync
@@ -929,8 +916,7 @@ entries:
     disposition: declared
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: PLUGIN-CHANNEL
     category: channels-plugins
     description: Channel capabilities register and drive inbound/outbound through
@@ -939,8 +925,7 @@ entries:
     disposition: declared
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: PLUGIN-AUTH
     category: channels-plugins
     description: Singleton auth capability, sign-in, group/role mapping, and session
@@ -949,8 +934,7 @@ entries:
     disposition: declared
     owners:
       - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/worker/src/channels
   - id: RECORDS-REGISTRY
     category: records
     description: App/object definitions, availability mirror, and catalog remain consistent

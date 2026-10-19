@@ -45,7 +45,7 @@ type Supervisor struct {
 	//   compose/core.yml
 	//   compose/dev.yml
 	//   compose/demo.yml
-	//   compose/plugins.linux.yml
+	//   compose/openshell.yml
 	AssetsFS fs.FS
 	// RuntimeDir is where compose files are written. Defaults to
 	// $OPENNEKO_WORKSPACE_ROOT/.openneko/runtime/ when that variable is set,

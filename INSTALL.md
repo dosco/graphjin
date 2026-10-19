@@ -41,7 +41,7 @@ Then run `openneko setup` (guided), or `openneko start` to bring the stack up wi
 
 Both paths drive the same web endpoints with the same validation (a live provider-key test, a data-source connectivity check), and each step persists independently — so you can start in the terminal and finish in the browser, or vice versa. For unattended installs (CI), pass `--admin-password`, `--provider`, `--provider-key`, etc. to run setup headless.
 
-As a final optional step, `openneko setup` offers to install **first-party plugins** from the [official marketplace](https://open-neko.github.io/plugins/) — Slack, Shopify, Telegram, Google Workspace, web search, SSO. Pick from the list and each plugin prompts for its own configuration (API keys, tokens), saved into the sandbox. Skip it with `--skip-plugins`, or pre-select non-interactively with `--plugins @open-neko/plugin-slack,@open-neko/plugin-shopify`.
+Integrations come from **solution packs**, installed after setup from **Admin → Settings → Solution packs** or with `openneko pack install`. Slack, Telegram and the HUD are built-in channels that a pack turns on; sign-in (Scalekit SSO or email link) is configured under **Admin → Settings**. (`--skip-plugins` and `--plugins` are still accepted by `setup` but do nothing.)
 
 The AdventureWorks seed pre-fills business onboarding (`AdventureWorks Cycles`, fiscal year `July`, seats `CEO`/`CFO`/`COO`, priorities `Defend wholesale margins` / `Grow DTC in Europe`). Otherwise fill it in at `/onboarding`.
 
@@ -127,13 +127,15 @@ openneko setup --mode prod
 
 Enter your GraphJin base URL when setup asks for it (terminal or browser). If GraphJin runs on your host, use `http://host.docker.internal:8080` — OpenNeko appends the GraphQL and MCP paths automatically.
 
-## Plugins
+## Solution packs and skills
 
 ```bash
-openneko install @open-neko/plugin-parallel-search
+openneko pack list
+openneko pack install magento
+openneko install https://github.com/<owner>/<repo>#<path/to/skill>   # community skill (admin opt-in)
 ```
 
-Browse the marketplace at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/). `openneko doctor` checks your host can run sandboxed plugins. Full sandbox model in **[PLUGINS.md](PLUGINS.md)**.
+Packs add sources, actions, workflows and skills, and can turn on the built-in Slack, Telegram and HUD channels. See **[PACKS.md](PACKS.md)**. `openneko doctor` checks your host can run the OpenShell sandbox.
 
 ---
 
@@ -153,8 +155,8 @@ openneko stop [--volumes]          # --volumes wipes data
 openneko migrate                   # apply pending migrations against running neko-db
 openneko seed adventureworks       # one-shot demo data load (already done by --mode demo)
 openneko [--instance name] graphjin import <customer-config.yml|->
-openneko reset [--all]             # tear down + clear local config (--all also wipes secrets/marketplaces)
-openneko doctor                    # host check, docker daemon, manifest state
+openneko reset [--all]             # tear down + clear local config (--all also wipes secrets)
+openneko doctor                    # host check, docker daemon, stack health
 openneko version
 ```
 
@@ -201,9 +203,9 @@ two-second timeout, is fire-and-forget, and never blocks the governed operation.
 Alert delivery failures are themselves emitted as structured critical stderr
 events.
 
-### Agent & plugin sandboxing
+### Agent sandboxing
 
-The agent loop **and** plugins always run inside OpenShell policy
+The agent loop always runs inside OpenShell policy
 sandboxes — default-deny egress, and the model API key never enters the
 sandbox (the gateway's egress proxy injects it on the wire; the box only
 ever holds an opaque placeholder). The containerized OpenShell gateway is
@@ -217,7 +219,7 @@ Docker — already required to run OpenNeko.
 
 `openneko upgrade` is the normal stack upgrade path. It:
 
-1. Pulls the latest OpenNeko service, agent, and plugin-base images.
+1. Pulls the latest OpenNeko service, agent, and sandbox supervisor images.
 2. Detects the mode recorded by your last `setup` or `start` (`prod`, `dev`, or `demo`) and recreates that stack detached.
 3. Re-runs every idempotent initializer against the existing volumes, including runtime-artifact repair and pending migrations.
 4. Waits for every declared service health check; a crash loop or unreachable data plane fails the upgrade instead of being reported as success.
@@ -288,8 +290,8 @@ openneko upgrade
 ## Reset
 
 ```bash
-openneko stop --volumes   # wipes data; keeps secrets + marketplaces
-openneko reset --all      # wipes everything including secrets and marketplaces
+openneko stop --volumes   # wipes data; keeps secrets
+openneko reset --all      # wipes everything including secrets
 ```
 
 ## Ports

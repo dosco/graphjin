@@ -55,7 +55,7 @@ const ownerBySection: Record<number, string[]> = {
   3: ["packages/llm/src", "apps/worker/src/jobs"],
   4: ["packages/llm/src/work"],
   5: ["packages/llm/src/workflows", "apps/worker/src/jobs"],
-  6: ["packages/channels", "packages/plugin-types", "packages/plugin-install"],
+  6: ["packages/channels", "apps/worker/src/channels"],
   7: ["packages/records"],
   8: ["packages/llm/src/work", "packages/records/src/policy"],
   9: ["apps/worker/src", "apps/openneko/internal"],

@@ -107,12 +107,9 @@ export default async function SettingsPage() {
       : pendingProvider === provider
         ? { status: "Setup pending", statusTone: "watch" as const }
         : { status: "Off", statusTone: "neutral" as const };
-  const extraMarketplaces = installPolicy.allowedMarketplaces.length;
-  const securityStatus = installPolicy.allowUnverified || installPolicy.allowGitUrlInstalls
-    ? { status: "Exceptions allowed", statusTone: "watch" as const }
-    : extraMarketplaces > 0
-      ? { status: `${extraMarketplaces + 1} marketplaces`, statusTone: "success" as const }
-      : { status: "Official marketplace only", statusTone: "success" as const };
+  const securityStatus = installPolicy.allowGitUrlInstalls
+    ? { status: "Git-URL skills allowed", statusTone: "watch" as const }
+    : { status: "Locked down", statusTone: "success" as const };
 
   const enabledSources = sources.filter((source) => source.enabled);
   const jwtSources = enabledSources.filter(
@@ -215,7 +212,7 @@ export default async function SettingsPage() {
         {
           href: "/admin/settings/security",
           title: "Install policy",
-          copy: "The marketplaces that plugins and skills can come from.",
+          copy: "Whether operators can install community skills from git URLs.",
           ...securityStatus,
         },
       ],

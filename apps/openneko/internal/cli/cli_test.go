@@ -2,15 +2,11 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
-	"github.com/open-neko/neko/apps/openneko/internal/plugin/manifest"
 )
 
 func TestExitCodeFor(t *testing.T) {
@@ -24,7 +20,7 @@ func TestExitCodeFor(t *testing.T) {
 
 func TestRootHasAllCommands(t *testing.T) {
 	root := NewRoot()
-	want := []string{"setup", "instances", "init", "install", "remove", "list", "doctor", "marketplace", "secrets", "pack", "version", "start", "upgrade", "stop", "status", "backup", "restore", "records", "storage", "logs", "migrate", "seed", "reset", "eval"}
+	want := []string{"setup", "instances", "install", "doctor", "secrets", "pack", "version", "start", "upgrade", "stop", "status", "backup", "restore", "records", "storage", "logs", "migrate", "seed", "reset", "eval"}
 	got := map[string]bool{}
 	for _, c := range root.Commands() {
 		got[c.Name()] = true
@@ -101,85 +97,24 @@ func TestNamedInstanceFromWorkerContainer(t *testing.T) {
 	}
 }
 
-func TestListJSONOutput(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir("/") })
-	// Pre-populate a manifest with one entry.
-	t.Setenv(manifest.PathEnv, "")
-	m := manifest.Empty()
-	m = manifest.Upsert(m, manifest.Entry{
-		Name:        "plug",
-		Version:     "1.0.0",
-		Integrity:   "sha512-x",
-		Permissions: manifest.Permissions{Network: []string{"api.example"}, Env: []manifest.EnvRequirement{}},
-	})
-	if err := manifest.Write(dir, m); err != nil {
-		t.Fatal(err)
-	}
-
+func TestRootDropsRemovedPluginCommands(t *testing.T) {
 	root := NewRoot()
-	var out bytes.Buffer
-	root.SetOut(&out)
-	root.SetErr(&out)
-	root.SetArgs([]string{"--local", "list", "--output", "json"})
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	var parsed []manifest.Entry
-	if err := json.Unmarshal(out.Bytes(), &parsed); err != nil {
-		t.Fatalf("expected JSON: %v\n%s", err, out.String())
-	}
-	if len(parsed) != 1 || parsed[0].Name != "plug" {
-		t.Fatalf("unexpected: %+v", parsed)
+	for _, c := range root.Commands() {
+		switch c.Name() {
+		case "init", "list", "remove", "marketplace":
+			t.Errorf("plugin command %q should be gone; integrations come from solution packs", c.Name())
+		}
 	}
 }
 
-func TestInitCreates(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir("/") })
-	t.Setenv(manifest.PathEnv, "")
-
+func TestInstallRejectsNonGitSpec(t *testing.T) {
 	root := NewRoot()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"--local", "init"})
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), "created") {
-		t.Fatalf("expected 'created' in output: %s", out.String())
-	}
-	if _, err := os.Stat(filepath.Join(dir, manifest.Filename)); err != nil {
-		t.Fatalf("manifest not created: %v", err)
-	}
-}
-
-func TestRemoveMissingPluginIsHarmless(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir("/") })
-	t.Setenv(manifest.PathEnv, "")
-	if err := manifest.Write(dir, manifest.Empty()); err != nil {
-		t.Fatal(err)
-	}
-	root := NewRoot()
-	var out bytes.Buffer
-	root.SetOut(&out)
-	root.SetErr(&out)
-	root.SetArgs([]string{"--local", "remove", "no-such"})
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), "was not in the manifest") {
-		t.Fatalf("unexpected output: %s", out.String())
+	root.SetArgs([]string{"--local", "install", "@open-neko/plugin-slack"})
+	err := root.Execute()
+	if err == nil || ExitCodeFor(err) != 2 || !strings.Contains(err.Error(), "openneko pack install") {
+		t.Fatalf("expected a usage error pointing at packs, got %v", err)
 	}
 }

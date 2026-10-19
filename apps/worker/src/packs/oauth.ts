@@ -1,6 +1,6 @@
 import type { SolutionPackBundle } from "@neko/packs";
 import { and, db, eq, pack_install, pool } from "@neko/db";
-import { readSecretsStore, writeSecretsStore } from "@open-neko/plugin-install/secrets";
+import { readSecretsStore, writeSecretsStore } from "@neko/secrets";
 import {
   buildPackAuthorizationUrl,
   exchangePackOAuthCode,

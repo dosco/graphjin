@@ -17,7 +17,7 @@ import {
 } from "@neko/llm/work";
 import { createRunSpendGuard, SpendBudgetExceeded } from "@neko/llm/spend";
 import { getCurrentActor } from "@/lib/actor";
-import { getPluginActionDescriptors } from "@/lib/auth";
+import { getActionDescriptors } from "@/lib/auth";
 import { createCoalescingEmit } from "@/lib/coalescing-emit";
 import { getOrgId } from "@/lib/db";
 import {
@@ -131,7 +131,7 @@ async function postRun(request: NextRequest, context: RouteContext) {
   const agentRuntime = await startupPhase("config.provision", () => ensureHostConfigProvisioned(orgId));
 
   const [pluginActions, packActions] = await Promise.all([
-    startupPhase("context.plugin_actions", () => getPluginActionDescriptors()),
+    startupPhase("context.plugin_actions", () => getActionDescriptors()),
     startupPhase("context.pack_actions", () => listPackActionDescriptors(orgId)),
   ]);
 

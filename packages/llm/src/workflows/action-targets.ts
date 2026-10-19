@@ -1,7 +1,6 @@
-import { action_target_spec, and, db, eq, notInArray } from "@neko/db";
 import type { PolicyRequestSubject } from "./policy-engine";
 
-/** Mirrors ActionTargetSpec in @open-neko/plugin-types. */
+/** Which payload fields carry an action's real targets, and how to read them. */
 export type ActionTargetSpec = {
   fields: string[];
   as?: "value" | "email_domain";
@@ -10,15 +9,6 @@ export type ActionTargetSpec = {
 const BUILTIN_TARGET_SPECS: Record<string, ActionTargetSpec> = {
   send_webhook: { fields: ["url"], as: "value" },
 };
-
-function parseSpec(value: unknown): ActionTargetSpec | null {
-  if (!value || typeof value !== "object") return null;
-  const { fields, as } = value as { fields?: unknown; as?: unknown };
-  if (!Array.isArray(fields)) return null;
-  const names = fields.filter((f): f is string => typeof f === "string" && f.length > 0);
-  if (names.length === 0) return null;
-  return { fields: names, as: as === "email_domain" ? "email_domain" : "value" };
-}
 
 function emailDomain(address: string): string {
   const bracketed = /<([^>]*)>/.exec(address);
@@ -48,45 +38,8 @@ export function deriveActionTargets(
   return [...new Set(values)].sort();
 }
 
-export async function getActionTargetSpec(orgId: string, kind: string): Promise<ActionTargetSpec | null> {
-  const builtin = BUILTIN_TARGET_SPECS[kind];
-  if (builtin) return builtin;
-  const [row] = await db()
-    .select({ spec: action_target_spec.spec })
-    .from(action_target_spec)
-    .where(and(eq(action_target_spec.org_id, orgId), eq(action_target_spec.kind, kind)))
-    .limit(1);
-  return row ? parseSpec(row.spec) : null;
-}
-
-/** Replaces the org's plugin target specs with the ones the installed plugins declare. */
-export async function syncPluginActionTargetSpecs(
-  orgId: string,
-  specs: ReadonlyArray<{ pluginName: string; kind: string; spec: unknown }>,
-): Promise<void> {
-  const valid = specs.flatMap((s) => {
-    const spec = parseSpec(s.spec);
-    return spec && !BUILTIN_TARGET_SPECS[s.kind] ? [{ ...s, spec }] : [];
-  });
-  await db().transaction(async (tx) => {
-    const kinds = valid.map((s) => s.kind);
-    await tx
-      .delete(action_target_spec)
-      .where(
-        kinds.length > 0
-          ? and(eq(action_target_spec.org_id, orgId), notInArray(action_target_spec.kind, kinds))
-          : eq(action_target_spec.org_id, orgId),
-      );
-    for (const s of valid) {
-      await tx
-        .insert(action_target_spec)
-        .values({ org_id: orgId, kind: s.kind, plugin_name: s.pluginName, spec: s.spec })
-        .onConflictDoUpdate({
-          target: [action_target_spec.org_id, action_target_spec.kind],
-          set: { plugin_name: s.pluginName, spec: s.spec, updated_at: new Date() },
-        });
-    }
-  });
+export async function getActionTargetSpec(_orgId: string, kind: string): Promise<ActionTargetSpec | null> {
+  return BUILTIN_TARGET_SPECS[kind] ?? null;
 }
 
 /**

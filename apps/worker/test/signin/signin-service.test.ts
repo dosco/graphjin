@@ -6,7 +6,7 @@ import {
   readFullSecretsFile,
   writeFullSecretsFile,
   type ConnectorCredential,
-} from "@open-neko/plugin-install/secrets";
+} from "@neko/secrets";
 import { CoreSecrets } from "../../src/secrets/core-secrets";
 import { SignInService } from "../../src/signin/signin-service";
 import type { EmailMessage } from "../../src/signin/magic-link/email";

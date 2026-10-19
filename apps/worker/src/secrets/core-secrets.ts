@@ -18,8 +18,8 @@ import {
   writeFullSecretsFile,
   type ConnectorCredential,
   type FullSecretsFile,
-} from "@open-neko/plugin-install/secrets";
-import { FileSecretsResolver, type SecretsResolver } from "@open-neko/plugin-install";
+} from "@neko/secrets";
+import { FileSecretsResolver, type SecretsResolver } from "@neko/secrets";
 import { createScrubber, type Scrubber } from "@neko/llm/work";
 
 const POLL_MS = 3000;

@@ -16,7 +16,7 @@ vi.mock("@neko/db", () => ({
   }),
 }));
 
-import { readSecretsStore, writeSecretsStore } from "@open-neko/plugin-install/secrets";
+import { readSecretsStore, writeSecretsStore } from "@neko/secrets";
 import {
   channelEnv,
   channelSettings,

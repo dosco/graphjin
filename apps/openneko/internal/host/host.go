@@ -41,7 +41,7 @@ func checkWith(goos, goarch string, docker func() bool) Result {
 			return Result{
 				Supported: false,
 				Triple:    triple,
-				Reason:    "docker not found on PATH — the OpenShell gateway and plugin sandboxes run as containers.",
+				Reason:    "docker not found on PATH — the OpenShell gateway and agent sandboxes run as containers.",
 			}
 		}
 		return Result{Supported: true, Triple: triple}

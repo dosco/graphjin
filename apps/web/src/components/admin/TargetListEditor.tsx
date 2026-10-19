@@ -8,7 +8,7 @@ import { Field, Textarea } from "@/components/ui/field";
 
 type SaveResult = { ok: true } | { ok: false; error: string };
 
-/** Edits one target list, typed one pattern per line. Used by rules and plugin settings. */
+/** Edits one target list, typed one pattern per line. Used by rules. */
 export function TargetListEditor({
   label,
   hint,

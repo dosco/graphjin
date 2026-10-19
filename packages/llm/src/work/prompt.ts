@@ -8,7 +8,6 @@ import {
   buildMemorySection,
 } from "../prompts/sections";
 import type { InstalledSkill } from "./workspace";
-import type { PluginCatalog } from "./control-plane";
 import type { GraphjinDataPath } from "./graphjin-tool-policy";
 import {
   GRAPHJIN_AGENT_ASK_TOOL_TITLE,
@@ -246,55 +245,6 @@ Legacy messages can contain
 that legacy block as a workflow selection. Without a valid trailing block, an
 @name is ordinary user text and must not be guessed into an id.
 </selected_mentions>`;
-}
-
-function buildPluginManagementSection(
-  supportsTool: boolean,
-  catalog?: PluginCatalog,
-): string {
-  if (supportsTool) {
-    return `<plugin_management>
-When the operator needs a capability OpenNeko does not have, use
-\`mcp_neko_plugin_manager_list_plugins\` to inspect installed integrations
-and the official marketplace. If an exact marketplace plugin fits, use
-\`mcp_neko_plugin_manager_request_plugin_install\`. Installation is never
-silent: it creates an approval request the web channel renders inline.
-After a network policy denial, file that request in the same answer when an
-exact plugin fits; the approval card is the operator's yes/no question.
-Never guess a package name and never ask for credentials in chat.
-</plugin_management>`;
-  }
-  const available = catalog?.available ?? [];
-  const rows = available.length
-    ? JSON.stringify(available)
-    : "(official marketplace unavailable for this turn)";
-  return `<plugin_management>
-You can propose an exact official integration install through the same action
-approval system used by every other mutation. The official marketplace
-snapshot for this turn is:
-
-${rows}
-
-Choose only an exact \`name\` from that snapshot. To propose installation,
-emit:
-
-\`\`\`neko_action_request
-{
-  "scope": "internal",
-  "kind": "plugin_install",
-  "target": "<exact marketplace name>",
-  "payload": { "spec": "<exact marketplace name>" },
-  "risk_level": "high",
-  "summary": "Install <title> so OpenNeko can <specific capability>."
-}
-\`\`\`
-
-This creates an inline approval request; it does not install silently. If no
-listed plugin fits, say so and point the operator to plugin administration.
-After a network policy denial, emit the request in the same answer when an
-exact plugin fits; the approval card is the operator's yes/no question.
-Never invent a package name and never request credentials in chat.
-</plugin_management>`;
 }
 
 function buildNativeDelegationSection(supportedForRun: boolean, backend: AgentBackendId): string {
@@ -883,10 +833,8 @@ export function buildWorkPrompt(args: {
   /** "agent" when the org opted in to GraphJin's server-side agent. */
   graphjinDataPath?: GraphjinDataPath;
   supportsClarificationTool?: boolean;
-  supportsPluginManagerTool?: boolean;
   /** True only when this run may expose the backend's native sub-agent tool. */
   supportsNativeDelegation: boolean;
-  pluginCatalog?: PluginCatalog;
   // True when prior turns must be inlined into the system prompt because the
   // backend can't reload them out-of-band (i.e. no session resume).
   inlineTranscript: boolean;
@@ -919,9 +867,7 @@ export function buildWorkPrompt(args: {
     supportsPolicyTool,
     supportsSourceConfigTool,
     supportsClarificationTool = false,
-    supportsPluginManagerTool = false,
     supportsNativeDelegation,
-    pluginCatalog,
     inlineTranscript,
     pluginActions,
     dataSurface = "customer",
@@ -964,9 +910,6 @@ that flags churn risk every Monday."
     dataSurface === "customer" ? buildPoliciesSection(supportsPolicyTool) : "",
     dataSurface === "customer"
       ? buildSourceConfigSection(supportsSourceConfigTool, workspace)
-      : "",
-    dataSurface === "customer"
-      ? buildPluginManagementSection(supportsPluginManagerTool, pluginCatalog)
       : "",
     buildNativeDelegationSection(supportsNativeDelegation, backend),
     dataSurface === "records"

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,12 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
-	"github.com/open-neko/neko/apps/openneko/internal/plugin/marketplace"
 	"github.com/open-neko/neko/apps/openneko/internal/preflight"
 	"github.com/open-neko/neko/apps/openneko/internal/prompt"
 	"github.com/open-neko/neko/apps/openneko/internal/setup"
@@ -192,11 +189,6 @@ at the prompt) to finish at the web UI. Credential flags
 			}
 
 			if outcome.Configured {
-				if !skipPlugins {
-					if err := offerPluginInstall(ctx, out, pluginsCSV, interactive && !cfg.Headless); err != nil {
-						return err
-					}
-				}
 				ui.CompletionBox(out,
 					ui.OK()+" Setup complete.",
 					"",
@@ -225,8 +217,12 @@ at the prompt) to finish at the web UI. Credential flags
 	cmd.Flags().StringVar(&researchProvider, "research-provider", "", "Headless: research provider")
 	cmd.Flags().StringVar(&researchKey, "research-key", "", "Headless: research provider API key")
 	cmd.Flags().BoolVar(&noResearch, "no-research", false, "Headless: leave industry research disabled")
-	cmd.Flags().BoolVar(&skipPlugins, "skip-plugins", false, "Skip the optional first-party plugin step")
-	cmd.Flags().StringVar(&pluginsCSV, "plugins", "", "Install these first-party plugins non-interactively (comma-separated)")
+	// Plugins were replaced by solution packs. Keep the old flags as no-ops
+	// so existing automation that passes them doesn't break.
+	cmd.Flags().BoolVar(&skipPlugins, "skip-plugins", false, "Deprecated: setup no longer installs plugins")
+	_ = cmd.Flags().MarkDeprecated("skip-plugins", "plugins were replaced by solution packs; install packs from /admin/settings/packs")
+	cmd.Flags().StringVar(&pluginsCSV, "plugins", "", "Deprecated: setup no longer installs plugins")
+	_ = cmd.Flags().MarkDeprecated("plugins", "plugins were replaced by solution packs; install packs from /admin/settings/packs")
 	return cmd
 }
 
@@ -237,132 +233,6 @@ func validateLegacyAgentBackend(value string) error {
 	default:
 		return fmt.Errorf("unsupported --backend %q: Hermes is the only agent runtime", value)
 	}
-}
-
-// offerPluginInstall lets the operator install (and configure) first-party
-// plugins from the official marketplace as a final, optional setup step. Each
-// install reuses `openneko install` via the binary itself, so it runs through
-// the worker proxy AND its env-prompt — selecting a plugin prompts for and
-// persists that plugin's API keys/tokens. csv (from --plugins) drives a
-// non-interactive selection; otherwise the operator picks from a list.
-func offerPluginInstall(ctx context.Context, out io.Writer, csv string, interactive bool) error {
-	preselected := splitCSV(csv)
-	if len(preselected) == 0 && !interactive {
-		return nil
-	}
-	var mp *marketplace.Marketplace
-	if err := ui.Spin("Loading the plugin marketplace", func() error {
-		var e error
-		mp, e = marketplace.NewClient().Fetch(ctx, marketplace.OfficialURL)
-		return e
-	}); err != nil {
-		ui.Info(out, "Skipping plugins — couldn't reach the marketplace: %v", err)
-		return nil
-	}
-	if mp == nil || len(mp.Plugins) == 0 {
-		return nil
-	}
-
-	var chosen []string
-	if len(preselected) > 0 {
-		chosen = matchPlugins(preselected, mp.Plugins)
-	} else {
-		opts := make([]huh.Option[string], len(mp.Plugins))
-		for i, p := range mp.Plugins {
-			label := p.Name
-			if p.Title != "" {
-				label = p.Name + " — " + p.Title
-			}
-			opts[i] = huh.NewOption(label, p.Name)
-		}
-		form := huh.NewForm(huh.NewGroup(
-			huh.NewMultiSelect[string]().
-				Title("Install first-party plugins?").
-				Description("space toggles · enter confirms · each prompts for its own keys").
-				Options(opts...).
-				Value(&chosen),
-		)).WithTheme(ui.Theme())
-		if err := form.Run(); err != nil {
-			if errors.Is(err, huh.ErrUserAborted) {
-				return nil
-			}
-			return err
-		}
-	}
-	if len(chosen) == 0 {
-		return nil
-	}
-
-	self, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	for _, name := range chosen {
-		ui.Info(out, "Installing %s…", name)
-		ic := exec.CommandContext(ctx, self, "install", name)
-		ic.Stdin = os.Stdin
-		ic.Stdout = os.Stdout
-		ic.Stderr = os.Stderr
-		if err := ic.Run(); err != nil {
-			ui.Failure(out, "%s install failed: %v (continuing)", name, err)
-		}
-	}
-	return nil
-}
-
-func splitCSV(s string) []string {
-	var out []string
-	for t := range strings.SplitSeq(s, ",") {
-		if t = strings.TrimSpace(t); t != "" {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-// resolvePluginSelection turns a user reply ("all", "1,3", or names) into a
-// list of plugin names.
-func resolvePluginSelection(sel string, plugins []marketplace.Plugin) []string {
-	sel = strings.TrimSpace(sel)
-	if sel == "" {
-		return nil
-	}
-	if strings.EqualFold(sel, "all") {
-		names := make([]string, len(plugins))
-		for i, p := range plugins {
-			names[i] = p.Name
-		}
-		return names
-	}
-	return matchPlugins(splitCSV(sel), plugins)
-}
-
-// matchPlugins resolves tokens (1-based indices or exact names) against the
-// catalog, de-duplicating and preserving order.
-func matchPlugins(tokens []string, plugins []marketplace.Plugin) []string {
-	var out []string
-	seen := map[string]bool{}
-	add := func(name string) {
-		if name != "" && !seen[name] {
-			seen[name] = true
-			out = append(out, name)
-		}
-	}
-	for _, tok := range tokens {
-		if n, err := strconv.Atoi(tok); err == nil {
-			if n >= 1 && n <= len(plugins) {
-				add(plugins[n-1].Name)
-			}
-			continue
-		}
-		for _, p := range plugins {
-			if p.Name == tok {
-				add(p.Name)
-				break
-			}
-		}
-	}
-	return out
 }
 
 // webBaseURL resolves the local web app URL from the published port (matching

@@ -53,7 +53,7 @@ import {
 import {
   readSecretsStore,
   writeSecretsStore,
-} from "@open-neko/plugin-install/secrets";
+} from "@neko/secrets";
 import { notifyChannelsChanged, prepareChannelsForPack } from "../channels/runtime.js";
 import { PackOAuthService, packOAuthBinding } from "./oauth.js";
 import {

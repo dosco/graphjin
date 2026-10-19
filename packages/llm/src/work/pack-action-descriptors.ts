@@ -43,7 +43,7 @@ function operationContract(definition: PackActionDefinition): string {
 
 /**
  * Discover ready pack-owned actions directly from installed pack artifacts.
- * Pack actions stay separate from the plugin registry throughout discovery.
+ * Pack actions stay separate from the worker's built-in actions throughout discovery.
  */
 export async function listPackActionDescriptors(
   orgId: string,

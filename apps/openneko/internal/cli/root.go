@@ -55,7 +55,7 @@ func MaybeProxyToWorker(cmd *cobra.Command, run ...func(container string) int) (
 	if resolveErr != nil {
 		if project == "" && !errors.Is(resolveErr, dockerproxy.ErrAmbiguousWorkers) {
 			// No packaged installation was selected. Preserve the source-dev
-			// workflow, where plugin operations intentionally execute locally.
+			// workflow, where worker-backed commands intentionally execute locally.
 			return 0, false
 		}
 		fmt.Fprintf(cmd.ErrOrStderr(), "openneko: cannot locate instance worker: %v\n", resolveErr)
@@ -122,11 +122,11 @@ func NewRoot() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "openneko",
 		Short: "OpenNeko operator CLI",
-		Long: `openneko — supervises the OpenNeko stack and manages plugins.
+		Long: `openneko — supervises the OpenNeko stack.
 
 Getting started: setup (guided install — preflight, bring-up, configure).
-Plugin ops: init, install, list, remove, marketplace, secrets, doctor.
 Solution packs: pack list, pack inspect, pack plan, pack install, pack status.
+Skills and secrets: install (community skill from a git URL), secrets, doctor.
 Stack ops:  instances, start, upgrade, stop, logs, status, backup, restore, storage, migrate, seed, reset.
 GraphJin:   graphjin import.
 Developer ops: eval.`,
@@ -138,23 +138,19 @@ Developer ops: eval.`,
 		},
 	}
 	cmd.SetVersionTemplate("{{.Version}}\n")
-	// Persistent flag: plugin-op commands (init/install/remove/list/
-	// marketplace/secrets) auto-proxy into a running openneko-*-worker-1
-	// container so the brew-installed binary on the host can manage
-	// plugins for an operator-side docker compose stack. --local forces
-	// host-side execution (use this for source-build dev workflows that
-	// happen to have a compose stack running alongside `pnpm dev`).
-	cmd.PersistentFlags().Bool("local", false, "Force local execution; don't auto-proxy plugin ops into a running worker container")
+	// Persistent flag: worker-backed commands (install, secrets, pack, ...)
+	// auto-proxy into a running openneko-*-worker-1 container so the
+	// brew-installed binary on the host acts on an operator-side docker
+	// compose stack. --local forces host-side execution (use this for
+	// source-build dev workflows that happen to have a compose stack
+	// running alongside `pnpm dev`).
+	cmd.PersistentFlags().Bool("local", false, "Force local execution; don't auto-proxy into a running worker container")
 	cmd.PersistentFlags().StringVar(&selectedInstance, "instance", "", "Target a named OpenNeko installation")
 	cmd.AddCommand(
 		newSetupCmd(),
 		newInstancesCmd(),
-		newInitCmd(),
 		newInstallCmd(),
-		newRemoveCmd(),
-		newListCmd(),
 		newDoctorCmd(),
-		newMarketplaceCmd(),
 		newSecretsCmd(),
 		newPackCmd(),
 		newVersionCmd(),

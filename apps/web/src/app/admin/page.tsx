@@ -15,7 +15,7 @@ import {
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
 import { getSetupCompleteAt } from "@/lib/org-state";
-import { getPluginStatus } from "@/lib/auth";
+import { getAuthGateStatus } from "@/lib/auth";
 import { AdminDenied, AdminShell } from "./AdminShell";
 import { Card } from "@/components/ui/card";
 import { StatCard, StatGrid } from "@/components/ui/stat-card";
@@ -28,7 +28,7 @@ export default async function AdminPage() {
   const orgId = await getOrgId();
   const [
     setupCompleteAt,
-    pluginStatus,
+    authGate,
     users,
     administrators,
     sources,
@@ -37,7 +37,7 @@ export default async function AdminPage() {
     pendingActionCounts,
   ] = await Promise.all([
     getSetupCompleteAt(orgId),
-    getPluginStatus(),
+    getAuthGateStatus(),
     db()
       .select({ id: app_user.id, disabledAt: app_user.disabled_at })
       .from(app_user)
@@ -87,7 +87,7 @@ export default async function AdminPage() {
   const policyTotal = policyCounts[0]?.total ?? 0;
   const policyEnabled = policyCounts[0]?.enabled ?? 0;
   const pendingActions = pendingActionCounts[0]?.total ?? 0;
-  const authProviderInstalled = Boolean(pluginStatus.authProvider);
+  const authProviderInstalled = Boolean(authGate.provider);
 
   const coreCards = [
     {
@@ -107,16 +107,6 @@ export default async function AdminPage() {
       copy: "Setup wizard, provider, data source, research, and security configuration.",
       status: setupCompleteAt ? "Setup complete" : "Setup incomplete",
       ok: Boolean(setupCompleteAt),
-    },
-    {
-      href: "/admin/plugins",
-      title: "Plugins",
-      copy: "Registry status, declared action kinds, auth, and channel providers.",
-      status:
-        pluginStatus.flagged.length > 0
-          ? `${pluginStatus.flagged.length} flagged`
-          : `${pluginStatus.loaded.length} loaded`,
-      ok: pluginStatus.flagged.length === 0,
     },
     {
       href: "/admin/rules",
@@ -144,7 +134,7 @@ export default async function AdminPage() {
     {
       href: "/actions?filter=awaiting",
       title: "Actions",
-      copy: "Review pending approvals and inspect action receipts across workflows and plugins.",
+      copy: "Review pending approvals and inspect action receipts across workflows and packs.",
       status:
         pendingActions === 0 ? "None pending" : `${pendingActions} pending`,
       ok: true,
@@ -154,7 +144,7 @@ export default async function AdminPage() {
   return (
     <AdminShell
       title="Administration"
-      subtitle="OpenNeko configuration, users, plugins, and data access."
+      subtitle="OpenNeko configuration, users, packs, and data access."
     >
       <StatGrid label="Workspace status">
         <StatCard
@@ -163,14 +153,9 @@ export default async function AdminPage() {
           tone={setupCompleteAt ? "ok" : "warn"}
         />
         <StatCard
-          label="Plugins"
-          value={`${pluginStatus.loaded.length}`}
-          detail={`${pluginStatus.kinds.length} plugin action kinds`}
-        />
-        <StatCard
           label="Auth"
-          value={pluginStatus.authProvider ? "Plugin" : "Solo"}
-          detail={pluginStatus.authProvider ?? "userless admin"}
+          value={authGate.provider ? "Sign-in" : "Solo"}
+          detail={authGate.provider?.providerLabel ?? "userless admin"}
         />
         <StatCard
           label="GraphJin"

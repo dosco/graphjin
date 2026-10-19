@@ -13,10 +13,7 @@ import {
   listPackActionDescriptors,
   type RunChannel,
 } from "@neko/llm/work";
-import {
-  getCurrentScrubber,
-  getPluginRegistryInstance,
-} from "../plugins/registry-instance.js";
+import { getCurrentScrubber } from "../secrets/instance.js";
 import { deliverChatReply } from "../channels/delivery.js";
 import { includeRecordActionDescriptors } from "../records/adapters.js";
 import {
@@ -98,9 +95,7 @@ async function runWorkRunTraced(
   let unregisterBrokerEvents = () => {};
   let result;
   try {
-    const pluginActions = includeRecordActionDescriptors(
-      getPluginRegistryInstance()?.getRegisteredActionDescriptors() ?? [],
-    );
+    const pluginActions = includeRecordActionDescriptors([]);
     const packActions = await startupPhase("context.pack_actions", () => listPackActionDescriptors(orgId));
 
     // Same gate the workflow job runs: if the boot-time provider sync lost a

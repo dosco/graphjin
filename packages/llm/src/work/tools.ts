@@ -74,110 +74,12 @@ export function buildRenderCardsServer(
   });
 }
 
-/**
- * ADM3 — chat-first plugin management. The agent can list installed +
- * marketplace plugins and PROPOSE installs/uninstalls; the commit step is
- * always an action_request through the control plane (policy-gated;
- * plugin_management_default seeds approval_required), never a direct
- * mutation. Credentials never transit this path — installs that need env
- * keys fail with a pointer to the secrets flow.
- */
-export function buildPluginManagerServer(opts: {
-  orgId: string;
-  runId?: string;
-  emit: (event: AgentEvent) => Promise<void> | void;
-  controlPlane?: AgentControlPlane;
-}) {
-  const controlPlane = requireControlPlane(opts.controlPlane);
-
-  const listPlugins = defineMcpTool(
-    "list_plugins",
-    [
-      "List installed plugins (with version, source, declared network",
-      "egress) and the official marketplace catalog. Use this before",
-      "proposing an install or uninstall, and to answer 'what plugins do",
-      "we have?'.",
-    ].join(" "),
-    {},
-    async () => {
-      const catalog = await controlPlane.listPlugins({ orgId: opts.orgId });
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(catalog) },
-        ],
-      };
-    },
-  );
-
-  const requestChange = (
-    kind: "plugin_install" | "plugin_uninstall",
-    target: string,
-    intent: string,
-    payload: Record<string, unknown>,
-  ) =>
-    proposeAdminAction({
-      controlPlane,
-      orgId: opts.orgId,
-      runId: opts.runId,
-      emit: opts.emit,
-      kind,
-      target,
-      intent,
-      payload,
-    });
-
-  const installTool = defineMcpTool(
-    "request_plugin_install",
-    [
-      "Propose installing a plugin from the marketplace. This NEVER",
-      "installs directly — it files an approval-gated action request; the",
-      "operator approves it on the approvals surface. Tell the operator",
-      "what you proposed and end your turn. If the plugin requires env",
-      "keys, the install will report them — the operator sets those via",
-      "`openneko secrets set` or the integrations page, never through",
-      "chat.",
-    ].join(" "),
-    {
-      spec: z.string().trim().min(1).describe("npm package name, e.g. @open-neko/plugin-slack"),
-      intent: z.string().trim().min(1).max(500),
-    },
-    async (args) =>
-      requestChange("plugin_install", args.spec, args.intent, {
-        spec: args.spec,
-      }),
-  );
-
-  const uninstallTool = defineMcpTool(
-    "request_plugin_uninstall",
-    [
-      "Propose removing an installed plugin. Approval-gated like installs;",
-      "the operator confirms on the approvals surface.",
-    ].join(" "),
-    {
-      name: z.string().trim().min(1),
-      intent: z.string().trim().min(1).max(500),
-    },
-    async (args) =>
-      requestChange("plugin_uninstall", args.name, args.intent, {
-        name: args.name,
-      }),
-  );
-
-  return createMcpServer({
-    name: "neko_plugin_manager",
-    version: "1.0.0",
-    tools: [listPlugins, installTool, uninstallTool],
-  });
-}
-
 async function proposeAdminAction(opts: {
   controlPlane: AgentControlPlane;
   orgId: string;
   runId?: string;
   emit: (event: AgentEvent) => Promise<void> | void;
   kind:
-    | "plugin_install"
-    | "plugin_uninstall"
     | "user_admin"
     | "group_admin"
     | "channel_admin"
@@ -206,7 +108,7 @@ async function proposeAdminAction(opts: {
             reason:
               "reason" in decision && decision.reason
                 ? String(decision.reason)
-                : "policy denies plugin management from chat",
+                : "policy denies this change from chat",
           }),
         },
       ],
@@ -1689,16 +1591,15 @@ export function buildLibraryServer(
 }
 
 /**
- * Plugin-installed action kinds, surfaced to the agent as MCP tools.
- * The worker collects these from PluginRegistry at turn start and
- * passes them in — the registry has the manifest entries; this module
- * only needs the {kind, description, default_mode} triples to build
- * tools.
+ * Worker-registered governed action kinds (the built-in records actions),
+ * surfaced to the agent as MCP tools. The worker passes the descriptors in
+ * at turn start; this module only needs the {kind, description,
+ * default_mode} triples to build tools.
  */
 interface GovernedActionDescriptor {
   kind: string;
   description: string;
-  /** Fixed policy scope. External preserves the plugin compatibility default. */
+  /** Fixed policy scope. External is the default for compatibility. */
   scope?: "external" | "internal";
   /**
    * Seeded approval mode from the manifest; runtime policy may
@@ -1716,7 +1617,7 @@ interface GovernedActionDescriptor {
       };
   /** Example payload from the manifest, surfaced to the agent so it shapes the call correctly. */
   example?: Record<string, unknown>;
-  /** Installed plugin that handles the kind; the integration item gates it. */
+  /** Integration that handles the kind; the integration item gates it. */
   pluginName?: string;
 }
 
@@ -1779,7 +1680,7 @@ export interface BuildPackActionServerOptions {
 }
 
 /**
- * One MCP tool per registered plugin action kind. Each tool's handler
+ * One MCP tool per registered governed action kind. Each tool's handler
  * routes through the action_policy engine:
  *
  *   - allow (auto_approve)  → create an approved action_request, enqueue it
@@ -1796,9 +1697,8 @@ export interface BuildPackActionServerOptions {
  *   - deny / no_policy      → return {ok:false, denied} to the agent.
  *
  * Tools whose declared default_mode is "deny" are excluded from the
- * MCP surface entirely — plugin authors using `deny` mean "this
- * kind exists in the plugin's vocabulary but the agent never gets to
- * call it without explicit operator opt-in."
+ * MCP surface entirely — `deny` means "this kind exists but the agent
+ * never gets to call it without explicit operator opt-in."
  *
  * `intent` (the agent's single-sentence natural-language framing of
  * what it's about to do) is required only on kinds whose default_mode
@@ -1986,11 +1886,10 @@ function buildGovernedActionServer(
         if (decision.decision === "allow") {
           // Auto-approve path: persist as approved and enqueue the
           // action_execute pg-boss job. We deliberately do NOT call
-          // executeApprovedActionRequest inline here — the plugin VM
+          // executeApprovedActionRequest inline here — the action
           // adapters are registered in the worker process, not the
           // web process that hosts /work runs. Enqueuing decouples
           // the two: any process can submit the job, only the worker
-          // (which holds the plugin registry + sandbox runtime)
           // runs it.
           const request = await controlPlane.createActionRequest({
             orgId: opts.orgId,

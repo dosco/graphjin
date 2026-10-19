@@ -24,7 +24,6 @@ import {
 import {
   buildPluginActionServer,
   buildPackActionServer,
-  buildPluginManagerServer,
   buildAuditViewerServer,
   buildChannelManagerServer,
   buildDataSourceManagerServer,
@@ -60,7 +59,7 @@ export interface RunAgentBackendInput {
   /** Team library files the actor holds. Undefined means the whole team library. */
   allowedLibrary?: AllowedLibrary;
   pluginActions: readonly PluginActionDescriptor[];
-  /** Installed pack actions, discovered independently of plugins. */
+  /** Installed pack actions, discovered independently of built-in actions. */
   packActions?: readonly PackActionDescriptor[];
   /** Mount the GraphJin source-config MCP server for this admin run. */
   sourceConfigEnabled?: boolean;
@@ -209,12 +208,6 @@ export async function runAgentBackend(
           orgId,
           createdByThreadId: threadId,
           createdByRunId: runId,
-          emit,
-          controlPlane,
-        }),
-        neko_plugin_manager: buildPluginManagerServer({
-          orgId,
-          runId,
           emit,
           controlPlane,
         }),

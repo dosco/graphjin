@@ -15,8 +15,7 @@
         { "type": "json", "path": "apps/worker/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "packages/db/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "packages/llm/package.json", "jsonpath": "$.version" },
-        { "type": "json", "path": "packages/plugin-install/package.json", "jsonpath": "$.version" },
-        { "type": "json", "path": "packages/plugin-types/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/secrets/package.json", "jsonpath": "$.version" },
         { "type": "generic", "path": "apps/openneko/internal/version/version.go" }
       ]
     }

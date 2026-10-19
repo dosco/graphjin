@@ -96,7 +96,7 @@ describeIfDb("SEC5 dual-identity audit", () => {
       });
       try {
         const token = broker.tokenFor({ runId: run.id, orgId, kind: "work" });
-        const res = await fetch(`http://127.0.0.1:${broker.port}/v1/plugins/list`, {
+        const res = await fetch(`http://127.0.0.1:${broker.port}/v1/skills/search`, {
           method: "POST",
           headers: {
             authorization: `Bearer ${token}`,
@@ -111,7 +111,7 @@ describeIfDb("SEC5 dual-identity audit", () => {
           .select()
           .from(control_plane_audit)
           .where(eq(control_plane_audit.org_id, orgId));
-        const row = rows.find((r) => r.path === "/v1/plugins/list");
+        const row = rows.find((r) => r.path === "/v1/skills/search");
         expect(row).toMatchObject({
           run_id: run.id,
           actor_role: "admin",

@@ -34,7 +34,7 @@ const SETTINGS: Array<{ href: string; label: string }> = [
   { href: "/admin/settings/security", label: "Security" },
   { href: "/admin/settings/packs", label: "Solution packs" },
   { href: "/admin/users", label: "Users" },
-  { href: "/admin/plugins", label: "Plugins" },
+  { href: "/admin/settings/channels", label: "Channels" },
   { href: "/admin/rules", label: "Rules" },
 ];
 

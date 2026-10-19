@@ -39,77 +39,6 @@ function policyDenialFromToolEnd(
   };
 }
 
-function parseNestedToolResult(value: unknown): Record<string, unknown> | null {
-  let current = value;
-  for (let depth = 0; depth < 4; depth += 1) {
-    if (typeof current === "string") {
-      try {
-        current = JSON.parse(current);
-        continue;
-      } catch {
-        return null;
-      }
-    }
-    if (!current || typeof current !== "object" || Array.isArray(current)) {
-      return null;
-    }
-    const record = current as Record<string, unknown>;
-    if (
-      typeof record.result === "string" &&
-      !("action_request_id" in record)
-    ) {
-      current = record.result;
-      continue;
-    }
-    return record;
-  }
-  return null;
-}
-
-/**
- * Older sandbox brokers persisted the action request but dropped the
- * action_request_emit event. Recover the approval from the successful MCP
- * tool result so historical pending requests remain actionable.
- */
-function approvalFromToolResult(
-  tool: ToolItem | undefined,
-  event: Extract<WorkEvent, { type: "tool_end" }>,
-): ApprovalItem | null {
-  if (!tool) return null;
-  const input =
-    tool.input && typeof tool.input === "object"
-      ? (tool.input as Record<string, unknown>)
-      : {};
-  const title = `${tool.name} ${String(input.title ?? "")}`.toLowerCase();
-  const isInstall = title.includes("plugin_manager_request_plugin_install");
-  const isUninstall = title.includes("plugin_manager_request_plugin_uninstall");
-  if (!isInstall && !isUninstall) return null;
-
-  const result = parseNestedToolResult(event.result);
-  const actionRequestId =
-    typeof result?.action_request_id === "string"
-      ? result.action_request_id
-      : null;
-  if (!actionRequestId || result?.ok !== true) return null;
-  const rawInput =
-    input.rawInput && typeof input.rawInput === "object"
-      ? (input.rawInput as Record<string, unknown>)
-      : {};
-  const intent =
-    typeof rawInput.intent === "string" ? rawInput.intent : null;
-  return {
-    actionRequestId,
-    actionKind: isInstall ? "plugin_install" : "plugin_uninstall",
-    intent,
-    summary: intent,
-    decision:
-      result.decision === "approved"
-        ? "auto_approved"
-        : "pending_approval",
-    result: null,
-  };
-}
-
 function toolSources(event: Extract<WorkEvent, { type: "tool_start" }>): string[] {
   const raw =
     typeof (event.input as { title?: unknown })?.title === "string"
@@ -233,18 +162,6 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
       case "tool_end": {
         const item = toolsById.get(event.id);
         if (item) item.end = event;
-        const recoveredApproval = approvalFromToolResult(item, event);
-        if (
-          recoveredApproval &&
-          item &&
-          !approvalToolByRequest.has(recoveredApproval.actionRequestId)
-        ) {
-          item.approval = recoveredApproval;
-          approvalToolByRequest.set(
-            recoveredApproval.actionRequestId,
-            item,
-          );
-        }
         const denial = policyDenialFromToolEnd(event);
         if (denial) {
           const key = `${denial.host}:${denial.port ?? 443}`;

@@ -6,7 +6,7 @@
 // provider's required values are set the deployment stays in
 // single-operator mode, so the admin is never locked out of setup.
 import { randomBytes } from "node:crypto";
-import type { ConnectorCredential } from "@open-neko/plugin-install/secrets";
+import type { ConnectorCredential } from "@neko/secrets";
 import type {
   ApplyDirectoryChangeResult,
   DirectoryCapabilities,

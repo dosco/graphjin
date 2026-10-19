@@ -35,7 +35,7 @@ import {
   type MagentoDomain,
   type MagentoRiskClass,
 } from "@neko/packs";
-import { readSecretsStore } from "@open-neko/plugin-install/secrets";
+import { readSecretsStore } from "@neko/secrets";
 
 const PACK_ID = "magento";
 const PACK_SECRET_SECTION = "pack.magento";

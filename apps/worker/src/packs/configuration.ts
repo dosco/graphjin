@@ -2,7 +2,7 @@ import type { SolutionPackBundle } from "@neko/packs";
 import {
   readSecretsStore,
   type SecretsStore,
-} from "@open-neko/plugin-install/secrets";
+} from "@neko/secrets";
 
 const PACK_SECRET_PREFIX = "pack.";
 

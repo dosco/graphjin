@@ -24,12 +24,10 @@
  *   POST /admin/auth/complete → 200 + { identity }
  *                               Body: { code, redirectUri, state }
  *                               Finishes sign-in with the chosen provider.
- *   GET  /admin/plugins/status → 200 + registry health/status summary.
- *   GET  /admin/plugins/settings → each installed plugin's declared settings
+ *   GET  /admin/action-descriptors → built-in governed action kinds (records).
+ *   GET  /admin/channels/settings → each built-in channel's declared settings
  *                               (secrets report only whether they are set).
- *   POST /admin/plugins/settings → { plugin, values: { KEY: string | null } }.
- *   GET  /admin/plugins/catalog → official marketplace plugins not yet installed.
- *   POST /admin/plugins/install → { name }; installs and lists missing settings.
+ *   POST /admin/channels/settings → { channel, values: { KEY: string | null } }.
  *   GET  /admin/directory/status → directory provider and last sync state.
  *   POST /admin/directory/sync  → run a full directory sync now.
  *   POST /admin/directory/users → create a user in the identity provider ({ email, name? }).
@@ -43,7 +41,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { ConnectorCredential } from "@open-neko/plugin-install/secrets";
+import type { ConnectorCredential } from "@neko/secrets";
 import type {
   AuthIdentity,
   BeginConnectParams,
@@ -77,7 +75,7 @@ export interface AuthHandlerSurface {
   } | null;
   /**
    * Whether sign-in is actually usable (all required env vars set).
-   * The web proxy gates on this, NOT on mere plugin presence — so the
+   * The web proxy gates on this, NOT on a provider merely being chosen — so the
    * admin isn't locked out of the setup UI before SSO is configured.
    */
   authSignInReady(): boolean;
@@ -115,10 +113,9 @@ export interface AuthHandlerSurface {
 }
 
 /**
- * Connect (per-operator OAuth) surface exposed to the web app. The
- * worker delegates each call to the matching plugin registry method;
- * credentials are persisted in the per-operator section of the secrets
- * file by the registry, not by the web.
+ * Connector OAuth surface exposed to the web app (the Scalekit workspace
+ * consent today). Credentials are persisted in the secrets file by the
+ * worker, not by the web.
  */
 export interface ConnectHandlerSurface {
   getConnectProviders(): Array<{
@@ -234,15 +231,11 @@ export interface ChannelHandlerSurface {
 /**
  * Install-policy surface exposed to the CLI (via the worker admin
  * port) for the install-time enforcement check. The CLI calls
- * `GET /admin/install-policy` before running install and refuses to
- * proceed with --unverified when the policy disallows it.
+ * `GET /admin/install-policy` before installing a community skill from
+ * a git URL and refuses when the policy disallows it.
  */
 export interface InstallPolicyHandlerSurface {
-  getInstallPolicy(): Promise<{
-    allowUnverified: boolean;
-    allowGitUrlInstalls: boolean;
-    allowedMarketplaces: string[];
-  }>;
+  getInstallPolicy(): Promise<{ allowGitUrlInstalls: boolean }>;
 }
 
 export interface PacksHandlerSurface {
@@ -285,16 +278,13 @@ export interface SchedulerHealthSurface {
   };
 }
 
-export interface PluginsHandlerSurface {
-  status(): PluginRegistryStatus;
-  /**
-   * Flat list of every plugin's declared action kinds + seeded
-   * default approval mode. Consumed by the web process's /work
-   * route so the in-process runChatTurn can build the agent's MCP
-   * tool surface — the web doesn't have the plugin registry
-   * locally (registry + adapters live in the worker).
-   */
-  getRegisteredActionDescriptors(): Array<{
+/**
+ * Built-in governed action kinds (records actions) with their seeded
+ * approval mode. The web process's /work route and rules page read them
+ * here; the adapters live in the worker.
+ */
+export interface ActionsHandlerSurface {
+  getActionDescriptors(): Array<{
     kind: string;
     description: string;
     pluginName?: string;
@@ -309,51 +299,7 @@ export interface PluginsHandlerSurface {
         };
     example?: Record<string, unknown>;
   }>;
-  settings?(): PluginSettingsView[];
-  setSettings?(plugin: string, values: Record<string, string | null>): Promise<void>;
-  catalog?(): Promise<{ available: PluginCatalogItem[]; error?: string }>;
-  install?(name: string): Promise<{ name: string; version: string; envMissing: string[] }>;
 }
-
-export interface PluginSettingsView {
-  name: string;
-  version: string;
-  fields: Array<{ key: string; required: boolean; secret: boolean; description: string; set: boolean; value?: string }>;
-  missing: string[];
-  targetActions: Array<{ kind: string; description: string; as: "value" | "email_domain" }>;
-}
-
-export interface PluginCatalogItem {
-  name: string;
-  title: string;
-  description: string;
-  version: string;
-}
-
-export interface PluginRegistryStatus {
-  loaded: string[];
-  skipped: Array<{ name: string; reason: string }>;
-  flagged: Array<{ pluginName: string; reason: string }>;
-  kinds: string[];
-  vmsRunning: number;
-  authProvider?: string | null;
-  directoryProvider?: string | null;
-  channels: Array<{
-    pluginId: string;
-    providerLabel: string;
-  }>;
-}
-
-const EMPTY_PLUGIN_STATUS: PluginRegistryStatus = {
-  loaded: [],
-  skipped: [],
-  flagged: [],
-  kinds: [],
-  vmsRunning: 0,
-  authProvider: null,
-  directoryProvider: null,
-  channels: [],
-};
 
 export type AdminHandlerOptions = {
   /**
@@ -369,40 +315,33 @@ export type AdminHandlerOptions = {
   /** The independent durable scheduler's process-local progress signal. */
   scheduler?: SchedulerHealthSurface | null;
   /**
-   * Auth surface — typically wired to the PluginRegistry. Absent when
-   * the plugin subsystem is disabled, in which case /admin/auth/*
-   * routes return 503 with a clear message.
+   * Auth surface — wired to the SignInService. Absent in tests, in which
+   * case /admin/auth/* routes report no provider or return 503.
    */
   auth?: AuthHandlerSurface | null;
   /**
-   * Plugins surface — typically wired to the PluginRegistry. Absent
-   * when the plugin subsystem is disabled, in which case
-   * /admin/plugins/action-descriptors returns an empty array.
+   * Built-in action descriptors. Absent in tests, in which case
+   * /admin/action-descriptors returns an empty array.
    */
-  plugins?: PluginsHandlerSurface | null;
+  actions?: ActionsHandlerSurface | null;
   /**
-   * Connect surface — typically wired to the PluginRegistry. Absent
-   * when the plugin subsystem is disabled, in which case
-   * /admin/connect/* routes return 503.
+   * Connector surface — wired to the SignInService (Scalekit workspace).
+   * Absent in tests, in which case /admin/connect/* routes return 503.
    */
   connect?: ConnectHandlerSurface | null;
   /**
-   * SSO admin-setup surface — typically wired to the SsoSetupService.
-   * Absent when the plugin subsystem is disabled, in which case
-   * /admin/sso/setup/* routes return 503.
+   * SSO admin-setup surface — wired to the SsoSetupService. Absent in
+   * tests, in which case /admin/sso/setup/* routes return 503.
    */
   ssoSetup?: SsoSetupHandlerSurface | null;
   /**
-   * Channel surface — typically wired to the PluginRegistry + channel
-   * delivery module. Absent when the plugin subsystem is disabled, in which
-   * case channel routes return 503 / empty.
+   * Channel surface — wired to the built-in channel runtime and delivery
+   * module. Absent in tests, in which case channel routes return 503 / empty.
    */
   channels?: ChannelHandlerSurface | null;
   /**
-   * Install-policy reader. Absent when the plugin subsystem is
-   * disabled — in that case /admin/install-policy returns a default
-   * (most-restrictive) policy so the CLI errs on the side of
-   * refusing privileged install paths.
+   * Install-policy reader. When absent, /admin/install-policy returns the
+   * most-restrictive default so the CLI refuses git-URL skill installs.
    */
   installPolicy?: InstallPolicyHandlerSurface | null;
   /**
@@ -418,7 +357,7 @@ export type AdminHandlerOptions = {
   actionRequests?: ActionRequestHandlerSurface | null;
   /** Shared first-party and uploaded solution-pack lifecycle. */
   packs?: PacksHandlerSurface | null;
-  /** Directory plugin status and on-demand sync. */
+  /** Directory provider status and on-demand sync. */
   directory?: DirectoryHandlerSurface | null;
   /** Writes group grants into the GraphJin config, now or batched. */
   groupGrants?: GroupGrantsHandlerSurface | null;
@@ -486,7 +425,7 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const exitDelayMs = opts.exitDelayMs ?? 100;
   const scheduler = opts.scheduler ?? null;
   const auth = opts.auth ?? null;
-  const plugins = opts.plugins ?? null;
+  const actions = opts.actions ?? null;
   const connect = opts.connect ?? null;
   const ssoSetup = opts.ssoSetup ?? null;
   const channels = opts.channels ?? null;
@@ -598,11 +537,8 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       void handleSsoSetupCheck(req, res, ssoSetup);
       return;
     }
-    if (
-      req.method === "GET" &&
-      req.url === "/admin/plugins/action-descriptors"
-    ) {
-      handlePluginActionDescriptors(res, plugins);
+    if (req.method === "GET" && req.url === "/admin/action-descriptors") {
+      json(res, 200, { descriptors: actions?.getActionDescriptors() ?? [] });
       return;
     }
     if (req.url === "/admin/graphjin/api-operations" && req.method === "GET") {
@@ -636,14 +572,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
     }
     if (req.url === "/admin/directory/status" || req.url === "/admin/directory/sync" || req.url === "/admin/directory/users") {
       void handleDirectory(req, res, directory);
-      return;
-    }
-    if (req.method === "GET" && req.url === "/admin/plugins/status") {
-      handlePluginStatus(res, plugins);
-      return;
-    }
-    if (req.url === "/admin/plugins/settings" || req.url === "/admin/plugins/catalog" || req.url === "/admin/plugins/install") {
-      void handlePluginAdmin(req, res, plugins);
       return;
     }
     if (req.method === "GET" && req.url === "/admin/connect/providers") {
@@ -1084,13 +1012,7 @@ async function handleInstallPolicy(
     // No reader wired → return defaults (most-restrictive). The CLI
     // will treat this as "no privileged install paths allowed".
     json(res, 200, {
-      policy: {
-        allowUnverified: false,
-        allowGitUrlInstalls: false,
-        allowedMarketplaces: [
-          "https://open-neko.github.io/plugins/marketplace.json",
-        ],
-      },
+      policy: { allowGitUrlInstalls: false },
       source: "default",
     });
     return;
@@ -1103,62 +1025,7 @@ async function handleInstallPolicy(
   }
 }
 
-const PLUGIN_NAME = /^(@[a-z0-9-]+\/)?[a-z0-9][a-z0-9-_.]*$/;
 const MAX_SETTING_LENGTH = 8192;
-
-async function handlePluginAdmin(
-  req: IncomingMessage,
-  res: ServerResponse,
-  plugins: PluginsHandlerSurface | null,
-) {
-  try {
-    if (req.url === "/admin/plugins/settings" && req.method === "GET") {
-      if (!plugins?.settings) return json(res, 503, { error: "plugin registry unavailable" });
-      return json(res, 200, { plugins: plugins.settings() });
-    }
-    if (req.url === "/admin/plugins/settings" && req.method === "POST") {
-      if (!plugins?.setSettings) return json(res, 503, { error: "plugin registry unavailable" });
-      const body = (await readJson(req).catch(() => null)) as { plugin?: unknown; values?: unknown } | null;
-      const plugin = typeof body?.plugin === "string" ? body.plugin : "";
-      const values = body?.values;
-      if (!PLUGIN_NAME.test(plugin)) return json(res, 400, { error: "plugin must be a package name" });
-      if (!values || typeof values !== "object" || Array.isArray(values) || Object.keys(values).length === 0) {
-        return json(res, 400, { error: "values must map at least one setting to a string or null" });
-      }
-      for (const value of Object.values(values)) {
-        if (value !== null && (typeof value !== "string" || value.length === 0 || value.length > MAX_SETTING_LENGTH)) {
-          return json(res, 400, { error: `each value must be null or a string of 1 to ${MAX_SETTING_LENGTH} characters` });
-        }
-      }
-      await plugins.setSettings(plugin, values as Record<string, string | null>);
-      return json(res, 200, { ok: true });
-    }
-    if (req.url === "/admin/plugins/catalog" && req.method === "GET") {
-      if (!plugins?.catalog) return json(res, 503, { error: "plugin registry unavailable" });
-      return json(res, 200, await plugins.catalog());
-    }
-    if (req.url === "/admin/plugins/install" && req.method === "POST") {
-      if (!plugins?.install) return json(res, 503, { error: "plugin registry unavailable" });
-      const body = (await readJson(req).catch(() => null)) as { name?: unknown } | null;
-      const name = typeof body?.name === "string" ? body.name.trim() : "";
-      if (!PLUGIN_NAME.test(name)) return json(res, 400, { error: "name must be a package name from the marketplace" });
-      return json(res, 200, await plugins.install(name));
-    }
-    return json(res, 405, { error: "method not allowed" });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const status = err instanceof Error && err.name === "PluginSettingsError" ? 400 : 500;
-    return json(res, status, { error: message });
-  }
-}
-
-function handlePluginActionDescriptors(
-  res: ServerResponse,
-  plugins: PluginsHandlerSurface | null,
-) {
-  const descriptors = plugins?.getRegisteredActionDescriptors() ?? [];
-  json(res, 200, { descriptors });
-}
 
 async function handleDirectory(
   req: IncomingMessage,
@@ -1193,13 +1060,6 @@ async function handleDirectory(
     const status = code === "no_provider" ? 404 : code === "running" || code === "lockout" ? 409 : code === "unsupported" ? 400 : 500;
     json(res, status, { error: err instanceof Error ? err.message : String(err), code: code ?? null });
   }
-}
-
-function handlePluginStatus(
-  res: ServerResponse,
-  plugins: PluginsHandlerSurface | null,
-) {
-  json(res, 200, { status: plugins?.status() ?? EMPTY_PLUGIN_STATUS });
 }
 
 async function handleAuthStatus(
@@ -1458,7 +1318,7 @@ async function handleAuthBegin(
   auth: AuthHandlerSurface | null,
 ) {
   if (!auth) {
-    json(res, 503, { error: "plugin subsystem disabled" });
+    json(res, 503, { error: "sign-in is unavailable" });
     return;
   }
   const body = await readJson(req).catch(() => null);
@@ -1498,7 +1358,7 @@ async function handleAuthComplete(
   auth: AuthHandlerSurface | null,
 ) {
   if (!auth) {
-    json(res, 503, { error: "plugin subsystem disabled" });
+    json(res, 503, { error: "sign-in is unavailable" });
     return;
   }
   const body = await readJson(req).catch(() => null);
@@ -1546,7 +1406,7 @@ async function handleSsoSetupStatus(
   ssoSetup: SsoSetupHandlerSurface | null,
 ) {
   if (!ssoSetup) {
-    json(res, 503, { error: "plugin subsystem disabled" });
+    json(res, 503, { error: "SSO setup is unavailable" });
     return;
   }
   const url = new URL(req.url ?? "/", "http://localhost");
@@ -1568,7 +1428,7 @@ async function handleSsoSetupEnvironments(
   ssoSetup: SsoSetupHandlerSurface | null,
 ) {
   if (!ssoSetup) {
-    json(res, 503, { error: "plugin subsystem disabled" });
+    json(res, 503, { error: "SSO setup is unavailable" });
     return;
   }
   const url = new URL(req.url ?? "/", "http://localhost");
@@ -1590,7 +1450,7 @@ async function handleSsoSetupOrganizations(
   ssoSetup: SsoSetupHandlerSurface | null,
 ) {
   if (!ssoSetup) {
-    json(res, 503, { error: "plugin subsystem disabled" });
+    json(res, 503, { error: "SSO setup is unavailable" });
     return;
   }
   const url = new URL(req.url ?? "/", "http://localhost");
@@ -1617,7 +1477,7 @@ async function handleSsoSetupCredentialsInfo(
   ssoSetup: SsoSetupHandlerSurface | null,
 ) {
   if (!ssoSetup) {
-    json(res, 503, { error: "plugin subsystem disabled" });
+    json(res, 503, { error: "SSO setup is unavailable" });
     return;
   }
   const url = new URL(req.url ?? "/", "http://localhost");
@@ -1642,7 +1502,7 @@ async function handleSsoSetupGeneratePortalLink(
   ssoSetup: SsoSetupHandlerSurface | null,
 ) {
   if (!ssoSetup) {
-    json(res, 503, { error: "plugin subsystem disabled" });
+    json(res, 503, { error: "SSO setup is unavailable" });
     return;
   }
   const body = await readJson(req).catch(() => null);
@@ -1661,7 +1521,7 @@ async function handleSsoSetupIds(
   ssoSetup: SsoSetupHandlerSurface | null,
 ) {
   if (!ssoSetup) {
-    json(res, 503, { error: "plugin subsystem disabled" });
+    json(res, 503, { error: "SSO setup is unavailable" });
     return;
   }
   const body = (await readJson(req).catch(() => null)) as Record<
@@ -1697,7 +1557,7 @@ async function handleSsoSetupCredentials(
   ssoSetup: SsoSetupHandlerSurface | null,
 ) {
   if (!ssoSetup) {
-    json(res, 503, { error: "plugin subsystem disabled" });
+    json(res, 503, { error: "SSO setup is unavailable" });
     return;
   }
   const body = (await readJson(req).catch(() => null)) as Record<
@@ -1737,7 +1597,7 @@ async function handleSsoSetupCheck(
   ssoSetup: SsoSetupHandlerSurface | null,
 ) {
   if (!ssoSetup) {
-    json(res, 503, { error: "plugin subsystem disabled" });
+    json(res, 503, { error: "SSO setup is unavailable" });
     return;
   }
   const body = await readJson(req).catch(() => null);
@@ -1799,7 +1659,7 @@ async function handleConnectBegin(
   connect: ConnectHandlerSurface | null,
 ) {
   if (!connect) {
-    json(res, 503, { error: "plugin subsystem disabled" });
+    json(res, 503, { error: "connectors are unavailable" });
     return;
   }
   const body = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;
@@ -1834,7 +1694,7 @@ async function handleConnectComplete(
   connect: ConnectHandlerSurface | null,
 ) {
   if (!connect) {
-    json(res, 503, { error: "plugin subsystem disabled" });
+    json(res, 503, { error: "connectors are unavailable" });
     return;
   }
   const body = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;
@@ -1869,7 +1729,7 @@ async function handleConnectRefresh(
   connect: ConnectHandlerSurface | null,
 ) {
   if (!connect) {
-    json(res, 503, { error: "plugin subsystem disabled" });
+    json(res, 503, { error: "connectors are unavailable" });
     return;
   }
   const body = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;
@@ -1901,7 +1761,7 @@ async function handleConnectDisconnect(
   connect: ConnectHandlerSurface | null,
 ) {
   if (!connect) {
-    json(res, 503, { error: "plugin subsystem disabled" });
+    json(res, 503, { error: "connectors are unavailable" });
     return;
   }
   const body = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;

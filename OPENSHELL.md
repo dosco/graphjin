@@ -1,11 +1,11 @@
 # OpenShell sandboxed-agent runtime
 
-OpenNeko can run the **agent loop itself** — not just plugins — inside an
+OpenNeko runs the **agent loop itself** inside an
 [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) policy sandbox, with the
 worker/web process as the only trusted control plane. This page covers the
 threat model, the architecture, how to turn it on, and what's verified.
 
-> **Status:** OpenShell is the only runtime — agents and plugins always run in
+> **Status:** OpenShell is the only runtime — agents always run in
 > sandboxes (SEC11 made it the default, SEC9 removed the in-process and
 > microsandbox paths). Both gateway shapes are verified end-to-end: the
 > **host-process gateway** via the web UI on macOS (hermes/gemini), and the
@@ -16,11 +16,11 @@ threat model, the architecture, how to turn it on, and what's verified.
 
 The least-trusted component historically ran with the most access: the
 autonomous, prompt-injectable agent loop ran **in-process** on the worker/web
-host, while only plugins were isolated. OpenShell flips that — the agent is
+host. OpenShell flips that — the agent is
 treated as untrusted code and runs in a default-deny sandbox:
 
 - **Egress is default-deny**, allowed per `(host, binary)` — the agent can only
-  reach the model endpoint (and whatever a plugin's manifest declares).
+  reach the model endpoint and the hosts its egress policy allows.
 - **The model API key never enters the sandbox.** The box holds only an opaque
   `openshell:resolve:env:…` placeholder; the gateway's TLS-terminating egress
   proxy substitutes the real key on the wire. Verified: a grep of the sandbox
@@ -96,11 +96,6 @@ contract and does not accept an installation override. Release validation
 requires the configured policy executable to equal Hermes' resolved
 interpreter inside the published image.
 
-## Plugins
-
-Plugins run in OpenShell sandboxes too, behind the same `PluginRuntime`
-interface — see [PLUGINS.md](PLUGINS.md).
-
 ## One-command install
 
 ```sh
@@ -108,7 +103,7 @@ openneko start
 ```
 
 overlays the containerised gateway (`compose.openshell.yml`) onto the stack and
-runs the agent + plugins in sandboxes. On macOS the CLI points the gateway's
+runs the agent in sandboxes. On macOS the CLI points the gateway's
 state dir under `$HOME` automatically (see Deployment); on Linux it uses
 `/var/lib/openneko/openshell`. Egress, the gateway-side provider, and the
 connecting binary all self-derive from your `/settings` model config on first

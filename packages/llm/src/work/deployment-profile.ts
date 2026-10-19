@@ -9,7 +9,7 @@ import {
  * mapping is auditable in one place:
  *
  *   solo      — single operator IS the admin; default.
- *   team      — auth plugin on, member/admin split, CV2 layers.
+ *   team      — sign-in on, member/admin split, CV2 layers.
  *   org       — + admin-gated chat approvals, tighter behavior envelopes.
  *   hardened  — + strictest envelopes; expects a client-provided
  *               on-prem LLM endpoint (config path only — OpenNeko does
@@ -45,23 +45,6 @@ export function profileBehaviorThresholds(
     controlPlaneCallsPerRun: apply(base.controlPlaneCallsPerRun),
     actionRequestsPerHour: apply(base.actionRequestsPerHour),
     memoryWritesPerHour: apply(base.memoryWritesPerHour),
-  };
-}
-
-export type ProfilePolicyDefaults = {
-  /** Who must approve chat-proposed plugin installs/uninstalls. */
-  pluginApproverRole: "admin" | null;
-};
-
-export function profilePolicyDefaults(
-  profile: DeploymentProfile = resolveDeploymentProfile(),
-): ProfilePolicyDefaults {
-  void profile;
-  return {
-    // Solo deployments resolve their operator as admin, so this also preserves
-    // userless administration while making multi-user/plugin-auth deployments
-    // admin-only by default.
-    pluginApproverRole: "admin",
   };
 }
 

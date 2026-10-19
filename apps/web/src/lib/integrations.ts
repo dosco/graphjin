@@ -2,9 +2,11 @@
  * Per-operator connector helpers (the `connect` capability), mirroring
  * the auth singleton helpers but non-singleton: each operator
  * authorises each connector independently. The web app drives the
- * OAuth dance; the worker proxies to the matching plugin in its
- * sandbox VM and persists tokens under the operator's slot in the
- * secrets file.
+ * OAuth dance; the worker runs the matching connector (for example the
+ * built-in Scalekit workspace connector) and persists tokens under the
+ * operator's slot in the secrets file. The `pluginName`/`pluginId` wire
+ * fields keep their old names for compatibility; their values are
+ * connector ids.
  */
 
 import "server-only";
@@ -118,7 +120,7 @@ export async function beginConnect(
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `connect plugin begin failed (${res.status}): ${text || res.statusText}`,
+      `connect begin failed (${res.status}): ${text || res.statusText}`,
     );
   }
   return (await res.json()) as { authorizationUrl: string; oauthState?: string };
@@ -145,7 +147,7 @@ export async function completeConnect(
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `connect plugin complete failed (${res.status}): ${text || res.statusText}`,
+      `connect complete failed (${res.status}): ${text || res.statusText}`,
     );
   }
   const body = (await res.json()) as { credential: ConnectorCredential };
@@ -184,7 +186,7 @@ export const DEPLOYMENT_CONNECT_OPERATOR_ID = "deployment";
 
 /**
  * Cookie payload encodes the data the callback needs to verify it's
- * looking at the original flow: the plugin we asked to authorize,
+ * looking at the original flow: the connector we asked to authorize,
  * the operator who started the flow, the state token the IdP echoes
  * back, the PKCE code_verifier paired with the challenge sent to the
  * IdP, and the path to send the browser back to on success.
@@ -195,7 +197,7 @@ export interface ConnectStateCookiePayload {
   state: string;
   codeVerifier: string;
   returnPath: string;
-  /** mcp-oauth: opaque state the plugin returned from begin (DCR + PKCE + endpoints). */
+  /** mcp-oauth: opaque state the connector returned from begin (DCR + PKCE + endpoints). */
   oauthState?: string;
 }
 

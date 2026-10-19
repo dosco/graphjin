@@ -110,18 +110,14 @@ import {
   registerBuiltinAdapters,
   registerFallbackActionAdapterResolver,
   seedDefaultActionPolicies,
-  seedPluginActionPolicies,
-  syncPluginActionTargetSpecs,
   startSubscriptionManager,
   type DataSourceContext,
-  type PluginActionSeed,
 } from "@neko/llm/workflows";
 import { resolveDeclarativePackActionAdapter, registerPackConnectionPreflight } from "./packs/declarative-action-runtime.js";
 import { ensureOrgWorkspace, getOrgAgentRoot, nameBackfilledBots, reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
 import { checkOrgUpdates } from "@neko/llm/config-vcs/updates";
 import { ensureQueueExists } from "./pg-boss-helpers.js";
-import { PluginRegistry } from "./plugins/plugin-registry.js";
-import { setPluginRegistryInstance } from "./plugins/registry-instance.js";
+import { setCoreSecretsInstance } from "./secrets/instance.js";
 import {
   ingestInboundWebhook,
   registerChannelOutputDelivery,
@@ -472,11 +468,9 @@ async function runMetricRefreshSweep() {
   console.log(`[worker] scheduled sweep: enqueued ${enqueued} metric_refresh job(s)`);
 }
 
-// The plugin registry is constructed below before the server starts
-// taking requests; we expose its auth surface via a closure so the
-// admin handler can lazily reach a freshly-installed auth plugin
-// without a server restart.
-let pluginRegistry: PluginRegistry | null = null;
+// The secrets view and sign-in service are constructed below, after the
+// server starts taking requests; the admin handler reaches them through
+// closures and reports "not ready" until then.
 let coreSecrets: CoreSecrets | null = null;
 let recordsImportAdminSurface: RecordsImportHandlerSurface | null = null;
 let ssoSetupService: SsoSetupService | null = null;
@@ -544,58 +538,8 @@ const server = createServer(
       beginAuth: (params) => signIn().beginAuth(params),
       completeAuth: (params) => signIn().completeAuth(params),
     },
-    plugins: {
-      status: () =>
-        pluginRegistry?.status() ?? {
-          loaded: [],
-          skipped: [],
-          flagged: [],
-          kinds: [],
-          vmsRunning: 0,
-          authProvider: null,
-          directoryProvider: null,
-          channels: [],
-        },
-      getRegisteredActionDescriptors: () =>
-        includeRecordActionDescriptors(
-          pluginRegistry?.getRegisteredActionDescriptors() ?? [],
-        ),
-      settings: () => pluginRegistry?.pluginSettings() ?? [],
-      setSettings: async (plugin, values) => {
-        if (!pluginRegistry) throw new Error("plugin registry not initialised");
-        await pluginRegistry.setPluginSettings(plugin, values);
-      },
-      catalog: async () => {
-        const { createMarketplaceClient, OFFICIAL_MARKETPLACE_URL, pickInstallVersion } = await import("@open-neko/plugin-install");
-        const installed = new Set((pluginRegistry?.pluginSettings() ?? []).map((p) => p.name));
-        try {
-          const marketplace = await createMarketplaceClient().fetch(OFFICIAL_MARKETPLACE_URL);
-          return {
-            available: (marketplace.plugins ?? [])
-              .filter((p) => !installed.has(p.name) && p.versions.some((v) => !v.yanked && !v.draft))
-              .map((p) => ({
-                name: p.name,
-                title: p.title || p.name,
-                description: p.description ?? "",
-                version: pickInstallVersion(p).version,
-              })),
-          };
-        } catch (err) {
-          return { available: [], error: `marketplace unavailable: ${err instanceof Error ? err.message : String(err)}` };
-        }
-      },
-      install: async (name) => {
-        const { getInstallPolicyForOrg } = await import("@neko/db");
-        const { installFromOfficialMarketplace } = await import("./plugins/manage-adapters.js");
-        const result = await installFromOfficialMarketplace({
-          spec: name,
-          repoRoot: process.cwd(),
-          policy: await getInstallPolicyForOrg(ADMIN_ORG_ID),
-          deferMissingEnv: true,
-        });
-        await pluginRegistry?.refresh();
-        return { name: result.name, version: result.version, envMissing: result.envMissing };
-      },
+    actions: {
+      getActionDescriptors: () => includeRecordActionDescriptors([]),
     },
     actionRequests: {
       create: async (input) => {
@@ -855,28 +799,20 @@ recordsImportAdminSurface = createRecordsCliImportBridge({
   approveRequest: approveActionRequest,
   enqueueAction: (payload) => enqueue(QUEUE.ACTION_EXECUTE, payload),
 });
-// ADM3: execute approved chat-proposed plugin installs/uninstalls.
+// ADM: execute approved chat-proposed user, group, channel and source admin changes.
 {
   const {
     registerChannelAdminAdapter,
     registerDataSourceAdminAdapter,
     registerSourceConfigAdminAdapter,
-    registerPluginManagementAdapters,
     registerUserAdminAdapter,
     registerGroupAdminAdapter,
-  } = await import("./plugins/manage-adapters.js");
+  } = await import("./admin-actions/adapters.js");
   registerUserAdminAdapter();
   registerGroupAdminAdapter((orgId) => scheduleGroupGrantsApply(orgId));
   registerChannelAdminAdapter();
   registerDataSourceAdminAdapter();
   registerSourceConfigAdminAdapter();
-  registerPluginManagementAdapters({
-    repoRoot: process.cwd(),
-    getInstallPolicy: async () => {
-      const { getInstallPolicyForOrg } = await import("@neko/db");
-      return getInstallPolicyForOrg(ADMIN_ORG_ID);
-    },
-  });
 }
 console.log("[worker] action policies seeded and built-in adapters registered");
 
@@ -887,60 +823,19 @@ const secretsResolver = await (async () => {
   const cfg = readLocalConfig().secrets;
   if (cfg?.backend === "infisical" && cfg.infisical) {
     const { InfisicalSecretsResolver } = await import(
-      "@open-neko/plugin-install"
+      "@neko/secrets"
     );
     console.log(
       `[worker] secrets backend: infisical (${cfg.infisical.siteUrl}, project ${cfg.infisical.projectId})`,
     );
     return new InfisicalSecretsResolver(cfg.infisical);
   }
-  return undefined; // registry defaults to the file resolver
+  return undefined; // CoreSecrets defaults to the file resolver
 })();
 
-pluginRegistry = new PluginRegistry({
-  repoRoot: process.cwd(),
-  pluginInstallDir: process.env.OPENNEKO_PLUGIN_INSTALL_DIR || undefined,
-  workRoot: `${process.env.HOME ?? "/tmp"}/.openneko/plugins`,
-  ...(secretsResolver ? { secretsResolver } : {}),
-  loadInstallPolicy: async () => {
-    const { getInstallPolicyForOrg } = await import("@neko/db");
-    return getInstallPolicyForOrg(ADMIN_ORG_ID);
-  },
-  onManifestRefresh: async (entries) => {
-    const seeds: PluginActionSeed[] = [];
-    for (const entry of entries) {
-      for (const decl of entry.capabilities.action?.kinds ?? []) {
-        seeds.push({
-          pluginName: entry.name,
-          kind: decl.kind,
-          description: decl.description,
-          default_mode: decl.default_mode,
-        });
-      }
-    }
-    const { created, skipped } = await seedPluginActionPolicies(
-      ADMIN_ORG_ID,
-      seeds,
-    );
-    await syncPluginActionTargetSpecs(
-      ADMIN_ORG_ID,
-      entries.flatMap((entry) =>
-        (entry.capabilities.action?.kinds ?? []).flatMap((decl) =>
-          decl.targets ? [{ pluginName: entry.name, kind: decl.kind, spec: decl.targets }] : [],
-        ),
-      ),
-    );
-    if (created > 0) {
-      console.log(
-        `[worker] seeded ${created} plugin action_policy row(s) (${skipped} already present or non-auto)`,
-      );
-    }
-  },
-});
-await pluginRegistry.start();
-setPluginRegistryInstance(pluginRegistry);
 coreSecrets = new CoreSecrets(secretsResolver ? { resolver: secretsResolver } : {});
 await coreSecrets.start();
+setCoreSecretsInstance(coreSecrets);
 signInService = new SignInService(coreSecrets);
 {
   const moved = await signInService.migrateLegacy().catch((err) => {
@@ -964,23 +859,6 @@ registerChannelOutputDelivery();
   if (moved.length > 0) console.log(`[worker] moved channel settings from ${moved.join(", ")}`);
 }
 await seedOpenNekoOpsWorkflow(ADMIN_ORG_ID);
-{
-  const s = pluginRegistry.status();
-  if (s.loaded.length > 0) {
-    console.log(
-      `[worker] plugin registry: ${s.loaded.length} plugin(s), ${s.kinds.length} action kind(s) registered (VMs lazy-spawn on first use)`,
-    );
-  } else {
-    console.log(`[worker] plugin registry: no plugins installed`);
-  }
-  if (s.authProvider) {
-    console.log(`[worker] auth provider plugin active: ${s.authProvider}`);
-  }
-  for (const skipped of s.skipped) {
-    console.warn(`[worker] plugin skipped ${skipped.name}: ${skipped.reason}`);
-  }
-}
-
 {
   const sources = await db()
     .select({ mcp_url: data_source.mcp_url })
@@ -1830,14 +1708,7 @@ const shutdown = async (signal: string) => {
   } catch (e) {
     console.error("[worker] subscription manager stop error:", e);
   }
-  try {
-    setPluginRegistryInstance(null);
-    if (pluginRegistry) {
-      await pluginRegistry.stop();
-    }
-  } catch (e) {
-    console.error("[worker] plugin shutdown error:", e);
-  }
+  setCoreSecretsInstance(null);
   try {
     await b.stop({ graceful: true });
   } catch (e) {

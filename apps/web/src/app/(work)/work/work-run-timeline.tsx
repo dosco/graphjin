@@ -204,7 +204,6 @@ export function RunTimeline({
           key={`capability-${item.denial.host}-${index}`}
           denial={item.denial}
           canAdminister={run?.actorRole === "admin"}
-          onRequest={(prompt) => insertComposerRef.current?.(prompt)}
         />
       );
     }

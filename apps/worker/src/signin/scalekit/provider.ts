@@ -4,7 +4,7 @@
 // Scalekit workspace MCP server that the SSO setup page drives. Every
 // function takes its settings explicitly; SignInService reads them from the
 // `signin.scalekit` section of the secrets store.
-import type { ConnectorCredential } from "@open-neko/plugin-install/secrets";
+import type { ConnectorCredential } from "@neko/secrets";
 import type {
   ApplyDirectoryChangeParams,
   ApplyDirectoryChangeResult,

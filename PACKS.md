@@ -3,8 +3,8 @@
 A solution pack bundles sources, API specifications, saved queries, metrics,
 workflows, watchers, actions, policies, and skills for an application or business
 use case. OpenNeko installs these artifacts through the shared pack lifecycle.
-Packs that need connectors ship their own declarations and specifications; they
-do not install runtime plugins.
+Packs that need connectors ship their own declarations and specifications.
+OpenNeko has no separate plugin system; channels and sign-in are built in.
 
 For operator instructions, see [installing and upgrading custom packs](docs/CUSTOM_PACKS.md).
 For contributing code, see [CONTRIBUTING.md](CONTRIBUTING.md).

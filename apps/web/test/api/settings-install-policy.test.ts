@@ -2,9 +2,7 @@
  * /api/settings/install-policy contract tests.
  *
  * Covers: persisted solo admin => 200, non-admin => 403,
- * admin => 200 read + write,
- * partial PATCH semantics, validation error on http: marketplace URL,
- * official marketplace is always preserved.
+ * admin => 200 read + write, partial PATCH semantics.
  */
 
 import {
@@ -47,8 +45,6 @@ const describeIfDb = reachable ? describe : describe.skip;
 if (!reachable) {
   console.warn("[api/settings/install-policy] skipping: Postgres unreachable.");
 }
-
-const OFFICIAL = "https://open-neko.github.io/plugins/marketplace.json";
 
 describeIfDb("/api/settings/install-policy", () => {
   let orgId: string;
@@ -95,16 +91,10 @@ describeIfDb("/api/settings/install-policy", () => {
     expect(res.status).toBe(200);
     const body = res.body as {
       source: "default" | "org";
-      policy: {
-        allowUnverified: boolean;
-        allowGitUrlInstalls: boolean;
-        allowedMarketplaces: string[];
-      };
+      policy: { allowGitUrlInstalls: boolean };
     };
     expect(body.source).toBe("default");
-    expect(body.policy.allowUnverified).toBe(false);
-    expect(body.policy.allowGitUrlInstalls).toBe(false);
-    expect(body.policy.allowedMarketplaces).toEqual([OFFICIAL]);
+    expect(body.policy).toEqual({ allowGitUrlInstalls: false });
   });
 
   it("GET returns 403 for signed-in non-admin users", async () => {
@@ -127,7 +117,7 @@ describeIfDb("/api/settings/install-policy", () => {
     });
     const res = await callRoute(PATCH, {
       method: "PATCH",
-      body: { allowUnverified: true },
+      body: { allowGitUrlInstalls: true },
     });
     expect(res.status).toBe(403);
   });
@@ -141,79 +131,16 @@ describeIfDb("/api/settings/install-policy", () => {
     });
     const res = await callRoute(PATCH, {
       method: "PATCH",
-      body: { allowUnverified: true, allowGitUrlInstalls: true },
-    });
-    expect(res.status).toBe(200);
-    const body = res.body as {
-      policy: { allowUnverified: boolean; allowGitUrlInstalls: boolean };
-    };
-    expect(body.policy.allowUnverified).toBe(true);
-    expect(body.policy.allowGitUrlInstalls).toBe(true);
-
-    const readBack = await callRoute(GET);
-    const readBody = readBack.body as {
-      policy: { allowUnverified: boolean };
-    };
-    expect(readBody.policy.allowUnverified).toBe(true);
-  });
-
-  it("PATCH is partial; omitted keys do not clobber existing values", async () => {
-    const userId = await seedUser("admin");
-    mockGetCurrentUser.mockResolvedValue({
-      id: userId,
-      email: "admin@example.com",
-      name: null,
-    });
-    await callRoute(PATCH, {
-      method: "PATCH",
-      body: { allowUnverified: true },
-    });
-    await callRoute(PATCH, {
-      method: "PATCH",
       body: { allowGitUrlInstalls: true },
     });
-    const res = await callRoute(GET);
-    const body = res.body as {
-      policy: { allowUnverified: boolean; allowGitUrlInstalls: boolean };
-    };
-    expect(body.policy.allowUnverified).toBe(true);
-    expect(body.policy.allowGitUrlInstalls).toBe(true);
-  });
-
-  it("PATCH rejects http: marketplace URLs with 400", async () => {
-    const userId = await seedUser("admin");
-    mockGetCurrentUser.mockResolvedValue({
-      id: userId,
-      email: "admin@example.com",
-      name: null,
-    });
-    const res = await callRoute(PATCH, {
-      method: "PATCH",
-      body: { allowedMarketplaces: ["http://example.com/m.json"] },
-    });
-    expect(res.status).toBe(400);
-    expect((res.body as { error: string }).error).toMatch(/https/);
-  });
-
-  it("PATCH adding a community marketplace preserves the official one", async () => {
-    const userId = await seedUser("admin");
-    mockGetCurrentUser.mockResolvedValue({
-      id: userId,
-      email: "admin@example.com",
-      name: null,
-    });
-    const community = "https://example.com/marketplace.json";
-    const res = await callRoute(PATCH, {
-      method: "PATCH",
-      body: { allowedMarketplaces: [community] },
-    });
     expect(res.status).toBe(200);
-    const body = res.body as { policy: { allowedMarketplaces: string[] } };
-    expect(body.policy.allowedMarketplaces).toContain(OFFICIAL);
-    expect(body.policy.allowedMarketplaces).toContain(community);
+    expect((res.body as { policy: { allowGitUrlInstalls: boolean } }).policy.allowGitUrlInstalls).toBe(true);
+
+    const readBack = await callRoute(GET);
+    expect((readBack.body as { policy: { allowGitUrlInstalls: boolean } }).policy.allowGitUrlInstalls).toBe(true);
   });
 
-  it("PATCH ignores non-boolean values for boolean fields", async () => {
+  it("PATCH ignores non-boolean values and unknown fields", async () => {
     const userId = await seedUser("admin");
     mockGetCurrentUser.mockResolvedValue({
       id: userId,
@@ -222,10 +149,9 @@ describeIfDb("/api/settings/install-policy", () => {
     });
     await callRoute(PATCH, {
       method: "PATCH",
-      body: { allowUnverified: "yes" as unknown as boolean },
+      body: { allowGitUrlInstalls: "yes" as unknown as boolean, allowUnverified: true },
     });
     const res = await callRoute(GET);
-    const body = res.body as { policy: { allowUnverified: boolean } };
-    expect(body.policy.allowUnverified).toBe(false);
+    expect((res.body as { policy: unknown }).policy).toEqual({ allowGitUrlInstalls: false });
   });
 });

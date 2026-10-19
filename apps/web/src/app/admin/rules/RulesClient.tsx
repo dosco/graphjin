@@ -100,7 +100,7 @@ function describeLimits(limits: Record<string, unknown>): string | null {
   return `Limits: ${parts.join(" · ")}`;
 }
 
-type PluginActionDescriptor = {
+type ActionDescriptor = {
   kind: string;
   description: string;
   default_mode?:
@@ -145,8 +145,8 @@ function resolveEffectiveMode(
 export default function RulesClient() {
   const router = useRouter();
   const [policies, setPolicies] = useState<Policy[] | null>(null);
-  const [pluginDescriptors, setPluginDescriptors] = useState<
-    PluginActionDescriptor[]
+  const [actionDescriptors, setActionDescriptors] = useState<
+    ActionDescriptor[]
   >([]);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -158,18 +158,18 @@ export default function RulesClient() {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json() as Promise<{ policies: Policy[] }>;
       }),
-      fetch("/api/plugins/action-descriptors", { cache: "no-store" })
+      fetch("/api/action-descriptors", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : { descriptors: [] }))
         .then(
           (data) =>
-            (data as { descriptors?: PluginActionDescriptor[] }).descriptors ?? [],
+            (data as { descriptors?: ActionDescriptor[] }).descriptors ?? [],
         )
-        .catch(() => [] as PluginActionDescriptor[]),
+        .catch(() => [] as ActionDescriptor[]),
     ])
       .then(([policiesResult, descriptors]) => {
         if (cancelled) return;
         setPolicies(policiesResult.policies ?? []);
-        setPluginDescriptors(descriptors);
+        setActionDescriptors(descriptors);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -235,9 +235,9 @@ export default function RulesClient() {
           <SkeletonList rows={3} variant="row" label="Loading rules" />
         ) : (
           <>
-            {pluginDescriptors.length > 0 ? (
-              <InstalledPluginsSection
-                descriptors={pluginDescriptors}
+            {actionDescriptors.length > 0 ? (
+              <BuiltInActionsSection
+                descriptors={actionDescriptors}
                 policies={policies}
                 query={query}
                 onEditPolicy={(policyId) => {
@@ -382,16 +382,14 @@ function Row({
   );
 }
 
-function pluginNameFromKind(kind: string): string {
-  // Cheap heuristic — most kinds are namespaced like `slack_send_message`
-  // or `web_search`. We don't actually have a reverse-lookup from kind
-  // to plugin without the descriptor, so callers group descriptors
-  // outside this function. Used only as a fallback header.
-  return kind.split("_")[0] ?? kind;
+function groupNameFromKind(kind: string): string {
+  // Kinds are namespaced like `records.create` or `records_backfill`;
+  // group them for display by the leading token.
+  return kind.split(/[._]/)[0] ?? kind;
 }
 
 function describeDefaultMode(
-  mode: PluginActionDescriptor["default_mode"],
+  mode: ActionDescriptor["default_mode"],
 ): string {
   if (mode === undefined) return "no default declared";
   if (typeof mode === "string") {
@@ -406,30 +404,26 @@ function describeDefaultMode(
   return parts.length > 0 ? parts.join(" · ") : "no default declared";
 }
 
-function InstalledPluginsSection({
+function BuiltInActionsSection({
   descriptors,
   policies,
   query,
   onEditPolicy,
 }: {
-  descriptors: PluginActionDescriptor[];
+  descriptors: ActionDescriptor[];
   policies: Policy[];
   query: string;
   onEditPolicy: (policyId: string) => void;
 }) {
-  // descriptors are flat across plugins; the kind name itself carries
-  // the plugin namespace (e.g. send_slack_*, web_search) since we
-  // committed to Option-A namespacing earlier in the design. Group
-  // for display by the leading token — close enough until plugins
-  // tell us their package name in the descriptor (a small follow-up).
+  // Descriptors are flat; group them for display by the kind's leading token.
   const normalizedQuery = query.trim().toLowerCase();
   const visibleDescriptors = descriptors.filter((descriptor) =>
-    [descriptor.kind, descriptor.description, pluginNameFromKind(descriptor.kind)]
+    [descriptor.kind, descriptor.description, groupNameFromKind(descriptor.kind)]
       .some((value) => value.toLowerCase().includes(normalizedQuery)),
   );
-  const groups = new Map<string, PluginActionDescriptor[]>();
+  const groups = new Map<string, ActionDescriptor[]>();
   for (const d of visibleDescriptors) {
-    const key = pluginNameFromKind(d.kind);
+    const key = groupNameFromKind(d.kind);
     const list = groups.get(key) ?? [];
     list.push(d);
     groups.set(key, list);
@@ -439,7 +433,7 @@ function InstalledPluginsSection({
     <section className="mt-8 mb-6">
       <div className="flex items-baseline justify-between mb-2.5">
         <h2 className="font-display text-ui-section font-bold tracking-[-0.01em] text-text">
-          Installed plugins
+          Built-in actions
         </h2>
         <span className="font-mono text-ui-label text-text3">
           {visibleDescriptors.length} of {descriptors.length} action kind
@@ -447,7 +441,7 @@ function InstalledPluginsSection({
         </span>
       </div>
       <p className="text-ui-body-sm leading-[1.5] text-text2 mb-3 max-w-[640px]">
-        Plugins contribute action kinds the agent can call from /work. Each
+        Built-in action kinds the agent can call from /work. Each
         kind&apos;s effective approval mode comes from the rule whose
         <em> applies-to-kinds </em>
         includes it; everything else falls through to{" "}
@@ -458,7 +452,7 @@ function InstalledPluginsSection({
       </p>
       {groups.size === 0 ? (
         <div className="border-y border-border py-8 text-center text-ui-body-sm text-text2">
-          No plugin action kinds match “{query}”.
+          No action kinds match “{query}”.
         </div>
       ) : (
         <ul className="list-none p-0 m-0 flex flex-col gap-2">

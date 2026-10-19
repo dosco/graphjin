@@ -23,7 +23,7 @@ import {
   readSecretsStore,
   writeSecretsStore,
   type SecretsStore,
-} from "@open-neko/plugin-install/secrets";
+} from "@neko/secrets";
 
 export interface ChannelProviderInfo {
   id: BuiltInChannelId;

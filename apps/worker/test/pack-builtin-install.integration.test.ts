@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildPoolConfig, pool } from "@neko/db";
 
 const state = vi.hoisted(() => ({ pool: null as pg.Pool | null, secrets: {} as Record<string, Record<string, string>> }));
-vi.mock("@open-neko/plugin-install/secrets", () => ({ readSecretsStore: async () => state.secrets, writeSecretsStore: async (value: typeof state.secrets) => { state.secrets = value; } }));
+vi.mock("@neko/secrets", () => ({ readSecretsStore: async () => state.secrets, writeSecretsStore: async (value: typeof state.secrets) => { state.secrets = value; } }));
 vi.mock("@neko/llm/work", () => ({ ensureOrgWorkspace: async () => ({ skillsRoot: "/tmp/unused-pack-skills" }) }));
 import { PackService } from "../src/packs/service.js";
 

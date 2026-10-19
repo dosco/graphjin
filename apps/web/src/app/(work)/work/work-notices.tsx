@@ -133,19 +133,11 @@ export function NeedsInputNotice({
 export function CapabilityDeniedNotice({
   denial,
   canAdminister,
-  onRequest,
 }: {
   denial: Extract<WorkEvent, { type: "capability_denied" }>;
   canAdminister: boolean;
-  onRequest: (prompt: string) => void;
 }) {
   const endpoint = `${denial.host}${denial.port ? `:${denial.port}` : ""}`;
-  const requestPrompt = [
-    `Find an appropriate approved integration that can securely access ${endpoint}`,
-    "for the request I just made.",
-    "Show me the exact integration and file an approval-gated install request.",
-    "Do not enable blanket network access.",
-  ].join(" ");
   return (
     <section className="work-capability-denied" role="status">
       <div className="work-capability-kicker">Network access blocked</div>
@@ -164,27 +156,18 @@ export function CapabilityDeniedNotice({
         <div className="work-capability-recovery">
           <span>Safe recovery</span>
           {canAdminister ? (
-            <>
-              <p>
-                Ask OpenNeko to find the right integration. Installation will
-                still require your explicit approval.
-              </p>
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={() => onRequest(requestPrompt)}
-              >
-                Request secure integration
-              </Button>
-            </>
+            <p>
+              Install a solution pack that connects this service. A pack
+              declares the hosts it reaches, so access stays scoped.
+            </p>
           ) : (
             <p>
-              Contact an OpenNeko administrator to install an integration
-              approved for this host.
+              Contact an OpenNeko administrator to install a solution pack
+              that connects this host.
             </p>
           )}
-          <Link href={canAdminister ? "/admin/plugins" : "/integrations"}>
-            {canAdminister ? "Review plugins" : "View integrations"}
+          <Link href={canAdminister ? "/admin/settings/packs" : "/integrations"}>
+            {canAdminister ? "Review solution packs" : "View integrations"}
           </Link>
         </div>
       </div>
