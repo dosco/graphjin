@@ -574,6 +574,7 @@ func watchNanoColumns() []core.NanoColumn {
 		{Name: "owner_ref", Type: "text", Index: true},
 		{Name: "last_data_hash", Type: "text", Index: true},
 		{Name: "last_fired_at", Type: "text"},
+		{Name: "last_polled_at", Type: "text"},
 		{Name: "last_error", Type: "text"},
 		{Name: "failure_count", Type: "integer"},
 		{Name: "created_at", Type: "text"},
