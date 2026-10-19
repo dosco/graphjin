@@ -53,6 +53,7 @@ const M_0064 = join(
 const M_0065 = join(REPO_ROOT, "db", "migrations", "0065_skill_usage.sql");
 const M_0066 = join(REPO_ROOT, "db", "migrations", "0066_skill_learn.sql");
 const M_0067 = join(REPO_ROOT, "db", "migrations", "0067_workflow_api.sql");
+const M_0119 = join(REPO_ROOT, "db", "migrations", "0119_ax_only_agent.sql");
 
 function uniqueDbName(): string {
   return `vitest_migrations_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -349,6 +350,62 @@ describeIfDb("schema migrations", () => {
     });
   });
 
+  it("0119 moves agent rows and queued runs to Ax and is idempotent", async () => {
+    await withTempDb(async (client) => {
+      await applyFile(client, M_0001);
+      await applyFile(client, M_0002);
+      await applyFile(client, M_0006);
+      await client.query(`
+        insert into organization (id, name) values ('ax-upgrade', 'Ax Upgrade');
+        insert into llm_provider_config
+          (org_id, scope, provider, model, enabled, config, secrets)
+        values
+          ('ax-upgrade', 'primary', 'google-gemini', 'gemini-3.6-flash', true,
+           '{}', '{"apiKey":"encrypted-primary"}'),
+          ('ax-upgrade', 'agent', 'legacy-runtime', null, true,
+           '{"backend":"legacy-runtime","globalCap":7}', '{}');
+        insert into work_thread (id, org_id, title)
+        values ('00000000-0000-0000-0000-000000000119', 'ax-upgrade', 'upgrade');
+        insert into work_run (org_id, thread_id, backend, status)
+        values
+          ('ax-upgrade', '00000000-0000-0000-0000-000000000119', 'legacy-runtime', 'queued'),
+          ('ax-upgrade', '00000000-0000-0000-0000-000000000119', 'legacy-runtime', 'completed');
+      `);
+
+      await applyFile(client, M_0119);
+      await applyFile(client, M_0119);
+
+      const providers = await client.query<{
+        scope: string;
+        provider: string;
+        config: Record<string, unknown>;
+        secrets: Record<string, unknown>;
+      }>(`
+        select scope, provider, config, secrets
+        from llm_provider_config
+        where org_id = 'ax-upgrade'
+        order by scope
+      `);
+      expect(providers.rows).toEqual([
+        { scope: "agent", provider: "ax", config: { globalCap: 7 }, secrets: {} },
+        {
+          scope: "primary",
+          provider: "google-gemini",
+          config: {},
+          secrets: { apiKey: "encrypted-primary" },
+        },
+      ]);
+
+      const runs = await client.query<{ status: string; backend: string }>(`
+        select status, backend from work_run where org_id = 'ax-upgrade' order by status
+      `);
+      expect(runs.rows).toEqual([
+        { status: "completed", backend: "legacy-runtime" },
+        { status: "queued", backend: "ax" },
+      ]);
+    });
+  });
+
   it("0063 creates an idempotent workflow cursor, firing ledger, and heartbeat", async () => {
     await withTempDb(async (client) => {
       await applyFile(client, M_0001);
@@ -499,7 +556,7 @@ describeIfDb("schema migrations", () => {
           '10000000-0000-0000-0000-000000000065',
           'skill-org',
           '00000000-0000-0000-0000-000000000065',
-          'hermes',
+          'ax',
           'running'
         );
         insert into skill_usage (
@@ -603,7 +660,7 @@ describeIfDb("schema migrations", () => {
         insert into work_run (id, org_id, thread_id, backend, status)
         values (
           '10000000-0000-0000-0000-000000000067', 'api-org',
-          '00000000-0000-0000-0000-000000000067', 'hermes', 'queued'
+          '00000000-0000-0000-0000-000000000067', 'ax', 'queued'
         );
         insert into workflow_definition (id, org_id, name, steps)
         values (
@@ -705,7 +762,7 @@ describeIfDb("schema migrations", () => {
         insert into organization (id, name) values ('work-org', 'Work Org');
         insert into work_thread (id, org_id, title) values ('00000000-0000-0000-0000-000000000001', 'work-org', 'Thread');
         insert into work_run (id, org_id, thread_id, backend, status)
-        values ('00000000-0000-0000-0000-000000000002', 'work-org', '00000000-0000-0000-0000-000000000001', 'hermes', 'running');
+        values ('00000000-0000-0000-0000-000000000002', 'work-org', '00000000-0000-0000-0000-000000000001', 'ax', 'running');
         insert into work_run_event (org_id, thread_id, run_id, seq, kind, payload)
         values ('work-org', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', 1, 'status', '{"type":"status","message":"ok"}');
       `);
