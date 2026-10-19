@@ -72,7 +72,7 @@ type Server struct {
 	PATH string
 
 	mu     sync.Mutex
-	runs   map[string]int    // run → uid, also its gid
+	runs   map[string]int          // run → uid, also its gid
 	stages map[string]string       // run → staged folder its group was granted
 	grants map[string]map[int]bool // staged folder → run groups granted it
 	used   map[int]bool
