@@ -109,6 +109,14 @@ func (s *Server) ListenAndServe(ctx context.Context, path string) error {
 	if err != nil {
 		return fmt.Errorf("sandbox socket unavailable: %w", err)
 	}
+	// Serve runs as another user in the shared group; as root, hand the
+	// socket to that group so serve can connect (mode stays 0660).
+	if os.Geteuid() == 0 {
+		if err := os.Chown(path, -1, s.GID); err != nil {
+			_ = listener.Close()
+			return fmt.Errorf("sandbox socket unavailable: %w", err)
+		}
+	}
 	fmt.Fprintf(os.Stderr, "openneko sandbox: listening on %s\n", path)
 	return s.Serve(ctx, listener)
 }
