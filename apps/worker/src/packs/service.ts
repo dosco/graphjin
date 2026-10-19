@@ -265,7 +265,6 @@ export class PackService {
         configFile: graphjin.configFile,
         update,
         ownedSourceNames,
-        restartAfterPersist: true,
       });
     }
     const connectedSourceNames = new Set(
@@ -950,7 +949,6 @@ export class PackService {
         configFile,
         update: { source_patches: revokedSources },
         ownedSourceNames: new Set(sourceNames),
-        restartAfterPersist: true,
       }) : { restore: async () => {} };
       graphjinRestore = revoked.restore;
 
@@ -1446,7 +1444,6 @@ export class PackService {
           : { ...declarativeGraphjinUpdate(bundle, inputs, resolvedSecrets.values, retiredSourceNames, runtime.bindings), tables: (runtime.tables ?? []).map(table => ({ ...table, database: table.source })) },
         ownedSourceNames,
         ...(!preflight ? { ownedTableNames } : {}),
-        restartAfterPersist: true,
       }) : { restore: async () => {} };
       graphjinRestore = applied.restore;
       if (preflight) await runMagentoAnalyticsSmoke(graphjinEndpoint(source!.graphqlUrl), this.orgId);

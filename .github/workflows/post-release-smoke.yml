@@ -251,17 +251,14 @@ jobs:
           worker_image="ghcr.io/open-neko/neko-worker:$OPENNEKO_VERSION"
           config_volume="openneko-demo_graphjin-config"
 
-          # Recreate the production regression exactly: the persisted config
-          # exists, but the runtime supervisor artifact is absent. Also keep a
-          # sentinel proving the upgrade reused rather than replaced the volume.
+          # Keep a sentinel proving the upgrade reused rather than replaced the
+          # persisted config volume.
           docker run --rm --user 0:0 \
             --entrypoint /bin/sh \
             -v "$config_volume:/config" \
             "$worker_image" -ceu '
               test -s /config/agentic.yml
               printf "%s\n" retained-state > /config/.upgrade-smoke-sentinel
-              rm -f /config/.openneko-graphjin-supervisor.sh \
-                    /config/.openneko-graphjin-supervisor.sh.tmp
             '
 
           openneko upgrade --stack-only --mode demo \
@@ -272,7 +269,6 @@ jobs:
             -v "$config_volume:/config" \
             "$worker_image" -ceu '
               test "$(cat /config/.upgrade-smoke-sentinel)" = retained-state
-              test -x /config/.openneko-graphjin-supervisor.sh
             '
 
           graphjin=$(docker ps -q \

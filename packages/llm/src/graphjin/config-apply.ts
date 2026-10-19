@@ -80,6 +80,8 @@ export async function applyGraphjinConfigUpdate(input: {
       return { row, messages, failed: Boolean(result.errors?.length) };
     };
     const preview = await run("preview");
+    // A valid preview without a preview_id means the update changes nothing.
+    if (!preview.failed && preview.row?.valid && !preview.row.preview_id) return preview.row.catalog_revision ?? revision;
     if (preview.failed || !preview.row?.valid || !preview.row.preview_id) {
       if (attempt < attempts && isCatalogRevisionConflict(preview.messages)) {
         revision = currentRevisionFromConflict(preview.messages);

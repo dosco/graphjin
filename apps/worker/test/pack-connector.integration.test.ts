@@ -18,7 +18,7 @@ import { runMetricRefresh } from "../src/jobs/metric-refresh.js";
 import { createAdminHandler } from "../src/admin-server.js";
 
 // Only the scheduler and workspace location are substituted. Connector HTTP,
-// GraphJin preview/apply/restart, credentials, and metadata use the real code.
+// GraphJin preview/apply, credentials, and metadata use the real code.
 const workspace = vi.hoisted(() => ({ root: "" }));
 vi.mock("@neko/db/jobs", () => ({ enqueue: async () => "fixture-job", QUEUE: { METRIC_REFRESH: "metric_refresh" } }));
 vi.mock("@neko/llm/work", () => ({ ensureOrgWorkspace: async () => ({ orgRoot: workspace.root, skillsRoot: join(workspace.root, "skills") }) }));
@@ -96,12 +96,12 @@ describe.skipIf(!enabled)("pack-owned connector on packaged GraphJin", () => {
     config.sources = [{ name: "fixture", kind: "database", default: true, read_only: true, type: "postgres", host: "host.docker.internal", port: Number(port), dbname: "connector", user: "neko", access: { read: "authenticated", write: "blocked", delete: "blocked" } }];
     await writeFile(join(configRoot, "agentic.yml"), stringify(config));
     const image = (await docker("image", "inspect", process.env.OPENNEKO_CONNECTOR_TEST_IMAGE ?? "ghcr.io/open-neko/records-graphjin:latest", "--format", "{{.Id}}")).stdout.trim();
-    expect((await docker("run", "--rm", "--entrypoint", "graphjin", image, "version")).stdout).toMatch(/^GraphJin \S+/);
+    expect((await docker("run", "--rm", "--entrypoint", "graphjin", image, "version")).stdout).toMatch(/^\s*GraphJin \S+/);
     const reservation = createServer();
     await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
     const reservedPort = (reservation.address() as { port: number }).port;
     await new Promise<void>(resolve => reservation.close(() => resolve()));
-    await docker("run", "-d", "--name", graphjin, "--user", "0", "-e", "GO_ENV=agentic", "-p", `127.0.0.1:${reservedPort}:8080`, "-v", `${configRoot}:/config`, "-v", `${resolve("../../scripts/graphjin-supervisor.sh")}:/supervisor.sh:ro`, "--entrypoint", "/bin/sh", image, "/supervisor.sh", "serve", "--path", "/config");
+    await docker("run", "-d", "--name", graphjin, "--add-host", "host.docker.internal:host-gateway", "--user", "0", "-e", "GO_ENV=agentic", "-p", `127.0.0.1:${reservedPort}:8080`, "-v", `${configRoot}:/config`, "--entrypoint", "graphjin", image, "serve", "--path", "/config");
     const graphjinPort = (await docker("port", graphjin, "8080/tcp")).stdout.trim().split(":").at(-1)!;
     endpoint = `http://127.0.0.1:${graphjinPort}/api/v1/graphql`;
     await ready();
@@ -171,7 +171,7 @@ describe.skipIf(!enabled)("pack-owned connector on packaged GraphJin", () => {
     const result = await query(await readFile(resolve("test/fixtures/service-health/graphjin/queries/health.gql"), "utf8"));
     expect(result.errors?.length).toBeGreaterThan(0);
     expect(authorizedReads).toBe(before);
-    const applied = await applyPackGraphjinConfig({ endpoint, orgId: org, configFile: join(root, "graphjin/agentic.yml"), update: { source_patches: [{ name: "fixture", read_only: true, access: { read: "blocked", write: "blocked", delete: "blocked" } }] }, restartAfterPersist: true });
+    const applied = await applyPackGraphjinConfig({ endpoint, orgId: org, configFile: join(root, "graphjin/agentic.yml"), update: { source_patches: [{ name: "fixture", read_only: true, access: { read: "blocked", write: "blocked", delete: "blocked" } }] } });
     const configFile = join(root, "graphjin/agentic.yml");
     const changed = (await readFile(configFile, "utf8")) + "\n# Later operator change\n";
     await writeFile(configFile, changed);

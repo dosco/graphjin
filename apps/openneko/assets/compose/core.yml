@@ -321,13 +321,9 @@ services:
         # Compatibility fallback for a main supervisor paired with a released
         # records-graphjin image that predates the image-owned supervisor.
         # Refresh it unconditionally so existing persistent volumes self-heal.
-        cp /app/scripts/graphjin-supervisor.sh /config/.openneko-graphjin-supervisor.sh.tmp
-        chmod 0755 /config/.openneko-graphjin-supervisor.sh.tmp
-        mv /config/.openneko-graphjin-supervisor.sh.tmp /config/.openneko-graphjin-supervisor.sh
         chown -R 1001:999 /config 2>/dev/null || true
         find /config -type d -exec chmod 0700 {} +
         find /config -type f -exec chmod 0600 {} +
-        chmod 0700 /config/.openneko-graphjin-supervisor.sh
     volumes:
       - openneko-graphjin-cli:/config
     restart: "no"
@@ -377,21 +373,11 @@ services:
 
   graphjin:
     # Reuse the already-required records-graphjin image: it contains the same
-    # pinned GraphJin binary and owns its supervisor, so a full install does
-    # not pull a second runtime or execute code from a persistent config
-    # volume. The fallback preserves main-supervisor/release-image skew during
-    # the first release that introduces the image-owned path.
+    # GraphJin binary, so a full install does not pull a second runtime.
+    # Config changes apply live through gj_config, so nothing restarts it.
     image: ${OPENNEKO_GRAPHJIN_IMAGE:-ghcr.io/open-neko/records-graphjin:${OPENNEKO_VERSION:-latest}}
     user: "1001:999"
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        if [ -x /usr/local/bin/openneko-graphjin-supervisor.sh ]; then
-          exec /usr/local/bin/openneko-graphjin-supervisor.sh "$$@"
-        fi
-        exec /bin/sh /config/.openneko-graphjin-supervisor.sh "$$@"
-      - --
+    entrypoint: ["/sbin/tini", "--", "graphjin"]
     restart: unless-stopped
     depends_on:
       graphjin-config-init:
@@ -406,8 +392,6 @@ services:
     environment:
       GO_ENV: agentic
       GRAPHJIN_AGENT_API_KEY: ${GRAPHJIN_AGENT_API_KEY:-}
-      GJ_AGENT_PROVIDER: ${GRAPHJIN_AGENT_PROVIDER:-openai}
-      GJ_AGENT_MODEL: ${GRAPHJIN_AGENT_MODEL:-gpt-4.1-mini}
     volumes:
       - openneko-graphjin-cli:/config
     command: ["serve", "--path", "/config"]

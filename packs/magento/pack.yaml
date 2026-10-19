@@ -127,5 +127,5 @@ health:
     promotions: [graphjin-mutations, magento-api-token, magento-promotions-acl]
     content: [graphjin-mutations, magento-api-token, magento-content-acl]
     customers: [graphjin-mutations, magento-api-token, magento-customers-acl, magento-customers-enabled]
-  postInstall: [graphjin-restart-if-required, analytics-smoke, operator-catalog-smoke]
+  postInstall: [analytics-smoke, operator-catalog-smoke]
   postWriteCanary: [domain-reconciled, indexer-state-recorded]

@@ -61,13 +61,11 @@ describe("GraphJin agent settings", () => {
 describe("provisionGraphjinAgent", () => {
   it("writes the key file and config, then applies the block live without a restart", async () => {
     vi.resetModules();
-    const restart = vi.fn();
     vi.doMock("@neko/db", async (original) => ({
       ...(await original<typeof import("@neko/db")>()),
       getGraphjinAgentRow: async () => ({ enabled: true, provider: "anthropic", model: "claude-sonnet-5-5", config: {}, secrets: { apiKey: "sk-test" } }),
       db: () => ({ select: () => ({ from: () => ({ where: () => ({ orderBy: () => ({ limit: async () => [{ graphql_url: "http://graphjin:8080/api/v1/graphql" }] }) }) }) }) }),
     }));
-    vi.doMock("../src/graphjin/restart", () => ({ requestGraphjinRestart: restart }));
     const { provisionGraphjinAgent } = await import("../src/graphjin/agent-settings");
     const dir = await mkdtemp(join(tmpdir(), "gj-agent-"));
     const file = join(dir, "agentic.yml");
@@ -80,20 +78,12 @@ describe("provisionGraphjinAgent", () => {
     expect(apply).toHaveBeenCalledWith("http://graphjin:8080/api/v1/graphql", {
       serv: { agent: expect.objectContaining({ enabled: true, provider: "anthropic", api_key_file: ".openneko-graphjin-agent-key" }) },
     });
-    expect(restart).not.toHaveBeenCalled();
 
     // Unchanged settings apply nothing.
     apply.mockClear();
     await provisionGraphjinAgent("org-1", file, apply);
     expect(apply).not.toHaveBeenCalled();
 
-    // A GraphJin that cannot apply the block live is restarted.
-    await writeFile(file, config);
-    await provisionGraphjinAgent("org-1", file, async () => {
-      throw new Error("GraphJin config preview failed: serv.agent.enabled is not writable; writable agent fields: model");
-    });
-    expect(restart).toHaveBeenCalledWith(file, "http://graphjin:8080/api/v1/graphql");
     vi.doUnmock("@neko/db");
-    vi.doUnmock("../src/graphjin/restart");
   });
 });

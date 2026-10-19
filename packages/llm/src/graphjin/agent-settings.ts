@@ -21,7 +21,6 @@ import { maybeDecryptSecret } from "../secrets";
 import { acquireGraphjinConfigLock } from "./persist-source-config";
 import { GRAPHJIN_AGENT_MAX_STEPS } from "./agent";
 import { applyGraphjinConfigUpdate } from "./config-apply";
-import { requestGraphjinRestart } from "./restart";
 import { mintGraphjinToken } from "./token";
 
 /**
@@ -161,8 +160,7 @@ async function graphjinEndpoint(orgId: string): Promise<string | null> {
  * Apply the opt-in: write the key file, which GraphJin reads for each agent
  * run, write the agent block to the config file for GraphJin's next start, and
  * apply the same block to the running GraphJin through gj_config. Nothing
- * restarts. A GraphJin too old to apply the block live (before graphjin#655)
- * is restarted instead.
+ * restarts.
  */
 export async function provisionGraphjinAgent(
   orgId: string,
@@ -192,10 +190,5 @@ export async function provisionGraphjinAgent(
   if (!changed) return;
   const endpoint = await graphjinEndpoint(orgId);
   if (!endpoint) return;
-  try {
-    await apply(endpoint, { serv: { agent: graphjinAgentSettings(model) } });
-  } catch (error) {
-    if (!/serv\.agent\.\S+ is not writable/.test(error instanceof Error ? error.message : String(error))) throw error;
-    await requestGraphjinRestart(configFile, endpoint);
-  }
+  await apply(endpoint, { serv: { agent: graphjinAgentSettings(model) } });
 }

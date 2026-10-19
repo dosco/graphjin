@@ -65,13 +65,9 @@ services:
         fi
         # This overlay replaces the core initializer, so it must preserve the
         # compatibility repair for existing volumes and older released images.
-        cp /app/scripts/graphjin-supervisor.sh /config/.openneko-graphjin-supervisor.sh.tmp
-        chmod 0755 /config/.openneko-graphjin-supervisor.sh.tmp
-        mv /config/.openneko-graphjin-supervisor.sh.tmp /config/.openneko-graphjin-supervisor.sh
         chown -R 1001:999 /config 2>/dev/null || true
         find /config -type d -exec chmod 0700 {} +
         find /config -type f -exec chmod 0600 {} +
-        chmod 0700 /config/.openneko-graphjin-supervisor.sh
     volumes:
       - graphjin-config:/config
     restart: "no"
@@ -103,11 +99,8 @@ services:
       - "8080"
     environment:
       GO_ENV: agentic
-      # The server agent stays unavailable until the operator supplies a
-      # dedicated key. Provider/model can be overridden without editing YAML.
+      # OpenNeko writes the agent block when the admin turns the agent on.
       GRAPHJIN_AGENT_API_KEY: ${GRAPHJIN_AGENT_API_KEY:-}
-      GJ_AGENT_PROVIDER: ${GRAPHJIN_AGENT_PROVIDER:-openai}
-      GJ_AGENT_MODEL: ${GRAPHJIN_AGENT_MODEL:-gpt-4.1-mini}
       # No GJ_DATABASE_* here: in sources mode those are a FATAL boot error
       # ("database is legacy database-only config") — the connection lives in
       # the seeded /config/dev.yml. This crash-looped every fresh demo boot.

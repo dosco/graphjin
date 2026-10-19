@@ -4,11 +4,11 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parse, parseDocument } from "yaml";
 import {
   acquireGraphjinConfigLock,
+  applyGraphjinConfigUpdate,
   currentRevisionFromConflict,
   graphjinInputWithJsonVariables,
   isCatalogRevisionConflict,
   persistGraphjinSourceConfigUpdate,
-  requestGraphjinRestart,
 } from "@neko/llm/graphjin";
 import {
   graphjinQuery,
@@ -83,26 +83,6 @@ async function persistPackSections(
   await rename(temporary, configFile);
 }
 
-export { requestGraphjinRestart };
-
-async function assertGraphjinSupervisor(configFile: string): Promise<void> {
-  const directory = dirname(configFile);
-  const pingFile = join(directory, ".openneko-graphjin-supervisor-ping");
-  const acknowledgementFile = join(directory, ".openneko-graphjin-supervisor-ping-ack");
-  const token = randomUUID();
-  const temporary = `${pingFile}.${token}.tmp`;
-  await writeFile(temporary, token, { mode: 0o666 });
-  await rename(temporary, pingFile);
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    const acknowledged = await readFile(acknowledgementFile, "utf8").catch(() => "");
-    if (acknowledged.trim() === token) return;
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(
-    "graphjin_restart_required: this deployment has not adopted the GraphJin supervisor",
-  );
-}
 
 /**
  * Apply one trusted pack update through GraphJin's preview/apply boundary and
@@ -149,15 +129,11 @@ export async function applyPackGraphjinConfig(input: {
   ownedSourceNames?: Set<string>;
   ownedTableNames?: Set<string>;
   sectionMode?: "merge" | "replace";
-  restartAfterPersist?: boolean;
 }): Promise<AppliedGraphjinConfig> {
   const release = await acquireGraphjinConfigLock({ configFile: input.configFile });
   try {
     const previous = await readFile(input.configFile);
     const previousMode = (await stat(input.configFile)).mode & 0o777;
-    if (input.restartAfterPersist) {
-      await assertGraphjinSupervisor(input.configFile);
-    }
     const durableConfig = parse(previous.toString("utf8")) as {
       roles?: unknown;
       tables?: unknown;
@@ -371,9 +347,14 @@ export async function applyPackGraphjinConfig(input: {
       const temporary = `${input.configFile}.${randomUUID()}.pack-rollback`;
       await writeFile(temporary, previous, { mode: previousMode });
       await rename(temporary, input.configFile);
-      if (input.restartAfterPersist) {
-        await requestGraphjinRestart(input.configFile, input.endpoint);
-      }
+      // Load the restored file into the running GraphJin.
+      await applyGraphjinConfigUpdate({
+        endpoint: input.endpoint,
+        headers: {
+          authorization: `Bearer ${mintGraphjinToken({ orgId: input.orgId, userId: "pack-installer", role: "admin", ttlSeconds: 120 })}`,
+        },
+        update: { reload_from_disk: true },
+      });
     };
 
     let appliedConfig: Buffer;
@@ -384,9 +365,6 @@ export async function applyPackGraphjinConfig(input: {
         update: appliedUpdate,
       });
       await persistPackSections(input.configFile, appliedUpdate);
-      if (input.restartAfterPersist) {
-        await requestGraphjinRestart(input.configFile, input.endpoint);
-      }
       appliedConfig = await readFile(input.configFile);
       appliedKeystore = await readKeystore();
     } catch (error) {

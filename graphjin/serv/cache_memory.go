@@ -441,6 +441,18 @@ func (mc *MemoryCache) Metrics() *CacheMetrics {
 	return mc.metrics
 }
 
+// Reset drops every cached response.
+func (mc *MemoryCache) Reset(ctx context.Context) error {
+	mc.cacheMu.Lock()
+	defer mc.cacheMu.Unlock()
+	mc.cache.Purge()
+	mc.mu.Lock()
+	mc.rowIndex = make(map[string]map[string]struct{})
+	mc.tableIndex = make(map[string]map[string]struct{})
+	mc.mu.Unlock()
+	return nil
+}
+
 // Close stops the SWR worker pool and purges the cache.
 func (mc *MemoryCache) Close() error {
 	if mc.workerPool != nil {

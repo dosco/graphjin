@@ -512,7 +512,6 @@ COPY --from=worker-deploy --chown=neko:neko /out/worker-app ./
 COPY --chown=neko:neko db ./db
 # Embedded first-party solution packs are loaded and validated by the worker.
 COPY --chown=neko:neko packs ./packs
-COPY --chown=neko:neko scripts/graphjin-supervisor.sh ./scripts/graphjin-supervisor.sh
 COPY --chown=neko:neko apps/worker/scripts/magento-v2-live-acceptance.ts ./scripts/magento-v2-live-acceptance.ts
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
@@ -604,8 +603,6 @@ FROM alpine:3.22 AS graphjin-runtime
 RUN apk add --no-cache ca-certificates curl tini
 COPY --from=go-build /out/openneko /usr/local/bin/openneko
 RUN ln -s openneko /usr/local/bin/graphjin && graphjin version
-COPY scripts/graphjin-supervisor.sh /usr/local/bin/openneko-graphjin-supervisor.sh
-RUN chmod +x /usr/local/bin/openneko-graphjin-supervisor.sh
 
 FROM graphjin-runtime AS neko-graphjin
 COPY scripts/neko-graphjin-entrypoint.sh /usr/local/bin/neko-graphjin-entrypoint.sh

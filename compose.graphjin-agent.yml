@@ -31,13 +31,9 @@ services:
           KEY=$$(head -c 32 /dev/urandom | base64 | tr -d '\n')
           sed -i "s|REPLACE_WITH_BASE64_32_BYTE_KEY|$$KEY|" /config/agentic.yml
         fi
-        cp /seed/graphjin-supervisor.sh /config/.openneko-graphjin-supervisor.sh.tmp
-        chmod 0755 /config/.openneko-graphjin-supervisor.sh.tmp
-        mv /config/.openneko-graphjin-supervisor.sh.tmp /config/.openneko-graphjin-supervisor.sh
         chown -R 1001:999 /config 2>/dev/null || true
         find /config -type d -exec chmod 0700 {} +
         find /config -type f -exec chmod 0600 {} +
-        chmod 0700 /config/.openneko-graphjin-supervisor.sh
 
   graphjin:
     environment:
