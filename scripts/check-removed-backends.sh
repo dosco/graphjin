@@ -66,7 +66,8 @@ hermes_pattern='hermes'
 
 hermes_history_path() {
   case "$1" in
-    CHANGELOG.md|scripts/check-removed-backends.sh|THIRD_PARTY_LICENSES.md)
+    # FEATURES.md keeps a dated history table of shipped PRs.
+    CHANGELOG.md|FEATURES.md|scripts/check-removed-backends.sh|THIRD_PARTY_LICENSES.md)
       return 0
       ;;
     db/migrations/0002_agent_backend_and_setup.sql|\

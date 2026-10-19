@@ -19,7 +19,7 @@ Those components remain under their own licenses.
 
 | Component | License | Notes |
 |---|---|---|
-| Hermes Agent | MIT | External/modular agent runtime from Nous Research. Preserve upstream copyright and license notices when distributing it or substantial portions of it. |
+| Hermes Agent skill catalog (Nous Research) | MIT | Some built-in skills (for example the finance model skills adapted by Nous Research) come from this catalog. Preserve upstream copyright and license notices when distributing them. OpenNeko no longer ships the Hermes Agent runtime. |
 | Anthropic-authored bundled skills | As declared | Preserve the upstream terms and attribution shipped with each skill. |
 | Built-in skills with `license:` frontmatter | As declared in each skill | Some bundled skills are Apache-2.0, MIT, or proprietary to their upstream source. Check each `SKILL.md` and local `LICENSE.txt`. |
 | Third-party plugins | Plugin author's license | Plugins communicate across the OpenNeko plugin RPC boundary and are independent works unless their own license says otherwise. |

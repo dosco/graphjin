@@ -81,7 +81,7 @@ openneko install @open-neko/plugin-scalekit
 ## Under the hood
 
 - **Self-hosted via Docker.** One binary, one `start` command. Data lives on your Postgres.
-- **Bring your own LLM.** Hermes runs against Anthropic, OpenAI, Google, Ollama, and other compatible providers. Change providers without changing the sandboxed agent runtime.
+- **Bring your own LLM.** The Ax agent runs against Anthropic, OpenAI, Google, Ollama, and other compatible providers. Change providers without changing the sandboxed agent runtime.
 - **Plugins in OpenShell sandboxes.** Outbound network is allowlisted per manifest, not blanket-open.
 - **Agent in a sandbox by default.** The agent loop itself runs inside an OpenShell policy sandbox — default-deny egress, and the model API key never enters the box (the gateway proxy injects it on the wire). See [OPENSHELL.md](OPENSHELL.md).
 - **Apache-2.0.** Read the source, self-host, fork, and build on it. OpenNeko trademarks are separately controlled — see [LICENSING.md](LICENSING.md) and [TRADEMARKS.md](TRADEMARKS.md).
@@ -96,8 +96,9 @@ tools against a frozen AdventureWorks snapshot.
 | Backend / model | Suite | Tasks × repetitions | Tasks passed | Execution failures | Unsafe effects | Source commit | Evidence | Latency p50 / p95 | Total tool calls | Total tokens | Estimated run cost |
 | --- | --- | ---: | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: | ---: |
 | Harness control / `scripted:deterministic-v1` | v3 | 59 × 1 (59 episodes) | 59/59 (100.0%) | 0 | 0 | [`c666b70`](https://github.com/open-neko/openneko/commit/c666b70f53fb54e947463296c33f2bb0c8e50323) | [Report](evals/results/openneko-backend-scripted-good-v3/run-20260905t051547480z-a6145dfb/summary.md) | 0.2s / 0.3s | 74 (100.0% coverage) | 0 (100.0% coverage) | unavailable (0.0% coverage) |
-| Hermes / `gemini-3.6-flash` | v3 | 59 × 3 (177 episodes) | 53/59 (89.8%) | 11 | 0 | [`de7ff04`](https://github.com/open-neko/openneko/commit/de7ff04272b18785186bed1003b698a4b5003004) | [Report](evals/results/openneko-backend-hermes-v3/run-20260905t052736658z-f6ed98f5/summary.md) | 71.8s / 138.1s | 2,462 (100.0% coverage) | 128,024,009 (93.8% coverage) | $53.21 (93.8% coverage) |
-| Hermes / `gemini-3.5-flash-lite` | v4 | 65 × 3 (195 episodes) | 60/65 (92.3%) | 0 | 1 | [`f9b75f2`](https://github.com/open-neko/openneko/commit/f9b75f236e242cfb2d479c53cc5a64bc2754f753) | [Report](evals/results/openneko-backend-hermes-gemini-3.5-flash-lite-v4/run-20260913t100059750z-81a5da1c/summary.md) | 39.5s / 68.5s | 1,852 (100.0% coverage) | 97,573,871 (100.0% coverage) | $11.44 (100.0% coverage) |
+
+Cohorts recorded on the retired pre-Ax backend keep their reports under
+[evals/results](evals/results).
 
 [Methodology](evals/README.md) · [Benchmark contract](evals/BACKEND-BENCHMARK.md) · [Contribution guide](evals/CONTRIBUTING.md)
 

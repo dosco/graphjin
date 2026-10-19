@@ -1,9 +1,9 @@
 # Ax Harness
 
 Ax Harness is a Go agent harness built on the [Ax](https://github.com/ax-llm/ax)
-framework. OpenNeko offers it as the Ax backend, an alternative to Hermes.
+framework. It is OpenNeko's agent backend.
 
-The harness runs one agent turn per process. Its limits match Hermes. It reads one run specification
+The harness runs one agent turn per process. It reads one run specification
 on stdin, runs an Ax agent with tools, and writes events as JSON lines on
 stdout. The host owns history, approvals, the sandbox and scheduling.
 
