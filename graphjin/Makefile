@@ -77,7 +77,6 @@ test-large:
 	@echo "See tests-large/ for manual AdventureWorks tests"
 
 BIN_DIR := $(GOPATH)/bin
-WEB_BUILD_DIR := ./serv/web/build/manifest.json
 
 # @echo Installing tools from tools.go
 # @cat tools.go | grep _ | awk -F'"' '{print $$2}' | xargs -tI % go install %
@@ -85,11 +84,6 @@ download-tools:
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@go install golang.org/x/perf/cmd/benchstat@latest
 	@go install golang.org/x/tools/cmd/stringer@latest
-
-$(WEB_BUILD_DIR):
-	@echo "First install Yarn and create a build of the web UI then re-run make install"
-	@echo "Run this command: yarn --cwd serv/web/ build"
-	@exit 1
 
 lint: download-tools
 	@golangci-lint run ./tests $(PACKAGES) 

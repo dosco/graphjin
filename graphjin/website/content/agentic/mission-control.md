@@ -6,25 +6,20 @@ doc_kind: "guide"
 weight: 48
 ---
 
-Mission Control is the human window over GraphJin's durable agentic state. Open
-`/mission` in the built-in console to see the work that otherwise lives behind
-the `gj_task`, `gj_watch_event`, and `gj_artifacts` GraphQL roots.
+Mission Control is the human window over GraphJin's durable agentic state. It
+moved out of GraphJin into the OpenNeko admin app (`/admin/graphjin/activity`),
+which shows the work that otherwise lives behind the `gj_task`,
+`gj_watch_event`, and `gj_artifacts` GraphQL roots.
 
-It is available with the console in development and agentic modes. The page
-polls GraphJin rather than introducing a second state store or privileged API:
-people and agents read the same rows under the same caller identity and role.
+It reads GraphJin directly rather than introducing a second state store or
+privileged API: people and agents read the same rows under the same caller
+identity and role.
 
-## Set the development identity
+## Caller identity
 
 Owner-scoped roots intentionally return no rows when no caller identity exists.
-Use the identity control in the console header to set a development user, role,
-and account. The console persists those values in browser local storage and
-sends them as `X-User-ID`, `X-User-Role`, and `X-Account-ID`.
-
-These headers are for `auth.development` only. With real authentication,
-same-origin session cookies continue to flow as they do for every other console
-page. Mission Control makes the missing-development-identity state explicit, so
-an unauthenticated empty scope cannot look like an empty workload.
+OpenNeko calls GraphJin with a short-lived token for the signed-in admin, so the
+page shows that admin's tasks, watches, and annotations.
 
 ## Follow declared work
 
@@ -37,10 +32,9 @@ task to inspect its newest-first immutable trail:
 - verification entries, including the declared expectation and observed
   saved-query result.
 
-Task changes remain in [Agent chat](/agentic/server-agent/) for v1. Continue a
-task from its drawer to pin the `task_id` above the composer. Every later chat
-request sends that ID, warm-starts from the owner-scoped goal and recent trail,
-and journals the run under the task. The ID remains correlation only and never
+Task changes remain in [Agent chat](/agentic/server-agent/). A chat request that
+sends a `task_id` warm-starts from the owner-scoped goal and recent trail, and
+journals the run under the task. The ID remains correlation only and never
 grants access or satisfies an evidence guard.
 
 ## Review the watch inbox
@@ -68,17 +62,12 @@ catalog evidence, or override source metadata.
 
 ## Act on agent notices
 
-The Agent page renders every response notice instead of dropping it:
-
-- `watch_events_unseen` opens the watch inbox;
-- `task_open_unlinked` offers task-pin actions;
-- `task_context_loaded` confirms the retained goal and trail count;
-- `task_verify_failed` opens the failed task trail;
-- `annotations_unshared` opens the annotation review queue.
-
-Unknown future notice kinds still appear as generic notice cards, so new
-server-side reminders do not silently disappear from the console.
+The agent panel on the admin workbench shows every response notice instead of
+dropping it, such as `watch_events_unseen`, `task_open_unlinked`,
+`task_context_loaded`, `task_verify_failed`, and `annotations_unshared`.
+Unknown future notice kinds appear too, so new server-side reminders do not
+silently disappear.
 
 Tasks, watches, and artifacts are queried independently. If one feature is
-disabled, Mission Control hides only that tab and explains the missing
-capability; the remaining views continue to work.
+disabled, Mission Control explains the missing capability in that section;
+the remaining sections continue to work.

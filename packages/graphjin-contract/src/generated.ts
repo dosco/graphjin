@@ -657,7 +657,7 @@ export type GraphjinConfigMCPConfig = {
   legacy_discovery?: boolean;
   /** MCP OAuth Configuration: OAuth exposes standards-compatible authorization discovery for remote MCP clients. */
   oauth?: GraphjinConfigMCPOAuthConfig;
-  /** MCP Only Mode: Run in MCP-only mode - disables GraphQL, REST saved-query API, WebUI, and OpenAPI endpoints. Health check and MCP endpoints remain available. Legacy HTTP helper endpoints also remain available only when legacy_discovery is enabled. */
+  /** MCP Only Mode: Run in MCP-only mode - disables GraphQL, REST saved-query API, and OpenAPI endpoints. Health check and MCP endpoints remain available. Legacy HTTP helper endpoints also remain available only when legacy_discovery is enabled. */
   only?: boolean;
   /** Stdio User ID: Default user ID for stdio transport (CLI). Can be overridden by GRAPHJIN_USER_ID env var. */
   stdio_user_id?: string;
@@ -1236,7 +1236,7 @@ export type GraphjinConfig = {
   variables?: Record<string, string>;
   /** Watches */
   watches?: GraphjinConfigWatchesConfig;
-  /** Enable Web UI: Enable the web UI. Defaults on in dev and agentic modes, off in prod. */
+  /** Web UI (deprecated no-op): No-op, kept for one release so configs that set it still load: the web console moved to OpenNeko admin. Remove it in the next release. */
   web_ui?: boolean;
   /** Workflows */
   workflows?: GraphjinConfigWorkflowsConfig;

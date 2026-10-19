@@ -653,14 +653,6 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			securitySourceOrFallbackExplicit(conf, featurecap.KindSystem, featurecap.KeyLegacyDiscoveryRead, mcpBoolExplicit(conf, "mcp.legacy_discovery", conf != nil && conf.MCP.LegacyDiscovery)), "medium",
 			"Legacy discovery can expose broader schema and helper surfaces than the catalog-first path.",
 			"Prefer gj_catalog for discovery and enable legacy discovery only for compatible clients."),
-		newSecurityPolicy(mode, "serve.web_ui", "serve", "system", featurecap.KindSystem, "admin_ui", "read",
-			"Web UI",
-			"Controls the built-in GraphJin Console HTTP surface.",
-			defaultAllow(mode, true, false, true), conf != nil && conf.Serv.WebUI,
-			"web_ui", fmt.Sprint(conf != nil && conf.Serv.WebUI),
-			configBoolExplicit(conf, "web_ui"), "medium",
-			"The console is expected in dev and governed agentic deployments; strict prod remains opt-in.",
-			"Keep web_ui false in prod unless the console is intentionally exposed behind authentication."),
 		newSecurityPolicy(mode, "serve.cors_wildcard", "serve", "system", featurecap.KindSystem, "cors", "allow",
 			"Wildcard CORS origins",
 			"Controls whether HTTP CORS allows every origin.",
@@ -1560,7 +1552,7 @@ func securitySurfaceFor(sourceKind, capability string) string {
 		switch capability {
 		case "anonymous_access":
 			return "auth"
-		case "admin_ui", "cors", "uploads", "tracing":
+		case "cors", "uploads", "tracing":
 			return "http"
 		case "request_variables":
 			return "logging"
@@ -1587,7 +1579,7 @@ func securityTransportFor(sourceKind, capability string) string {
 		switch capability {
 		case "raw_graphql", "schema", "dev_tools", "legacy_discovery", "legacy_workflow_execution":
 			return "mcp"
-		case "admin_ui", "cors", "uploads", "tracing", "anonymous_access":
+		case "cors", "uploads", "tracing", "anonymous_access":
 			return "http"
 		default:
 			return "graphql"
@@ -1637,9 +1629,6 @@ func mcpBoolExplicit(conf *Config, key string, value bool) bool {
 }
 
 func configBoolExplicit(conf *Config, key string) bool {
-	if key == "web_ui" {
-		return conf != nil && conf.webUIExplicit
-	}
 	return conf != nil && conf.settingExplicit(key)
 }
 

@@ -13,11 +13,6 @@ operator:
   # Watches run under `role`, so it stays least-privilege: these questions only
   # ever read what an ordinary user could already query.
   role: user
-  # The console adopts `console_role` instead. Mission Control's watch inbox
-  # reads control-plane columns (`snoozed_until`, tasks' `owner_ref`) that the
-  # user role cannot, so a console driven as `user` renders an empty inbox even
-  # when the watches are firing.
-  console_role: admin
 
 watches:
   # Fires on boot: the seed data already contains failed invoices.

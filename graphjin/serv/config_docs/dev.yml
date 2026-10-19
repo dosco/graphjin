@@ -4,8 +4,6 @@ mode: dev
 # built-in agent, stateful MCP HTTP, and the primitive MCP tools. No feature
 # toggles are needed; add explicit settings only to opt out or customize them.
 host_port: 0.0.0.0:8080
-# Defaults on in dev and agentic modes. Set false to disable the console.
-web_ui: true
 
 # Log levels: debug, error, warn, info
 log_level: "info"

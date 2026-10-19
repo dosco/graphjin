@@ -9,7 +9,6 @@ explicitly:
 ```bash
 graphjin serve --demo                            # built-in, no clone
 graphjin serve --demo --path examples/saas-ops   # from a repo clone
-# Web UI:  http://localhost:8083/
 # GraphQL: http://localhost:8083/api/v1/graphql
 # MCP:     http://localhost:8083/api/v1/mcp
 ```

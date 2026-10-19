@@ -28,23 +28,9 @@ Then start the service:
 graphjin serve
 ```
 
-## Open the Web UI
+## Inspect the service
 
-Open [http://localhost:8080/](http://localhost:8080/) after the service starts. The console opens in the **User** workspace with the built-in Agent. Use the User/Admin switcher at the top to move between governed work and runtime administration.
-
-Open **Admin → Runtime** directly at [http://localhost:8080/admin/runtime](http://localhost:8080/admin/runtime). It is a quick visual check that GraphJin discovered the configured sources and is serving the built-in system roots.
-
-<figure class="doc-screenshot">
-  <img src="/assets/webui-runtime-overview.webp" width="1440" height="900" alt="GraphJin Web UI Runtime view showing ready sources, table count, catalog readiness, and security posture." loading="lazy" decoding="async">
-  <figcaption>The Admin workspace is served by GraphJin itself and reads from the same runtime, catalog, and security GraphQL roots.</figcaption>
-</figure>
-
-Use **Admin → Workbench** at [http://localhost:8080/admin/workbench](http://localhost:8080/admin/workbench) to try queries interactively. It sends requests to the same `/api/v1/graphql` endpoint that applications and command-line smoke tests use.
-
-<figure class="doc-screenshot">
-  <img src="/assets/webui-workbench-query.webp" width="1440" height="900" alt="GraphJin Web UI Workbench running a read-only SourceHealth query and showing JSON results." loading="lazy" decoding="async">
-  <figcaption>Workbench is useful for inspecting source readiness and result shape before you copy the same query into an API call.</figcaption>
-</figure>
+GraphJin no longer ships a built-in web console; it moved to the OpenNeko admin app. Inspect a running service with the CLI, an MCP client, or the OpenAPI document at [http://localhost:8080/api/v1/openapi.json](http://localhost:8080/api/v1/openapi.json).
 
 ## First query
 
