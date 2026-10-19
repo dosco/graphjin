@@ -1280,3 +1280,21 @@ func cloneMap(in map[string]any) map[string]any {
 	}
 	return out
 }
+
+// ArtifactStorePostgresSQL returns the statements that create or upgrade the
+// artifact store, and with watches the watch store, in schema on Postgres.
+// Every statement is idempotent. GraphJin runs the same statements at start
+// when artifacts.auto_init is on; an embedding application can run them
+// first, for example inside its own migrations, so the tables exist before
+// GraphJin serves.
+func ArtifactStorePostgresSQL(schema string, watches bool) []string {
+	if schema == "" {
+		schema = "_graphjin"
+	}
+	out := append([]string(nil), artifactDDL("postgres", schema)...)
+	if watches {
+		out = append(out, watchDDL("postgres", schema)...)
+		out = append(out, watchMigrationDDL("postgres", schema)...)
+	}
+	return append(out, artifactMigrationDDL("postgres", schema)...)
+}

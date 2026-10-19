@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"fmt"
+
+	"github.com/dosco/graphjin/serv/v3"
 	"github.com/spf13/cobra"
 )
 
@@ -69,6 +72,22 @@ Use --destructive to also apply DROP operations.`,
 	syncCmd.Flags().Bool("yes", false, "Skip confirmation prompt")
 	c.AddCommand(syncCmd)
 
+	// Store SQL command - print the artifact/watch store DDL
+	storeSQLCmd := &cobra.Command{
+		Use:   "store-sql",
+		Short: "Print the Postgres SQL that creates GraphJin's artifact and watch store",
+		Long: `Print the idempotent Postgres statements that create or upgrade GraphJin's
+internal artifact store (and, with --watches, its watch store). GraphJin runs
+the same statements at start when artifacts.auto_init is on. An application
+that embeds GraphJin can run them in its own migrations instead, so the tables
+exist before GraphJin serves. Needs no config or database connection.`,
+		Args: cobra.NoArgs,
+		Run:  cmdDBStoreSQL,
+	}
+	storeSQLCmd.Flags().String("schema", "_graphjin", "Schema that holds the store tables")
+	storeSQLCmd.Flags().Bool("watches", false, "Include the watch store tables")
+	c.AddCommand(storeSQLCmd)
+
 	// Seed command
 	seedCmd := &cobra.Command{
 		Use:   "seed",
@@ -89,6 +108,16 @@ Use 'db diff' first to preview changes.`,
 	c.AddCommand(setupCmd)
 
 	return c
+}
+
+// cmdDBStoreSQL prints the artifact (and watch) store DDL, one statement per
+// block, each ending with a semicolon.
+func cmdDBStoreSQL(cmd *cobra.Command, args []string) {
+	schema, _ := cmd.Flags().GetString("schema")
+	watches, _ := cmd.Flags().GetBool("watches")
+	for _, stmt := range serv.ArtifactStorePostgresSQL(schema, watches) {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s;\n\n", stmt)
+	}
 }
 
 // cmdDBSetup sets up the database by syncing schema and seeding
