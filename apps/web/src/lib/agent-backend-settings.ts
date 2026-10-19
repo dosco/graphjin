@@ -7,12 +7,15 @@ const AGENT_SCOPE = "agent";
 export type AgentSettings = {
   source: "org" | "default";
   globalCap: number;
+  /** Whether the agent may run shell commands in its sandbox. On by default. */
+  terminal: boolean;
 };
 
 export type AgentSettingsPayload = {
   agent: AgentSettings;
   defaults: {
     globalCap: number;
+    terminal: boolean;
   };
 };
 
@@ -55,10 +58,11 @@ export async function getAgentSettings(
   orgId: string,
 ): Promise<AgentSettings> {
   const row = await loadAgentRow(orgId);
-  const cfg = (row?.config ?? {}) as { globalCap?: unknown };
+  const cfg = (row?.config ?? {}) as { globalCap?: unknown; terminal?: unknown };
   return {
     source: row ? "org" : "default",
     globalCap: readPositiveInt(cfg.globalCap, AGENT_DEFAULT_GLOBAL_CAP),
+    terminal: cfg.terminal !== false,
   };
 }
 
@@ -70,12 +74,14 @@ export async function getAgentSettingsPayload(
     agent,
     defaults: {
       globalCap: AGENT_DEFAULT_GLOBAL_CAP,
+      terminal: true,
     },
   };
 }
 
 export type AgentSaveDraft = {
   globalCap?: number | string;
+  terminal?: boolean;
 };
 
 export async function saveAgentSettingsDraft(
@@ -83,12 +89,16 @@ export async function saveAgentSettingsDraft(
   draft: AgentSaveDraft,
 ): Promise<AgentSettings> {
   const existing = await loadAgentRow(orgId);
-  const existingCfg = (existing?.config ?? {}) as { globalCap?: unknown };
+  const existingCfg = (existing?.config ?? {}) as { globalCap?: unknown; terminal?: unknown };
   const globalCap = readPositiveInt(
     draft.globalCap ?? existingCfg.globalCap,
     AGENT_DEFAULT_GLOBAL_CAP,
   );
-  const config = { globalCap };
+  if (draft.terminal !== undefined && typeof draft.terminal !== "boolean") {
+    throw new Error("terminal must be true or false");
+  }
+  const terminal = draft.terminal ?? existingCfg.terminal !== false;
+  const config = { globalCap, terminal };
 
   if (existing) {
     await db()
@@ -110,5 +120,5 @@ export async function saveAgentSettingsDraft(
     });
   }
 
-  return { source: "org", globalCap };
+  return { source: "org", globalCap, terminal };
 }

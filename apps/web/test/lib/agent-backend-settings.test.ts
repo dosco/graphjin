@@ -44,6 +44,7 @@ describeIfDb("agent-settings", () => {
     await expect(getAgentSettings(orgId)).resolves.toEqual({
       source: "default",
       globalCap: AGENT_DEFAULT_GLOBAL_CAP,
+      terminal: true,
     });
   });
 
@@ -52,8 +53,9 @@ describeIfDb("agent-settings", () => {
       agent: {
         source: "default",
         globalCap: AGENT_DEFAULT_GLOBAL_CAP,
+        terminal: true,
       },
-      defaults: { globalCap: AGENT_DEFAULT_GLOBAL_CAP },
+      defaults: { globalCap: AGENT_DEFAULT_GLOBAL_CAP, terminal: true },
     });
   });
 
@@ -74,7 +76,7 @@ describeIfDb("agent-settings", () => {
         ),
       );
     expect(row.provider).toBe("ax");
-    expect(row.config).toEqual({ globalCap: 50 });
+    expect(row.config).toEqual({ globalCap: 50, terminal: true });
   });
 
   it("falls back to the default for an invalid cap", async () => {
@@ -86,7 +88,20 @@ describeIfDb("agent-settings", () => {
 
   it("keeps the saved cap on a later save without one", async () => {
     await saveAgentSettingsDraft(orgId, { globalCap: 9 });
-    await expect(saveAgentSettingsDraft(orgId, {})).resolves.toEqual({ source: "org", globalCap: 9 });
+    await expect(saveAgentSettingsDraft(orgId, {})).resolves.toEqual({ source: "org", globalCap: 9, terminal: true });
+  });
+
+  it("turns the terminal off, keeps it off on a later save, and refuses a non-boolean", async () => {
+    await saveAgentSettingsDraft(orgId, { terminal: false });
+    expect((await getAgentSettings(orgId)).terminal).toBe(false);
+    await saveAgentSettingsDraft(orgId, { globalCap: 4 });
+    await expect(getAgentSettings(orgId)).resolves.toMatchObject({ globalCap: 4, terminal: false });
+    await expect(saveAgentSettingsDraft(orgId, { terminal: "no" as unknown as boolean })).rejects.toThrow(/terminal/);
+    // The runtime reads the same row for every run.
+    const { resolveAgentTerminal } = await import("@neko/llm");
+    await expect(resolveAgentTerminal(orgId)).resolves.toBe(false);
+    await saveAgentSettingsDraft(orgId, { terminal: true });
+    await expect(resolveAgentTerminal(orgId)).resolves.toBe(true);
   });
 
   it("does not alter the primary provider", async () => {

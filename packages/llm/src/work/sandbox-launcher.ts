@@ -635,6 +635,9 @@ function makeSandboxCore(
           : {}),
         ...(opts.modelKeys ??
           (await import("../host-provision").then(({ loadAgentModelKeys }) => loadAgentModelKeys(input.orgId)))),
+        OPENNEKO_AGENT_TERMINAL: (await import("../agent-backend-resolver")
+          .then(({ resolveAgentTerminal }) => resolveAgentTerminal(input.orgId))
+          .catch(() => true)) ? "on" : "off",
         ...(opts.env ?? {}),
       };
       const result = await timed("exec", () => execAndStream(

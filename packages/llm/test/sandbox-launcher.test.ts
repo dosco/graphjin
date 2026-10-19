@@ -237,6 +237,8 @@ describe("makeSandboxRunCore", () => {
       MODEL_API_KEY: "org-key",
     });
     expect(env.NEKO_PG_PASSWORD).toBeUndefined();
+    // The org's terminal setting rides with the run; on by default.
+    expect(env.OPENNEKO_AGENT_TERMINAL).toBe("on");
     // The stage is gone once the run ends.
     await expect(access(job.workspace.orgRoot)).rejects.toThrow();
   });

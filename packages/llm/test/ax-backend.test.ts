@@ -192,6 +192,15 @@ describe("AxBackend", () => {
     expect(spawned[1].env.OPENNEKO_HARNESS_CHILD_TOOLS).toBeUndefined();
   });
 
+  it("gives the harness the terminal unless the org turned it off", async () => {
+    script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
+    await new AxBackend(config).run({ prompt: "p", workspace });
+    vi.stubEnv("OPENNEKO_AGENT_TERMINAL", "off");
+    await new AxBackend(config).run({ prompt: "p", workspace });
+    expect(spawned[0].env.OPENNEKO_HARNESS_SHELL).toBe("1");
+    expect(spawned[1].env.OPENNEKO_HARNESS_SHELL).toBeUndefined();
+  });
+
   it("runs again once after a malformed call when nothing was shown or written", async () => {
     const malformed = {
       lines: [finished({ status: "failed", kind: "failure", code: "model_failed" }, 1)],

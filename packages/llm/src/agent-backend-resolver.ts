@@ -80,11 +80,21 @@ export async function resolveAgentConcurrency(orgId: string): Promise<AgentConcu
   };
 }
 
+/**
+ * Whether the org's agent may use the terminal. On unless an admin turned it
+ * off at Admin → Settings → Agent; read for every run, so a change applies to
+ * the next run.
+ */
+export async function resolveAgentTerminal(orgId: string): Promise<boolean> {
+  const row = await loadRow(orgId, "agent");
+  return (row?.config as { terminal?: unknown } | null)?.terminal !== false;
+}
+
 function positiveInt(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
-/** Ax needs the route itself, not only the identity; the key stays in OpenShell. */
+/** Ax needs the route itself, not only the identity; the key is loaded per run. */
 export function axBackendConfig(row: StoredRow | null): AxBackendConfig | undefined {
   const model = row?.model?.trim();
   if (!row?.enabled || !model || !isPrimaryProvider(row.provider)) return undefined;
@@ -99,9 +109,9 @@ export function axBackendConfig(row: StoredRow | null): AxBackendConfig | undefi
 }
 
 /**
- * Resolve the org's agent backend with its non-secret model route. The real
- * provider key remains independently provisioned through OpenShell and is
- * never returned with the backend. `model` overrides the primary model.
+ * Resolve the org's agent backend with its non-secret model route. The
+ * provider key is loaded per run by the launcher and is never returned with
+ * the backend. `model` overrides the primary model.
  */
 export async function resolveAgentBackend(orgId: string, model?: string): Promise<AgentBackend> {
   const primary = await loadRow(orgId, "primary");

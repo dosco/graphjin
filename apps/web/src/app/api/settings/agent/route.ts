@@ -22,14 +22,15 @@ export async function PUT(request: NextRequest) {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       throw new Error("Agent settings payload must be an object");
     }
-    const unsupported = Object.keys(body).filter((key) => key !== "globalCap");
+    const unsupported = Object.keys(body).filter((key) => key !== "globalCap" && key !== "terminal");
     if (unsupported.length > 0) {
       throw new Error(`Unsupported agent setting: ${unsupported.join(", ")}`);
     }
     const saved = await saveAgentSettingsDraft((await getOrgId()), {
       globalCap: body.globalCap,
+      terminal: body.terminal,
     });
-    // Reprovision so the agent sandbox uses the latest provider settings.
+    // Reprovision so the next run uses the latest settings.
     await provisionHostConfig((await getOrgId()));
     return NextResponse.json(saved);
   } catch (e) {

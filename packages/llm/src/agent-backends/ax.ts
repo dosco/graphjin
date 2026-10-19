@@ -366,7 +366,9 @@ export class AxBackend implements AgentBackend {
     env.OPENNEKO_MCP_ORG_ID = opts.mcpBridgeEnv?.OPENNEKO_MCP_ORG_ID ?? opts.orgId ?? "local";
     env.OPENNEKO_MCP_THREAD_ID = opts.mcpBridgeEnv?.OPENNEKO_MCP_THREAD_ID ?? opts.tag ?? "local";
     env.OPENNEKO_HARNESS_WORKSPACE_DIR = cwd;
-    env.OPENNEKO_HARNESS_SHELL = "1";
+    // The terminal is on unless the org turned it off.
+    if (process.env.OPENNEKO_AGENT_TERMINAL === "off") delete env.OPENNEKO_HARNESS_SHELL;
+    else env.OPENNEKO_HARNESS_SHELL = "1";
     if (workspace?.threadUploadsRoot) env.OPENNEKO_HARNESS_UPLOADS_DIR = workspace.threadUploadsRoot;
     else delete env.OPENNEKO_HARNESS_UPLOADS_DIR;
     if (workspace?.skillsRoot) {

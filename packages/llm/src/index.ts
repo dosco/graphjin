@@ -24,6 +24,7 @@ export {
   resolveAgentBackend,
   resolveAgentConcurrency,
   type AgentConcurrency,
+  resolveAgentTerminal,
 } from "./agent-backend-resolver";
 export { cancelAllAgents, registerAgentCanceller } from "./agent-shutdown";
 export {

@@ -6,6 +6,7 @@ import PageHeading from "@/components/PageHeading";
 import { toast } from "sonner";
 import Select from "@/components/Select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Input } from "@/components/ui/field";
 import GraphjinAgentSection, { type GraphjinAgentPayload } from "./GraphjinAgentSection";
 
@@ -38,8 +39,9 @@ type AgentSettingsPayload = {
   agent: {
     source: "org" | "default";
     globalCap: number;
+    terminal: boolean;
   };
-  defaults: { globalCap: number };
+  defaults: { globalCap: number; terminal: boolean };
 };
 
 export default function AgentForm({
@@ -48,6 +50,7 @@ export default function AgentForm({
   initial: { agent: AgentSettingsPayload; providers: SettingsPayload; graphjinAgent: GraphjinAgentPayload };
 }) {
   const [concurrentJobs, setConcurrentJobs] = useState(String(initial.agent.agent.globalCap));
+  const [terminal, setTerminal] = useState(initial.agent.agent.terminal);
   const [primary, setPrimary] = useState({
     provider: initial.providers.primary.provider,
     model: initial.providers.primary.model,
@@ -110,7 +113,7 @@ export default function AgentForm({
       const agentRes = await fetch("/api/settings/agent", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ globalCap: cap }),
+        body: JSON.stringify({ globalCap: cap, terminal }),
       });
       const agentBody = await agentRes.json();
       if (!agentRes.ok) throw new Error(agentBody.error ?? "Agent settings save failed");
@@ -164,6 +167,17 @@ export default function AgentForm({
               max={1000}
               value={concurrentJobs}
               onChange={(e) => setConcurrentJobs(e.target.value)}
+            />
+          </Field>
+
+          <Field
+            label="Terminal"
+            hint="Lets the agent run shell commands, such as a skill's scripts, in its sandbox. The sandbox holds no keys and cannot reach OpenNeko's databases. Applies from the next run."
+          >
+            <Checkbox
+              label="Let the agent use the terminal"
+              checked={terminal}
+              onCheckedChange={(checked) => setTerminal(checked === true)}
             />
           </Field>
 
