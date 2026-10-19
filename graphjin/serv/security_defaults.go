@@ -253,6 +253,7 @@ func watchPublicProjectionColumns() []string {
 		"enabled",
 		"last_data_hash",
 		"last_fired_at",
+		"last_polled_at",
 		"last_error",
 		"failure_count",
 		"created_at",

@@ -138,6 +138,7 @@ func (s *graphjinService) pollWatchOnce(ctx context.Context, current *watchRunti
 		return fmt.Errorf("graphjin core is not initialized")
 	}
 	res, err := gj.GraphQL(ownerCtx, current.Query, vars, &core.RequestConfig{NoCache: true})
+	s.recordWatchPoll(ctx, current.ID, now, err == nil)
 	if err != nil {
 		return err
 	}
@@ -150,4 +151,32 @@ func (s *graphjinService) pollWatchOnce(ctx context.Context, current *watchRunti
 		current.LastDataHash = dataHash
 	}
 	return nil
+}
+
+// recordWatchPoll stores when a polled watch last ran, so a caller can tell a
+// poll that found no change from one that did not run. A successful poll also
+// clears the error a failed one left. It is status only, so it does not bump
+// the watch revision that wakes the runner.
+func (s *graphjinService) recordWatchPoll(ctx context.Context, id string, at time.Time, ok bool) {
+	if strings.TrimSpace(id) == "" {
+		return
+	}
+	if _, _, _, _, ready := s.watchDB(); !ready {
+		return
+	}
+	input := map[string]any{"last_polled_at": at.UTC().Format(time.RFC3339Nano)}
+	if ok {
+		input["last_error"] = ""
+		input["failure_count"] = 0
+	}
+	if _, err := s.internalStoreMutationRows(ctx, "watches", `where: { id: { eq: $id } }, update: $input`, "id", map[string]any{"id": id, "input": input}); err != nil {
+		s.recordWatchRunnerError("record watch poll", err, map[string]any{"watch_id": id})
+		return
+	}
+	// gj_watch reads come from the projection; refresh it so they see the poll.
+	if s.systemNanoDB != nil {
+		if err := s.refreshWatchProjection(); err != nil {
+			s.recordWatchRunnerError("refresh watch projection", err, map[string]any{"watch_id": id})
+		}
+	}
 }

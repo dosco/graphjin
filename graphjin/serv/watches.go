@@ -20,7 +20,7 @@ const (
 	watchValidationProbeTimeout = 10 * time.Second
 )
 
-const watchStoreFields = `id name task_id description query saved_query_name variables_json condition_js delivery_json enrich_json absence_json poll_json evidence_json lifecycle lease_expires_at lease_owner_id status approval enabled account_id owner_id owner_role last_data_hash last_cursor_json last_fired_at last_error failure_count created_at updated_at`
+const watchStoreFields = `id name task_id description query saved_query_name variables_json condition_js delivery_json enrich_json absence_json poll_json evidence_json lifecycle lease_expires_at lease_owner_id status approval enabled account_id owner_id owner_role last_data_hash last_cursor_json last_fired_at last_polled_at last_error failure_count created_at updated_at`
 
 const watchEventStoreFields = `id watch_id data_hash data_json data_truncated evidence_json delivery_status delivery_attempts delivery_json receipt_json enrichment_json seen seen_at snoozed_until account_id owner_id created_at updated_at`
 
@@ -86,6 +86,7 @@ func watchColumns() []core.ManagedColumn {
 		cpCol("owner_ref", "text", false),
 		cpCol("last_data_hash", "text", false),
 		cpCol("last_fired_at", "text", false),
+		cpCol("last_polled_at", "text", false),
 		cpCol("last_error", "text", false),
 		cpCol("failure_count", "integer", false),
 		cpCol("created_at", "text", false),
@@ -1187,6 +1188,7 @@ owner_role TEXT NOT NULL DEFAULT 'user',
 last_data_hash TEXT NOT NULL DEFAULT '',
 last_cursor_json JSONB,
 last_fired_at TIMESTAMPTZ,
+last_polled_at TIMESTAMPTZ,
 last_error TEXT NOT NULL DEFAULT '',
 failure_count BIGINT NOT NULL DEFAULT 0,
 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -1246,6 +1248,7 @@ owner_role VARCHAR(64) NOT NULL DEFAULT 'user',
 last_data_hash VARCHAR(128) NOT NULL DEFAULT '',
 last_cursor_json LONGTEXT,
 last_fired_at VARCHAR(64),
+last_polled_at VARCHAR(64),
 last_error LONGTEXT NOT NULL,
 failure_count BIGINT NOT NULL DEFAULT 0,
 created_at VARCHAR(64) NOT NULL DEFAULT '',
@@ -1300,6 +1303,7 @@ owner_role TEXT NOT NULL DEFAULT 'user',
 last_data_hash TEXT NOT NULL DEFAULT '',
 last_cursor_json TEXT,
 last_fired_at TEXT,
+last_polled_at TEXT,
 last_error TEXT NOT NULL DEFAULT '',
 failure_count INTEGER NOT NULL DEFAULT 0,
 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1349,6 +1353,7 @@ func watchMigrationDDL(dbType, schema string) []string {
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS lease_owner_id TEXT NOT NULL DEFAULT ''`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS absence_json JSONB`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS poll_json JSONB`, watches),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS last_polled_at TIMESTAMPTZ`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS data_truncated BOOLEAN NOT NULL DEFAULT FALSE`, events),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS snoozed_until TIMESTAMPTZ`, events),
 	}
@@ -1410,6 +1415,9 @@ func (s *graphjinService) migrateWatchSchema(ctx context.Context, db *sql.DB, db
 		return err
 	}
 	if err := ensureSQLColumn(ctx, db, dbType, watches, "poll_json", absenceDef); err != nil {
+		return err
+	}
+	if err := ensureSQLColumn(ctx, db, dbType, watches, "last_polled_at", leaseExpiresDef); err != nil {
 		return err
 	}
 	events := artifactTableName(dbType, schema, "watch_events")
@@ -1508,6 +1516,7 @@ func watchStoreRow(row map[string]any, rawIDs bool) map[string]any {
 		"owner_ref":        safeArtifactIdentity(ownerID, false),
 		"last_data_hash":   stringMapValue(row, "last_data_hash"),
 		"last_fired_at":    stringMapValue(row, "last_fired_at"),
+		"last_polled_at":   stringMapValue(row, "last_polled_at"),
 		"last_error":       stringMapValue(row, "last_error"),
 		"failure_count":    int64MapValue(row, "failure_count"),
 		"created_at":       stringMapValue(row, "created_at"),

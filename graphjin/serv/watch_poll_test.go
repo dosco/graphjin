@@ -125,6 +125,20 @@ func TestPolledWatchRecordsEachChangedResult(t *testing.T) {
 	if got := events(); got != 3 {
 		t.Fatalf("events = %d, want 3 (0, 1, back to 0)", got)
 	}
+	var polled string
+	if err := db.QueryRow(`SELECT COALESCE(last_polled_at, '') FROM "_graphjin_watches" WHERE id = ?`, watchID).Scan(&polled); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(polled, "2026-10-19T12:03:00") {
+		t.Fatalf("last_polled_at = %q, want the last poll", polled)
+	}
+	rows, err := cp.watchRows(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) == 0 || rows[0]["last_polled_at"] == "" {
+		t.Fatalf("gj_watch rows do not show last_polled_at: %+v", rows)
+	}
 }
 
 func TestWatchWebhookKeystoreSecret(t *testing.T) {

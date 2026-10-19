@@ -46,8 +46,10 @@ function graphjinEndpoint(url: string): string {
   return clean.endsWith("/api/v1/graphql") ? clean : `${clean}/api/v1/graphql`;
 }
 
+const WATCH_NAME_PREFIX = "openneko_watcher_";
+
 function watchName(row: WatcherRow): string {
-  return `openneko_watcher_${row.id.replaceAll("-", "")}`;
+  return `${WATCH_NAME_PREFIX}${row.id.replaceAll("-", "")}`;
 }
 
 type PollVariable = { kind: "now" } | { kind: "seconds_ago"; seconds: number };
@@ -72,7 +74,7 @@ export function watcherWatchVariables(definition: Record<string, unknown> | null
 }
 
 /** The gj_watch definition for a watcher. Its hash decides when to resend it. */
-export function watcherWatchDefinition(row: WatcherRow, webhookUrl: string) {
+export function watcherWatchDefinition(row: WatcherRow, webhookUrl: string, minIntervalSeconds = 60) {
   const { fixed, poll } = watcherWatchVariables(row.variables_json);
   const definition = {
     name: watchName(row),
@@ -80,7 +82,7 @@ export function watcherWatchDefinition(row: WatcherRow, webhookUrl: string) {
     query: row.query,
     variables_json: fixed,
     poll_json: {
-      interval_seconds: Math.max(60, row.cadence_seconds),
+      interval_seconds: Math.max(minIntervalSeconds, row.cadence_seconds),
       ...(Object.keys(poll).length > 0 ? { variables: poll } : {}),
     },
     delivery_json: { kind: "webhook", url: webhookUrl, secret_source: "keystore" },
@@ -90,7 +92,14 @@ export function watcherWatchDefinition(row: WatcherRow, webhookUrl: string) {
   return { definition, hash };
 }
 
-type WatchRow = { id?: string; action_hash?: string | null; action_approval?: string | null; status?: string | null; last_error?: string | null };
+type WatchRow = {
+  id?: string;
+  action_hash?: string | null;
+  action_approval?: string | null;
+  status?: string | null;
+  last_error?: string | null;
+  last_polled_at?: string | null;
+};
 
 export type WatcherWatchClient = {
   upsert(input: {
@@ -102,6 +111,8 @@ export type WatcherWatchClient = {
   approve(input: { endpoint: string; orgId: string; watchId: string; actionHash: string }): Promise<WatchRow>;
   remove(input: { endpoint: string; orgId: string; watchId: string }): Promise<void>;
   status(input: { endpoint: string; orgId: string; watchId: string }): Promise<WatchRow | null>;
+  /** The org service identity's watches on a GraphJin. */
+  list(input: { endpoint: string; orgId: string }): Promise<Array<{ id: string; name: string }>>;
 };
 
 function firstRow<T>(value: T | T[] | null | undefined): T | null {
@@ -163,12 +174,23 @@ export const graphjinWatcherWatchClient: WatcherWatchClient = {
       headers: serviceHeaders(orgId),
       role: "service",
       // A read returns the watch's public columns; the action fields are not among them.
-      query: `query WatcherWatchStatus_${Date.now().toString(36)}($id: String!) { gj_watch(where: { id: { eq: $id } }) { id status last_error } }`,
+      query: `query WatcherWatchStatus_${Date.now().toString(36)}($id: String!) { gj_watch(where: { id: { eq: $id } }) { id status last_error last_polled_at } }`,
       variables: { id: watchId },
       signal: AbortSignal.timeout(30_000),
     });
     if (result.errors?.length) throw new Error(result.errors.map((e) => e.message).join("; "));
     return firstRow(result.data?.gj_watch);
+  },
+  async list({ endpoint, orgId }) {
+    const result = await graphjinQuery<{ gj_watch?: Array<{ id: string; name: string }> }>({
+      baseUrl: endpoint,
+      headers: serviceHeaders(orgId),
+      role: "service",
+      query: `query WatcherWatchList_${Date.now().toString(36)} { gj_watch(limit: 1000) { id name } }`,
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (result.errors?.length) throw new Error(result.errors.map((e) => e.message).join("; "));
+    return result.data?.gj_watch ?? [];
   },
 };
 
@@ -179,6 +201,8 @@ function serviceHeaders(orgId: string): Record<string, string> {
 export type ReconcileWatcherDeps = {
   client?: WatcherWatchClient;
   webhookUrl?: string;
+  /** The shortest poll interval to give GraphJin; tests lower it. */
+  minIntervalSeconds?: number;
 };
 
 export type ReconcileWatcherResult = { synced: number; removed: number; failed: number };
@@ -219,14 +243,21 @@ export async function reconcileWatcherWatches(
       const source = (await packArtifactSource(orgId, "watcher", row.id)) ?? fallbackSource;
       if (!source?.graphqlUrl) throw new Error("watcher has no enabled GraphJin source");
       const endpoint = graphjinEndpoint(source.graphqlUrl);
-      const { definition, hash } = watcherWatchDefinition(row, webhookUrl);
+      const { definition, hash } = watcherWatchDefinition(row, webhookUrl, deps.minIntervalSeconds);
       const current = row.graphjin_endpoint === endpoint ? row.graphjin_watch_id : null;
       if (current && row.graphjin_watch_hash === hash) {
         const status = await client.status({ endpoint, orgId, watchId: current });
         if (status) {
+          // GraphJin polls the watch; its last poll is the watcher's last check.
           const error = status.status === "error" || status.last_error ? status.last_error || "GraphJin watch failed" : null;
-          if (error !== row.last_error && (error || row.last_error)) {
-            await db().update(watcher).set({ last_error: error, updated_at: new Date() }).where(eq(watcher.id, row.id));
+          const polledAt = status.last_polled_at ? new Date(status.last_polled_at) : null;
+          const checked = polledAt && !Number.isNaN(polledAt.getTime()) &&
+            (!row.last_checked_at || polledAt.getTime() > row.last_checked_at.getTime()) ? polledAt : null;
+          if (checked || (error !== row.last_error && (error || row.last_error))) {
+            await db()
+              .update(watcher)
+              .set({ last_error: error, ...(checked ? { last_checked_at: checked } : {}), updated_at: new Date() })
+              .where(eq(watcher.id, row.id));
           }
           continue;
         }
@@ -255,7 +286,33 @@ export async function reconcileWatcherWatches(
       await db().update(watcher).set({ last_error: message, updated_at: new Date() }).where(eq(watcher.id, row.id));
     }
   }
+  result.removed += await removeOrphanWatches(orgId, client);
   return result;
+}
+
+/**
+ * Removes the GraphJin watches of deleted watchers. A deleted watcher leaves
+ * no row to reconcile, so its watch is found by name on each of the org's
+ * GraphJins.
+ */
+async function removeOrphanWatches(orgId: string, client: WatcherWatchClient): Promise<number> {
+  const known = new Set(
+    (await db().select({ id: watcher.id }).from(watcher).where(eq(watcher.org_id, orgId)))
+      .map((row) => `${WATCH_NAME_PREFIX}${row.id.replaceAll("-", "")}`),
+  );
+  const sources = await db()
+    .select({ graphqlUrl: data_source.graphql_url })
+    .from(data_source)
+    .where(and(eq(data_source.org_id, orgId), eq(data_source.enabled, true)));
+  let removed = 0;
+  for (const endpoint of new Set(sources.map((source) => graphjinEndpoint(source.graphqlUrl)))) {
+    const watches = await client.list({ endpoint, orgId }).catch(() => []);
+    for (const watch of watches) {
+      if (!watch.name.startsWith(WATCH_NAME_PREFIX) || known.has(watch.name)) continue;
+      await client.remove({ endpoint, orgId, watchId: watch.id }).then(() => removed++, () => {});
+    }
+  }
+  return removed;
 }
 
 /** The watcher a GraphJin watch id belongs to, for verifying its webhook. */

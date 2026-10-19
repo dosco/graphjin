@@ -165,7 +165,7 @@ describe("action policy matrix", () => {
       throw new Error("GraphJin transport unavailable");
     };
     const result = await reconcileWatcherWatches(orgId, {
-      client: { upsert: refuse, approve: refuse, remove: async () => {}, status: async () => null },
+      client: { upsert: refuse, approve: refuse, remove: async () => {}, status: async () => null, list: async () => [] },
       webhookUrl: "http://worker.test/hook",
     });
     expect(result.failed).toBe(1);

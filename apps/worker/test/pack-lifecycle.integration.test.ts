@@ -71,6 +71,7 @@ function watchClient() {
     approve: async ({ watchId }) => ({ id: watchId, action_approval: "approved" }),
     remove: async () => {},
     status: async () => null,
+    list: async () => [],
   };
   return { sent, client };
 }

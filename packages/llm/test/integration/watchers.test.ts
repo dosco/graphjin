@@ -177,6 +177,7 @@ describeIfDb("watchers on GraphJin watches", () => {
         calls.push(`remove ${watchId}`);
       },
       status: async () => status,
+      list: async () => [],
     };
     const deps = { client, webhookUrl: "http://worker.test/admin/events/watcher" };
 
@@ -227,7 +228,7 @@ describeIfDb("watchers on GraphJin watches", () => {
       throw new Error("gj_watch query probe failed: unknown table nope");
     };
     const result = await reconcileWatcherWatches(orgId, {
-      client: { upsert: refuse, approve: refuse, remove: async () => {}, status: async () => null },
+      client: { upsert: refuse, approve: refuse, remove: async () => {}, status: async () => null, list: async () => [] },
       webhookUrl: "http://worker.test/admin/events/watcher",
     });
     expect(result.failed).toBeGreaterThan(0);
