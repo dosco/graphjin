@@ -73,7 +73,7 @@ See `docs/GRAPHJIN-EVAL.md` for the full contract.
 |---|---|
 | `cmd/env_serve_config.go` `envServeFlags` | `website/content/environment/cli-reference.md`, `CONFIG.md` — enforced by `check-site.mjs` |
 | `cmd/cmd_env.go` subcommands | `website/content/environment/cli-reference.md` — enforced |
-| `cmd/benchmark/public-suite.json` | nothing: the task count is derived — do not write it down |
+| `cmd/cli/benchmark/public-suite.json` | nothing: the task count is derived — do not write it down |
 | `agent/skills.go` skill list | `website/content/agentic/server-agent.md` count and enumeration |
 | Anything with a `{{< verified >}}` badge | the badge's test name — enforced |
 | Measured container figures | `website/data/environment.yaml`, including `measured.on` |

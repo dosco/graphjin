@@ -1170,7 +1170,7 @@ if (await exists(path.join(siteRoot, 'static', 'install.sh'))) {
 // real published tasks. They are transcribed into the benchmark-try shortcode,
 // so a suite rotation would silently turn that invitation into fiction. Assert
 // every quoted item still exists word-for-word in the committed suite.
-const suitePath = path.join(repoRoot, 'cmd', 'benchmark', 'public-suite.json');
+const suitePath = path.join(repoRoot, 'cmd', 'cli', 'benchmark', 'public-suite.json');
 const tryPath = path.join(publicRoot, 'index.html');
 if ((await exists(suitePath)) && (await exists(tryPath))) {
   const suite = JSON.parse(await readFile(suitePath, 'utf8'));
@@ -1199,7 +1199,7 @@ if ((await exists(suitePath)) && (await exists(tryPath))) {
   }
   for (const prompt of quoted) {
     if (!prompts.has(prompt)) {
-      failures.push(`Homepage quotes "${prompt.slice(0, 60)}..." as a published DeepORG item, but it is not in cmd/benchmark/public-suite.json`);
+      failures.push(`Homepage quotes "${prompt.slice(0, 60)}..." as a published DeepORG item, but it is not in cmd/cli/benchmark/public-suite.json`);
     }
   }
 }
@@ -1298,10 +1298,10 @@ for (const file of htmlFiles) {
 
 // GJ_ENV_* — the CLI reference must cover exactly the flags the server reads.
 {
-  const source = await readFile(path.join(repoRoot, 'cmd', 'env_serve_config.go'), 'utf8');
+  const source = await readFile(path.join(repoRoot, 'cmd', 'cli', 'env_serve_config.go'), 'utf8');
   const block = source.match(/var envServeFlags = \[\]string\{([\s\S]*?)\}/);
   if (!block) {
-    failures.push('cmd/env_serve_config.go: envServeFlags literal moved; the GJ_ENV_ drift check cannot run');
+    failures.push('cmd/cli/env_serve_config.go: envServeFlags literal moved; the GJ_ENV_ drift check cannot run');
   } else {
     const flags = [...block[1].matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
     const expected = new Set(flags.map((f) => 'GJ_ENV_' + f.toUpperCase().replaceAll('-', '_')));
@@ -1330,7 +1330,7 @@ for (const file of htmlFiles) {
     const html = await readFile(page, 'utf8');
     const hidden = ['freeze-suite', 'import-corpus'];
     for (const [file, pattern] of [
-      ['cmd/cmd_env.go', /cmd\.AddCommand\(env([A-Za-z]+)Cmd\(\)\)/g],
+      ['cmd/cli/cmd_env.go', /cmd\.AddCommand\(env([A-Za-z]+)Cmd\(\)\)/g],
     ]) {
       const source = await readFile(path.join(repoRoot, file), 'utf8');
       for (const match of source.matchAll(pattern)) {
@@ -1350,7 +1350,7 @@ for (const file of htmlFiles) {
 
 // The public suite's task count, which prose has already got wrong once.
 {
-  const suite = JSON.parse(await readFile(path.join(repoRoot, 'cmd', 'benchmark', 'public-suite.json'), 'utf8'));
+  const suite = JSON.parse(await readFile(path.join(repoRoot, 'cmd', 'cli', 'benchmark', 'public-suite.json'), 'utf8'));
   const actual = suite.tasks.length;
   let seen = 0;
   for (const rel of ['index.html', 'environment/quickstart/index.html']) {
