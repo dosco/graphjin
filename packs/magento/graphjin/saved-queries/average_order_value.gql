@@ -1,3 +1,6 @@
+# Average order value: Net invoiced base-currency revenue divided by invoiced
+# orders placed in the period. Counts orders placed in the period whose base
+# invoiced total is positive; returns null when there are none.
 query MagentoAverageOrderValue($from: String!, $to: String!, $storeIds: [Int!]) {
   sales_invoice(where: {and: [{created_at: {gte: $from}}, {created_at: {lt: $to}}], store_id: {in: $storeIds}}) {
     invoiced: sum_base_grand_total

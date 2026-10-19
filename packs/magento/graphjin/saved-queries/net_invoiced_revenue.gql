@@ -1,3 +1,6 @@
+# Net invoiced revenue: Invoiced base-currency value less refunded base-
+# currency value. Uses Magento base currency and invoice/refund timestamps in
+# the configured store timezone.
 query MagentoNetInvoicedRevenue($from: String!, $to: String!, $storeIds: [Int!]) {
   sales_invoice(where: {and: [{created_at: {gte: $from}}, {created_at: {lt: $to}}], store_id: {in: $storeIds}}) {
     invoiced: sum_base_grand_total

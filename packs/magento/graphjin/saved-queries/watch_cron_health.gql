@@ -1,3 +1,5 @@
+# Watcher count for Magento cron failure or stall. Fires when cron failures or
+# stale running jobs are observed.
 query MagentoWatchCronHealth($staleBefore: String!, $from: String!) {
   cron_schedule(where: {created_at: {gte: $from}, or: [{status: {eq: "error"}}, {status: {eq: "running"}, executed_at: {lt: $staleBefore}}]}) {
     count: count_schedule_id

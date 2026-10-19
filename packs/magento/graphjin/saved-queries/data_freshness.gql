@@ -1,3 +1,6 @@
+# Magento data freshness: Age of the newest order and most recent successful
+# cron observation. Helps distinguish a quiet store from a stale analytics
+# connection.
 query MagentoDataFreshness($from: String!) {
   sales_order(where: {created_at: {gte: $from}}, order_by: {created_at: desc}, limit: 1) {
     newest_order_at: created_at

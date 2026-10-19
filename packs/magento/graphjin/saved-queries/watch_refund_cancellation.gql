@@ -1,3 +1,6 @@
+# Watcher count for Magento cancellation threshold. Fires when cancellations
+# in the configured window exceed the administrator-confirmed threshold; the
+# workflow also reviews refunds.
 query MagentoWatchRefundCancellation($from: String!, $storeIds: [Int!]) {
   sales_invoice(where: {created_at: {gte: $from}, store_id: {in: $storeIds}}) { invoiced: sum_base_grand_total }
   sales_creditmemo(where: {created_at: {gte: $from}, store_id: {in: $storeIds}}) { refunded: sum_base_grand_total }

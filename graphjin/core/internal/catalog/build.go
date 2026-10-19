@@ -1669,11 +1669,15 @@ func addSavedQueries(out *Snapshot, opts BuildOptions) {
 		}
 		cardID := "saved_query:" + qualified
 		operation := valueOrDefault(sq.Operation, "query")
+		summary := fmt.Sprintf("Allow-listed %s ready for execute_saved_query.", operation)
+		if description := savedQueryDescription(sq.Query); description != "" {
+			summary = description + " " + summary
+		}
 		out.Cards = append(out.Cards, Card{
 			ID:              cardID,
 			Kind:            "saved_query",
 			Title:           qualified,
-			Summary:         fmt.Sprintf("Allow-listed %s ready for execute_saved_query.", operation),
+			Summary:         summary,
 			Source:          "core.allow_list",
 			RiskLevel:       riskForSavedQuery(operation),
 			Confidence:      "high",
@@ -1700,6 +1704,25 @@ func addSavedQueries(out *Snapshot, opts BuildOptions) {
 		})
 		out.Nodes = append(out.Nodes, Node{ID: "node:" + cardID, Kind: "saved_query", Name: qualified, Summary: operation + " saved query", CardID: cardID})
 	}
+}
+
+// savedQueryDescription reads the comment lines at the top of a saved query,
+// where its author says what it measures and how to read the result.
+func savedQueryDescription(query string) string {
+	var lines []string
+	for _, line := range strings.Split(query, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" && len(lines) == 0 {
+			continue
+		}
+		if !strings.HasPrefix(line, "#") {
+			break
+		}
+		if text := strings.TrimSpace(strings.TrimLeft(line, "#")); text != "" {
+			lines = append(lines, text)
+		}
+	}
+	return strings.Join(lines, " ")
 }
 
 func savedQueryQualifiedName(sq SavedQuery) string {

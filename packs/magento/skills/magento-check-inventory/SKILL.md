@@ -33,7 +33,8 @@ actually triggered it. Do not infer a threshold from a low quantity.
 
 ## Gather evidence
 
-1. Use `stock_status` for the installed source-quantity approximation.
+1. Run the `stock_status` saved query; its catalog description states what
+   the source quantity does and does not mean.
 2. Use `watch_stock_threshold` when validating a watcher count.
 3. Query `inventory_source_item` for SKU, source, quantity, and enabled status.
 4. Inspect aggregate reservations or legacy stock configuration only when the

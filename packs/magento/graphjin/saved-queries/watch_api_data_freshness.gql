@@ -1,3 +1,6 @@
+# Watcher count for Magento recent-order data freshness. Fires when no order
+# has appeared during the configured freshness window; quiet stores can
+# legitimately meet this condition.
 query MagentoWatchDataFreshness($staleBefore: String!, $storeIds: [Int!]) {
   sales_order(where: {created_at: {gte: $staleBefore}, store_id: {in: $storeIds}}) {
     count: count_entity_id

@@ -1,3 +1,5 @@
+# Cancellation rate: Cancelled orders divided by orders placed in the selected
+# period. Uses the Magento order state `canceled` and order created timestamp.
 query MagentoCancellationRate($from: String!, $to: String!, $storeIds: [Int!]) {
   all_orders: sales_order(where: {and: [{created_at: {gte: $from}}, {created_at: {lt: $to}}], store_id: {in: $storeIds}}) {
     count: count_entity_id

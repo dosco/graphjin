@@ -1,3 +1,6 @@
+# Magento cron health: Failed and long-running Magento cron jobs in the
+# configured window. Running jobs become stuck only after the configured age
+# threshold.
 query MagentoCronHealth($staleBefore: String!, $from: String!) {
   failed: cron_schedule(where: {created_at: {gte: $from}, status: {eq: "error"}}) {
     count: count_schedule_id

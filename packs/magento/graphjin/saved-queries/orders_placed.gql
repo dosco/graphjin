@@ -1,3 +1,5 @@
+# Orders placed: Distinct Magento orders created during the selected period.
+# Cancellations are included in orders placed and reported separately.
 query MagentoOrdersPlaced($from: String!, $to: String!, $storeIds: [Int!]) {
   sales_order(where: {and: [{created_at: {gte: $from}}, {created_at: {lt: $to}}], store_id: {in: $storeIds}}) {
     orders: count_entity_id

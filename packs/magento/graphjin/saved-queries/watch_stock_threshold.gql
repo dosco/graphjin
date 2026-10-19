@@ -1,3 +1,6 @@
+# Watcher count for Magento low-stock threshold. Fires when the count of
+# source-level low/out-of-stock SKUs crosses a threshold. Status 0 means the
+# item is disabled or out of stock at that source.
 query MagentoWatchStockThreshold($threshold: Float = 5) {
   inventory_source_item(where: {or: [{status: {eq: 0}}, {quantity: {lte: $threshold}}]}) {
     count: count_sku

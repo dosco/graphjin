@@ -690,6 +690,26 @@ func TestBuildWithOptionsSavedQueryCards(t *testing.T) {
 	}
 }
 
+func TestSavedQueryCardCarriesItsDescription(t *testing.T) {
+	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{
+		SavedQueries: []SavedQuery{{
+			Name:  "stock_status",
+			Query: "# Low and out-of-stock source items.\n#\n# Source quantity is not salable quantity.\nquery { items { sku } }",
+		}},
+	})
+	card, ok := findCatalogCard(snap, "saved_query:stock_status")
+	if !ok {
+		t.Fatal("saved query card missing")
+	}
+	want := "Low and out-of-stock source items. Source quantity is not salable quantity. Allow-listed query ready for execute_saved_query."
+	if card.Summary != want {
+		t.Fatalf("summary = %q, want %q", card.Summary, want)
+	}
+	if got, err := snap.Query(Query{Search: "salable quantity"}); err != nil || len(got.Cards) == 0 || got.Cards[0].ID != card.ID {
+		t.Fatalf("search by description did not find the saved query: %+v", got.Cards)
+	}
+}
+
 func TestSavedQueryHashIdentifiesPublishedDefinition(t *testing.T) {
 	query := "  query { users { count_id } }\n\n"
 	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{

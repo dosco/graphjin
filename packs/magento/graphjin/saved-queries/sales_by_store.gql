@@ -1,3 +1,5 @@
+# Sales by store: Net invoiced base-currency revenue grouped by Magento store.
+# Values remain in base currency; display-currency totals are not mixed.
 query MagentoSalesByStore($from: String!, $to: String!, $storeIds: [Int!]) {
   sales_invoice(
     distinct: [store_id]

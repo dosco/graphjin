@@ -1,3 +1,7 @@
+# Fulfillment age: Median and oldest age of paid orders that have not reached
+# a terminal fulfillment state. Uses paid orders outside canceled, closed, and
+# complete states; age is calculated from order creation in the configured
+# Magento timezone.
 query MagentoFulfillmentAge($from: String!, $storeIds: [Int!]) {
   sales_order(
     where: {
