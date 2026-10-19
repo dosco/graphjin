@@ -58,14 +58,13 @@ describe("records GraphJin schema boundary", () => {
     ).toBe(normalizeRecordsGraphjinSchemaPreview(`${account}\n\n${contact}\n`));
   });
 
-  it("uses only the pinned serve db diff/sync invocation", async () => {
+  it("uses only the serve db diff/sync invocation", async () => {
     const directory = await mkdtemp(join(tmpdir(), "records-schema-cli-"));
     await writeFile(join(directory, "dev.yml"), "database: {}\n", { mode: 0o600 });
     await writeRecordsGraphjinDdl(directory, "type example { id: Text! @id }\n");
     const calls: string[][] = [];
     const command: RecordsGraphjinSchemaCommand = async (_binary, args) => {
       calls.push(args);
-      if (args[0] === "version") return { stdout: "GraphJin 3.21.13\n", stderr: "" };
       if (args.includes("diff")) {
         return { stdout: "CREATE TABLE example (id TEXT PRIMARY KEY);\n", stderr: "" };
       }
@@ -78,7 +77,6 @@ describe("records GraphJin schema boundary", () => {
     );
     await expect(cli.sync(directory)).resolves.toBeUndefined();
     expect(calls).toEqual([
-      ["version"],
       ["serve", "db", "diff", "--format", "sql", "--path", directory],
       ["serve", "db", "sync", "--yes", "--path", directory],
     ]);

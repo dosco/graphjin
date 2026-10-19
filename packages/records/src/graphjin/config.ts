@@ -19,7 +19,6 @@ import {
 } from "../policy/graphjin";
 import { validateRecordIdentifier } from "../naming";
 
-export const RECORDS_GRAPHJIN_VERSION = "3.21.13";
 export const RECORDS_GRAPHJIN_CONFIG_FILENAME = "dev.yml";
 export const RECORDS_WATCH_WEBHOOK_SECRET_FILENAME = ".records-watch-webhook-secret";
 
@@ -497,22 +496,15 @@ function runGraphjin(
   });
 }
 
+// The graphjin binary is the openneko binary's graphjin role, built from the
+// same commit as this package, so no version check is needed.
 export function createRecordsGraphjinConfigValidator(options: {
   binary?: string;
-  expectedVersion?: string;
   timeoutMs?: number;
 } = {}): RecordsGraphjinConfigValidator {
   const binary = options.binary ?? "graphjin";
-  const expectedVersion = options.expectedVersion ?? RECORDS_GRAPHJIN_VERSION;
   const timeoutMs = options.timeoutMs ?? VALIDATION_TIMEOUT_MS;
   return async ({ configDirectory }) => {
-    const version = await runGraphjin(binary, ["version"], { timeoutMs });
-    if (!version.stdout.includes(`GraphJin ${expectedVersion}`)) {
-      const found = /GraphJin \S+/.exec(version.stdout)?.[0] ?? "no version";
-      throw new Error(
-        `records GraphJin validator must be version ${expectedVersion}; ${binary} reports ${found}`,
-      );
-    }
     await runGraphjin(
       binary,
       ["serve", "test", "--json", "--path", configDirectory],

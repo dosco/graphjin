@@ -30,7 +30,7 @@ Use this skill to add a database end to end without leaving half-public support 
 
 4. Update public surfaces only after the runtime is wired.
    - Update README, CONFIG, FEATURES, website database logos/frontpage copy, website database matrix, and test-parallel scripts.
-   - If the database uses `graphjin serve new --db-url`, update the URL parser and the rendered `cmd/tmpl/prod.yml` and `cmd/tmpl/agentic.yml` sources. Verify a real generated app loads without test-only placeholder replacement.
+   - If the database uses `graphjin serve new --db-url`, update the URL parser and the rendered `cmd/cli/tmpl/prod.yml` and `cmd/cli/tmpl/agentic.yml` sources. Verify a real generated app loads without test-only placeholder replacement.
    - Make feature claims match tests. Use "experimental" and "query/discovery only" when writes, subscriptions, GIS, full-text, or migrations are not verified.
    - Preserve unrelated dirty worktree edits. Patch on top; never revert user changes.
    - Do not add artifact, watch, agent, stateful-MCP, or primitive-tool enablement to new `dev.yml` / `agentic.yml` examples; parsed mode defaults already provide them. Configure an artifact source only when documenting a shared clustered store.

@@ -70,7 +70,7 @@ func startCassandraDB(ctx context.Context) (func(context.Context) error, *sql.DB
 	}
 
 	cluster := gocql.NewCluster(host)
-	cluster.Port = port.Int()
+	cluster.Port = int(port.Num())
 	cluster.ProtoVersion = 4
 	cluster.Consistency = gocql.Quorum
 	cluster.ConnectTimeout = 20 * time.Second

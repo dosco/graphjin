@@ -12,6 +12,18 @@ license texts alongside their distribution.
 
 ---
 
+## GraphJin
+
+GraphJin lives in this repository under `graphjin/` and is published on its
+own as `dosco/graphjin`. Every OpenNeko image ships it inside the `openneko`
+binary, as the `graphjin` role.
+
+| Component | License | Notes |
+|---|---|---|
+| GraphJin | Apache-2.0 | Copyright Vikram Rangnekar and GraphJin contributors. See `graphjin/LICENSE` and `graphjin/NOTICE`. Its Go dependencies are listed in the `go.mod` files under `graphjin/`. |
+
+---
+
 ## Modular agents, skills, and plugins
 
 OpenNeko can invoke or interoperate with external agents, skills, and plugins.

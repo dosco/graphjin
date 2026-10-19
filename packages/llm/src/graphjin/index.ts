@@ -1,4 +1,3 @@
-export { GRAPHJIN_VERSION } from "./version";
 export {
   graphjinQuery,
   graphjinSubscribe,

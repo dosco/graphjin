@@ -11,7 +11,7 @@ seed=/seed/neko.yml
 generated=/config/dev.yml
 
 template_config() {
-  openneko-graphjin-config "$config_json" "$secret_key" "$seed" "$generated"
+  openneko graphjin-config "$config_json" "$secret_key" "$seed" "$generated"
 }
 
 source_generation() {

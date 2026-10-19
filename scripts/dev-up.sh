@@ -15,21 +15,11 @@ if [ ! -s .openneko/development-backup-key ]; then
   (umask 077 && openssl rand -hex 32 > .openneko/development-backup-key)
 fi
 
-# Host processes validate GraphJin configs with the pinned CLI.
-graphjin_version="$(sed -n 's/^export const GRAPHJIN_VERSION = "\(.*\)";$/\1/p' packages/llm/src/graphjin/version.ts)"
-if ! "$OPENNEKO_DEV_STATE/bin/graphjin" version 2>/dev/null | grep -q "GraphJin $graphjin_version"; then
-  os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-  arch="$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')"
-  asset="graphjin_${graphjin_version}_${os}_${arch}.tar.gz"
-  download="$(mktemp -d)"
-  base="https://github.com/dosco/graphjin/releases/download/v$graphjin_version"
-  curl -fsSL -o "$download/$asset" "$base/$asset"
-  curl -fsSL -o "$download/checksums.txt" "$base/checksums.txt"
-  (cd "$download" && grep " $asset\$" checksums.txt | shasum -a 256 -c -)
-  mkdir -p "$OPENNEKO_DEV_STATE/bin"
-  tar -xzf "$download/$asset" -C "$OPENNEKO_DEV_STATE/bin" graphjin
-  rm -rf "$download"
-fi
+# Host processes validate GraphJin configs with the graphjin role of the
+# openneko binary, built from graphjin/ in this checkout.
+mkdir -p "$OPENNEKO_DEV_STATE/bin"
+(cd apps/openneko && go build -o "$OPENNEKO_DEV_STATE/bin/openneko" ./cmd/openneko)
+ln -sf openneko "$OPENNEKO_DEV_STATE/bin/graphjin"
 
 # Host processes start agent sandboxes with the pinned OpenShell CLI.
 openshell_version="$(sed -n 's/^ARG OPENSHELL_VERSION=\(.*\)$/\1/p' Dockerfile)"

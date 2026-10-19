@@ -152,7 +152,6 @@ describeIfRecordsDb("records schema saga integration", () => {
     let physicallyApplied = false;
     const cli = new RecordsGraphjinSchemaCli({
       command: async (_binary, args) => {
-        if (args[0] === "version") return { stdout: "GraphJin 3.21.13\n", stderr: "" };
         if (args.includes("diff")) {
           return {
             stdout: physicallyApplied

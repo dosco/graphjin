@@ -23,7 +23,9 @@
 //   - Lockfile, root config, and CI plumbing run everything.
 //   - With --base, a package.json whose only change is its version (a
 //     release-please bump) runs nothing.
-//   - graphjin/ has its own workflow. Docs run nothing.
+//   - graphjin/ has its own workflow; here it runs only the GraphJin
+//     integration job, since the openneko binary carries GraphJin. Docs run
+//     nothing.
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -75,7 +77,8 @@ const JOBS = {
     packages: ["apps/web"],
   },
   graphjin_integration: {
-    paths: ["db/graphjin/", "db/records/", "Dockerfile"],
+    // GraphJin builds from graphjin/ into the openneko binary.
+    paths: ["db/graphjin/", "db/records/", "Dockerfile", "graphjin/", "scripts/build-openneko.sh"],
     packages: ["packages/records"],
   },
   records_recovery: {
@@ -109,7 +112,16 @@ const EVERYTHING = [
 ];
 
 // Changes here run nothing in this workflow.
-const IGNORED = ["graphjin/", "docs/", ".github/", "deploy/"];
+const IGNORED = [
+  "graphjin/website/",
+  "graphjin/docs/",
+  "graphjin/benchmark/",
+  "graphjin/training/",
+  "graphjin/notes/",
+  "docs/",
+  ".github/",
+  "deploy/",
+];
 
 const picked = new Set();
 const jobs = Object.fromEntries(Object.keys(JOBS).map((job) => [job, false]));

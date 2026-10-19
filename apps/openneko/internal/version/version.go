@@ -10,6 +10,12 @@ var Version = "0.0.0-dev"
 var Commit = "unknown"
 var CommitTimestamp = "unknown"
 
+// GraphJinVersion and GraphJinCommit name the GraphJin release that this
+// binary carries as its graphjin role. Release builds set them with -ldflags
+// from graphjin/package.json and the commit.
+var GraphJinVersion = "dev"
+var GraphJinCommit = ""
+
 // LibrarianImage is injected by release CI after the multi-architecture
 // manifest exists. It includes both the release tag and immutable digest.
 var LibrarianImage = ""
@@ -26,11 +32,12 @@ For documentation, visit %s
 
 Commit SHA-1          : %s
 Commit timestamp      : %s
+GraphJin              : %s
 Go version            : %s
 
 Licensed under the %s
 %s
-`, Version, DocumentationURL, commit(), commitTimestamp(), runtime.Version(), LicenseName, Copyright)
+`, Version, DocumentationURL, commit(), commitTimestamp(), graphJin(), runtime.Version(), LicenseName, Copyright)
 }
 
 func commit() string {
@@ -41,6 +48,13 @@ func commit() string {
 		return value
 	}
 	return "unknown"
+}
+
+func graphJin() string {
+	if GraphJinCommit == "" {
+		return GraphJinVersion
+	}
+	return GraphJinVersion + " (" + GraphJinCommit + ")"
 }
 
 func commitTimestamp() string {

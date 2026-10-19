@@ -1,9 +1,16 @@
 # syntax=docker/dockerfile:1.7
 
-FROM golang:1.25-bookworm AS lazy-service-build
+# The lazy listener is the openneko binary's lazy-service role. Build context
+# is the repository root.
+FROM golang:1.25-bookworm AS openneko-build
 WORKDIR /src
-COPY apps/lazy-service .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/lazy-service .
+COPY graphjin graphjin
+COPY apps/ax-harness apps/ax-harness
+COPY apps/lazy-service apps/lazy-service
+COPY apps/openneko apps/openneko
+COPY scripts/build-openneko.sh scripts/build-openneko.sh
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=linux sh scripts/build-openneko.sh /out/openneko
 
 FROM python:3.12.11-slim-bookworm@sha256:519591d6871b7bc437060736b9f7456b8731f1499a57e22e6c285135ae657bf7 AS dependencies
 
@@ -63,7 +70,8 @@ COPY --from=model-builder --chown=librarian:librarian /app/.venv /app/.venv
 COPY --from=model-builder --chown=librarian:librarian /opt/docling/models /opt/docling/models
 COPY --chown=librarian:librarian apps/librarian/app.py apps/librarian/result_store.py apps/librarian/smoke.py /app/
 
-COPY --from=lazy-service-build /out/lazy-service /usr/local/bin/lazy-service
+COPY --from=openneko-build /out/openneko /usr/local/bin/openneko
+RUN ln -s openneko /usr/local/bin/lazy-service
 
 USER librarian
 EXPOSE 5001

@@ -173,9 +173,8 @@ describe("Hermes install contract", () => {
       dockerfile.indexOf("FROM source AS agent-deploy"),
     );
 
-    expect(sharedRuntime).toContain(
-      "COPY --from=graphjin-bin /usr/local/bin/graphjin /usr/local/bin/graphjin",
-    );
+    expect(sharedRuntime).toContain("COPY --from=go-build /out/openneko /usr/local/bin/openneko");
+    expect(sharedRuntime).toContain("ln -s openneko /usr/local/bin/graphjin");
     expect(workerDeployStage).toContain("ONNXRUNTIME_NODE_INSTALL=skip");
     expect(workerStage).toContain(
       "ln -s /usr/bin/python3 /usr/local/uv/tools/hermes-agent/bin/python",

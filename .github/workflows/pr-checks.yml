@@ -21,9 +21,6 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  GRAPHJIN_VERSION: "3.21.13"
-
 jobs:
   plan:
     name: Plan
@@ -121,12 +118,12 @@ jobs:
       - name: Install
         run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
 
-      - name: Install graphjin CLI
+      - name: Install graphjin CLI from graphjin/
         run: |
-          curl -fsSL -o /tmp/graphjin.tgz \
-            "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_amd64.tar.gz"
-          sudo tar -xzf /tmp/graphjin.tgz -C /usr/local/bin graphjin
-          graphjin version
+          sh scripts/build-openneko.sh "$RUNNER_TEMP/bin/openneko"
+          ln -s openneko "$RUNNER_TEMP/bin/graphjin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/graphjin" version
 
       - name: Run migrations
         working-directory: apps/openneko
@@ -316,7 +313,7 @@ jobs:
           --health-retries 10
 
     env:
-      RECORDS_GRAPHJIN_IMAGE: openneko/graphjin-integration:3.21.13
+      RECORDS_GRAPHJIN_IMAGE: openneko/graphjin-integration:pr
       REQUIRE_GRAPHJIN_INTEGRATION: "1"
       OPENNEKO_PG_ENV_OVERRIDE: "1"
       RECORDS_PG_HOST: localhost
@@ -340,7 +337,7 @@ jobs:
       - name: Install
         run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
 
-      - name: Build the pinned GraphJin runtime
+      - name: Build the GraphJin runtime from graphjin/
         run: |
           docker buildx build \
             --load \
@@ -348,8 +345,7 @@ jobs:
             --target graphjin-runtime \
             --tag "$RECORDS_GRAPHJIN_IMAGE" \
             .
-          docker run --rm --entrypoint graphjin \
-            "$RECORDS_GRAPHJIN_IMAGE" version | grep -F "$GRAPHJIN_VERSION"
+          docker run --rm --entrypoint graphjin "$RECORDS_GRAPHJIN_IMAGE" version
 
       - name: Validate shipped source-mode configs
         run: |

@@ -66,3 +66,16 @@ apps/*/test
 Dockerfile
 .dockerignore
 cloudbuild.yaml
+
+# graphjin/ builds into the openneko binary. Its website, docs, benchmark
+# data, and database test suites are not build inputs. serv/web/build holds
+# the embedded console and must stay in the context.
+graphjin/website
+graphjin/docs
+graphjin/benchmark
+graphjin/training
+graphjin/notes
+graphjin/tests
+graphjin/tests-large
+graphjin/wasm
+!graphjin/serv/web/build

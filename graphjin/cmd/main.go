@@ -34,6 +34,20 @@ Use "graphjin [command] --help" for more information about a command.
 
 package main
 
+import "github.com/dosco/graphjin/cmd/v3/cli"
+
+// Set with -ldflags. The command tree lives in package cli so that other
+// binaries, such as openneko, can embed the GraphJin CLI.
+var (
+	version string
+	commit  string
+	date    string
+	// imageRole picks the image's default subcommand; see cli.SetImageRole.
+	imageRole string
+)
+
 func main() {
-	Cmd()
+	cli.SetBuildInfo(version, commit, date)
+	cli.SetImageRole(imageRole)
+	cli.Cmd()
 }

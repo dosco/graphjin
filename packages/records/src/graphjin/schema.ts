@@ -2,10 +2,7 @@ import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  RECORDS_GRAPHJIN_CONFIG_FILENAME,
-  RECORDS_GRAPHJIN_VERSION,
-} from "./config";
+import { RECORDS_GRAPHJIN_CONFIG_FILENAME } from "./config";
 
 export const RECORDS_GRAPHJIN_DDL_FILENAME = "db.ddl";
 
@@ -139,13 +136,12 @@ export async function writeRecordsGraphjinDdl(
   };
 }
 
+// The graphjin binary is the openneko binary's graphjin role, built from the
+// same commit as this package, so no version check is needed.
 export class RecordsGraphjinSchemaCli {
-  private versionVerified = false;
-
   constructor(
     private readonly options: {
       binary?: string;
-      expectedVersion?: string;
       timeoutMs?: number;
       command?: RecordsGraphjinSchemaCommand;
     } = {},
@@ -157,16 +153,6 @@ export class RecordsGraphjinSchemaCli {
       args,
       { timeoutMs: this.options.timeoutMs ?? COMMAND_TIMEOUT_MS },
     );
-  }
-
-  private async verifyVersion(): Promise<void> {
-    if (this.versionVerified) return;
-    const result = await this.command(["version"]);
-    const expected = this.options.expectedVersion ?? RECORDS_GRAPHJIN_VERSION;
-    if (!result.stdout.includes(`GraphJin ${expected}`)) {
-      throw new Error(`records GraphJin schema CLI must be version ${expected}`);
-    }
-    this.versionVerified = true;
   }
 
   private async verifyDirectory(configDirectory: string): Promise<void> {
@@ -190,7 +176,6 @@ export class RecordsGraphjinSchemaCli {
   }
 
   async diff(configDirectory: string): Promise<string> {
-    await this.verifyVersion();
     await this.verifyDirectory(configDirectory);
     // In 3.18.42 lifecycle commands moved below `serve`; keep this invocation
     // centralized because GraphJin has moved it between releases before.
@@ -209,7 +194,6 @@ export class RecordsGraphjinSchemaCli {
   }
 
   async sync(configDirectory: string): Promise<void> {
-    await this.verifyVersion();
     await this.verifyDirectory(configDirectory);
     await this.command([
       "serve",

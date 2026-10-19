@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Install the two external CLIs used for local agent development:
-#   - graphjin  (always required; the metric agent runs `graphjin cli`)
+# Install the two CLIs used for local agent development:
+#   - graphjin  (always required; the metric agent runs `graphjin cli`). It
+#               builds from graphjin/ as a role of the openneko binary.
 #   - hermes    (the OpenNeko agent runtime)
 #
 # Idempotent. Pass --skip-hermes for GraphJin-only development. macOS uses
@@ -14,7 +15,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
-GRAPHJIN_VERSION="${GRAPHJIN_VERSION:-3.21.13}"
 # Pin Hermes to the same ref baked into the Dockerfile so local-dev installs
 # match what ships in the container image. v2026.8.31 / v0.21.0.
 HERMES_AGENT_REF="${HERMES_AGENT_REF:-29112bef099274229cadff79cdff7bf7b99c4b77}"
@@ -43,25 +43,17 @@ case "$uname_s" in
 esac
 
 # ─── graphjin ──────────────────────────────────────────────────────────
-if ! $SKIP_GRAPHJIN && ! have graphjin; then
-  log "installing graphjin v${GRAPHJIN_VERSION}"
-  if [ "$os" = macos ] && have brew; then
-    brew install dosco/tap/graphjin
-  else
-    arch=$(uname -m)
-    case "$arch" in
-      x86_64|amd64) gj_arch=amd64 ;;
-      aarch64|arm64) gj_arch=arm64 ;;
-      *) echo "unsupported arch for graphjin: $arch" >&2; exit 1 ;;
-    esac
-    suffix="${os}_${gj_arch}"
-    [ "$os" = macos ] && suffix="darwin_${gj_arch}"
-    tmp=$(mktemp -d)
-    curl -fsSL -o "$tmp/gj.tgz" \
-      "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_${suffix}.tar.gz"
-    sudo tar -xzf "$tmp/gj.tgz" -C /usr/local/bin graphjin
-    rm -rf "$tmp"
-  fi
+# GraphJin builds from graphjin/ in this repository as a role of the openneko
+# binary. Install that binary and a graphjin link to it.
+if ! $SKIP_GRAPHJIN; then
+  have go || { echo "graphjin needs Go to build from graphjin/; install Go 1.25 or later" >&2; exit 1; }
+  log "building openneko with GraphJin from $REPO_ROOT/graphjin"
+  bin_dir="${OPENNEKO_BIN_DIR:-/usr/local/bin}"
+  tmp=$(mktemp -d)
+  (cd "$REPO_ROOT/apps/openneko" && go build -o "$tmp/openneko" ./cmd/openneko)
+  sudo install -m 0755 "$tmp/openneko" "$bin_dir/openneko"
+  sudo ln -sf openneko "$bin_dir/graphjin"
+  rm -rf "$tmp"
   graphjin version
 fi
 

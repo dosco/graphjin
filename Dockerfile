@@ -139,26 +139,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=openshell-bin /usr/local/bin/openshell /usr/local/bin/openshell
 
-# Pinned GraphJin binary shared by the Records-aware worker and the two
-# dedicated GraphJin runtimes. The sandbox agent deliberately does not inherit
-# this lineage: all agent GraphJin reads cross the authenticated host broker.
-FROM debian:bookworm-slim AS graphjin-bin
-ARG GRAPHJIN_VERSION=3.21.13
-ARG TARGETARCH
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
-    && case "${TARGETARCH}" in amd64|arm64) ;; *) exit 1 ;; esac \
-    && curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors \
-      -o /tmp/graphjin.tgz \
-      "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_${TARGETARCH}.tar.gz" \
-    && tar -xzf /tmp/graphjin.tgz -C /usr/local/bin graphjin \
-    && rm /tmp/graphjin.tgz \
-    && rm -rf /var/lib/apt/lists/* \
-    && graphjin version
+# ─── 2a. the openneko binary ───────────────────────────────────────────
+# Every Go process in an install runs this one binary. It picks its role from
+# the name it runs under, so each image links it as graphjin, ax-harness,
+# lazy-service or graphjin-config. GraphJin builds from graphjin/ in this
+# repository at the same commit; there is no release tarball and no pin.
+FROM golang:1.25-bookworm AS go-build
+WORKDIR /src
+COPY graphjin graphjin
+COPY apps/ax-harness apps/ax-harness
+COPY apps/lazy-service apps/lazy-service
+COPY apps/openneko apps/openneko
+COPY db/migrations db/migrations
+COPY scripts/build-openneko.sh scripts/build-openneko.sh
+# Ensure the embedded migration copies match the canonical source. CI also
+# runs this check separately; build-time guard prevents drift sneaking in
+# via an image-only rebuild.
+RUN cd apps/openneko && ./scripts/sync-migrations.sh --check
+ARG OPENNEKO_VERSION=container
+ARG OPENNEKO_COMMIT=container
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=linux OPENNEKO_VERSION="$OPENNEKO_VERSION" OPENNEKO_COMMIT="$OPENNEKO_COMMIT" \
+    sh scripts/build-openneko.sh /out/openneko
 
-# The worker requires npm plus the pinned GraphJin CLI for trusted host-side
-# Records configuration. It is never part of the sandbox agent image.
+# The worker requires npm plus the GraphJin CLI for trusted host-side Records
+# configuration. It is never part of the sandbox agent image.
 FROM npm-runtime AS graphjin-node-runtime
-COPY --from=graphjin-bin /usr/local/bin/graphjin /usr/local/bin/graphjin
+COPY --from=go-build /out/openneko /usr/local/bin/openneko
+RUN ln -s openneko /usr/local/bin/graphjin && graphjin version
 
 # ─── 2b. agent runtime: Hermes (sandbox only) ──────────────────────────
 FROM npm-runtime AS agent-base
@@ -312,40 +320,6 @@ ARG TARGETARCH
 RUN sh scripts/prune-node-runtime.sh /app/apps/web/.next/standalone "$TARGETARCH" \
     && sh scripts/prune-node-runtime.sh /app "$TARGETARCH"
 
-# ─── 4b. openneko go binary ────────────────────────────────────────────
-# Built from apps/openneko (Go 1.24 module) and baked into the worker
-# image so the agent's Bash tool can run `openneko install/secrets/...`
-# from inside the worker container. The same binary operators install via
-# Homebrew / GitHub Releases on their host.
-FROM golang:1.25-bookworm AS go-build
-WORKDIR /src
-COPY apps/openneko/go.mod apps/openneko/go.sum apps/openneko/
-RUN cd apps/openneko && go mod download
-COPY apps/openneko apps/openneko
-COPY db/migrations db/migrations
-# Ensure the embedded migration copies match the canonical source. CI also
-# runs this check separately; build-time guard prevents drift sneaking in
-# via an image-only rebuild.
-RUN cd apps/openneko && ./scripts/sync-migrations.sh --check
-RUN cd apps/openneko && \
-    CGO_ENABLED=0 GOOS=linux \
-    go build -trimpath -ldflags "-s -w -X github.com/open-neko/neko/apps/openneko/internal/version.Version=container -X github.com/open-neko/neko/apps/openneko/internal/version.Commit=container -X github.com/open-neko/neko/apps/openneko/internal/version.CommitTimestamp=container" \
-      -o /out/openneko ./cmd/openneko
-RUN cd apps/openneko && \
-    CGO_ENABLED=0 GOOS=linux \
-    go build -trimpath -ldflags "-s -w" \
-      -o /out/openneko-graphjin-config ./cmd/graphjin-config
-
-# Ax Harness: the Go agent behind the Ax backend. OpenShell pins model egress
-# to /usr/local/bin/ax-harness for Ax runs (AX_HARNESS_BINARY).
-FROM golang:1.25-bookworm AS ax-harness-build
-WORKDIR /src
-COPY apps/ax-harness/go.mod apps/ax-harness/go.sum apps/ax-harness/
-RUN cd apps/ax-harness && go mod download
-COPY apps/ax-harness apps/ax-harness
-RUN cd apps/ax-harness && CGO_ENABLED=0 GOOS=linux \
-    go build -trimpath -ldflags "-s -w" -o /out/ax-harness ./cmd/ax-harness
-
 # DuckDB CLI for data work in the agent terminal, pinned by checksum.
 FROM debian:bookworm-slim AS duckdb-bin
 ARG TARGETARCH
@@ -412,12 +386,6 @@ COPY evals/environment/adventureworks/api/server.mjs /app/server.mjs
 EXPOSE 8090
 ENTRYPOINT ["node", "/app/server.mjs"]
 
-# Shared listener used by the embedding and Docling service images.
-FROM golang:1.25-bookworm AS lazy-service-build
-WORKDIR /src
-COPY apps/lazy-service .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/lazy-service .
-
 FROM source AS embedding-deploy
 ARG TARGETARCH
 RUN pnpm --filter @neko/embedding deploy --prod /out/embedding \
@@ -428,7 +396,9 @@ RUN cd /out/embedding && NEKO_TRANSFORMERS_CACHE=/out/embedding/models node mode
 FROM node-runtime AS embedding
 RUN useradd --system --create-home --uid 10001 embedding
 COPY --from=embedding-deploy --chown=embedding:embedding /out/embedding /app
-COPY --from=lazy-service-build /out/lazy-service /usr/local/bin/lazy-service
+# The shared lazy listener is the openneko binary's lazy-service role.
+COPY --from=go-build /out/openneko /usr/local/bin/openneko
+RUN ln -s openneko /usr/local/bin/lazy-service
 ENV NEKO_TRANSFORMERS_CACHE=/app/models
 WORKDIR /app
 USER embedding
@@ -577,11 +547,14 @@ ENV OPENSHELL_POLICY_POLL_INTERVAL_SECS=1
 # startup budget trying a lazy install through the restricted egress policy.
 ENV HERMES_DISABLE_LAZY_INSTALLS=1
 # Supervisor egress-netns tools + a non-root `sandbox` user (high UID, OpenShell
-# convention). GraphJin never enters this image; the agent can reach it only
-# through the authenticated host broker.
+# convention). The openneko binary here carries GraphJin's code but no GraphJin
+# config or credentials; the agent reaches GraphJin only through the
+# authenticated host broker.
 RUN apt-get update && apt-get install -y --no-install-recommends iproute2 nftables jq ripgrep \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=ax-harness-build /out/ax-harness /usr/local/bin/ax-harness
+# The Ax harness is the openneko binary's ax-harness role.
+COPY --from=go-build /out/openneko /usr/local/bin/openneko
+RUN ln -s openneko /usr/local/bin/ax-harness
 COPY --from=duckdb-bin /usr/local/bin/duckdb /usr/local/bin/duckdb
 RUN groupadd -g 1000660000 sandbox \
     && useradd -u 1000660000 -g sandbox -d /sandbox -M sandbox \
@@ -629,13 +602,13 @@ CMD ["--help"]
 # a small static Go binary; Node is not present in either GraphJin image.
 FROM alpine:3.22 AS graphjin-runtime
 RUN apk add --no-cache ca-certificates curl tini
-COPY --from=graphjin-bin /usr/local/bin/graphjin /usr/local/bin/graphjin
+COPY --from=go-build /out/openneko /usr/local/bin/openneko
+RUN ln -s openneko /usr/local/bin/graphjin && graphjin version
 COPY scripts/graphjin-supervisor.sh /usr/local/bin/openneko-graphjin-supervisor.sh
 RUN chmod +x /usr/local/bin/openneko-graphjin-supervisor.sh
 
 FROM graphjin-runtime AS neko-graphjin
 COPY scripts/neko-graphjin-entrypoint.sh /usr/local/bin/neko-graphjin-entrypoint.sh
-COPY --from=go-build /out/openneko-graphjin-config /usr/local/bin/openneko-graphjin-config
 RUN chmod +x /usr/local/bin/neko-graphjin-entrypoint.sh
 COPY db/graphjin/neko.yml /seed/neko.yml
 EXPOSE 8089

@@ -28,13 +28,14 @@ grep -Fq 'for image in neko-db records-db neko-backup; do' "$smoke_workflow"
 grep -Fq 'org.openneko.storage-owner' "$smoke_workflow"
 grep -Fq 'test "$image_owner" = "999:999"' "$smoke_workflow"
 
-# Release builds must use the immutable versioned GraphJin asset URL. The API
-# asset-ID endpoint is rate limited for unauthenticated Docker build steps and
-# can return 403 even while the release asset itself remains healthy.
-if grep -Fq "api.github.com/repos/dosco/graphjin/releases/assets" Dockerfile; then
-  echo "GraphJin build still depends on the rate-limited GitHub API asset endpoint" >&2
+# Release builds compile GraphJin from graphjin/ at the release commit. They
+# must not download a GraphJin release, which a network outage or rate limit
+# can break and which can drift from the source.
+if grep -Fq "github.com/dosco/graphjin/releases" Dockerfile; then
+  echo "GraphJin build still downloads a GraphJin release instead of building graphjin/" >&2
   exit 1
 fi
-grep -Fq 'releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_${TARGETARCH}.tar.gz' Dockerfile
+grep -Fq 'sh scripts/build-openneko.sh /out/openneko' Dockerfile
+grep -Fq 'GraphJinVersion=${graphjin_version}' scripts/build-openneko.sh
 
 echo "release recovery contract is intact"
