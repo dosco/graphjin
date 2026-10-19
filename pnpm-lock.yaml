@@ -153,9 +153,6 @@ importers:
       '@neko/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@neko/evals':
-        specifier: workspace:*
-        version: link:../../packages/evals
       '@neko/graphjin-contract':
         specifier: workspace:*
         version: link:../../packages/graphjin-contract
@@ -264,31 +261,6 @@ importers:
       '@types/pg':
         specifier: ^8.11.10
         version: 8.20.0
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
-
-  packages/evals:
-    dependencies:
-      '@neko/telemetry':
-        specifier: workspace:*
-        version: link:../telemetry
-      yaml:
-        specifier: ^2.8.1
-        version: 2.9.0
-      zod:
-        specifier: ^4.3.6
-        version: 4.3.6
-    devDependencies:
-      '@types/node':
-        specifier: ^20
-        version: 20.19.39
-      tsx:
-        specifier: ^4.19.2
-        version: 4.21.0
-      typescript:
-        specifier: ^5
-        version: 5.9.3
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)

@@ -20,7 +20,7 @@ func TestExitCodeFor(t *testing.T) {
 
 func TestRootHasAllCommands(t *testing.T) {
 	root := NewRoot()
-	want := []string{"setup", "instances", "install", "doctor", "secrets", "pack", "version", "start", "upgrade", "stop", "status", "backup", "restore", "records", "storage", "logs", "migrate", "seed", "reset", "eval"}
+	want := []string{"setup", "instances", "install", "doctor", "secrets", "pack", "version", "start", "upgrade", "stop", "status", "backup", "restore", "records", "storage", "logs", "migrate", "seed", "reset"}
 	got := map[string]bool{}
 	for _, c := range root.Commands() {
 		got[c.Name()] = true

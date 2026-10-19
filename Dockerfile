@@ -285,7 +285,6 @@ COPY apps/embedding/package.json apps/embedding/package.json
 COPY packages/avatars/package.json packages/avatars/package.json
 COPY packages/channels/package.json packages/channels/package.json
 COPY packages/db/package.json packages/db/package.json
-COPY packages/evals/package.json packages/evals/package.json
 COPY packages/interaction/package.json packages/interaction/package.json
 COPY packages/llm/package.json packages/llm/package.json
 COPY packages/packs/package.json packages/packs/package.json

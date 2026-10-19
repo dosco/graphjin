@@ -168,7 +168,6 @@ Developer ops: eval.`,
 		newSeedCmd(),
 		newGraphjinCmd(),
 		newResetCmd(),
-		newEvalCmd(),
 	)
 	return cmd
 }

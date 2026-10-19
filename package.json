@@ -29,7 +29,6 @@
     "ui:check": "node scripts/check-web-design-system.mjs",
     "bench:hermes": "node scripts/bench-hermes-acp.mjs",
     "skills:check": "node --experimental-strip-types scripts/skill-doctor.ts",
-    "eval:backend": "sh scripts/eval-openneko-backend.sh",
     "skills:install": "node --experimental-strip-types scripts/skill-doctor.ts --install",
     "openneko": "OPENNEKO_WORKSPACE_ROOT=\"$PWD\" sh -c 'cd apps/openneko && exec go run ./cmd/openneko \"$@\"' --"
   },

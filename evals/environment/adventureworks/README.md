@@ -1,6 +1,7 @@
 # Frozen AdventureWorks eval environment
 
-This environment is the frozen data plane for the OpenNeko backend benchmark.
+This environment is the frozen data plane for the AdventureWorks data eval
+(evals/adventureworks), which runs on GraphJin's eval engine.
 It combines a read-only AdventureWorks database with a stateless selection API
 fixture and is separate from the interactive product demo:
 
@@ -79,10 +80,8 @@ Use the wrapper from the repository root. Direct `docker compose up` is not a
 supported lifecycle because the wrapper serializes GraphJin shutdown,
 snapshot restore, and pre/post checks.
 
-For a complete backend cohort, including the isolated OpenNeko metadata
-database and migrations, use `pnpm eval:backend`; see
-`evals/BACKEND-BENCHMARK.md`. The commands below are the lower-level frozen
-data-plane lifecycle.
+The data eval itself runs from evals/adventureworks (see its README). The
+commands below are the frozen data-plane lifecycle.
 
 ```sh
 scripts/eval-adventureworks/environment.sh config

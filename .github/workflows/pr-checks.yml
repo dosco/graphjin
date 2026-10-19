@@ -138,14 +138,6 @@ jobs:
           createdb -h 127.0.0.1 -U neko embedding_jobs_test
           pnpm --filter @neko/worker exec vitest run test/embedding-jobs.test.ts
 
-      - name: Verify eval definitions and checked-in results
-        if: matrix.package == 'packages/evals'
-        run: |
-          pnpm --filter @neko/evals schemas:generate
-          pnpm --filter @neko/evals semantics:generate
-          git diff --exit-code -- evals/schemas evals/semantics.yaml
-          pnpm --filter @neko/evals repo:check
-
       - name: Typecheck
         run: pnpm --filter "./${{ matrix.package }}" run --if-present typecheck
 
