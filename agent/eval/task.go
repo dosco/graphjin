@@ -469,7 +469,7 @@ func readOnlyGraphQL(query string) bool {
 		return false
 	}
 	word := strings.ToLower(fields[0])
-	return word == "query" || strings.HasPrefix(q, "{")
+	return word == "query" || strings.HasPrefix(word, "query(") || strings.HasPrefix(q, "{")
 }
 
 func stripGraphQLComments(query string) string {
