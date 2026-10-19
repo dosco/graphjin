@@ -140,7 +140,7 @@ type ExecRequest struct {
 // Executor runs terminal commands somewhere other than this process, such as
 // the sandbox service.
 type Executor interface {
-	Exec(ctx context.Context, command, skillDir string, timeoutSeconds, maxOutput int) (ExecResult, error)
+	Exec(ctx context.Context, command, skillDir string, env map[string]string, timeoutSeconds, maxOutput int) (ExecResult, error)
 	Close() error
 }
 
@@ -173,7 +173,7 @@ func (s *Shell) run(ctx context.Context, raw json.RawMessage) (json.RawMessage, 
 	var result ExecResult
 	var err error
 	if s.executor != nil {
-		result, err = s.executor.Exec(ctx, input.Command, skillDir, input.TimeoutSeconds, s.maxOutput)
+		result, err = s.executor.Exec(ctx, input.Command, skillDir, s.runPaths(), input.TimeoutSeconds, s.maxOutput)
 	} else {
 		var env []string
 		for _, entry := range s.environ() {
@@ -191,6 +191,21 @@ func (s *Shell) run(ctx context.Context, raw json.RawMessage) (json.RawMessage, 
 		return nil, err
 	}
 	return json.Marshal(result)
+}
+
+// RunPathVars are the run's folders and data socket that skills and
+// workflow scripts read from the environment. They name paths, never
+// secrets, so they go to a command that runs elsewhere too.
+var RunPathVars = []string{"RUN_DIR", "ARTIFACT_DIR", "OPENNEKO_DATA_SOCKET", "PYTHONPATH"}
+
+func (s *Shell) runPaths() map[string]string {
+	out := map[string]string{}
+	for _, name := range RunPathVars {
+		if value := envValue(s.environ(), name); value != "" {
+			out[name] = value
+		}
+	}
+	return out
 }
 
 // Exec runs one command with /bin/sh in its own process group and kills the

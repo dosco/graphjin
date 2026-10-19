@@ -35,8 +35,8 @@ func NewClient(socket, workspace string) *Client {
 }
 
 // Exec runs one command in the sandbox.
-func (c *Client) Exec(ctx context.Context, command, skillDir string, timeoutSeconds, maxOutput int) (localtool.ExecResult, error) {
-	body, _ := json.Marshal(ExecRequest{Workspace: c.workspace, Command: command, SkillDir: skillDir, TimeoutSeconds: timeoutSeconds, MaxOutput: maxOutput})
+func (c *Client) Exec(ctx context.Context, command, skillDir string, env map[string]string, timeoutSeconds, maxOutput int) (localtool.ExecResult, error) {
+	body, _ := json.Marshal(ExecRequest{Workspace: c.workspace, Command: command, SkillDir: skillDir, Env: env, TimeoutSeconds: timeoutSeconds, MaxOutput: maxOutput})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://sandbox/v1/runs/"+url.PathEscape(c.run)+"/exec", bytes.NewReader(body))
 	if err != nil {
 		return localtool.ExecResult{}, err

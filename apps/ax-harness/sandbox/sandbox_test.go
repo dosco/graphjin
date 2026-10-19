@@ -48,7 +48,7 @@ func TestSandboxRunsCommandsWithoutSecretsAsTheRunUser(t *testing.T) {
 	client := NewClient(socket, workspace)
 	ctx := context.Background()
 
-	result, err := client.Exec(ctx, "id -u; env; echo hi > out.txt", "", 10, 10_000)
+	result, err := client.Exec(ctx, "id -u; env; echo hi > out.txt", "", nil, 10, 10_000)
 	if err != nil || result.ExitCode != 0 {
 		t.Fatalf("exec = %+v, %v", result, err)
 	}
@@ -69,15 +69,15 @@ func TestSandboxRunsCommandsWithoutSecretsAsTheRunUser(t *testing.T) {
 	}
 
 	other := NewClient(socket, workspace)
-	if result, _ := other.Exec(ctx, "id -u", "", 10, 10_000); switchUsers && strings.TrimSpace(result.Output) == strconv.Itoa(server.BaseUID) {
+	if result, _ := other.Exec(ctx, "id -u", "", nil, 10, 10_000); switchUsers && strings.TrimSpace(result.Output) == strconv.Itoa(server.BaseUID) {
 		t.Fatal("two runs share a user")
 	}
 
-	if _, err := NewClient(socket, "/etc").Exec(ctx, "true", "", 10, 10_000); err == nil || !strings.Contains(err.Error(), "outside") {
+	if _, err := NewClient(socket, "/etc").Exec(ctx, "true", "", nil, 10, 10_000); err == nil || !strings.Contains(err.Error(), "outside") {
 		t.Fatalf("a workspace outside the sandbox was admitted: %v", err)
 	}
 
-	if _, err := client.Exec(ctx, "sleep 60 >/dev/null 2>&1 &", "", 10, 10_000); err != nil {
+	if _, err := client.Exec(ctx, "sleep 60 >/dev/null 2>&1 &", "", nil, 10, 10_000); err != nil {
 		t.Fatal(err)
 	}
 	if err := client.Close(); err != nil {
@@ -89,11 +89,11 @@ func TestSandboxRunsCommandsWithoutSecretsAsTheRunUser(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(server.Homes, client.run)); !os.IsNotExist(err) {
 		t.Fatalf("ending the run left its home: %v", err)
 	}
-	if _, err := other.Exec(ctx, "true", "", 10, 10_000); err != nil {
+	if _, err := other.Exec(ctx, "true", "", nil, 10, 10_000); err != nil {
 		t.Fatal(err)
 	}
 	third := NewClient(socket, workspace)
-	if _, err := third.Exec(ctx, "true", "", 10, 10_000); err != nil {
+	if _, err := third.Exec(ctx, "true", "", nil, 10, 10_000); err != nil {
 		t.Fatalf("an ended run's user was not freed: %v", err)
 	}
 }
@@ -195,7 +195,7 @@ func TestSandboxKeepsRunsApart(t *testing.T) {
 	}
 
 	runA, runB := NewClient(socket, a), NewClient(socket, b)
-	res, err := runA.Exec(context.Background(), "id -G; echo made > mine.txt; cat mine.txt", "", 10, 10_000)
+	res, err := runA.Exec(context.Background(), "id -G; echo made > mine.txt; cat mine.txt", "", nil, 10, 10_000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,11 +208,11 @@ func TestSandboxKeepsRunsApart(t *testing.T) {
 	if groups := strings.Fields(strings.SplitN(res.Output, "\n", 2)[0]); len(groups) != 1 || groups[0] == strconv.Itoa(shared) {
 		t.Fatalf("run A's groups = %v, want only its own", groups)
 	}
-	if _, err := runB.Exec(context.Background(), "true", "", 10, 10_000); err != nil {
+	if _, err := runB.Exec(context.Background(), "true", "", nil, 10, 10_000); err != nil {
 		t.Fatal(err)
 	}
 	for _, cmd := range []string{"cat " + filepath.Join(b, "secret.txt"), "ls " + workspaces, "touch " + filepath.Join(b, "planted")} {
-		res, err := runA.Exec(context.Background(), cmd, "", 10, 10_000)
+		res, err := runA.Exec(context.Background(), cmd, "", nil, 10, 10_000)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -254,4 +254,25 @@ func aclHasGroup(acl []byte, gid int) bool {
 		}
 	}
 	return false
+}
+
+func TestSandboxPassesOnlyRunPathsInsideTheRunsFolder(t *testing.T) {
+	_, socket, workspace := startSandbox(t, os.Geteuid() == 0)
+	client := NewClient(socket, workspace)
+	ctx := context.Background()
+	artifacts := filepath.Join(workspace, "artifacts")
+	res, err := client.Exec(ctx, "echo $ARTIFACT_DIR", "", map[string]string{"ARTIFACT_DIR": artifacts}, 10, 10_000)
+	if err != nil || strings.TrimSpace(res.Output) != artifacts {
+		t.Fatalf("ARTIFACT_DIR did not reach the command: %+v %v", res, err)
+	}
+	for _, env := range []map[string]string{
+		{"ARTIFACT_DIR": "/etc"},
+		{"OPENAI_API_KEY": "leak"},
+		{"PYTHONPATH": workspace + ":/usr/lib/evil"},
+		{"RUN_DIR": filepath.Join(workspace, "..", "..", "etc")},
+	} {
+		if _, err := client.Exec(ctx, "true", "", env, 10, 10_000); err == nil {
+			t.Fatalf("the sandbox passed %v", env)
+		}
+	}
 }

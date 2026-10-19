@@ -24,6 +24,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,11 +48,14 @@ var runIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 // ExecRequest is the body of an exec call.
 type ExecRequest struct {
-	Workspace      string `json:"workspace"`
-	Command        string `json:"command"`
-	SkillDir       string `json:"skill_dir,omitempty"`
-	TimeoutSeconds int    `json:"timeout_seconds"`
-	MaxOutput      int    `json:"max_output"`
+	Workspace string `json:"workspace"`
+	Command   string `json:"command"`
+	SkillDir  string `json:"skill_dir,omitempty"`
+	// Env carries the run's folders and data socket (localtool.RunPathVars);
+	// each value must be a path inside the workspaces folder.
+	Env            map[string]string `json:"env,omitempty"`
+	TimeoutSeconds int               `json:"timeout_seconds"`
+	MaxOutput      int               `json:"max_output"`
 }
 
 // Server runs commands for runs.
@@ -191,6 +195,12 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request) {
 	if dir, ok := within(s.Skills, req.SkillDir); ok && req.SkillDir != "" && s.Skills != "" {
 		env = append(env, "SKILL_DIR="+dir)
 	}
+	runPaths, err := s.runPathEnv(req.Env)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	env = append(env, runPaths...)
 	exec := localtool.ExecRequest{
 		Dir: workspace,
 		// The stage's default ACL shares what the run writes; others get nothing.
@@ -232,6 +242,60 @@ func (s *Server) end(w http.ResponseWriter, r *http.Request) {
 	delete(s.used, uid)
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// runPathEnv admits the run's folders and data socket, and nothing else:
+// only localtool.RunPathVars, and only paths inside the workspaces folder.
+func (s *Server) runPathEnv(in map[string]string) ([]string, error) {
+	allowed := map[string]bool{}
+	for _, name := range localtool.RunPathVars {
+		allowed[name] = true
+	}
+	var out []string
+	for name, value := range in {
+		if !allowed[name] {
+			return nil, fmt.Errorf("the sandbox does not pass %s", name)
+		}
+		for _, part := range filepath.SplitList(value) {
+			if !pathWithin(s.Workspaces, part) {
+				return nil, fmt.Errorf("%s points outside the sandbox", name)
+			}
+		}
+		out = append(out, name+"="+value)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// pathWithin reports whether path is root or under it, without needing it
+// to exist yet (ARTIFACT_DIR may be created by the command).
+func pathWithin(root, path string) bool {
+	if root == "" || !filepath.IsAbs(path) {
+		return false
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return false
+	}
+	clean := filepath.Clean(path)
+	// Resolve the deepest existing ancestor, so a symlink cannot point out.
+	existing := clean
+	for {
+		if _, err := os.Lstat(existing); err == nil {
+			break
+		}
+		parent := filepath.Dir(existing)
+		if parent == existing {
+			return false
+		}
+		existing = parent
+	}
+	resolved, err := filepath.EvalSymlinks(existing)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(resolvedRoot, filepath.Join(resolved, strings.TrimPrefix(clean, existing)))
+	return err == nil && (rel == "." || filepath.IsLocal(rel))
 }
 
 // grantStage gives run's group the staged folder that holds workspace, once:
