@@ -188,7 +188,6 @@ services:
       - openneko-config:/snapshots/config:ro
       - openneko-graphjin-cli:/snapshots/graphjin:ro
       - openneko-records-graphjin:/snapshots/records-graphjin:ro
-      - openneko-plugins:/snapshots/plugins:ro
       - openneko-agent-home:/volumes/staging:ro
       - ${OPENNEKO_HOST_CONFIG_DIR:?OPENNEKO_HOST_CONFIG_DIR is required}:/snapshots/host-config:ro
       - ${OPENNEKO_BACKUP_KEY_FILE:?OPENNEKO_BACKUP_KEY_FILE is required}:/run/secrets/openneko-backup-key:ro
@@ -224,7 +223,6 @@ services:
       - openneko-config:/restore/config
       - openneko-graphjin-cli:/restore/graphjin
       - openneko-records-graphjin:/restore/records-graphjin
-      - openneko-plugins:/restore/plugins
       - ${OPENNEKO_HOST_CONFIG_DIR:?OPENNEKO_HOST_CONFIG_DIR is required}:/restore/host-config
       - ${OPENNEKO_BACKUP_KEY_FILE:?OPENNEKO_BACKUP_KEY_FILE is required}:/run/secrets/openneko-backup-key:ro
       - ${OPENNEKO_BACKUP_REPOSITORY:?OPENNEKO_BACKUP_REPOSITORY is required}:/var/lib/pgbackrest
@@ -642,12 +640,6 @@ services:
       OPENNEKO_RECORDS_WATCH_GRAPHJIN_URL: http://records-watch-graphjin:8090
       OPENNEKO_RECORDS_OPS_URL: http://neko-backup:9470
       OPENNEKO_BACKUP_URL: http://neko-backup:9470
-      OPENNEKO_PLUGINS_MANIFEST_PATH: /config/openneko/plugins.json
-      # Plugin npm packages install into a dedicated dir, isolated from /app's
-      # pnpm-managed node_modules. Both the openneko CLI (via env-var pickup
-      # in internal/plugin/install/) and the worker plugin-registry's runner
-      # resolver use this path.
-      OPENNEKO_PLUGIN_INSTALL_DIR: /var/lib/openneko/plugins
       # The library distiller's sole document extractor (Docling). Required:
       # if the librarian service is unreachable, extraction fails and the
       # document is retried — there is no in-worker fallback.
@@ -661,7 +653,6 @@ services:
       - openneko-records-graphjin:/config/records-graphjin
       - openneko-agent-home:/tmp/openneko-home
       - openneko-agent-tmp:/tmp/openneko-tmp
-      - openneko-plugins:/var/lib/openneko/plugins
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4100/health"]
       interval: 5s
@@ -681,4 +672,3 @@ volumes:
   openneko-records-graphjin:
   openneko-agent-home:
   openneko-agent-tmp:
-  openneko-plugins:

@@ -65,24 +65,18 @@ The memory layer runs on your own Postgres, on your own infrastructure:
 
 Apache-2.0 core, self-hosted, single Postgres. Take a backup, take it with you — and the team library exports as a plain-Markdown [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) bundle any OKF-aware tool can read.
 
-## Plugins
+## Integrations, channels and sign-in
 
-Add new action kinds with sandboxed plugins — web search, Slack, Gmail, Shopify, Sheets, Telegram, and more. Enterprise SSO comes from the Scalekit plugin: install it, authorize the workspace from **Admin → Settings → Single sign-on** (a guided checklist), and every Scalekit-backed IdP (Okta, Entra ID, Google Workspace…) lights up — plus the agent gains 35 workspace-management tools.
+Integrations ship as **solution packs** — sources, API specs, actions, workflows and skills for an application, installed from **Admin → Settings → Solution packs** or `openneko pack install`. See **[PACKS.md](PACKS.md)**.
 
-- **Every plugin runs in an isolated OpenShell sandbox**, with outbound network limited to what its manifest declares.
-- **Secrets are scoped per plugin** and never reach the model context.
-
-Browse the [marketplace](https://open-neko.github.io/plugins/) · capability model, install policy, and host support in **[PLUGINS.md](PLUGINS.md)**.
-
-```bash
-openneko install @open-neko/plugin-scalekit
-```
+- **Channels are built in.** Slack, Telegram and the HUD come with the core; a pack turns a channel on by listing it in its manifest, and you add the credentials at **Admin → Settings → Channels**.
+- **Sign-in is built in.** Enterprise SSO and directory sync come from Scalekit: authorize the workspace from **Admin → Settings → Single sign-on** (a guided checklist) and every Scalekit-backed IdP (Okta, Entra ID, Google Workspace…) lights up. Email-link sign-in is the lighter option for small teams.
+- **Secrets never reach the model context.** Channel, sign-in and pack credentials live in the encrypted secrets store.
 
 ## Under the hood
 
 - **Self-hosted via Docker.** One binary, one `start` command. Data lives on your Postgres.
 - **Bring your own LLM.** Hermes runs against Anthropic, OpenAI, Google, Ollama, and other compatible providers. Change providers without changing the sandboxed agent runtime.
-- **Plugins in OpenShell sandboxes.** Outbound network is allowlisted per manifest, not blanket-open.
 - **Agent in a sandbox by default.** The agent loop itself runs inside an OpenShell policy sandbox — default-deny egress, and the model API key never enters the box (the gateway proxy injects it on the wire). See [OPENSHELL.md](OPENSHELL.md).
 - **Apache-2.0.** Read the source, self-host, fork, and build on it. OpenNeko trademarks are separately controlled — see [LICENSING.md](LICENSING.md) and [TRADEMARKS.md](TRADEMARKS.md).
 
@@ -108,8 +102,8 @@ CLI deploys. Every mode shares the same core: app + records Postgres, migrations
 backup/restore, web, worker, three internal GraphJin instances (app
 subscriptions, records, records-watch), plus the customer-facing GraphJin in
 sources (agentic) mode. The OpenShell sandbox runtime (gateway, registry,
-certgen) is always layered on top — it is the only way agents and plugins run,
-in every mode.
+certgen) is always layered on top — it is the only way agents run, in every
+mode.
 
 | Mode | Layers on top of core | What's different |
 |------|----------------------|------------------|
@@ -127,7 +121,6 @@ to the customer GraphJin config at runtime.
 - [PACKS.md](PACKS.md) — authoring solution packs, directory layout, connectors, validation, and contributions
 - [CONTEXT_REPOSITORY.md](CONTEXT_REPOSITORY.md) — version history of skills and workflows, and an optional GitHub, GitLab or other git remote
 - [INSTALL.md](INSTALL.md) — install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data, full demo trial
-- [PLUGINS.md](PLUGINS.md) — plugin capabilities, sandbox/security model, marketplaces, install policy, host support
 - [OPENSHELL.md](OPENSHELL.md) — preview: running the agent itself in an OpenShell policy sandbox (architecture, security, how to enable)
 - [SECRETS.md](SECRETS.md) — secrets at rest and the optional Infisical vault (enterprise)
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, repo layout, pre-PR checks

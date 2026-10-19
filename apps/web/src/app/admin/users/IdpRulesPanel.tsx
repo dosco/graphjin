@@ -181,6 +181,6 @@ export function IdpRulesPanel({
 }
 
 function providerName(provider: string): string {
-  const name = provider.replace(/^@open-neko\/plugin-/, "").replace(/^@[^/]+\//, "");
+  const name = provider.replace(/^@[^/]+\//, "");
   return name.charAt(0).toUpperCase() + name.slice(1);
 }

@@ -1,6 +1,5 @@
-# OpenShell sandbox overlay (opt-in). Runs the agent's plugins — and, with the
-# agent-runtime env, the agent itself — in OpenShell sandboxes via a
-# containerised gateway with the Docker driver.
+# OpenShell sandbox overlay (opt-in). Runs the agent in OpenShell sandboxes via
+# a containerised gateway with the Docker driver.
 #
 #   docker compose -f compose.yml -f compose.openshell.yml up
 #
@@ -30,7 +29,7 @@
 #  5. The gateway image is DISTROLESS (no /bin/sh): certgen runs the binary
 #     directly; the registration-writing is a separate busybox step.
 #  6. Sandbox base images must include a `sandbox` user/group AND iproute2 (for
-#     the egress netns). The plugin-base + agent images provide both.
+#     the egress netns). The agent image provides both.
 
 services:
   # Generate the mTLS PKI (CA + server + client + JWT signing key). Distroless
@@ -234,11 +233,10 @@ services:
       openshell-gateway:
         condition: service_started
 
-  # Worker: channel-triggered agent runs + plugins, both in OpenShell sandboxes.
+  # Worker: channel-triggered agent runs in OpenShell sandboxes.
   worker:
     environment:
       OPENNEKO_SANDBOX_OWNER: openneko-worker
-      OPENNEKO_PLUGIN_BASE_IMAGE: ${OPENNEKO_PLUGIN_BASE_IMAGE:-ghcr.io/open-neko/plugin-base:${OPENNEKO_VERSION:-latest}}
       OPENNEKO_AGENT_IMAGE: ${OPENNEKO_AGENT_IMAGE:-ghcr.io/open-neko/agent:${OPENNEKO_VERSION:-latest}}
       OPENNEKO_AGENT_CPUS: ${OPENNEKO_AGENT_CPUS:-2}
       OPENNEKO_AGENT_MEMORY: ${OPENNEKO_AGENT_MEMORY:-1Gi}

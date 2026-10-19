@@ -20,7 +20,7 @@ import {
 } from "@neko/db";
 import { graphjinQuery, mintGraphjinToken } from "@neko/llm/graphjin";
 import { listWatchers, listWorkflows } from "@neko/llm/workflows";
-import { getPluginActionDescriptors, getPluginStatus } from "@/lib/auth";
+import { getActionDescriptors } from "@/lib/auth";
 import { listConnectProviders } from "@/lib/integrations";
 import { listWorkSkills } from "@/lib/work-files";
 
@@ -192,22 +192,19 @@ export async function listItemOptions(orgId: string, type: ItemType): Promise<It
       return operations.map((id) => ({ id, label: id.split(":").slice(1).join(" · "), detail: id.split(":")[0] }));
     }
     case "action": {
-      const plugin = (await getPluginActionDescriptors()).map((a) => ({ id: a.kind, label: a.kind, detail: a.description }));
+      const builtIn = (await getActionDescriptors()).map((a) => ({ id: a.kind, label: a.kind, detail: a.description }));
       const pack = (await db()
         .select({ kind: pack_action_definition.kind, description: pack_action_definition.description })
         .from(pack_action_definition)
         .where(eq(pack_action_definition.org_id, orgId))).map((a) => ({ id: a.kind, label: a.kind, detail: a.description }));
-      return [...new Map([...plugin, ...pack].map((a) => [a.id, a])).values()].sort((a, b) => a.label.localeCompare(b.label));
+      return [...new Map([...builtIn, ...pack].map((a) => [a.id, a])).values()].sort((a, b) => a.label.localeCompare(b.label));
     }
     case "integration":
       return (await listConnectProviders()).map((p) => ({ id: p.pluginName, label: p.providerLabel, detail: p.pluginName }));
     case "channel": {
-      const status = await getPluginStatus();
-      const labels = new Map<string, string>();
-      for (const channel of status.channels) {
-        const name = status.loaded.find((loaded) => loaded.replace(/^@/, "").replace(/\//g, "-") === channel.pluginId);
-        if (name) labels.set(name, channel.providerLabel);
-      }
+      const result = await requestWorker("/admin/channels/providers").catch(() => ({ status: 500, body: {} }));
+      const providers = (result.body as { providers?: Array<{ id: string; providerLabel: string }> }).providers ?? [];
+      const labels = new Map<string, string>(providers.map((provider) => [provider.id, provider.providerLabel]));
       for (const row of await db().selectDistinct({ plugin: channel_identity.channel_plugin }).from(channel_identity).where(eq(channel_identity.org_id, orgId))) {
         if (!labels.has(row.plugin)) labels.set(row.plugin, row.plugin);
       }

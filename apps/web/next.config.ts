@@ -29,7 +29,7 @@ const nextConfig: NextConfig = {
     "@neko/llm",
     "@neko/telemetry",
     "@neko/secret-crypt",
-    "@open-neko/plugin-install",
+    "@neko/secrets",
   ],
   // Emit a self-contained build at .next/standalone for container deploys
   // (Cloud Run). Tracing root is the monorepo root so workspace deps

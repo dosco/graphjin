@@ -352,8 +352,6 @@ export function ActionApprovalRow({
 
 function approvalActionLabel(kind: string): string {
   const known: Record<string, string> = {
-    plugin_install: "Install integration",
-    plugin_uninstall: "Remove integration",
     web_fetch: "Fetch from web",
     web_search: "Search the web",
     send_slack_message: "Send Slack message",

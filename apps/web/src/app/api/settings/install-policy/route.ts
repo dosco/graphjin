@@ -22,12 +22,8 @@ export async function PATCH(request: NextRequest) {
     const body = (await request.json()) as InstallPolicyDraft;
     const orgId = await getOrgId();
     const saved = await saveInstallPolicyDraft(orgId, {
-      allowUnverified: typeof body.allowUnverified === "boolean" ? body.allowUnverified : undefined,
       allowGitUrlInstalls:
         typeof body.allowGitUrlInstalls === "boolean" ? body.allowGitUrlInstalls : undefined,
-      allowedMarketplaces: Array.isArray(body.allowedMarketplaces)
-        ? body.allowedMarketplaces
-        : undefined,
     });
     return NextResponse.json({ policy: saved, source: "org" });
   } catch (e) {

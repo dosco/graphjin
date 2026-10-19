@@ -74,8 +74,8 @@ export const runMultiChannelDemo = async (): Promise<DemoResult> => {
   registry.register(createSlackChannel());
   registry.register(createVoiceChannel());
 
-  registry.bind({ audience: "coo", channelPlugin: "@open-neko/plugin-slack", recipient: { kind: "slack", channel: "#exec" } });
-  registry.bind({ audience: "coo", channelPlugin: "@open-neko/channel-voice", recipient: { kind: "voice", to: "+15551111" } });
+  registry.bind({ audience: "coo", channelPlugin: "slack", recipient: { kind: "slack", channel: "#exec" } });
+  registry.bind({ audience: "coo", channelPlugin: "voice", recipient: { kind: "voice", to: "+15551111" } });
 
   const outbound = await registry.deliver("coo", interactionEvents);
 
@@ -83,7 +83,7 @@ export const runMultiChannelDemo = async (): Promise<DemoResult> => {
     interactionEvents,
     outbound,
     inbound: {
-      slack: registry.parseInbound("@open-neko/plugin-slack", slackApproveEnvelope("ar-501")),
+      slack: registry.parseInbound("slack", slackApproveEnvelope("ar-501")),
     },
   };
 };

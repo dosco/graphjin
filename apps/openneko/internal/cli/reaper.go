@@ -18,11 +18,14 @@ import (
 )
 
 const (
-	reaperInterval     = 30 * time.Second
-	containerGrace     = 30 * time.Second
-	imageGrace         = 24 * time.Hour
-	dockerSocketPath   = "/var/run/docker.sock"
-	librarianRepo      = "ghcr.io/open-neko/neko-librarian"
+	reaperInterval   = 30 * time.Second
+	containerGrace   = 30 * time.Second
+	imageGrace       = 24 * time.Hour
+	dockerSocketPath = "/var/run/docker.sock"
+	librarianRepo    = "ghcr.io/open-neko/neko-librarian"
+	// pluginBaseRepo is the legacy plugin sandbox image. Plugins were
+	// removed, but hosts upgraded from older releases can still carry its
+	// stopped sandboxes and images, so the reaper keeps recognizing them.
 	pluginBaseRepo     = "ghcr.io/open-neko/plugin-base"
 	managedByOpenShell = "openshell.ai/managed-by"
 )

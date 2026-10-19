@@ -171,15 +171,12 @@ importers:
       '@neko/records':
         specifier: workspace:*
         version: link:../../packages/records
+      '@neko/secrets':
+        specifier: workspace:*
+        version: link:../../packages/secrets
       '@neko/telemetry':
         specifier: workspace:*
         version: link:../../packages/telemetry
-      '@open-neko/plugin-install':
-        specifier: workspace:*
-        version: link:../../packages/plugin-install
-      '@open-neko/plugin-types':
-        specifier: workspace:*
-        version: link:../../packages/plugin-types
       dotenv:
         specifier: ^17.4.1
         version: 17.4.2
@@ -346,12 +343,12 @@ importers:
       '@neko/secret-crypt':
         specifier: workspace:*
         version: link:../secret-crypt
+      '@neko/secrets':
+        specifier: workspace:*
+        version: link:../secrets
       '@neko/telemetry':
         specifier: workspace:*
         version: link:../telemetry
-      '@open-neko/plugin-install':
-        specifier: workspace:*
-        version: link:../plugin-install
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.1
@@ -406,38 +403,6 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
 
-  packages/plugin-install:
-    dependencies:
-      '@neko/secret-crypt':
-        specifier: workspace:*
-        version: link:../secret-crypt
-    devDependencies:
-      '@types/node':
-        specifier: ^20
-        version: 20.19.39
-      typescript:
-        specifier: ^5
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
-
-  packages/plugin-types:
-    dependencies:
-      zod:
-        specifier: ^4.3.6
-        version: 4.3.6
-    devDependencies:
-      '@types/node':
-        specifier: ^20
-        version: 20.19.39
-      typescript:
-        specifier: ^5
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
-
   packages/records:
     dependencies:
       '@neko/secret-crypt':
@@ -470,6 +435,22 @@ importers:
         version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
 
   packages/secret-crypt:
+    devDependencies:
+      '@types/node':
+        specifier: ^20
+        version: 20.19.39
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
+
+  packages/secrets:
+    dependencies:
+      '@neko/secret-crypt':
+        specifier: workspace:*
+        version: link:../secret-crypt
     devDependencies:
       '@types/node':
         specifier: ^20

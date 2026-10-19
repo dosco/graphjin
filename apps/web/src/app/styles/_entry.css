@@ -362,18 +362,6 @@ textarea.entry-control {
   font-weight: 500;
 }
 
-.entry-provider-note {
-  margin: -6px 0 0;
-  color: var(--text3);
-  font-size: var(--type-label);
-  text-align: center;
-}
-
-.entry-provider-note code {
-  color: var(--text2);
-  font-family: var(--font-mono);
-}
-
 .entry-empty {
   padding: 20px;
   border: 1px solid var(--border);

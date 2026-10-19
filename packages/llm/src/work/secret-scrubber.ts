@@ -1,15 +1,14 @@
-// Env-value scrubber for agent output. Built per agent invocation from
-// the operator's per-user secrets store (read via
-// @open-neko/plugin-install). Applied at every sink that persists or
+// Env-value scrubber for agent output. Built from the deployment secrets
+// store (@neko/secrets). Applied at every sink that persists or
 // displays agent output — tool_end output, message content,
 // action_execution.error, fence emitters — so accidentally-leaked
-// plugin secrets get replaced with [REDACTED] before they hit
+// secrets get replaced with [REDACTED] before they hit
 // work_memory, run replays, or the Briefing.
 //
 // Defense-in-depth, NOT the first line of defence. The first line is
-// the sandbox + the manifest-declared network egress + the per-user
-// secrets file that the agent never sees. The scrubber catches
-// verbatim leaks (the 95% case: `env | grep TOKEN`, plugin stderr
+// the agent sandbox + its network egress policy + the secrets file that
+// the agent never sees. The scrubber catches
+// verbatim leaks (the 95% case: `env | grep TOKEN`, a tool's stderr
 // echoing the value on auth failure, agent paraphrasing the value into
 // a message). It does NOT catch transformations (base64, URL-encode,
 // partial echo).

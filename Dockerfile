@@ -289,8 +289,7 @@ COPY packages/evals/package.json packages/evals/package.json
 COPY packages/interaction/package.json packages/interaction/package.json
 COPY packages/llm/package.json packages/llm/package.json
 COPY packages/packs/package.json packages/packs/package.json
-COPY packages/plugin-install/package.json packages/plugin-install/package.json
-COPY packages/plugin-types/package.json packages/plugin-types/package.json
+COPY packages/secrets/package.json packages/secrets/package.json
 COPY packages/records/package.json packages/records/package.json
 COPY packages/secret-crypt/package.json packages/secret-crypt/package.json
 COPY packages/telemetry/package.json packages/telemetry/package.json
@@ -493,16 +492,8 @@ RUN useradd --system --create-home --uid 1001 neko
 # /cache is mounted by the demo-mode adventureworks-init step; pre-creating
 # it here lets the named volume initialize with neko ownership instead of root
 # (Docker copies image-side ownership into a fresh named volume on first mount).
-# /app must be writable by neko so `openneko install` (run in-container via
-# docker exec) can write the plugin manifest during installs.
-RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-tmp /cache /var/lib/openneko/plugins \
-    && chown -R neko:neko /app /config /tmp/openneko-home /tmp/openneko-tmp /cache /var/lib/openneko
-# Seed the plugin install dir with an empty package.json so `npm install`
-# inside that dir has a workspace to operate on. Isolated from /app's
-# node_modules (OPENNEKO_PLUGIN_INSTALL_DIR points here), so plugin packages
-# land cleanly regardless of the worker's own (pruned) deps.
-RUN printf '{\n  "name": "openneko-plugins",\n  "version": "0.0.0",\n  "private": true\n}\n' > /var/lib/openneko/plugins/package.json \
-    && chown neko:neko /var/lib/openneko/plugins/package.json
+RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-tmp /cache \
+    && chown -R neko:neko /app /config /tmp/openneko-home /tmp/openneko-tmp /cache
 # Prod closure (src + node_modules) rooted at /app, replacing the full pnpm
 # workspace install + per-package source copies.
 COPY --from=worker-deploy --chown=neko:neko /out/worker-app ./
@@ -515,7 +506,7 @@ COPY --chown=neko:neko apps/worker/scripts/magento-v2-live-acceptance.ts ./scrip
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 # Vendor the openneko Go binary so the agent's Bash tool inside the worker
-# container can run `openneko install/secrets/marketplace …` without an
+# container can run `openneko install/secrets/pack …` without an
 # extra install step. Same binary operators install on their host.
 COPY --from=go-build --chown=neko:neko /out/openneko /usr/local/bin/openneko
 RUN chmod +x /usr/local/bin/openneko

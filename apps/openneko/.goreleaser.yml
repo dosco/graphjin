@@ -59,7 +59,7 @@ homebrew_casks:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://openneko.app"
-    description: "OpenNeko operator CLI — supervises the stack and manages plugins"
+    description: "OpenNeko operator CLI — supervises the stack and manages solution packs"
     # The binary isn't code-signed/notarized, so macOS quarantines it on
     # download. Strip the attribute on install so `openneko` runs without a
     # Gatekeeper "cannot be opened" prompt.

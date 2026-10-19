@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // handleFrame is the pure-ish core of the Slack Socket Mode loop. Mock the
-// downstream dispatch + registry so we test framing/ack/routing in isolation.
+// downstream dispatch + channel settings so we test framing/ack/routing in isolation.
 vi.mock("../../src/channels/delivery.js", () => ({
   processInboundUpdate: vi.fn(async () => true),
 }));
-vi.mock("../../src/plugins/registry-instance.js", () => ({
-  getPluginRegistryInstance: vi.fn(),
+vi.mock("../../src/channels/runtime.js", () => ({
+  channelEnv: vi.fn(async () => ({})),
 }));
 
 import { handleFrame } from "../../src/channels/socket-loop";

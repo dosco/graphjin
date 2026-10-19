@@ -203,14 +203,11 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 	}
 
 	// Pre-pull the sandbox images at install time so the gateway's first
-	// sandbox-create (the user's first chat, or the first plugin RPC) never
-	// blocks on a large pull inside the create timeout. `upgrade` already
-	// pulled both; `start`/`setup` used to pull only the agent image, so a
-	// fresh install's first plugin call raced a lazy multi-GB pull.
-	// Best-effort: a failure just falls back to a lazy pull.
+	// sandbox-create (the user's first chat) never blocks on a large pull
+	// inside the create timeout. Best-effort: a failure just falls back to
+	// a lazy pull.
 	for _, img := range []string{
 		agentImageRef(os.Getenv("OPENNEKO_AGENT_IMAGE"), os.Getenv("OPENNEKO_VERSION")),
-		pluginBaseImageRef(os.Getenv("OPENNEKO_PLUGIN_BASE_IMAGE"), os.Getenv("OPENNEKO_VERSION")),
 		supervisorImageRef(os.Getenv("OPENNEKO_SUPERVISOR_IMAGE"), os.Getenv("OPENNEKO_VERSION")),
 	} {
 		if !opts.quiet {

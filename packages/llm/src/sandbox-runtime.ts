@@ -25,7 +25,6 @@ export {
   buildLibraryServer,
   buildPluginActionServer,
   buildPackActionServer,
-  buildPluginManagerServer,
   buildRecordsReadServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,

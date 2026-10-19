@@ -32,7 +32,6 @@ export {
   buildRecordsReadServer,
   buildPluginActionServer,
   buildPackActionServer,
-  buildPluginManagerServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
   buildSourceConfigManagerServer,

@@ -24,8 +24,8 @@ describe("multi-channel demo (one stream → every membrane → back)", () => {
     const { outbound } = await runMultiChannelDemo();
     const reached = outbound.deliveries.map((d) => d.channelPlugin).sort();
     expect(reached).toEqual([
-      "@open-neko/channel-voice",
-      "@open-neko/plugin-slack",
+      "slack",
+      "voice",
       "web",
     ]);
   });
@@ -34,11 +34,11 @@ describe("multi-channel demo (one stream → every membrane → back)", () => {
     const { outbound } = await runMultiChannelDemo();
     const native = (plugin: string) => outbound.deliveries.find((d) => d.channelPlugin === plugin)?.native;
 
-    const slack = native("@open-neko/plugin-slack") as SlackProjectionResult;
+    const slack = native("slack") as SlackProjectionResult;
     expect(JSON.stringify(slack.blocks)).toContain('"action_id":"approve"');
     expect(JSON.stringify(slack.blocks)).toContain("Chart available"); // chart dropped to a note
 
-    const voice = native("@open-neko/channel-voice") as VoiceProjectionResult;
+    const voice = native("voice") as VoiceProjectionResult;
     expect(voice.ssml).toContain("Say approve or reject");
     expect(voice.ssml).not.toContain("Jul"); // no chart axis labels spoken
   });

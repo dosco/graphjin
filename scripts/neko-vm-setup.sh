@@ -8,8 +8,9 @@
 set -euo pipefail
 
 DEPLOY_USER="${1:-neko}"
-PLUGIN_DIR="/opt/neko/.plugins"
-DROPIN="/etc/systemd/system/neko-worker.service.d/openneko-plugins.conf"
+# Drop-in written by older versions of this script for the removed plugin
+# system. Removed on re-run.
+LEGACY_DROPIN="/etc/systemd/system/neko-worker.service.d/openneko-plugins.conf"
 SUDOERS="/etc/sudoers.d/neko-deploy"
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -20,21 +21,11 @@ fi
 id -u "$DEPLOY_USER" >/dev/null 2>&1 || { echo "[setup] user '$DEPLOY_USER' missing" >&2; exit 1; }
 echo "[setup] deploy user: $DEPLOY_USER"
 
-mkdir -p "$PLUGIN_DIR"
-if [ ! -f "$PLUGIN_DIR/package.json" ]; then
-  printf '{\n  "name": "openneko-plugins",\n  "version": "0.0.0",\n  "private": true\n}\n' \
-    > "$PLUGIN_DIR/package.json"
+if [ -f "$LEGACY_DROPIN" ]; then
+  rm -f "$LEGACY_DROPIN"
+  systemctl daemon-reload
+  echo "[setup] removed legacy plugin drop-in $LEGACY_DROPIN"
 fi
-chown -R "$DEPLOY_USER:$DEPLOY_USER" "$PLUGIN_DIR"
-echo "[setup] $PLUGIN_DIR ready"
-
-mkdir -p "$(dirname "$DROPIN")"
-cat > "$DROPIN" <<EOF
-[Service]
-Environment="OPENNEKO_PLUGIN_INSTALL_DIR=$PLUGIN_DIR"
-EOF
-systemctl daemon-reload
-echo "[setup] systemd drop-in installed at $DROPIN"
 
 ARCH=$(uname -m)
 case "$ARCH" in

@@ -3,8 +3,8 @@
 A solution pack bundles sources, API specifications, saved queries, metrics,
 workflows, watchers, actions, policies, and skills for an application or business
 use case. OpenNeko installs these artifacts through the shared pack lifecycle.
-Packs that need connectors ship their own declarations and specifications; they
-do not install runtime plugins.
+Packs that need connectors ship their own declarations and specifications.
+OpenNeko has no separate plugin system; channels and sign-in are built in.
 
 For operator instructions, see [installing and upgrading custom packs](docs/CUSTOM_PACKS.md).
 For contributing code, see [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -82,6 +82,7 @@ Copy a working `pack.yaml` and edit these sections:
 | `inputs` | Named settings with a type: `string`, `url`, `integer`, `enum`, `timezone`, or `boolean`; defaults and required values as appropriate |
 | `secrets` | Secret keys, purpose, and whether required; never credential values |
 | `oauth` | Connection scope, provider label, setup/help copy, OAuth endpoints, input and secret references, account identity fields, and consent scopes |
+| `channels` | Optional built-in channels the pack turns on while installed: `slack`, `telegram`, `hud` |
 | `management` | Optional label and local path to an existing application management page |
 | `permissions.network` | Every host used by OAuth and the pack's API sources |
 | `artifacts` | Source/relationship files, spec paths, query and YAML directories, and skill directories |
@@ -250,6 +251,21 @@ accept letters, digits, `/`, `_`, and `-`, and cannot be external URLs. Ordinary
 pack configuration needs no management route. Packs supply supported fields and
 copy; OpenNeko supplies shared controls, layout, accessibility, and account states.
 Packs cannot ship arbitrary UI components, HTML, or CSS.
+
+## Channels
+
+Slack, Telegram, and the HUD surface are built into OpenNeko. A pack turns one
+on for the workspace by listing it:
+
+```yaml
+channels: [slack]
+```
+
+The channel stays on while any installed pack lists it; removing the last such
+pack turns it off. Channel tokens are not pack secrets. An admin enters them
+once under **Admin → Settings → Channels**, and OpenNeko keeps them in the
+secrets store under `channel.<id>`. The HUD channel needs no tokens: OpenNeko
+generates its signing secret and scopes it to the pack that turned it on.
 
 ## Personal and deployment OAuth
 

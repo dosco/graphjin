@@ -303,21 +303,21 @@ describe("work run action timeline", () => {
       {
         type: "tool_start",
         id: "tool-1",
-        name: "request_plugin_install",
+        name: "request_user_change",
       },
       {
         type: "action_request_emit",
         action_request_id: "action-1",
-        kind: "plugin_install",
+        kind: "user_admin",
         scope: "external",
-        intent: "Install the weather integration",
+        intent: "Add the new analyst",
         decision: "pending_approval",
       },
       { type: "tool_end", id: "tool-1", result: { ok: true } },
       {
         type: "action_request_result",
         action_request_id: "action-1",
-        kind: "plugin_install",
+        kind: "user_admin",
         status: "succeeded",
       },
     ]);
@@ -327,8 +327,8 @@ describe("work run action timeline", () => {
     expect(items[0].tools).toHaveLength(1);
     expect(items[0].tools[0]?.approval).toMatchObject({
       actionRequestId: "action-1",
-      actionKind: "plugin_install",
-      intent: "Install the weather integration",
+      actionKind: "user_admin",
+      intent: "Add the new analyst",
       result: { status: "succeeded" },
     });
   });
@@ -338,9 +338,9 @@ describe("work run action timeline", () => {
       {
         type: "action_request_emit",
         action_request_id: "action-legacy",
-        kind: "plugin_uninstall",
+        kind: "channel_admin",
         scope: "external",
-        summary: "Remove the unused integration",
+        summary: "Unlink the old Slack identity",
         decision: "pending_approval",
       },
     ]);
@@ -349,10 +349,10 @@ describe("work run action timeline", () => {
     if (items[0]?.kind !== "tools") throw new Error("Expected tool row");
     expect(items[0].tools[0]).toMatchObject({
       id: "approval-action-legacy",
-      name: "plugin_uninstall",
+      name: "channel_admin",
       approval: {
         actionRequestId: "action-legacy",
-        actionKind: "plugin_uninstall",
+        actionKind: "channel_admin",
       },
     });
   });

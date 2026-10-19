@@ -1,6 +1,6 @@
 // SSO admin-setup client — mirrors auth.ts's worker bridge. The web app
 // reaches the worker's /admin/sso/setup/* endpoints over loopback; the worker
-// drives the auth plugin's workspace MCP tools (portal link + connections).
+// drives the Scalekit workspace MCP tools (portal link + connections).
 
 export type SsoSetupStatus =
   | "not_started"

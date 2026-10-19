@@ -530,8 +530,6 @@ async function handleRunRequest(
           limit: typeof body.limit === "number" ? body.limit : undefined,
         }),
       );
-    case "/v1/plugins/list":
-      return send(res, 200, await cp.listPlugins({ orgId: binding.orgId }));
     case "/v1/users/list":
       return send(res, 200, await cp.listUsers({ orgId: binding.orgId }));
     case "/v1/groups/list":

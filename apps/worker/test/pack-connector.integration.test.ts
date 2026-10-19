@@ -23,10 +23,6 @@ const workspace = vi.hoisted(() => ({ root: "" }));
 vi.mock("@neko/db/jobs", () => ({ enqueue: async () => "fixture-job", QUEUE: { METRIC_REFRESH: "metric_refresh" } }));
 vi.mock("@neko/llm/work", () => ({ ensureOrgWorkspace: async () => ({ orgRoot: workspace.root, skillsRoot: join(workspace.root, "skills") }) }));
 
-// A connector accidentally entering either plugin lifecycle must fail this test.
-vi.mock("@open-neko/plugin-install", () => { throw new Error("pack connectors must not load the plugin installer"); });
-vi.mock("../src/plugins/plugin-registry.js", () => { throw new Error("pack connectors must not load the plugin registry"); });
-
 const exec = promisify(execFile);
 const docker = (...args: string[]) => exec("docker", args, { maxBuffer: 1024 * 1024 });
 const enabled = process.env.OPENNEKO_PACK_CONNECTOR_TEST === "1";
@@ -227,7 +223,7 @@ describe.skipIf(!enabled)("pack-owned connector on packaged GraphJin", () => {
     const proof = join(root, "backup-proof");
     await mkdir(join(proof, "snapshots"), { recursive: true });
     await cp(dirname(localConfigPath()), join(proof, "snapshots/config"), { recursive: true });
-    for (const name of ["graphjin", "records-graphjin", "host-config", "plugins"]) await mkdir(join(proof, "snapshots", name));
+    for (const name of ["graphjin", "records-graphjin", "host-config"]) await mkdir(join(proof, "snapshots", name));
     for (const name of ["backup", "restored"]) await mkdir(join(proof, name));
     await docker("run", "--rm", "-v", `${proof}:/proof`, "-e", `PGBACKREST_REPO1_CIPHER_PASS=${randomBytes(32).toString("hex")}`, "--entrypoint", "python3", "openneko-pack-backup-test", "-c", [
       "import importlib.util,pathlib",

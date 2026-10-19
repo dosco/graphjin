@@ -1,6 +1,6 @@
 # Worker
 
-The worker owns background jobs, workflow execution, plugins, channel
+The worker owns background jobs, workflow execution, sign-in, channel
 delivery, and the durable workflow scheduler.
 
 ## Durable workflow scheduler

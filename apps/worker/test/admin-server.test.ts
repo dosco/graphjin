@@ -542,74 +542,34 @@ describe("worker native records-watch ingress", () => {
   });
 });
 
-describe("worker admin /admin/plugins/*", () => {
-  it("GET /admin/plugins/status returns the registry status", async () => {
+describe("worker admin /admin/action-descriptors", () => {
+  it("returns the built-in action descriptors", async () => {
     const srv = await startServer(
       createAdminHandler({
-        plugins: {
-          status: () => ({
-            loaded: ["@open-neko/plugin-slack"],
-            skipped: [{ name: "@open-neko/plugin-dupe", reason: "duplicate" }],
-            flagged: [
-              {
-                pluginName: "@open-neko/plugin-unverified",
-                reason: "unverified install",
-              },
-            ],
-            kinds: ["send_slack_message"],
-            vmsRunning: 1,
-            authProvider: null,
-            channels: [{ pluginId: "slack", providerLabel: "Slack" }],
-          }),
-          getRegisteredActionDescriptors: () => [],
+        actions: {
+          getActionDescriptors: () => [{ kind: "records.create", description: "Create a record", default_mode: "ask" }],
         },
       }),
     );
     try {
-      const res = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/plugins/status`,
-      );
+      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/action-descriptors`);
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({
-        status: {
-          loaded: ["@open-neko/plugin-slack"],
-          skipped: [{ name: "@open-neko/plugin-dupe", reason: "duplicate" }],
-          flagged: [
-            {
-              pluginName: "@open-neko/plugin-unverified",
-              reason: "unverified install",
-            },
-          ],
-          kinds: ["send_slack_message"],
-          vmsRunning: 1,
-          authProvider: null,
-          channels: [{ pluginId: "slack", providerLabel: "Slack" }],
-        },
+        descriptors: [{ kind: "records.create", description: "Create a record", default_mode: "ask" }],
       });
     } finally {
       await srv.close();
     }
   });
 
-  it("GET /admin/plugins/status returns an empty status when no surface is wired", async () => {
+  it("returns an empty list when no surface is wired, and the plugin routes are gone", async () => {
     const srv = await startServer(createAdminHandler());
     try {
-      const res = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/plugins/status`,
-      );
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({
-        status: {
-          loaded: [],
-          skipped: [],
-          flagged: [],
-          kinds: [],
-          vmsRunning: 0,
-          authProvider: null,
-          directoryProvider: null,
-          channels: [],
-        },
-      });
+      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/action-descriptors`);
+      expect(await res.json()).toEqual({ descriptors: [] });
+      for (const path of ["/admin/plugins/status", "/admin/plugins/settings", "/admin/plugins/action-descriptors"]) {
+        expect((await fetch(`http://127.0.0.1:${srv.port}${path}`)).status).toBe(404);
+      }
     } finally {
       await srv.close();
     }
@@ -634,7 +594,7 @@ describe("worker admin /admin/auth/*", () => {
         auth: {
           authSignInReady: () => true,
           getAuthProvider: () => ({
-            pluginName: "@open-neko/plugin-scalekit",
+            pluginName: "scalekit",
             providerLabel: "Scalekit",
           }),
           beginAuth: async () => ({ authorizationUrl: "https://x" }),
@@ -651,7 +611,7 @@ describe("worker admin /admin/auth/*", () => {
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({
         provider: {
-          pluginName: "@open-neko/plugin-scalekit",
+          pluginName: "scalekit",
           providerLabel: "Scalekit",
           provisioning: "automatic",
           loginHintRequired: false,
@@ -673,7 +633,7 @@ describe("worker admin /admin/auth/*", () => {
         hasProvisionedAdmin: async () => hasAdmin,
         soloAdminNeedsEmail: async () => provisioning === "automatic" && !hasAdmin,
         getAuthProvider: () => ({
-          pluginName: "@open-neko/plugin-magic-link",
+          pluginName: "magic-link",
           providerLabel: "Email link",
           provisioning,
           loginHintRequired: true,
@@ -709,7 +669,7 @@ describe("worker admin /admin/auth/*", () => {
         pending: unknown;
       };
       expect(liveBody.provider?.pluginName).toBe(
-        "@open-neko/plugin-magic-link",
+        "magic-link",
       );
       expect(liveBody.pending).toBeNull();
     } finally {
@@ -726,7 +686,7 @@ describe("worker admin /admin/auth/*", () => {
           getAuthConfiguredEnvKeys: () => ["MAGIC_LINK_SIGNING_SECRET"],
           hasProvisionedAdmin: async () => true,
           getAuthProvider: () => ({
-            pluginName: "@open-neko/plugin-magic-link",
+            pluginName: "magic-link",
             providerLabel: "Email link",
             provisioning: "manual",
             loginHintRequired: true,
@@ -765,7 +725,7 @@ describe("worker admin /admin/auth/*", () => {
             writes.push([key, value]);
           },
           getAuthProvider: () => ({
-            pluginName: "@open-neko/plugin-magic-link",
+            pluginName: "magic-link",
             providerLabel: "Email link",
             provisioning: "manual",
             loginHintRequired: true,
@@ -802,6 +762,37 @@ describe("worker admin /admin/auth/*", () => {
         },
       );
       expect(undeclared.status).toBe(400);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("POST /admin/auth/provider chooses or clears the sign-in provider", async () => {
+    const chosen: Array<string | null> = [];
+    const srv = await startServer(
+      createAdminHandler({
+        auth: {
+          authSignInReady: () => false,
+          getAuthProvider: () => null,
+          selectProvider: async (provider) => {
+            chosen.push(provider);
+          },
+          beginAuth: async () => ({ authorizationUrl: "https://x" }),
+          completeAuth: async () => ({ sub: "u", email: "u@e.com", groups: [] }),
+        },
+      }),
+    );
+    const post = (provider: unknown) =>
+      fetch(`http://127.0.0.1:${srv.port}/admin/auth/provider`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+    try {
+      expect((await post("magic-link")).status).toBe(200);
+      expect((await post(null)).status).toBe(200);
+      expect((await post("@open-neko/plugin-scalekit")).status).toBe(400);
+      expect(chosen).toEqual(["magic-link", null]);
     } finally {
       await srv.close();
     }
@@ -1207,11 +1198,7 @@ describe("worker admin /admin/auth/*", () => {
     const srv = await startServer(
       createAdminHandler({
         installPolicy: {
-          getInstallPolicy: async () => ({
-            allowUnverified: true,
-            allowGitUrlInstalls: false,
-            allowedMarketplaces: ["https://x"],
-          }),
+          getInstallPolicy: async () => ({ allowGitUrlInstalls: true }),
         },
       }),
     );
@@ -1219,11 +1206,11 @@ describe("worker admin /admin/auth/*", () => {
       const res = await fetch(`http://127.0.0.1:${srv.port}/admin/install-policy`);
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
-        policy: { allowUnverified: boolean };
+        policy: { allowGitUrlInstalls: boolean };
         source: string;
       };
       expect(body.source).toBe("org");
-      expect(body.policy.allowUnverified).toBe(true);
+      expect(body.policy).toEqual({ allowGitUrlInstalls: true });
     } finally {
       await srv.close();
     }
@@ -1235,17 +1222,17 @@ describe("worker admin /admin/auth/*", () => {
       const res = await fetch(`http://127.0.0.1:${srv.port}/admin/install-policy`);
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
-        policy: { allowUnverified: boolean };
+        policy: { allowGitUrlInstalls: boolean };
         source: string;
       };
       expect(body.source).toBe("default");
-      expect(body.policy.allowUnverified).toBe(false);
+      expect(body.policy).toEqual({ allowGitUrlInstalls: false });
     } finally {
       await srv.close();
     }
   });
 
-  it("POST /admin/connect/begin propagates plugin errors as 500", async () => {
+  it("POST /admin/connect/begin propagates provider errors as 500", async () => {
     const srv = await startServer(
       createAdminHandler({
         connect: fakeConnect({
@@ -1412,20 +1399,21 @@ describe("worker channel routes", () => {
     overrides: Partial<NonNullable<Parameters<typeof createAdminHandler>[0]["channels"]>> = {},
   ): NonNullable<Parameters<typeof createAdminHandler>[0]["channels"]> {
     return {
-      getChannelProviders: overrides.getChannelProviders ?? (() => []),
+      getChannelProviders: overrides.getChannelProviders ?? (async () => []),
       deliver: overrides.deliver ?? (async () => ({ delivered: true, ref: "1" })),
       ingestInbound: overrides.ingestInbound ?? (async () => ({ ok: true, dispatched: 0 })),
+      ...(overrides.settings ? { settings: overrides.settings } : {}),
+      ...(overrides.setSettings ? { setSettings: overrides.setSettings } : {}),
     };
   }
 
-  it("GET /admin/channels/providers returns the registry's channels", async () => {
+  it("GET /admin/channels/providers returns the turned-on channels", async () => {
     const srv = await startServer(
       createAdminHandler({
         channels: fakeChannel({
-          getChannelProviders: () => [
+          getChannelProviders: async () => [
             {
-              pluginId: "open-neko-channel-telegram",
-              pluginName: "@open-neko/channel-telegram",
+              id: "telegram",
               providerLabel: "Telegram",
               directions: ["outbound", "inbound"],
               ingress: "webhook",
@@ -1468,7 +1456,7 @@ describe("worker channel routes", () => {
     );
     try {
       const res = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/channels/@open-neko%2Fchannel-telegram/deliver`,
+        `http://127.0.0.1:${srv.port}/admin/channels/telegram/deliver`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1477,7 +1465,7 @@ describe("worker channel routes", () => {
       );
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ delivered: true, ref: "278" });
-      expect(captured.plugin).toBe("@open-neko/channel-telegram");
+      expect(captured.plugin).toBe("telegram");
       expect((captured.recipient as { chatId: number }).chatId).toBe(5);
       expect(captured.events).toHaveLength(1);
     } finally {
@@ -1527,7 +1515,7 @@ describe("worker channel routes", () => {
     );
     try {
       const res = await fetch(
-        `http://127.0.0.1:${srv.port}/channels/@open-neko%2Fchannel-telegram/inbound`,
+        `http://127.0.0.1:${srv.port}/channels/telegram/inbound`,
         {
           method: "POST",
           headers: {
@@ -1539,9 +1527,45 @@ describe("worker channel routes", () => {
       );
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ ok: true, dispatched: 1 });
-      expect(captured.plugin).toBe("@open-neko/channel-telegram");
+      expect(captured.plugin).toBe("telegram");
       expect(captured.headers?.["x-telegram-bot-api-secret-token"]).toBe("s3cret");
       expect(captured.body).toContain("approve:ar-1");
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("GET and POST /admin/channels/settings read and write channel settings", async () => {
+    let written: { channel?: string; values?: Record<string, string | null> } = {};
+    const srv = await startServer(
+      createAdminHandler({
+        channels: fakeChannel({
+          settings: async () => [{ id: "slack", enabled: true, missing: ["SLACK_BOT_TOKEN"] }],
+          setSettings: async (channel, values) => {
+            written = { channel, values };
+          },
+        }),
+      }),
+    );
+    try {
+      const read = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/settings`);
+      expect(read.status).toBe(200);
+      expect(((await read.json()) as { channels: Array<{ id: string }> }).channels[0]?.id).toBe("slack");
+
+      const save = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel: "slack", values: { SLACK_BOT_TOKEN: "xoxb-1", SLACK_APP_TOKEN: null } }),
+      });
+      expect(save.status).toBe(200);
+      expect(written).toEqual({ channel: "slack", values: { SLACK_BOT_TOKEN: "xoxb-1", SLACK_APP_TOKEN: null } });
+
+      const bad = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel: "@open-neko/plugin-slack", values: { SLACK_BOT_TOKEN: "x" } }),
+      });
+      expect(bad.status).toBe(400);
     } finally {
       await srv.close();
     }

@@ -22,7 +22,6 @@ function staticServers(): NekoMcpServer[] {
   const memory = { orgId: "org", runId: "run" } as never;
   return [
     tools.buildRenderCardsServer(emit),
-    tools.buildPluginManagerServer(base),
     tools.buildUserManagerServer(base),
     tools.buildChannelManagerServer(base),
     tools.buildDataSourceManagerServer(base),

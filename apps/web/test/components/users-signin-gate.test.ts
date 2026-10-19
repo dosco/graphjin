@@ -11,24 +11,24 @@ const users = [
     lastLoginAt: null, createdAt: null },
 ];
 
-describe("Users page without a sign-in plugin", () => {
+describe("Users page without a sign-in provider", () => {
   it("offers guidance instead of a form nobody can use", () => {
     const html = renderToStaticMarkup(
       createElement(UsersClient, { users, signInProvider: null }),
     );
     // The form collected a real address for an account that cannot sign in.
     expect(html).not.toContain('id="new-user-email"');
-    expect(html).toContain("Install a sign-in plugin");
-    expect(html).toContain("/admin/plugins");
+    expect(html).toContain("Set up single sign-on or email-link sign-in");
+    expect(html).toContain("/admin/settings");
     // The existing people stay visible.
     expect(html).toContain("owner@company.com");
   });
 
-  it("keeps the form once a plugin is installed", () => {
+  it("keeps the form once sign-in is set up", () => {
     const html = renderToStaticMarkup(
       createElement(UsersClient, { users, signInProvider: "Email link" }),
     );
     expect(html).toContain('id="new-user-email"');
-    expect(html).not.toContain("Install a sign-in plugin");
+    expect(html).not.toContain("Set up single sign-on or email-link sign-in");
   });
 });

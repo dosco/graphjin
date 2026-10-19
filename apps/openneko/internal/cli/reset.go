@@ -48,20 +48,22 @@ func newResetCmd() *cobra.Command {
 				return err
 			}
 			if all {
+				// marketplaces.json and plugins.json are left over from the
+				// removed plugin system; clear them too on a full reset.
 				for _, name := range []string{"secrets.json", "marketplaces.json", "plugins.json", "compose.override.yml"} {
 					if err := removeIfExists(filepath.Join(config.Dir(""), name)); err != nil {
 						return err
 					}
 				}
 			} else if !keepSecrets {
-				// Default: keep secrets + marketplaces; only config.json is wiped.
+				// Default: keep secrets; only config.json is wiped.
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "reset complete; backups preserved at %s; next start will use installation %s\n", oldRepository, newID)
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&keepSecrets, "keep-secrets", true, "Preserve ~/.config/openneko/secrets.json")
-	cmd.Flags().BoolVar(&all, "all", false, "Also remove secrets, marketplaces, plugins manifest, compose override")
+	cmd.Flags().BoolVar(&all, "all", false, "Also remove secrets and the compose override")
 	return cmd
 }
 

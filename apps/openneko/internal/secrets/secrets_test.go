@@ -99,7 +99,7 @@ func TestWritePerms(t *testing.T) {
 
 func TestListKeysSorted(t *testing.T) {
 	s := Store{"p": {"Z": "1", "A": "2", "M": "3"}}
-	keys := ListKeysForPlugin(s, "p")
+	keys := ListKeysForSection(s, "p")
 	want := []string{"A", "M", "Z"}
 	for i, k := range want {
 		if keys[i] != k {

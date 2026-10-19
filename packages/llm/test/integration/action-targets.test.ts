@@ -1,10 +1,9 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { pool } from "@neko/db";
+import { db, pack_action_definition, pool } from "@neko/db";
 import { dbReachable, withTestOrg } from "@neko/db/test-helpers";
 import {
   createActionPolicy,
   createActionRequest,
-  syncPluginActionTargetSpecs,
 } from "../../src/workflows";
 import { inProcessControlPlane } from "../../src/work/control-plane";
 
@@ -42,9 +41,14 @@ async function seedRules(orgId: string) {
     allowedTargets: null,
     priority: 950,
   });
-  await syncPluginActionTargetSpecs(orgId, [
-    { pluginName: "@open-neko/plugin-resend", kind: "send_email", spec: { fields: ["to", "cc", "bcc"], as: "email_domain" } },
-  ]);
+  // A pack action that reads its recipients from the payload, as the Resend pack does.
+  await db().insert(pack_action_definition).values({
+    org_id: orgId,
+    kind: "send_email",
+    definition: { targets: { fields: ["body.to", "body.cc", "body.bcc"], as: "email_domain" } },
+    definition_hash: "fixture",
+    readiness: "ready",
+  });
 }
 
 describeIfDb("action targets read from the payload", () => {
@@ -60,7 +64,7 @@ describeIfDb("action targets read from the payload", () => {
         scope: "external",
         kind: "send_email",
         target: "gmail.com",
-        payload: { to: ["ops@acme.com"], cc: "Finance <cfo@partner.com>" },
+        payload: { body: { to: ["ops@acme.com"], cc: "Finance <cfo@partner.com>" } },
       });
       expect(decision.decision).toBe("allow");
     }, "targets");
@@ -69,7 +73,7 @@ describeIfDb("action targets read from the payload", () => {
   it("ignores the agent's target and asks when a recipient is outside the list", async () => {
     await withTestOrg(async (orgId) => {
       await seedRules(orgId);
-      const payload = { to: ["ops@acme.com"], bcc: ["x@gmail.com"] };
+      const payload = { body: { to: ["ops@acme.com"], bcc: ["x@gmail.com"] } };
       const decision = await inProcessControlPlane.evaluateActionPolicy({
         orgId,
         scope: "external",
@@ -108,14 +112,13 @@ describeIfDb("action targets read from the payload", () => {
     }, "targets");
   });
 
-  it("drops the spec of a plugin that no longer declares one", async () => {
+  it("keeps the agent's target for a kind without a target spec", async () => {
     await withTestOrg(async (orgId) => {
       await seedRules(orgId);
-      await syncPluginActionTargetSpecs(orgId, []);
       const request = await createActionRequest({
         orgId,
         scope: "external",
-        kind: "send_email",
+        kind: "post_note",
         target: "acme.com",
         payload: { to: ["x@gmail.com"] },
         status: "pending_approval",

@@ -24,7 +24,6 @@ const SERVERS = [
   "neko_workflow_output",
   "neko_action",
   "neko_rule_builder",
-  "neko_plugin_manager",
   "neko_user_manager",
   "neko_channel_manager",
   "neko_data_source_manager",
@@ -45,9 +44,8 @@ function ctx() {
     triggeredByObservationId: null,
     pluginActions: [
       {
-        kind: "send_slack_message",
-        pluginId: "@open-neko/plugin-slack",
-        description: "send",
+        kind: "records.create",
+        description: "create",
         scope: "external" as const,
       },
     ],

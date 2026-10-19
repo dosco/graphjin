@@ -203,12 +203,6 @@ export class BrokerControlPlane implements AgentControlPlane {
     return this.post("/v1/rule/list", input);
   }
 
-  listPlugins(
-    input: Parameters<AgentControlPlane["listPlugins"]>[0],
-  ): ReturnType<AgentControlPlane["listPlugins"]> {
-    return this.post("/v1/plugins/list", input);
-  }
-
   listGroups(
     input: Parameters<AgentControlPlane["listGroups"]>[0],
   ): ReturnType<AgentControlPlane["listGroups"]> {

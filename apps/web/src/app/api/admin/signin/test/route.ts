@@ -1,6 +1,6 @@
 /**
  * POST /api/admin/signin/test — fire a delivery test through the real
- * plugin path (mint token → provider API → mailbox). The email that
+ * sign-in path (mint token → provider API → mailbox). The email that
  * arrives is a genuine sign-in email, but its link is bound to a
  * synthetic state no browser holds, so it cannot complete a sign-in —
  * this proves delivery, nothing else. Admin-only.

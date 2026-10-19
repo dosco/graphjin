@@ -255,15 +255,12 @@ export {
 export {
   evaluateActionPolicy,
   seedDefaultActionPolicies,
-  seedPluginActionPolicies,
-  type PluginActionSeed,
   type PolicyDecision,
   type PolicyRequestSubject,
 } from "./policy-engine";
 export {
   deriveActionTargets,
   getActionTargetSpec,
-  syncPluginActionTargetSpecs,
   withActionTargets,
   type ActionTargetSpec,
 } from "./action-targets";

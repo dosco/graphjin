@@ -1,9 +1,9 @@
 // Package dockerproxy detects a running openneko-*-worker-1 container and
-// re-executes plugin-op CLI subcommands inside it. The brew-installed openneko
-// on the host can't reach the worker's named-volume manifest or its baked
-// node_modules, so install/list/remove/secrets/marketplace operations have
-// to happen container-side. This package makes that transparent — operators
-// just run `openneko install …` and the proxy handles it.
+// re-executes worker-backed CLI subcommands inside it. The brew-installed
+// openneko on the host can't reach the worker's named volumes (secrets,
+// skills, packs), so install/secrets/pack operations have to happen
+// container-side. This package makes that transparent — operators just run
+// `openneko secrets set …` and the proxy handles it.
 //
 // Source-build dev users (running the worker via `pnpm dev` on the host) get
 // no proxy because no openneko-*-worker-1 container exists; the same command
@@ -45,7 +45,7 @@ func FindRunningWorker(project ...string) string {
 
 // ResolveRunningWorker is the error-reporting form used by the root CLI. An
 // ambiguous multi-stack host must fail closed instead of silently performing a
-// plugin operation in the caller's current directory.
+// worker-backed operation in the caller's current directory.
 func ResolveRunningWorker(project string) (string, error) {
 	if os.Getenv(EnvMarker) == "1" {
 		return "", nil

@@ -90,7 +90,7 @@ the right workspace.
 | Feature | What it does for you | Shipped in |
 |---|---|---|
 | Slack & Telegram | Talk to your assistant from the tools your team already uses — replies are formatted natively for each app. | #68, #96 |
-| Channels are plugins | Each chat tool is a plugin behind one modality-free interface, so new channels arrive without core changes — and install through the same CLI as everything else. | #68, #70 |
+| Built-in channels | Slack, Telegram and the HUD are built into the core behind one modality-free interface. A solution pack turns a channel on, and an admin adds its credentials in settings. | #68, #70 |
 | Zero-config inbound | Install a channel and it just starts listening — inbound polling auto-enables and the first contact auto-binds to your workspace. No env flags. | #72 |
 | It knows who's asking | Every inbound message is tied to the actual sender, so permissions and personalisation follow the person, not the channel. | #96 |
 | Workspace routing | Messages from a connected Slack workspace or phone number land in the right organisation automatically. | #96 |
@@ -101,15 +101,14 @@ the right workspace.
 ## Built for teams
 
 Every run knows who started it and what they're allowed to do. Admin work —
-people, plugins, channels — happens in chat with explicit approvals.
+people, channels, settings — happens in chat with explicit approvals.
 
 | Feature | What it does for you | Shipped in |
 |---|---|---|
-| Enterprise SSO as a plugin | Install an auth plugin (Scalekit today; the contract fits Okta/Auth0/Keycloak) and "Sign in with…" lights up — no core rebuild. | #22, #24 |
+| Built-in enterprise SSO | Connect Scalekit (Okta, Entra ID, Google Workspace and more behind it) or turn on email-link sign-in from settings, and "Sign in with…" lights up — no install step. | #22, #24 |
 | Real roles | Admins, members, and automated services each have distinct permissions, enforced everywhere — not just labels. | #96 |
 | Every action has an owner | Whether something was started by a person in chat, a schedule, or a channel message, the record shows who and in what capacity. | #96 |
 | Manage people from chat | Invite teammates, change roles, deactivate accounts — proposed by the assistant, approved by an admin. | #96 |
-| Manage plugins from chat | Browse, install, and remove integrations conversationally, with each plugin's permissions shown on the card before you approve. | #96 |
 | Personas | Tell OpenNeko what you do in your own words — free text, not a dropdown — and it tailors its briefings, language, and priorities to your role, from onboarding onwards. | #96, #120 |
 
 ## Yours and your team's knowledge
@@ -141,7 +140,7 @@ hand to an auditor.
 
 | Feature | What it does for you | Shipped in |
 |---|---|---|
-| Always sandboxed | The AI agent and every plugin run inside isolation boxes with networking denied by default — this is the only mode, not an option you might forget to turn on. | #82, #96, #98 |
+| Always sandboxed | The AI agent runs inside isolation boxes with networking denied by default — this is the only mode, not an option you might forget to turn on. | #82, #96, #98 |
 | Your keys never enter the box | API keys are injected on the wire by a gateway outside the sandbox; the agent only ever holds a placeholder. Verifiably — you can grep the box and find nothing. | #82 |
 | Secrets encrypted at rest | Tokens, passwords, and keys are encrypted on disk everywhere they're stored. | #96 |
 | Bring your own vault | Plug in an external secrets manager (Infisical) instead of local files, with no change to how anything else works. | #96 |
@@ -155,19 +154,15 @@ hand to an auditor.
 
 ## Plug in anything
 
-Integrations are sandboxed plugins: installed in one command, hot-reloaded
-without restarts, and governed by the same approval policies as everything
-else.
+Integrations are solution packs: sources, actions, workflows and skills for an
+application, installed from settings or one command and governed by the same
+approval policies as everything else. See [PACKS.md](PACKS.md).
 
 | Feature | What it does for you | Shipped in |
 |---|---|---|
-| Sandboxed plugin system | Every plugin runs in its own isolation box with only the network egress its manifest declares — a misbehaving integration can't reach anything you didn't grant. | #20 |
-| Hot-reload registry | Install, remove, or rotate a plugin's secrets and the running system reconciles itself — no worker restart. | #20 |
-| Plugin actions as agent tools | Installed plugins surface their actions directly to the assistant, complete with example payloads so even small models call them correctly. | #24, #66 |
+| Pack actions as agent tools | Installed packs surface their actions directly to the assistant, governed by the same approval policies as everything else. | #24, #66 |
 | Per-person integrations | Each operator connects their own accounts (OAuth) on the /integrations page — tokens are stored per-person, never shared. | #42 |
-| Install policy | Admins decide who may install what; the policy is enforced at the CLI, the worker, and the web UI. | #42, #44 |
-| Community plugins | Install straight from a git URL — the marketplace is a convenience, not a gate. | #42 |
-| Always-current integrations | Deploys upgrade installed plugins to the latest marketplace release automatically. | #65 |
+| Community skills | Install a skill straight from a git URL once an admin allows it; the policy is enforced at the CLI and the worker. | #42, #44 |
 
 ## Install in one command, operate calmly
 
@@ -176,7 +171,7 @@ truth when something is wrong — in language an operator can act on.
 
 | Feature | What it does for you | Shipped in |
 |---|---|---|
-| The `openneko` binary | One Go binary supervises everything: start/stop/status/logs, migrations, seeding, plugins, secrets, doctor. No Node toolchain required to operate. | #26 |
+| The `openneko` binary | One Go binary supervises everything: start/stop/status/logs, migrations, seeding, packs, secrets, doctor. No Node toolchain required to operate. | #26 |
 | One-command sandboxed install | `openneko start` brings up the full stack — agent sandbox gateway included — with migrations applied before anything that needs them. | #82, #49, #54 |
 | A demo with living data | The trial workspace ships with simulated sales trickling in and scripted scenarios firing, so briefings move and workflows have something real to find. | #47, #118, #121 |
 | Honest status | `openneko status` probes what's actually serving — failures read as what they are (transient, cosmetic, or real) instead of all looking fatal. | #86 |

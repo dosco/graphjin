@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentWorkspace } from "../src/agent-backend";
 import type { KnowledgePackContents } from "../src/knowledge-pack";
-import type { PluginCatalog } from "../src/work/control-plane";
 import { buildBotSection, buildCardsSection, buildWorkPrompt } from "../src/work/prompt";
 import { VALUE_ESTIMATE_INSTRUCTIONS } from "../src/prompts/sections";
 import { splitStablePrompt } from "../src/prompts/stable-prefix";
@@ -38,9 +37,7 @@ function build(
     supportsPolicyTool?: boolean;
     supportsSourceConfigTool?: boolean;
     supportsClarificationTool?: boolean;
-    supportsPluginManagerTool?: boolean;
     supportsNativeDelegation?: boolean;
-    pluginCatalog?: PluginCatalog;
     installedSkills?: Array<{ name: string; description: string }>;
     pluginActions?: Array<{
       kind: string;
@@ -67,9 +64,7 @@ function build(
     supportsPolicyTool: overrides.supportsPolicyTool ?? false,
     supportsSourceConfigTool: overrides.supportsSourceConfigTool ?? false,
     supportsClarificationTool: overrides.supportsClarificationTool ?? false,
-    supportsPluginManagerTool: overrides.supportsPluginManagerTool ?? false,
     supportsNativeDelegation: overrides.supportsNativeDelegation ?? true,
-    pluginCatalog: overrides.pluginCatalog,
     installedSkills: overrides.installedSkills,
     pluginActions: overrides.pluginActions,
     dataSurface: overrides.dataSurface,
@@ -387,45 +382,6 @@ describe("buildWorkPrompt workflow + policy management", () => {
   });
 });
 
-describe("buildWorkPrompt capability recovery", () => {
-  it("uses the plugin manager approval tool when MCP tools are available", () => {
-    const prompt = build("hermes", {
-      supportsPluginManagerTool: true,
-    });
-
-    expect(prompt).toContain("mcp_neko_plugin_manager_list_plugins");
-    expect(prompt).toContain(
-      "mcp_neko_plugin_manager_request_plugin_install",
-    );
-    expect(prompt).toMatch(/approval request.*inline/i);
-    expect(prompt).toMatch(/same answer/i);
-    expect(prompt).toMatch(/operator's yes\/no question/i);
-  });
-
-  it("gives Hermes exact marketplace names and an approval-gated action fence", () => {
-    const prompt = build("hermes", {
-      pluginCatalog: {
-        installed: [],
-        available: [
-          {
-            name: "@openneko/weather",
-            title: "Weather",
-            description: "Live weather data.",
-            version: "1.0.0",
-          },
-        ],
-      },
-    });
-
-    expect(prompt).toContain("@openneko/weather");
-    expect(prompt).toContain('"kind": "plugin_install"');
-    expect(prompt).toContain('"risk_level": "high"');
-    expect(prompt).toMatch(/does not install silently/i);
-    expect(prompt).toMatch(/same answer/i);
-    expect(prompt).toMatch(/operator's yes\/no question/i);
-  });
-});
-
 describe("buildWorkPrompt native delegation guidance", () => {
   it("teaches Hermes to use delegate_task without OpenNeko-named profiles", () => {
     const prompt = build("hermes");
@@ -512,7 +468,6 @@ describe("cards in the final answer", () => {
         supportsPolicyTool: true,
         supportsSourceConfigTool: false,
         supportsClarificationTool: true,
-        supportsPluginManagerTool: true,
         supportsNativeDelegation: true,
         inlineTranscript: true,
       });

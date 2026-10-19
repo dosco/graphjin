@@ -14,7 +14,7 @@ import {
   getActionRequest,
   listActionExecutions,
 } from "@neko/llm/workflows";
-import { readSecretsStore } from "@open-neko/plugin-install/secrets";
+import { readSecretsStore } from "@neko/secrets";
 
 type Prepared = { id: string; status: string };
 type Execution = Awaited<ReturnType<typeof listActionExecutions>>[number];

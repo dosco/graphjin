@@ -14,7 +14,7 @@ import {
   executeApprovedActionRequest,
 } from "@neko/llm/workflows";
 import { inProcessControlPlane } from "@neko/llm/work";
-import { registerChannelAdminAdapter } from "../../src/plugins/manage-adapters.js";
+import { registerChannelAdminAdapter } from "../../src/admin-actions/adapters.js";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;

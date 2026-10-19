@@ -86,8 +86,8 @@ describe("/api/integrations/list", () => {
               credentialScope: "operator",
             },
             {
-              pluginId: "open-neko-plugin-scalekit",
-              pluginName: "@open-neko/plugin-scalekit",
+              pluginId: "scalekit",
+              pluginName: "scalekit",
               providerLabel: "Scalekit workspace",
               scopes: ["environment_read"],
               flow: "mcp-oauth",
@@ -110,7 +110,7 @@ describe("/api/integrations/list", () => {
         return jsonResponse(200, {
           connected: [
             {
-              pluginName: "@open-neko/plugin-scalekit",
+              pluginName: "scalekit",
               connectedAt: "2026-05-22T10:00:00Z",
             },
           ],
@@ -126,7 +126,7 @@ describe("/api/integrations/list", () => {
       connectors: Array<{ pluginName: string; connected: boolean }>;
     };
     expect(body.workspace).toHaveLength(1);
-    expect(body.workspace[0]!.pluginName).toBe("@open-neko/plugin-scalekit");
+    expect(body.workspace[0]!.pluginName).toBe("scalekit");
     expect(body.workspace[0]!.connected).toBe(true);
     expect(body.connectors).toHaveLength(1);
     expect(body.connectors[0]!.pluginName).toBe(
@@ -134,9 +134,9 @@ describe("/api/integrations/list", () => {
     );
     expect(body.connectors[0]!.connected).toBe(true);
 
-    held.integrations = new Set(["@open-neko/plugin-scalekit"]);
+    held.integrations = new Set(["scalekit"]);
     const narrowed = (await callRoute(GET)).body as typeof body;
-    expect(narrowed.workspace.map((p) => p.pluginName)).toEqual(["@open-neko/plugin-scalekit"]);
+    expect(narrowed.workspace.map((p) => p.pluginName)).toEqual(["scalekit"]);
     expect(narrowed.connectors).toEqual([]);
   });
 });
@@ -228,8 +228,8 @@ describe("/api/integrations/connect/[plugin]/start", () => {
         return jsonResponse(200, {
           providers: [
             {
-              pluginId: "open-neko-plugin-scalekit",
-              pluginName: "@open-neko/plugin-scalekit",
+              pluginId: "scalekit",
+              pluginName: "scalekit",
               providerLabel: "Scalekit workspace",
               scopes: ["wks:read"],
               flow: "mcp-oauth",
@@ -253,7 +253,7 @@ describe("/api/integrations/connect/[plugin]/start", () => {
         (req) =>
           GET(req, {
             params: Promise.resolve({
-              plugin: encodeURIComponent("@open-neko/plugin-scalekit"),
+              plugin: encodeURIComponent("scalekit"),
             }),
           }) as Promise<Response> | Response,
       );

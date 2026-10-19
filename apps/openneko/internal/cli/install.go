@@ -4,175 +4,79 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/open-neko/neko/apps/openneko/internal/dockerproxy"
-	"github.com/open-neko/neko/apps/openneko/internal/host"
-	"github.com/open-neko/neko/apps/openneko/internal/plugin/install"
-	"github.com/open-neko/neko/apps/openneko/internal/plugin/marketplace"
-	"github.com/open-neko/neko/apps/openneko/internal/plugin/policy"
-	"github.com/open-neko/neko/apps/openneko/internal/plugin/store"
-	"github.com/open-neko/neko/apps/openneko/internal/prompt"
+	"github.com/open-neko/neko/apps/openneko/internal/skill"
 )
 
+// newInstallCmd installs a community skill from a git URL. Integrations
+// and channels come from solution packs (`openneko pack install`).
 func newInstallCmd() *cobra.Command {
-	var version string
-	var unverified bool
-	var skipHostCheck bool
 	cmd := &cobra.Command{
-		Use:   "install <name>[@<marketplace>] | <git-url>[#<sub-path>]",
-		Short: "Install a plugin from a trusted marketplace or a community skill from a git URL",
-		Args:  cobra.ExactArgs(1),
+		Use:   "install <git-url>[#<sub-path>]",
+		Short: "Install a community skill from a git URL",
+		Long: `Install a community skill (a folder with a SKILL.md) from a git URL.
+
+Accepted hosts: github.com, gitlab.com, codeberg.org (https only). Use the
+#<sub-path> fragment to point at a skill folder inside the repo.
+
+An admin must enable Git-URL skill installs at /admin/settings/security.
+Integrations and channels are installed as solution packs: see
+` + "`openneko pack`" + `.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if code, proxied := MaybeProxyToWorker(cmd); proxied {
 				return WithExit(code, nil)
 			}
 			spec := args[0]
 			if spec == "" {
-				return WithExit(2, errors.New("install: package name required"))
+				return WithExit(2, errors.New("install: git URL required"))
 			}
 			errOut := cmd.ErrOrStderr()
 			out := cmd.OutOrStdout()
 
-			// Fetch the deployment-wide install policy. Privileged install
-			// paths (--unverified, git-URL skills) need an admin to have
-			// opted in via /admin/settings/security. If the worker is
-			// unreachable, the fetch falls back to the secure default —
-			// operators can't turn off the policy by killing the worker.
-			pol, source, fetchErr := policy.Fetch(context.Background())
+			if !isGitURLSpec(spec) {
+				return WithExit(2, fmt.Errorf("install: %q is not a git URL. Plugins were replaced by solution packs; use `openneko pack install <pack>` for integrations", spec))
+			}
+
+			// Fetch the deployment-wide install policy. Git-URL skills need
+			// an admin to have opted in via /admin/settings/security. If the
+			// worker is unreachable, the fetch falls back to the secure
+			// default — operators can't turn off the policy by killing the
+			// worker.
+			pol, source, fetchErr := skill.FetchPolicy(context.Background())
 			if fetchErr != nil {
 				fmt.Fprintf(errOut, "WARNING: install policy check failed (%s) — defaulting to most-restrictive\n", fetchErr.Error())
 			}
-
-			if isGitURLSpec(spec) {
-				if !pol.Allows(policy.SourceGitURL) {
-					hint := "ask an admin to enable Git-URL skill installs at /admin/settings/security"
-					if source == "unreachable" {
-						hint = "start the worker so the policy can be read, or ask an admin to enable Git-URL skill installs at /admin/settings/security"
-					}
-					return WithExit(2, fmt.Errorf("install: Git-URL skill installs are disabled by deployment policy. %s", hint))
-				}
-				fmt.Fprintln(errOut, "Installing community skill from Git URL. The SKILL.md will be loaded as-is from the upstream repo; there is no integrity check beyond the agentskills.io spec validation.")
-				res, err := install.RunGitSkill(context.Background(), install.GitSkillOptions{Spec: spec})
-				if err != nil {
-					return err
-				}
-				fmt.Fprintf(out, "installed skill %q (git-url, source: %s", res.SkillName, res.SourceURL)
-				if res.SourceSubPath != "" {
-					fmt.Fprintf(out, "#%s", res.SourceSubPath)
-				}
-				fmt.Fprintf(out, ")\n  installed at: %s\n", res.SkillInstalledAt)
-				return nil
-			}
-
-			// A proxied invocation runs inside the worker container, whose
-			// image ships no docker CLI — so the host check always misfires
-			// there even though the deployment is plainly running under Docker.
-			// The real host already cleared its checks to bring the stack up.
-			proxied := os.Getenv(dockerproxy.EnvMarker) == "1"
-			h := host.Check()
-			if !h.Supported && !skipHostCheck && !proxied {
-				// Used to be a hard exit. Softened to a warning because
-				// install is increasingly decoupled from run: operators
-				// stage plugin installs from one host (e.g. Mac) and the
-				// VMs actually execute on another (Linux+KVM container,
-				// or pnpm-dev on the same Mac). --skip-host-check passed
-				// = silence the warning entirely.
-				reason := h.Reason
-				if reason == "" {
-					reason = "(unknown reason)"
-				}
-				fmt.Fprintf(errOut, "WARNING: host check: %s\n  Install will proceed. Plugin execution requires a host that can run the OpenShell sandbox runtime (Docker on Linux or macOS). Pass --skip-host-check to suppress this warning.\n", reason)
-			}
-
-			if unverified && !pol.Allows(policy.SourceUnverified) {
-				hint := "ask an admin to enable it at /admin/settings/security"
+			if !pol.AllowGitURLInstalls {
+				hint := "ask an admin to enable Git-URL skill installs at /admin/settings/security"
 				if source == "unreachable" {
-					hint = "start the worker so the policy can be read, or ask an admin to enable --unverified at /admin/settings/security"
+					hint = "start the worker so the policy can be read, or ask an admin to enable Git-URL skill installs at /admin/settings/security"
 				}
-				return WithExit(2, fmt.Errorf("install: --unverified is disabled by deployment policy. %s", hint))
+				return WithExit(2, fmt.Errorf("install: Git-URL skill installs are disabled by deployment policy. %s", hint))
 			}
-			if unverified {
-				fmt.Fprintln(errOut, "WARNING: --unverified bypasses every trusted marketplace. The plugin is not reviewed and its integrity hash is taken on trust from npm. Use only for plugin authoring or emergency hotfixes.")
-			}
-
-			cwd, err := os.Getwd()
+			fmt.Fprintln(errOut, "Installing community skill from Git URL. The SKILL.md will be loaded as-is from the upstream repo; there is no integrity check beyond the agentskills.io spec validation.")
+			res, err := skill.RunGitSkill(context.Background(), skill.GitSkillOptions{Spec: spec})
 			if err != nil {
 				return err
 			}
-
-			var trusted []install.TrustedMarketplace
-			if !unverified {
-				s, err := store.Read("")
-				if err != nil {
-					return err
-				}
-				for _, m := range s.Marketplaces {
-					trusted = append(trusted, install.TrustedMarketplace{Name: m.Name, URL: m.URL})
-				}
+			fmt.Fprintf(out, "installed skill %q (git-url, source: %s", res.SkillName, res.SourceURL)
+			if res.SourceSubPath != "" {
+				fmt.Fprintf(out, "#%s", res.SourceSubPath)
 			}
-
-			res, err := install.Run(context.Background(), install.Options{
-				RepoRoot:            cwd,
-				Spec:                spec,
-				Version:             version,
-				Unverified:          unverified,
-				TrustedMarketplaces: trusted,
-				EnvPrompt:           defaultEnvPrompt(),
-			})
-			if err != nil {
-				return err
-			}
-
-			network := "none"
-			if len(res.Network) > 0 {
-				network = strings.Join(res.Network, ", ")
-			}
-			provenance := "unverified npm"
-			if res.Source == "marketplace" {
-				provenance = "marketplace=" + res.Marketplace
-			}
-			fmt.Fprintf(out, "installed %s@%s (%s) — network: %s\n", res.Name, res.Version, provenance, network)
-			if len(res.EnvSaved) > 0 {
-				fmt.Fprintf(out, "  saved env: %s\n", strings.Join(res.EnvSaved, ", "))
-			}
-			if len(res.EnvAlreadySet) > 0 {
-				fmt.Fprintf(out, "  env already set: %s\n", strings.Join(res.EnvAlreadySet, ", "))
-			}
-			if res.SkillInstalledAt != "" {
-				fmt.Fprintf(out, "  bundled skill installed at: %s\n", res.SkillInstalledAt)
-			}
+			fmt.Fprintf(out, ")\n  installed at: %s\n", res.SkillInstalledAt)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&version, "version", "", "Pin to a specific version (default: latest non-yanked)")
-	cmd.Flags().BoolVar(&unverified, "unverified", false, "Bypass trusted marketplaces and install directly from npm")
-	cmd.Flags().BoolVar(&skipHostCheck, "skip-host-check", false, "Silence the host-compatibility warning when installing on a host that can't execute plugin VMs (Mac+docker, Linux without KVM, etc.)")
 	return cmd
 }
 
 // isGitURLSpec returns true when the install spec looks like a clone
-// URL rather than a marketplace/npm package name. We accept only
-// https against the same forge hosts the marketplace schema does.
+// URL. We accept only https against well-known forge hosts.
 func isGitURLSpec(spec string) bool {
 	return strings.HasPrefix(spec, "https://github.com/") ||
 		strings.HasPrefix(spec, "https://gitlab.com/") ||
 		strings.HasPrefix(spec, "https://codeberg.org/")
-}
-
-func defaultEnvPrompt() install.EnvPromptFunc {
-	return func(plugin string, req marketplace.EnvRequirement) (string, error) {
-		if !prompt.IsInteractive() {
-			return "", fmt.Errorf(`install: required env %q for %s is not set and stdin is not a TTY.\nRun: openneko secrets set %s %s <value>`, req.Key, plugin, plugin, req.Key)
-		}
-		fmt.Fprintf(os.Stdout, "\n%s requires %s\n  %s\n", plugin, req.Key, req.Description)
-		hidden := req.Secret == nil || *req.Secret
-		if hidden {
-			return prompt.Hidden(req.Key + " (hidden): ")
-		}
-		return prompt.Visible("value: ")
-	}
 }

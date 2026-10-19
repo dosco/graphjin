@@ -36,10 +36,7 @@ import {
 import { errorCodeOf, observeSafely } from "@neko/telemetry";
 import { createRunSpendGuard, SpendBudgetExceeded } from "@neko/llm/spend";
 import { reckonSeedMessageFrom } from "@neko/llm/workflows/compat";
-import {
-  getCurrentScrubber,
-  getPluginRegistryInstance,
-} from "../plugins/registry-instance.js";
+import { getCurrentScrubber } from "../secrets/instance.js";
 import { includeRecordActionDescriptors } from "../records/adapters.js";
 import {
   createWorkerHarnessObserver,
@@ -438,9 +435,7 @@ async function runWorkflowRunFireTraced(
       }));
     } else {
       const agentRuntime = await startupPhase("config.provision", async () => ensureHostConfigProvisioned(payload.orgId));
-      const pluginActions = includeRecordActionDescriptors(
-        getPluginRegistryInstance()?.getRegisteredActionDescriptors() ?? [],
-      );
+      const pluginActions = includeRecordActionDescriptors([]);
       const broker = await startupPhase("broker.ready", async () => ensureAgentBroker());
       const abort = new AbortController();
       const unregister = registerAgentCanceller(() => abort.abort());

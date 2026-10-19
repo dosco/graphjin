@@ -2,7 +2,7 @@
 # trusted control plane only through the broker.
 #
 # This file is the OS base layer (the OpenShell-required shape: glibc +
-# iproute2/nftables + a `sandbox` user @ /sandbox, same as plugin-base). The
+# iproute2/nftables + a `sandbox` user @ /sandbox). The
 # runnable agent image in the main Dockerfile adds Hermes, GraphJin, document
 # tooling, two standalone JavaScript bundles, and built-in skill assets. It does
 # not inherit the worker source or production dependency closure.

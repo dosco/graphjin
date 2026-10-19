@@ -246,9 +246,9 @@ func Unset(store Store, plugin, key string) (Store, bool) {
 	return out, true
 }
 
-func ListKeysForPlugin(store Store, plugin string) []string {
-	keys := make([]string, 0, len(store[plugin]))
-	for k := range store[plugin] {
+func ListKeysForSection(store Store, section string) []string {
+	keys := make([]string, 0, len(store[section]))
+	for k := range store[section] {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)

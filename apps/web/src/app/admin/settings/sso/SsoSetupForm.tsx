@@ -365,7 +365,7 @@ export default function SsoSetupForm({
                   there; the consent screen names the scopes and endpoint.
                 </p>
                 <ButtonLink
-                  href="/api/integrations/connect/%40open-neko%2Fplugin-scalekit/start?returnTo=%2Fadmin%2Fsettings%2Fsso"
+                  href="/api/integrations/connect/scalekit/start?returnTo=%2Fadmin%2Fsettings%2Fsso"
                 >
                   Connect Scalekit workspace
                 </ButtonLink>

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, NativeSelect } from "@/components/ui/field";
 
-const MAGIC_LINK_PLUGIN = "@open-neko/plugin-magic-link";
+const MAGIC_LINK = "magic-link";
 
 const PROVIDERS = [
   { id: "resend", label: "Resend", key: "RESEND_API_KEY" },
@@ -86,21 +86,20 @@ export default function SignInSetupCard() {
       <section className="settings-card">
         <div className="settings-card-head">
           <div>
-            <h2 className="settings-card-title">No auth plugin installed</h2>
+            <h2 className="settings-card-title">Email-link sign-in is off</h2>
             <p className="settings-card-copy">
-              Install the magic-link plugin from a shell on the deployment
-              host, then return here. Everything else happens on this page.
+              Turn it on, then set up email delivery and add the people who
+              may sign in. The deployment stays in single-operator mode until
+              setup is complete.
             </p>
           </div>
         </div>
-        <code className="block rounded-md bg-neutral px-3 py-2 text-sm">
-          openneko install {MAGIC_LINK_PLUGIN}
-        </code>
+        <UseMagicLinkButton label="Turn on email-link sign-in" onDone={reload} />
       </section>
     );
   }
 
-  if (gate.pluginName !== MAGIC_LINK_PLUGIN) {
+  if (gate.pluginName !== MAGIC_LINK) {
     return (
       <section className="settings-card">
         <div className="settings-card-head">
@@ -109,14 +108,16 @@ export default function SignInSetupCard() {
               {gate.providerLabel} is the sign-in provider
             </h2>
             <p className="settings-card-copy">
-              This deployment uses {gate.pluginName}. Configure it on the{" "}
+              Configure it on the{" "}
               <a href="/admin/settings/sso" className="underline">
                 Single sign-on
               </a>{" "}
-              page instead.
+              page. Switching to email-link sign-in limits sign-in to the
+              users you add here.
             </p>
           </div>
         </div>
+        <UseMagicLinkButton label="Use email-link sign-in instead" onDone={reload} />
       </section>
     );
   }
@@ -128,6 +129,45 @@ export default function SignInSetupCard() {
       <UsersSection status={status} onSaved={reload} />
       <TestSection status={status} />
     </>
+  );
+}
+
+function UseMagicLinkButton({ label, onDone }: { label: string; onDone: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function choose() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/signin/provider", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: MAGIC_LINK }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `could not turn on email-link sign-in (${res.status})`);
+      }
+      await onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button type="button" variant="primary" disabled={busy} onClick={() => void choose()}>
+        {busy ? "Turning on…" : label}
+      </Button>
+      {error ? (
+        <span className="text-sm text-danger" role="alert">
+          {error}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

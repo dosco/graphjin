@@ -6,7 +6,7 @@ import { buildPoolConfig } from "@neko/db";
 
 const state = vi.hoisted(() => ({ pool: null as pg.Pool | null, refreshes: 0 }));
 vi.mock("@neko/db", async original => ({ ...await original<typeof import("@neko/db")>(), pool: () => state.pool! }));
-vi.mock("@open-neko/plugin-install/secrets", () => ({ readSecretsStore: async () => ({ "pack.fixture": { OAUTH_ACCOUNT_CLIENT_ID: "client", CLIENT_SECRET: "secret" } }) }));
+vi.mock("@neko/secrets", () => ({ readSecretsStore: async () => ({ "pack.fixture": { OAUTH_ACCOUNT_CLIENT_ID: "client", CLIENT_SECRET: "secret" } }) }));
 vi.mock("@neko/packs/oauth-client", async original => ({
   ...await original<typeof import("@neko/packs/oauth-client")>(),
   exchangePackOAuthCode: vi.fn(async ({ code }: { code: string }) => ({ accessToken: `access-${code}`, refreshToken: `refresh-${code}`, scopes: ["read"], expiresAt: new Date(Date.now() + 3_600_000).toISOString() })),

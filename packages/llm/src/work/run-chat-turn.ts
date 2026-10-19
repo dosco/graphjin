@@ -73,7 +73,6 @@ import {
 import {
   inProcessControlPlane,
   type AgentControlPlane,
-  type PluginCatalog,
 } from "./control-plane";
 import {
   ensureWorkWorkspace as defaultEnsureWorkWorkspace,
@@ -102,13 +101,13 @@ export type RunChatTurnOptions = {
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
   /**
-   * Plugin action kinds to surface to the agent as MCP tools, one
-   * per kind. The worker passes its plugin registry snapshot here;
-   * tests pass an empty array to keep the agent's surface stable.
-   * Mounted for Hermes through the sandbox MCP bridge.
+   * Worker-registered governed action kinds (records actions) to surface
+   * to the agent as MCP tools, one per kind. Tests pass an empty array to
+   * keep the agent's surface stable. Mounted for Hermes through the
+   * sandbox MCP bridge.
    */
   pluginActions?: readonly PluginActionDescriptor[];
-  /** Installed pack actions. Kept separate from the plugin registry. */
+  /** Installed pack actions, discovered from installed pack artifacts. */
   packActions?: readonly import("./tools").PackActionDescriptor[];
   /**
    * Control-plane impl for the DB-touching MCP tools. Default (undefined)
@@ -407,7 +406,7 @@ async function runChatTurnTraced(
     });
 
     // Rendering is a per-channel capability: a channel that can render the
-    // a2ui surface gets it (web as cards, telegram as HTML via its plugin
+    // a2ui surface gets it (web as cards, telegram as HTML via its
     // projection). Thin channels answer in plain markdown — no rendering
     // vocabulary in their prompt. See docs/PER_CHANNEL_RENDERING.md.
     const RENDERING_CHANNELS = new Set(["web", "telegram"]);
@@ -421,8 +420,6 @@ async function runChatTurnTraced(
     const supportsMemoryTool = customerSurface && backend.capabilities.mcpTools;
     const supportsWorkflowTool = customerSurface && backend.capabilities.mcpTools;
     const supportsPolicyTool = customerSurface && backend.capabilities.mcpTools;
-    const supportsPluginManagerTool =
-      customerSurface && backend.capabilities.mcpTools;
     const sourceConfigSettings = dataSurface === "customer"
       ? await startupPhase("config.graphjin", () => getGraphjinConfigSettingsForOrg(orgId))
       : { sourceConfigEnabled: false };
@@ -506,24 +503,6 @@ async function runChatTurnTraced(
       startupPhase("context.persona", () => getOperatorProfile(orgId, actor.userId)),
     ]);
     const operatorProfile = buildOperatorProfileSection(profile);
-    let pluginCatalog: PluginCatalog | undefined;
-    const mayNeedCapabilityRecovery =
-      /\b(integration|plugin|network|egress|live data|external api|weather)\b/i.test(
-        message,
-      );
-    if (
-      !supportsPluginManagerTool &&
-      actor.role === "admin" &&
-      mayNeedCapabilityRecovery
-    ) {
-      try {
-        pluginCatalog = await startupPhase("context.plugin_catalog", () => (opts.controlPlane ?? inProcessControlPlane).listPlugins({ orgId }));
-      } catch (error) {
-        console.warn(
-          `[work-run] marketplace lookup failed: ${error instanceof Error ? error.message : error}`,
-        );
-      }
-    }
 
     const prompt = buildWorkPrompt({
       backend: backend.id,
@@ -545,11 +524,9 @@ async function runChatTurnTraced(
       supportsPolicyTool,
       supportsSourceConfigTool,
       supportsClarificationTool,
-      supportsPluginManagerTool,
       supportsNativeDelegation:
         backend.capabilities.nativeDelegation !== undefined &&
         opts.nativeDelegation !== "disabled",
-      pluginCatalog,
       inlineTranscript,
       pluginActions: customerSurface ? heldPluginActions : [],
       dataSurface,

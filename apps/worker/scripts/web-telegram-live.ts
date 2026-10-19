@@ -5,9 +5,8 @@
  * ONE modality-free InteractionEvent[] (an `inform` + an approval `ask`) is
  * fanned out to two membranes at once:
  *   - WEB     — the built-in, in-process projection the live /api/briefing uses.
- *   - TELEGRAM — the real @open-neko/channel-telegram plugin, driven over the
- *                exact one-shot RPC the worker uses (node dist/run.js <method>),
- *                projecting *inside the plugin*.
+ *   - TELEGRAM — the built-in Telegram channel the worker delivers through,
+ *                projecting with the Telegram profile.
  * Then a real Telegram button tap is normalized back to the same `decision`
  * intent the web Approve button produces — terminating at the same agent entry
  * point. This is the worker's delivery fan-out, minus the (Phase-2) binding row.
@@ -15,23 +14,12 @@
  * Run:  pnpm --filter @neko/worker demo:telegram
  * Live: TELEGRAM_BOT_TOKEN=… TELEGRAM_CHAT_ID=… pnpm --filter @neko/worker demo:telegram
  */
-import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { webProjection } from "@neko/channels";
+import { TELEGRAM_CHANNEL, webProjection } from "@neko/channels";
 import {
-  TELEGRAM_PROFILE,
   WEB_PROFILE,
-  type CapabilityProfile,
   type InteractionEvent,
-  type IntentEvent,
 } from "@neko/interaction";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const RUNNER =
-  process.env.TELEGRAM_PLUGIN_RUNNER ??
-  path.resolve(here, "../../../../plugins/packages/telegram/dist/run.js");
 const CHAT_RAW = process.env.TELEGRAM_CHAT_ID ?? "123456789";
 const chatId = /^-?\d+$/.test(CHAT_RAW) ? Number(CHAT_RAW) : CHAT_RAW;
 
@@ -59,43 +47,10 @@ const events: InteractionEvent[] = [
   },
 ];
 
-interface RpcOut {
-  ok: boolean;
-  result?: unknown;
-  error?: { code: string; message: string };
-  stderr: string;
-}
-
-const rpc = (method: string, params: unknown): RpcOut => {
-  const res = spawnSync("node", [RUNNER, method, JSON.stringify(params)], {
-    encoding: "utf8",
-    env: process.env,
-  });
-  if (res.error) throw new Error(`spawn failed for "${method}": ${res.error.message}`);
-  const stdout = (res.stdout ?? "").trim();
-  const lastLine = stdout.split("\n").filter(Boolean).at(-1) ?? "";
-  let parsed: { ok: boolean; result?: unknown; error?: { code: string; message: string } };
-  try {
-    parsed = JSON.parse(lastLine);
-  } catch {
-    throw new Error(`"${method}" returned non-JSON stdout: ${stdout || "(empty)"}`);
-  }
-  return { ...parsed, stderr: (res.stderr ?? "").trim() };
-};
-
 const rule = (label: string): string =>
   `\n${"─".repeat(4)} ${label} ${"─".repeat(Math.max(0, 66 - label.length))}`;
 
-const main = (): void => {
-  if (!existsSync(RUNNER)) {
-    console.error(
-      `Telegram plugin runner not found:\n  ${RUNNER}\n\n` +
-        `Build it first:\n  (cd ../plugins && pnpm --filter @open-neko/channel-telegram build)\n` +
-        `or point TELEGRAM_PLUGIN_RUNNER at a built dist/run.js.`,
-    );
-    process.exit(1);
-  }
-
+const main = async (): Promise<void> => {
   console.log(rule("THE WAIST — one modality-free InteractionEvent[]"));
   console.log(JSON.stringify(events, null, 2));
 
@@ -108,38 +63,21 @@ const main = (): void => {
   console.log(JSON.stringify(cards, null, 2));
   console.log(`approval affordances: ${JSON.stringify(web.pendingAsks)}`);
 
-  // ── TELEGRAM: the real plugin, over the worker's one-shot RPC ──
-  const reg = rpc("register", {});
-  const profile = (reg.result as { capabilities?: { channel?: { profile?: CapabilityProfile } } })
-    ?.capabilities?.channel?.profile;
-  const profileMatches = JSON.stringify(profile) === JSON.stringify(TELEGRAM_PROFILE);
-
-  console.log(rule("TELEGRAM  (real plugin VM, one-shot RPC)  profile: text+markdown+buttons"));
-  console.log(`register → providerLabel="Telegram"  directions=outbound,inbound`);
-  console.log(
-    `declared profile matches @neko/interaction TELEGRAM_PROFILE: ${profileMatches ? "yes ✓" : "NO — DRIFT ✗"}`,
-  );
-
-  const delivered = rpc("deliver", { recipient: { kind: "telegram", chatId }, events, profile });
+  // ── TELEGRAM: the built-in channel, exactly as the worker delivers ──
+  console.log(rule("TELEGRAM  (built-in channel)  profile: text+markdown+buttons"));
+  console.log(`providerLabel="${TELEGRAM_CHANNEL.providerLabel}"  directions=${TELEGRAM_CHANNEL.directions.join(",")}`);
   const live = Boolean(process.env.TELEGRAM_BOT_TOKEN);
-  console.log(`deliver → ${JSON.stringify(delivered.result)}  ${live ? "(LIVE send)" : "(dry-run — set TELEGRAM_BOT_TOKEN to send)"}`);
-  // In dry-run the projected native payload is on the plugin's stderr.
-  const payload = delivered.stderr.replace(/^\[channel-telegram dry-run\][^[]*?(\[)/s, "$1");
-  if (delivered.stderr) {
-    console.log("projected Telegram payload:");
-    try {
-      console.log(JSON.stringify(JSON.parse(payload), null, 2));
-    } catch {
-      console.log(delivered.stderr);
-    }
-  }
+  // Without a token the channel runs dry and logs the projected payload.
+  const delivered = await TELEGRAM_CHANNEL.deliver({
+    recipient: { kind: "telegram", chatId },
+    events,
+    env: { TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN },
+  });
+  console.log(`deliver → ${JSON.stringify(delivered)}  ${live ? "(LIVE send)" : "(dry-run — set TELEGRAM_BOT_TOKEN to send)"}`);
 
   // ── INBOUND: a real Telegram button tap → the same intent the web button makes ──
-  const tap = {
-    raw: { update_id: 1, callback_query: { id: "c1", data: "approve:ar-501", message: { chat: { id: chatId } } } },
-  };
-  const inbound = rpc("parse_inbound", tap);
-  const intents = (inbound.result as { intents?: IntentEvent[] })?.intents ?? [];
+  const tap = { update_id: 1, callback_query: { id: "c1", data: "approve:ar-501", message: { chat: { id: chatId } } } };
+  const { intents } = TELEGRAM_CHANNEL.parseInbound(tap, {});
   console.log(rule("INBOUND — Telegram tap → IntentEvent → same agent entry point"));
   for (const intent of intents) {
     const route =
@@ -155,9 +93,9 @@ const main = (): void => {
   console.log(
     "One InteractionEvent[] → WEB (A2UI BriefingCard + inline approval) AND TELEGRAM\n" +
       "(HTML message + Approve/Reject buttons), projected per profile, simultaneously.\n" +
-      "Neither the agent nor the waist named a channel. Adding Telegram was one manifest\n" +
+      "Neither the agent nor the waist named a channel. Adding Telegram was one projection\n" +
       "+ one adapter; the web path was untouched.\n",
   );
 };
 
-main();
+await main();

@@ -18,7 +18,6 @@ import {
   buildLibraryServer,
   buildPluginActionServer,
   buildPackActionServer,
-  buildPluginManagerServer,
   buildRecordsReadServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
@@ -171,8 +170,6 @@ export function buildBridgeServer(
         emit,
         controlPlane,
       });
-    case "neko_plugin_manager":
-      return buildPluginManagerServer(common);
     case "neko_user_manager":
       return buildUserManagerServer(common);
     case "neko_channel_manager":

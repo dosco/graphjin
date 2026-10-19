@@ -1,7 +1,7 @@
 # openneko
 
 The OpenNeko operator CLI — a single Go binary that supervises the Docker
-stack and manages sandboxed plugins. Same binary works on an operator's
+stack and installs solution packs. Same binary works on an operator's
 laptop, on a self-hosted server, and inside the worker container.
 
 ## Install
@@ -68,11 +68,11 @@ preview/apply path while preserving managed authentication and keystore settings
 Named instances allow multiple production stacks on one Docker host. Setup
 persists the web/OpenShell ports and assigns an isolated Docker subnet; Compose
 resources use `openneko-<instance>-<mode>`. Always pass `--instance <name>` to
-lifecycle and plugin commands for that customer.
+lifecycle, pack and secrets commands for that customer.
 
 `openneko upgrade` resolves the latest stable release (or the exact
 `--version`), updates the local CLI first, and re-executes that new binary
-before it pulls service and agent/plugin-base images at the same tag. Keeping
+before it pulls service and agent images at the same tag. Keeping
 the CLI and stack together matters because the CLI embeds the Compose topology
 used to recreate the stack. Homebrew-owned CLIs are updated through Homebrew;
 standalone CLIs use the release archive and `checksums.txt` before atomic
@@ -127,49 +127,32 @@ Adoption asks pgBackRest to validate legacy repositories before writing their
 new identity marker. A missing or mismatched key fails closed and never causes
 the CLI to generate a replacement key against existing encrypted backups.
 
-### Plugin + skill management
+### Skills and secrets
 
 ```bash
-openneko init
-openneko install <name>[@<marketplace>] [--version <v>] [--unverified]
 openneko install <git-url>[#<sub-path>]
-openneko remove <name>
-openneko list
-openneko marketplace {list,add,remove}
 openneko secrets {list,set,unset}
 openneko doctor
 ```
 
-Two install lanes:
+`openneko install <https-url>[#<sub-path>]` clones the URL (shallow),
+validates the agentskills.io-spec `SKILL.md` at the root or the given
+sub-path, and copies the folder under `~/.openneko/skills/<skill-name>/`.
+URLs must be https against github / gitlab / codeberg. Gated by the
+deployment install policy (`allowGitUrlInstalls`, set at
+`/admin/settings/security`).
 
-1. **Marketplace (default)** — `openneko install <name>` resolves against
-   trusted marketplaces, runs `npm install`, writes the manifest entry.
-   `--unverified` bypasses every marketplace and installs directly from
-   npm. Both gated by the deployment install policy at `/settings/security`.
+Integrations ship as solution packs (`openneko pack …`, see
+[PACKS.md](../../PACKS.md)). The plugin commands (`init`, `list`, `remove`,
+`marketplace`) were removed with the plugin system.
 
-2. **Git URL** — `openneko install <https-url>[#<sub-path>]` clones the
-   URL (shallow), validates the agentskills.io-spec `SKILL.md` at the
-   root or the given sub-path, and copies the folder under
-   `~/.openneko/skills/<skill-name>/`. No plugin half, no npm install —
-   for pure-procedural community skills. URLs must be https against
-   github / gitlab / codeberg. Gated by `allowGitUrlInstalls`.
+The binary manages two things on the operator's host:
 
-Packages whose `package.json` declares `openneko.skill: "./skill"` also
-drop the bundled SKILL.md half under `~/.openneko/skills/<name>/` during
-install — that's how connectors like Google Workspace and Shopify ship
-their procedural-knowledge skills alongside their typed action handlers.
-
-The binary manages three things on the operator's host:
-
-- `openneko.plugins.json` (tracked) — installed plugins manifest; each
-  entry carries `installSource` + `installedAt` + `policySnapshot` for
-  audit.
-- `~/.config/openneko/secrets.json` (mode 0600) — per-user env vars for
-  static API keys, plus `_operators[opId][plugin]` slots for per-operator
-  OAuth credentials produced by `connect`-capable plugins.
-- `~/.openneko/skills/` — community + bundled-half skill folders the
-  worker loads at agent-turn time. `pnpm skills:check` validates declared
-  deps.
+- `~/.config/openneko/secrets.json` (mode 0600) — deployment secrets by
+  section (for example `channel.slack`, `signin.scalekit`), plus
+  `_operators[opId][connector]` slots for per-operator OAuth credentials.
+- `~/.openneko/skills/` — community skill folders the worker loads at
+  agent-turn time. `pnpm skills:check` validates declared deps.
 
 See the repo-root [README](../../README.md) for the full operator-side
 docs including `/integrations` (per-operator OAuth) and `/settings/security`

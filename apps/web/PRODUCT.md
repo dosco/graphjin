@@ -79,7 +79,7 @@ Capabilities:
 - The operator approves actions through commits, not free-form model writes.
 - Packs, workflows, rules and policies, runs and replay, library, memory,
   skills, and integrations complete the operator loop.
-- Admin covers users, plugins, rules, and settings for agent, data, GraphJin,
+- Admin covers users, rules, and settings for agent, data, GraphJin,
   packs, research, rules, security, SSO, and sign-in.
 
 Constraints:

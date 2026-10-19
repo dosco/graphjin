@@ -46,7 +46,6 @@ services:
 
   worker:
     environment:
-      OPENNEKO_PLUGIN_BASE_IMAGE: ${OPENNEKO_PLUGIN_BASE_IMAGE:-ghcr.io/open-neko/plugin-base:${OPENNEKO_VERSION:-latest}}
       OPENNEKO_AGENT_IMAGE: ${OPENNEKO_AGENT_IMAGE:-ghcr.io/open-neko/agent:${OPENNEKO_VERSION:-latest}}
       OPENNEKO_AGENT_CPUS: ${OPENNEKO_AGENT_CPUS:-2}
       OPENNEKO_AGENT_MEMORY: ${OPENNEKO_AGENT_MEMORY:-1Gi}

@@ -20,15 +20,14 @@ Setup commands — Node deps, migrations, `pnpm dev`, the two GraphJin services 
 ```text
 apps/
   web/                 Next.js UI and API routes
-  worker/              Background job runner, plugin registry, OpenShell runtime
+  worker/              Background job runner, built-in channels and sign-in, OpenShell runtime
   openneko/            `openneko` CLI + stack supervisor (Go), distributed as a single binary
 packages/
   db/                  Drizzle ORM client, schema, migrations, job queue
   llm/                 Providers, agents, classifier, GraphJin work support; document
                        library + OKF tooling (src/library), bundled skills and starter
                        knowledge packs (assets/)
-  plugin-install/      Manifest, secrets store, marketplace client, install orchestrator (TS — consumed by worker)
-  plugin-types/        Plugin RPC schemas (zod) + manifest types — shared with plugin authors
+  secrets/             Deployment secrets store, at-rest cipher, Infisical resolver (TS — consumed by worker)
 db/
   migrations/          Metadata database migrations (mirrored into apps/openneko/assets/migrations/ for embedding)
   graphjin/            Sample GraphJin config

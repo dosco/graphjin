@@ -317,7 +317,7 @@ export default function AppRail({ initial }: { initial?: RailIdentity }) {
     "loading" | "solo" | "admin" | "member"
   >(RECORDS_VISUAL_TEST ? "member" : (initial?.mode ?? "loading"));
   // A visitor holding a session cookie can always sign out, whatever
-  // the worker reports about the auth plugin.
+  // the worker reports about the sign-in provider.
   const [signedIn, setSignedIn] = useState(Boolean(initial?.signedIn));
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [recordApps, setRecordApps] = useState<RecordAppNav[]>(

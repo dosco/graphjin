@@ -6,7 +6,7 @@ import {
   _resetAdministratorCacheForTest,
   _resetProviderCache,
   _setProviderStatusRequestForTest,
-  isAuthPluginInstalled,
+  isSignInGateLive,
   proxy,
   verifySessionCookie,
 } from "../src/proxy";
@@ -92,7 +92,7 @@ describe("verifySessionCookie", () => {
   });
 });
 
-describe("isAuthPluginInstalled", () => {
+describe("isSignInGateLive", () => {
   it("uses Node HTTP rather than Next's request fetch wrapper", async () => {
     const server = createServer((_req, res) => {
       res.setHeader("content-type", "application/json");
@@ -108,7 +108,7 @@ describe("isAuthPluginInstalled", () => {
     vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
 
     try {
-      expect(await isAuthPluginInstalled()).toBe(false);
+      expect(await isSignInGateLive()).toBe(false);
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       await new Promise<void>((resolve, reject) =>
@@ -123,21 +123,21 @@ describe("isAuthPluginInstalled", () => {
         Response.json({ provider: { pluginName: "@x/y", providerLabel: "X" } }),
       ),
     );
-    expect(await isAuthPluginInstalled()).toBe(true);
+    expect(await isSignInGateLive()).toBe(true);
   });
 
   it("returns false when the worker reports no provider", async () => {
     _setProviderStatusRequestForTest(
       freshFetch(() => Response.json({ provider: null })),
     );
-    expect(await isAuthPluginInstalled()).toBe(false);
+    expect(await isSignInGateLive()).toBe(false);
   });
 
   it("fails open (false) when the worker is unreachable", async () => {
     _setProviderStatusRequestForTest(
       () => Promise.reject(new Error("ECONNREFUSED")),
     );
-    expect(await isAuthPluginInstalled()).toBe(false);
+    expect(await isSignInGateLive()).toBe(false);
   });
 
   it("caches the result for the TTL window", async () => {
@@ -148,9 +148,9 @@ describe("isAuthPluginInstalled", () => {
         return Response.json({ provider: { pluginName: "@x/y", providerLabel: "X" } });
       }),
     );
-    expect(await isAuthPluginInstalled()).toBe(true);
-    expect(await isAuthPluginInstalled()).toBe(true);
-    expect(await isAuthPluginInstalled()).toBe(true);
+    expect(await isSignInGateLive()).toBe(true);
+    expect(await isSignInGateLive()).toBe(true);
+    expect(await isSignInGateLive()).toBe(true);
     expect(calls).toBe(1);
   });
 });

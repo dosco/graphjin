@@ -44,7 +44,7 @@ export const ACCESS_POLICIES: AccessPolicy[] = [
   { prefix: "/api/admin", rule: "admin" },
   { prefix: "/api/settings", rule: "admin" },
   { prefix: "/api/policies", rule: "admin" },
-  { prefix: "/api/plugins", rule: "admin" },
+  { prefix: "/api/action-descriptors", rule: "admin" },
   { prefix: "/api/onboarding", rule: "admin" },
   { prefix: "/onboarding", rule: "admin" },
   { prefix: "/business-profile", rule: "admin" },

@@ -57,9 +57,8 @@ vi.mock("@neko/llm/workflows", () => ({
   WORKFLOW_API_INPUT_FILE: "trigger_input.json",
 }));
 
-vi.mock("../../src/plugins/registry-instance.js", () => ({
+vi.mock("../../src/secrets/instance.js", () => ({
   getCurrentScrubber: vi.fn(() => ({})),
-  getPluginRegistryInstance: vi.fn(() => null),
 }));
 
 vi.mock("../../src/records/adapters.js", () => ({

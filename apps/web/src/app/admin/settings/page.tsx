@@ -99,20 +99,17 @@ export default async function SettingsPage() {
     ),
     getContextRemote(orgId),
   ]);
-  const signInPlugin = authGate.provider?.pluginName ?? null;
-  const pendingPlugin = authGate.pending?.pluginName ?? null;
-  const authStatus = (plugin: string) =>
-    signInPlugin === plugin
+  const liveProvider = authGate.provider?.pluginName ?? null;
+  const pendingProvider = authGate.pending?.pluginName ?? null;
+  const authStatus = (provider: "scalekit" | "magic-link") =>
+    liveProvider === provider
       ? { status: "Live", statusTone: "success" as const }
-      : pendingPlugin === plugin
+      : pendingProvider === provider
         ? { status: "Setup pending", statusTone: "watch" as const }
-        : { status: "Not installed", statusTone: "neutral" as const };
-  const extraMarketplaces = installPolicy.allowedMarketplaces.length;
-  const securityStatus = installPolicy.allowUnverified || installPolicy.allowGitUrlInstalls
-    ? { status: "Exceptions allowed", statusTone: "watch" as const }
-    : extraMarketplaces > 0
-      ? { status: `${extraMarketplaces + 1} marketplaces`, statusTone: "success" as const }
-      : { status: "Official marketplace only", statusTone: "success" as const };
+        : { status: "Off", statusTone: "neutral" as const };
+  const securityStatus = installPolicy.allowGitUrlInstalls
+    ? { status: "Git-URL skills allowed", statusTone: "watch" as const }
+    : { status: "Locked down", statusTone: "success" as const };
 
   const enabledSources = sources.filter((source) => source.enabled);
   const jwtSources = enabledSources.filter(
@@ -144,6 +141,11 @@ export default async function SettingsPage() {
           copy: "Install and manage packs for applications such as Magento.",
           status: "Magento ready",
           statusTone: "success",
+        },
+        {
+          href: "/admin/settings/channels",
+          title: "Channels",
+          copy: "Slack, Telegram, and other places where people talk to OpenNeko. A pack turns each one on.",
         },
         {
           href: "/admin/settings/graphjin",
@@ -199,18 +201,18 @@ export default async function SettingsPage() {
           href: "/admin/settings/sso",
           title: "Single sign-on",
           copy: "People sign in with Okta, Entra ID, or another identity provider. Their groups map to roles.",
-          ...authStatus("@open-neko/plugin-scalekit"),
+          ...authStatus("scalekit"),
         },
         {
           href: "/admin/settings/signin",
           title: "Email-link sign-in",
           copy: "Invited people sign in with a one-time link sent to their email.",
-          ...authStatus("@open-neko/plugin-magic-link"),
+          ...authStatus("magic-link"),
         },
         {
           href: "/admin/settings/security",
           title: "Install policy",
-          copy: "The marketplaces that plugins and skills can come from.",
+          copy: "Whether operators can install community skills from git URLs.",
           ...securityStatus,
         },
       ],

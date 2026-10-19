@@ -14,7 +14,7 @@ import {
 } from "@neko/db";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
-import { getAuthGateStatus, getPluginStatus } from "@/lib/auth";
+import { getAuthGateStatus } from "@/lib/auth";
 import { requestWorker } from "@/lib/groups-admin";
 import { AdminDenied, AdminShell } from "../AdminShell";
 import { UsersAdminTabs, type UsersAdminTab } from "./UsersAdminTabs";
@@ -28,7 +28,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
   if (actor.role !== "admin") return <AdminDenied />;
 
   const orgId = await getOrgId();
-  const [users, memberships, administrators, groups, idpGroups, rules, pluginStatus, authGate, query] = await Promise.all([
+  const [users, memberships, administrators, groups, idpGroups, rules, directoryStatus, authGate, query] = await Promise.all([
     db()
       .select({
         id: app_user.id,
@@ -52,7 +52,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
     listUserGroups(orgId),
     listIdpGroups(orgId),
     listIdpGroupRules(orgId),
-    getPluginStatus(),
+    requestWorker("/admin/directory/status").catch(() => null),
     getAuthGateStatus(),
     searchParams,
   ]);
@@ -66,15 +66,14 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
     groupsByUser.set(m.userId, list);
   }
 
-  const directory = pluginStatus.directoryProvider
-    ? ((await requestWorker("/admin/directory/status").catch(() => null))?.body as
-        | { provider?: { providerLabel: string; canCreateUsers: boolean } | null }
-        | undefined)
-    : undefined;
+  const directory = directoryStatus?.body as
+    | { provider?: { pluginName: string; providerLabel: string; canCreateUsers: boolean } | null }
+    | undefined;
   const directoryCreateLabel = directory?.provider?.canCreateUsers ? directory.provider.providerLabel : null;
+  const signInLabel = authGate.provider?.providerLabel ?? null;
 
   // Claiming the operator's address only matters once someone can sign
-  // in, so the prompt waits for a sign-in plugin. Without one it would ask
+  // in, so the prompt waits for a sign-in provider. Without one it would ask
   // whoever opens the page, which on a public installation is a stranger.
   const identitySetup =
     Boolean(authGate.provider ?? authGate.pending) &&
@@ -97,8 +96,8 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
     <AdminShell
       title="User administration"
       subtitle={
-        pluginStatus.authProvider
-          ? `Multi-user mode via ${pluginStatus.authProvider}.`
+        signInLabel
+          ? `Multi-user mode via ${signInLabel}.`
           : "Solo mode uses your local admin account."
       }
       back={{ href: "/admin", label: "Admin" }}
@@ -110,8 +109,8 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
         groups={groups}
         idpGroups={idpGroups.map((g) => ({ ...g }))}
         rules={rules.map((r) => ({ ...r, createdAt: new Date(r.createdAt).toISOString() }))}
-        signInProvider={pluginStatus.authProvider ?? authGate.pending?.providerLabel ?? null}
-        directoryProvider={pluginStatus.directoryProvider ?? null}
+        signInProvider={signInLabel ?? authGate.pending?.providerLabel ?? null}
+        directoryProvider={directory?.provider?.pluginName ?? null}
         directoryCreateLabel={directoryCreateLabel}
       />
     </AdminShell>

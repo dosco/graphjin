@@ -13,7 +13,7 @@ import (
 func newSecretsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "secrets",
-		Short: "Manage per-plugin env values stored at ~/.config/openneko/secrets.json",
+		Short: "Manage deployment secrets (channel, sign-in and pack credentials) stored at ~/.config/openneko/secrets.json",
 	}
 	cmd.AddCommand(newSecretsListCmd(), newSecretsSetCmd(), newSecretsUnsetCmd())
 	return cmd
@@ -21,8 +21,8 @@ func newSecretsCmd() *cobra.Command {
 
 func newSecretsListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list [<plugin>]",
-		Short: "Show env keys stored for a plugin (or all plugins); values never echoed",
+		Use:   "list [<section>]",
+		Short: "Show env keys stored for a section (or all sections); values never echoed",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if code, proxied := MaybeProxyToWorker(cmd); proxied {
@@ -34,13 +34,13 @@ func newSecretsListCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			if len(args) == 1 {
-				plugin := args[0]
-				keys := secrets.ListKeysForPlugin(store, plugin)
+				section := args[0]
+				keys := secrets.ListKeysForSection(store, section)
 				if len(keys) == 0 {
 					fmt.Fprintln(out, "no secrets stored")
 					return nil
 				}
-				fmt.Fprintln(out, plugin)
+				fmt.Fprintln(out, section)
 				for _, k := range keys {
 					fmt.Fprintf(out, "  %s\n", k)
 				}
@@ -50,9 +50,9 @@ func newSecretsListCmd() *cobra.Command {
 				fmt.Fprintln(out, "no secrets stored")
 				return nil
 			}
-			plugins := sortedPluginNames(store)
-			for _, p := range plugins {
-				keys := secrets.ListKeysForPlugin(store, p)
+			sections := sortedSectionNames(store)
+			for _, p := range sections {
+				keys := secrets.ListKeysForSection(store, p)
 				if len(keys) == 0 {
 					continue
 				}
@@ -66,12 +66,12 @@ func newSecretsListCmd() *cobra.Command {
 	}
 }
 
-func sortedPluginNames(s secrets.Store) []string {
+func sortedSectionNames(s secrets.Store) []string {
 	names := make([]string, 0, len(s))
 	for n := range s {
 		names = append(names, n)
 	}
-	// reuse secrets.ListKeysForPlugin's behavior: alphabetical
+	// reuse secrets.ListKeysForSection's behavior: alphabetical
 	sortStrings(names)
 	return names
 }
@@ -87,17 +87,17 @@ func sortStrings(s []string) {
 
 func newSecretsSetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "set <plugin> <key> [<value>]",
-		Short: "Set an env value for a plugin",
+		Use:   "set <section> <key> [<value>]",
+		Short: "Set an env value in a section (for example channel.slack)",
 		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if code, proxied := MaybeProxyToWorker(cmd); proxied {
 				return WithExit(code, nil)
 			}
-			plugin := args[0]
+			section := args[0]
 			key := args[1]
-			if plugin == "" || key == "" {
-				return WithExit(2, errors.New("secrets set: plugin and key required"))
+			if section == "" || key == "" {
+				return WithExit(2, errors.New("secrets set: section and key required"))
 			}
 			if !secrets.IsValidEnvKey(key) {
 				return fmt.Errorf(`secrets set: key %q must be UPPER_SNAKE_CASE`, key)
@@ -120,10 +120,10 @@ func newSecretsSetCmd() *cobra.Command {
 				return err
 			}
 			existing := map[string]bool{}
-			for _, k := range secrets.ListKeysForPlugin(s, plugin) {
+			for _, k := range secrets.ListKeysForSection(s, section) {
 				existing[k] = true
 			}
-			next, err := secrets.Set(s, plugin, key, value)
+			next, err := secrets.Set(s, section, key, value)
 			if err != nil {
 				return err
 			}
@@ -134,7 +134,7 @@ func newSecretsSetCmd() *cobra.Command {
 			if !existing[key] {
 				verb = "set"
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s %s/%s\n", verb, plugin, key)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s %s/%s\n", verb, section, key)
 			return nil
 		},
 	}
@@ -142,32 +142,32 @@ func newSecretsSetCmd() *cobra.Command {
 
 func newSecretsUnsetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "unset <plugin> <key>",
+		Use:   "unset <section> <key>",
 		Short: "Remove an env value",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if code, proxied := MaybeProxyToWorker(cmd); proxied {
 				return WithExit(code, nil)
 			}
-			plugin := args[0]
+			section := args[0]
 			key := args[1]
-			if plugin == "" || key == "" {
-				return WithExit(2, errors.New("secrets unset: plugin and key required"))
+			if section == "" || key == "" {
+				return WithExit(2, errors.New("secrets unset: section and key required"))
 			}
 			s, err := secrets.Read("")
 			if err != nil {
 				return err
 			}
-			next, removed := secrets.Unset(s, plugin, key)
+			next, removed := secrets.Unset(s, section, key)
 			out := cmd.OutOrStdout()
 			if !removed {
-				fmt.Fprintf(out, "%s/%s was not set\n", plugin, key)
+				fmt.Fprintf(out, "%s/%s was not set\n", section, key)
 				return nil
 			}
 			if err := secrets.Write(next, ""); err != nil {
 				return err
 			}
-			fmt.Fprintf(out, "unset %s/%s\n", plugin, key)
+			fmt.Fprintf(out, "unset %s/%s\n", section, key)
 			return nil
 		},
 	}
