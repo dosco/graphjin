@@ -53,7 +53,10 @@ type watchDigestConfig struct {
 type watchWebhookConfig struct {
 	URL       string
 	SecretEnv string
-	Headers   map[string]string
+	// SecretSource "keystore" signs with a per-watch secret derived from the
+	// keystore key; see watchWebhookKeystoreSecret.
+	SecretSource string
+	Headers      map[string]string
 }
 
 type watchWorkflowConfig struct {
@@ -772,9 +775,13 @@ func (s *graphjinService) deliverWatchWebhook(ctx context.Context, def watchRunt
 		}
 		req.Header.Set(headerName, value)
 	}
-	if cfg.SecretEnv != "" {
-		secret := os.Getenv(cfg.SecretEnv)
-		if secret == "" {
+	if cfg.SecretEnv != "" || cfg.SecretSource == "keystore" {
+		var secret string
+		if cfg.SecretSource == "keystore" {
+			if secret, err = s.watchWebhookKeystoreSecret(def.ID); err != nil {
+				return nil, err
+			}
+		} else if secret = os.Getenv(cfg.SecretEnv); secret == "" {
 			return nil, fmt.Errorf("webhook secret env %s is not set", cfg.SecretEnv)
 		}
 		mac := hmac.New(sha256.New, []byte(secret))
@@ -1049,6 +1056,12 @@ func parseWatchDeliveryConfig(raw string) (watchDeliveryConfig, bool, error) {
 		if strings.TrimSpace(cfg.Webhook.URL) == "" {
 			return cfg, true, errors.New("webhook delivery requires url")
 		}
+		switch {
+		case cfg.Webhook.SecretSource != "" && cfg.Webhook.SecretSource != "keystore":
+			return cfg, true, fmt.Errorf("unsupported webhook secret_source %q", cfg.Webhook.SecretSource)
+		case cfg.Webhook.SecretSource != "" && cfg.Webhook.SecretEnv != "":
+			return cfg, true, errors.New("webhook delivery takes secret_env or secret_source, not both")
+		}
 	case "workflow":
 		if cfg.Workflow.Name == "" {
 			cfg.Workflow = parseWatchWorkflowConfig(m)
@@ -1065,9 +1078,10 @@ func parseWatchDeliveryConfig(raw string) (watchDeliveryConfig, bool, error) {
 func parseWatchWebhookConfig(raw any) watchWebhookConfig {
 	m := mapFromAny(raw)
 	cfg := watchWebhookConfig{
-		URL:       stringFromAny(m["url"]),
-		SecretEnv: stringFromAny(m["secret_env"]),
-		Headers:   map[string]string{},
+		URL:          stringFromAny(m["url"]),
+		SecretEnv:    stringFromAny(m["secret_env"]),
+		SecretSource: strings.ToLower(stringFromAny(m["secret_source"])),
+		Headers:      map[string]string{},
 	}
 	for key, value := range mapFromAny(m["headers"]) {
 		cfg.Headers[key] = stringFromAny(value)
@@ -1348,4 +1362,25 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 	case <-timer.C:
 		return nil
 	}
+}
+
+// watchWebhookKeystoreSecret is the signing secret for a watch whose webhook
+// uses secret_source "keystore": hex(HMAC-SHA256(keystore key,
+// "graphjin-watch-webhook:v1:" + watch id)). A receiver that holds the
+// keystore key derives the same secret, so nothing else has to be shared.
+func (s *graphjinService) watchWebhookKeystoreSecret(watchID string) (string, error) {
+	keyText := ""
+	if s.conf != nil {
+		keyText = strings.TrimSpace(s.conf.Secrets.Keystore.Key)
+	}
+	if keyText == "" {
+		return "", errors.New("webhook secret_source keystore needs secrets.keystore.key")
+	}
+	key, err := decodeLocalKeystoreKey(keyText)
+	if err != nil {
+		return "", err
+	}
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte("graphjin-watch-webhook:v1:" + watchID))
+	return hex.EncodeToString(mac.Sum(nil)), nil
 }

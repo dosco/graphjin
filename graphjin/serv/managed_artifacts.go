@@ -45,11 +45,15 @@ func (s *graphjinService) initManagedArtifactStore() error {
 	if s.runtimeCore.Databases == nil {
 		s.runtimeCore.Databases = make(map[string]core.DatabaseConfig)
 	}
+	// The store's control rows have time columns of their own, so a global
+	// analytics_mode must not demand time windows on them.
+	analytics := false
 	s.runtimeCore.Databases[name] = core.DatabaseConfig{
-		Type:         "sqlite",
-		Path:         path,
-		MaxOpenConns: 1,
-		MaxIdleConns: 1,
+		Type:          "sqlite",
+		Path:          path,
+		MaxOpenConns:  1,
+		MaxIdleConns:  1,
+		AnalyticsMode: &analytics,
 	}
 	s.runtimeCore.Artifacts.Source = name
 	s.dbs[name] = db

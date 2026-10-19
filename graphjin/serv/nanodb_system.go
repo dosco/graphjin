@@ -552,6 +552,7 @@ func watchNanoColumns() []core.NanoColumn {
 		{Name: "delivery_json", Type: "json"},
 		{Name: "enrich_json", Type: "json"},
 		{Name: "absence_json", Type: "json"},
+		{Name: "poll_json", Type: "json"},
 		{Name: "flow_review_json", Type: "json"},
 		{Name: "action_review_json", Type: "json"},
 		{Name: "flow_hash", Type: "text", Index: true},

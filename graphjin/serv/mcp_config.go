@@ -3370,7 +3370,8 @@ func (ms *mcpServer) attachStagedManagedArtifactStore(stagedCore *core.Config, s
 	}
 	delete(stage.runtimeCore.Databases, oldName)
 	name := allocateRuntimeDatabaseName(internalArtifactDatabaseBase, stagedCore, stage.runtimeCore, stage.dbs)
-	dbConf := core.DatabaseConfig{Type: "sqlite", MaxOpenConns: 1, MaxIdleConns: 1}
+	analytics := false
+	dbConf := core.DatabaseConfig{Type: "sqlite", MaxOpenConns: 1, MaxIdleConns: 1, AnalyticsMode: &analytics}
 	if ms.service.runtimeCore != nil {
 		if current, ok := ms.service.runtimeCore.Databases[oldName]; ok {
 			dbConf = current

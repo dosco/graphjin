@@ -74,6 +74,7 @@ type watchRuntimeDefinition struct {
 	DeliveryJSON       string
 	EnrichJSON         string
 	AbsenceJSON        string
+	PollJSON           string
 	Lifecycle          string
 	LeaseExpiresAt     string
 	LeaseOwnerID       string
@@ -88,6 +89,8 @@ type watchRuntimeDefinition struct {
 	WorkflowSourceHash string
 	lease              watchLease
 	key                string
+	// pollTick is set by a polled watch for the result being persisted.
+	pollTick int64
 }
 
 type activeWatchRuntime struct {
@@ -280,6 +283,7 @@ func (s *graphjinService) loadRunnableWatches(ctx context.Context) ([]watchRunti
 			DeliveryJSON:   jsonMapString(row, "delivery_json"),
 			EnrichJSON:     jsonMapString(row, "enrich_json"),
 			AbsenceJSON:    jsonMapString(row, "absence_json"),
+			PollJSON:       jsonMapString(row, "poll_json"),
 			Lifecycle:      watchLifecycle(stringMapValue(row, "lifecycle")),
 			LeaseExpiresAt: stringMapValue(row, "lease_expires_at"),
 			LeaseOwnerID:   stringMapValue(row, "lease_owner_id"),
@@ -309,6 +313,14 @@ func (s *graphjinService) loadRunnableWatches(ctx context.Context) ([]watchRunti
 			continue
 		}
 		def.AbsenceJSON = normalizedAbsence
+		normalizedPoll, _, _, pollErr := normalizeWatchPollJSON(def.PollJSON)
+		if pollErr != nil {
+			if err := s.pauseWatchForReview(ctx, row, watchReviewPending); err != nil {
+				s.recordWatchRunnerError("pause invalid watch poll", err, map[string]any{"watch_id": def.ID})
+			}
+			continue
+		}
+		def.PollJSON = normalizedPoll
 		proposal, proposalErr := s.watchActionProposal(
 			s.watchOwnerContext(ctx, def),
 			def.Query, def.SavedQueryName, def.VariablesJSON, def.EnrichJSON, def.DeliveryJSON, def.AbsenceJSON,
@@ -394,6 +406,7 @@ func (d watchRuntimeDefinition) runtimeKey() string {
 		d.DeliveryJSON,
 		d.EnrichJSON,
 		d.AbsenceJSON,
+		d.PollJSON,
 		d.Lifecycle,
 		d.LeaseExpiresAt,
 		d.AccountID,
@@ -662,6 +675,10 @@ func (s *graphjinService) runWatchSubscription(ctx context.Context, def watchRun
 		}()
 		go s.renewWatchLease(runCtx, cancel, coord, def.lease)
 		ctx = runCtx
+	}
+	if _, poll, ok, _ := normalizeWatchPollJSON(def.PollJSON); ok {
+		s.runWatchPoll(ctx, def, poll)
+		return
 	}
 	current := def
 	for {
@@ -972,6 +989,9 @@ func (s *graphjinService) persistWatchResult(ctx context.Context, def *watchRunt
 	eventCacheHash := dataHash
 	if enrichCfg.Kind == "flow" && enrichCfg.FlowHash != "" {
 		eventCacheHash = hashString(dataHash + ":" + enrichCfg.FlowHash)
+	}
+	if def.pollTick != 0 {
+		eventCacheHash = hashString(fmt.Sprintf("%s:poll:%d", eventCacheHash, def.pollTick))
 	}
 	eventID := watchEventID(def.ID, eventCacheHash)
 	eventEvidence := map[string]any{
