@@ -40,8 +40,10 @@ import {
 } from "./memory";
 import { searchLibraryForRun } from "./library";
 import type {
+  GraphjinAgentActionEvent,
   GraphjinAgentResponse,
   GraphjinAgentStatus,
+  GraphjinAgentTurn,
 } from "../graphjin/agent";
 import {
   callGraphjinMcpTool as callRemoteGraphjinMcpTool,
@@ -405,6 +407,27 @@ export type WaitForActionExecutionResult =
       status: "timeout";
     };
 
+/**
+ * Each thread's recent data questions and GraphJin's answers, so a follow-up
+ * such as "and last month?" resolves. GraphJin treats history as untrusted
+ * context only. Kept per process and per data source, newest last.
+ */
+const DATA_AGENT_HISTORY_TURNS = 8;
+const DATA_AGENT_HISTORY_THREADS = 500;
+const dataAgentHistory = new Map<string, GraphjinAgentTurn[]>();
+
+function rememberDataAgentTurn(key: string, instruction: string, response: GraphjinAgentResponse): void {
+  const turns = dataAgentHistory.get(key) ?? [];
+  dataAgentHistory.delete(key);
+  turns.push({ role: "user", content: instruction });
+  if (response.answer) turns.push({ role: "assistant", content: response.answer, status: response.status });
+  dataAgentHistory.set(key, turns.slice(-DATA_AGENT_HISTORY_TURNS));
+  // Least recently asked threads go first.
+  while (dataAgentHistory.size > DATA_AGENT_HISTORY_THREADS) {
+    dataAgentHistory.delete(dataAgentHistory.keys().next().value!);
+  }
+}
+
 type RecordsControlPlaneRuntime = {
   gateway: RecordsReadGateway;
 };
@@ -587,9 +610,13 @@ export interface AgentControlPlane {
   askGraphjinDataAgent(input: {
     orgId: string;
     runId?: string | null;
+    /** The thread whose earlier data questions GraphJin gets as history. */
+    threadId?: string;
     dataSourceId?: string;
     instruction: string;
     maxSteps?: number;
+    /** Each step GraphJin's agent takes, as it happens. */
+    onAction?: (event: GraphjinAgentActionEvent) => void;
   }): Promise<GraphjinDataAgentResult>;
   /** Actor-scoped registry catalog for native generated records apps. */
   listRecordCatalog(input: {
@@ -1095,9 +1122,11 @@ export class InProcessControlPlane implements AgentControlPlane {
   async askGraphjinDataAgent(input: {
     orgId: string;
     runId?: string | null;
+    threadId?: string;
     dataSourceId?: string;
     instruction: string;
     maxSteps?: number;
+    onAction?: (event: GraphjinAgentActionEvent) => void;
   }): Promise<GraphjinDataAgentResult> {
     try {
       await assertRunHoldsDataSource(input.orgId, input.runId);
@@ -1184,12 +1213,16 @@ export class InProcessControlPlane implements AgentControlPlane {
             "GraphJin agent is not configured read-only; OpenNeko will not delegate data questions",
         };
       }
+      const historyKey = input.threadId ? `${input.orgId}\u0000${input.threadId}\u0000${src.id}` : undefined;
+      const history = historyKey ? dataAgentHistory.get(historyKey) : undefined;
       const response = await askGraphjinAgent({
         baseUrl: src.graphqlUrl,
         token,
         signal: AbortSignal.timeout(180_000),
+        ...(input.onAction ? { onAction: input.onAction } : {}),
         request: {
           instruction,
+          ...(history?.length ? { history } : {}),
           max_steps: Math.min(Math.max(input.maxSteps ?? GRAPHJIN_AGENT_MAX_STEPS, 1), GRAPHJIN_AGENT_MAX_STEPS),
           return_trace: false,
           context: {
@@ -1201,6 +1234,7 @@ export class InProcessControlPlane implements AgentControlPlane {
           },
         },
       });
+      if (historyKey) rememberDataAgentTurn(historyKey, instruction, response);
       return { source, agentStatus, response };
     } catch (error) {
       return {

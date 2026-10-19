@@ -1,4 +1,5 @@
 import type {
+  AgentActionEvent,
   AgentRefusal,
   AgentRequest,
   AgentResponse,
@@ -17,6 +18,7 @@ export type GraphjinAgentRequest = AgentRequest;
 export type GraphjinAgentRefusal = AgentRefusal;
 export type GraphjinAgentResponse = AgentResponse;
 export type GraphjinAgentStatus = AgentStatus;
+export type GraphjinAgentActionEvent = AgentActionEvent;
 
 /** Resolve GraphQL, MCP, or server-root URLs to the matching agent route. */
 export function graphjinAgentEndpoint(baseUrl: string, status = false): string {
@@ -58,17 +60,22 @@ async function readAgentResponse<T>(res: Response, operation: string): Promise<T
   return parsed as T;
 }
 
+/**
+ * Ask GraphJin's agent. With onAction, GraphJin streams the run over
+ * Server-Sent Events and onAction receives each step as it happens.
+ */
 export async function askGraphjinAgent(input: {
   baseUrl: string;
   token: string;
   request: GraphjinAgentRequest;
   signal?: AbortSignal;
+  onAction?: (event: GraphjinAgentActionEvent) => void;
 }): Promise<GraphjinAgentResponse> {
   const res = await fetch(graphjinAgentEndpoint(input.baseUrl), {
     method: "POST",
     headers: await packUserConnectionHeaders(input.baseUrl, {
       ...graphjinTraceHeaders(),
-      accept: "application/json",
+      accept: input.onAction ? "text/event-stream" : "application/json",
       "content-type": "application/json",
       authorization: `Bearer ${input.token}`,
     }),
@@ -77,7 +84,57 @@ export async function askGraphjinAgent(input: {
     body: JSON.stringify(input.request),
     signal: input.signal,
   });
+  if (input.onAction && res.ok && res.headers.get("content-type")?.startsWith("text/event-stream")) {
+    return readAgentEvents(res, input.onAction);
+  }
   return readAgentResponse<GraphjinAgentResponse>(res, "agent request");
+}
+
+/** Read GraphJin's agent stream: `action` events, then one `result`. */
+async function readAgentEvents(
+  res: Response,
+  onAction: (event: GraphjinAgentActionEvent) => void,
+): Promise<GraphjinAgentResponse> {
+  if (!res.body) throw new Error("GraphJin agent stream has no body");
+  const decoder = new TextDecoder();
+  let buffered = "";
+  let result: GraphjinAgentResponse | undefined;
+  const dispatch = (block: string) => {
+    let event = "message";
+    const data: string[] = [];
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      else if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+    }
+    if (data.length === 0) return;
+    let payload: unknown;
+    try {
+      payload = JSON.parse(data.join("\n"));
+    } catch {
+      return;
+    }
+    if (event === "action") {
+      try {
+        onAction(payload as GraphjinAgentActionEvent);
+      } catch {
+        // Progress is best-effort; the answer still arrives.
+      }
+    } else if (event === "result" && payload && typeof payload === "object") {
+      result = payload as GraphjinAgentResponse;
+    }
+  };
+  for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+    buffered += decoder.decode(chunk, { stream: true }).replace(/\r\n/g, "\n");
+    let end = buffered.indexOf("\n\n");
+    while (end >= 0) {
+      dispatch(buffered.slice(0, end));
+      buffered = buffered.slice(end + 2);
+      end = buffered.indexOf("\n\n");
+    }
+  }
+  if (buffered.trim()) dispatch(buffered);
+  if (!result) throw new Error("GraphJin agent stream ended without a result");
+  return result;
 }
 
 export async function getGraphjinAgentStatus(input: {

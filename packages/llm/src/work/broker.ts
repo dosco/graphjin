@@ -108,6 +108,13 @@ async function handle(
   return withRunTraceContext(binding.runId, () => handleRunRequest(deps, req, res, binding));
 }
 
+/** A one-line status for a step GraphJin's agent took. */
+export function dataAgentStepMessage(event: { tool: string; status: string; error?: string }): string {
+  const tool = event.tool.replace(/_/g, " ");
+  if (event.status === "error" || event.error) return `Data agent: ${tool} failed, trying again`;
+  return `Data agent: ${tool}`;
+}
+
 async function handleRunRequest(
   deps: AgentBrokerDeps,
   req: IncomingMessage,
@@ -354,8 +361,12 @@ async function handleRunRequest(
         await cp.askGraphjinDataAgent({
           orgId: binding.orgId,
           // A job has no work_run row, so it carries no run entitlements.
-          ...(binding.kind === "agent-job" ? {} : { runId: binding.runId }),
+          ...(binding.kind === "agent-job" ? {} : { runId: binding.runId, ...(binding.threadId ? { threadId: binding.threadId } : {}) }),
           instruction: String(body.instruction ?? ""),
+          // GraphJin's steps reach the conversation while it works.
+          onAction: (event) => {
+            void deps.onEvents(binding, [{ type: "status", message: dataAgentStepMessage(event) }]).catch(() => {});
+          },
           ...(typeof body.dataSourceId === "string"
             ? { dataSourceId: body.dataSourceId }
             : {}),

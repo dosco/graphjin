@@ -370,12 +370,14 @@ describe("agent broker", () => {
       runId: "r1",
       instruction: "Count all orders",
       maxSteps: 6,
+      // GraphJin's steps go to the run as status events.
+      onAction: expect.any(Function),
     });
   });
 
   it("lets a job ask GraphJin's agent without run entitlements", async () => {
     await new BrokerControlPlane(baseUrl, "job").askGraphjinDataAgent({ orgId: "SPOOF", runId: "SPOOF", instruction: "Count all orders" });
-    expect(fake.calls.find((call) => call.method === "graphjin-agent")?.input).toEqual({ orgId: "o1", instruction: "Count all orders" });
+    expect(fake.calls.find((call) => call.method === "graphjin-agent")?.input).toEqual({ orgId: "o1", instruction: "Count all orders", onAction: expect.any(Function) });
   });
 
   it("refuses direct GraphJin routes when the org uses GraphJin's agent", async () => {
