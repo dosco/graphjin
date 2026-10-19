@@ -9,15 +9,19 @@ import (
 // ModelUsage is content-free accounting. Requests includes calls with no
 // provider usage, so coverage remains honest after a crash or missing report.
 type ModelUsage struct {
-	Requests         int    `json:"requests,omitempty"`
-	Reported         int    `json:"reported,omitempty"`
-	InputTokens      int64  `json:"input_tokens,omitempty"`
-	OutputTokens     int64  `json:"output_tokens,omitempty"`
-	TotalTokens      int64  `json:"total_tokens,omitempty"`
-	CacheReadTokens  int64  `json:"cache_read_tokens,omitempty"`
-	CacheWriteTokens int64  `json:"cache_write_tokens,omitempty"`
-	ReasoningTokens  int64  `json:"reasoning_tokens,omitempty"`
-	Coverage         string `json:"coverage,omitempty"`
+	Requests         int   `json:"requests,omitempty"`
+	Reported         int   `json:"reported,omitempty"`
+	InputTokens      int64 `json:"input_tokens,omitempty"`
+	OutputTokens     int64 `json:"output_tokens,omitempty"`
+	TotalTokens      int64 `json:"total_tokens,omitempty"`
+	CacheReadTokens  int64 `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int64 `json:"cache_write_tokens,omitempty"`
+	ReasoningTokens  int64 `json:"reasoning_tokens,omitempty"`
+	// DelegatedTokens are model tokens another agent spent for this run,
+	// such as GraphJin's agent answering a data question. They count
+	// against the run's token budget.
+	DelegatedTokens int64  `json:"delegated_tokens,omitempty"`
+	Coverage        string `json:"coverage,omitempty"`
 	// CostMicros sums the catalog cost of the reported calls. PricedBy is
 	// "catalog" only when every reported call had a catalog price.
 	CostMicros     int64  `json:"cost_micros,omitempty"`

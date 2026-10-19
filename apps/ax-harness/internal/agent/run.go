@@ -363,6 +363,7 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 					return ax.Object("error", "invalid_"+name+"_result"), nil
 				}
 				finished.Data = append(json.RawMessage(nil), raw...)
+				events.chargeDelegated(raw)
 				if failed, message := toolFailure(raw); failed {
 					finished.Error = name + "_failed"
 					failedCalls.record(name, instruction, message)
@@ -888,7 +889,26 @@ func (r *recorder) chargedTokens() int64 {
 	if missing < 0 {
 		missing = 0
 	}
-	return r.usage.TotalTokens + int64(missing)*missingModelUsageCharge
+	return r.usage.TotalTokens + r.usage.DelegatedTokens + int64(missing)*missingModelUsageCharge
+}
+
+// chargeDelegated counts tokens a tool reports another agent spent for this
+// run against the token budget.
+func (r *recorder) chargeDelegated(raw json.RawMessage) {
+	var result struct {
+		Delegated struct {
+			TotalTokens int64 `json:"total_tokens"`
+		} `json:"delegated_usage"`
+	}
+	if json.Unmarshal(raw, &result) != nil || result.Delegated.TotalTokens <= 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.usage.DelegatedTokens += result.Delegated.TotalTokens
+	if r.spec.MaxModelTokens > 0 && r.chargedTokens() > r.spec.MaxModelTokens {
+		r.modelTokenOverspent = true
+	}
 }
 
 func (r *recorder) costBudgetExceeded() bool {

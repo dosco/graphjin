@@ -1062,6 +1062,9 @@ export const buildGraphjinReadServer = buildGraphjinMcpServer;
  * sandbox supplies only a business instruction; the host owns source
  * selection, readiness checks, and credentials.
  */
+/** The MCP _meta key a tool reports another agent's model tokens under (apps/ax-harness/internal/mcp). */
+export const DELEGATED_USAGE_META_KEY = "openneko/delegated_usage";
+
 export function buildGraphjinAgentServer(opts: {
   orgId: string;
   runId?: string;
@@ -1090,6 +1093,10 @@ export function buildGraphjinAgentServer(opts: {
         instruction: args.instruction,
         ...(args.maxSteps ? { maxSteps: args.maxSteps } : {}),
       });
+      // GraphJin's agent spends model tokens for this run; the harness counts
+      // them against the turn's budget.
+      const usage = result.response?.usage as { total_tokens?: unknown } | undefined;
+      const totalTokens = typeof usage?.total_tokens === "number" ? usage.total_tokens : 0;
       return {
         content: [
           {
@@ -1097,6 +1104,9 @@ export function buildGraphjinAgentServer(opts: {
             text: JSON.stringify(result),
           },
         ],
+        ...(totalTokens > 0
+          ? { _meta: { [DELEGATED_USAGE_META_KEY]: { total_tokens: totalTokens } } }
+          : {}),
       };
     },
   );

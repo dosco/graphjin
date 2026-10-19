@@ -44,6 +44,10 @@ func TestMCPResultKindsAndBoundaries(t *testing.T) {
 	server.AddTool(&protocol.Tool{Name: "structured", InputSchema: schema}, func(context.Context, *protocol.CallToolRequest) (*protocol.CallToolResult, error) {
 		return &protocol.CallToolResult{Content: []protocol.Content{&protocol.TextContent{Text: "record-42"}}, StructuredContent: map[string]any{"id": "42"}}, nil
 	})
+	server.AddTool(&protocol.Tool{Name: "delegated", InputSchema: schema}, func(context.Context, *protocol.CallToolRequest) (*protocol.CallToolResult, error) {
+		return &protocol.CallToolResult{Content: []protocol.Content{&protocol.TextContent{Text: "answer"}},
+			Meta: protocol.Meta{DelegatedUsageKey: map[string]any{"total_tokens": 1234}}}, nil
+	})
 	server.AddTool(&protocol.Tool{Name: "resource", InputSchema: schema}, func(context.Context, *protocol.CallToolRequest) (*protocol.CallToolResult, error) {
 		return &protocol.CallToolResult{Content: []protocol.Content{&protocol.ResourceLink{URI: "artifact://run/42", Name: "result.csv", MIMEType: "text/csv"}}}, nil
 	})
@@ -61,7 +65,7 @@ func TestMCPResultKindsAndBoundaries(t *testing.T) {
 		return nil, ctx.Err()
 	})
 	caps, err := Capabilities(ctx, connect(t, server), "mcp_", nil)
-	if err != nil || len(caps) != 6 {
+	if err != nil || len(caps) != 7 {
 		t.Fatalf("paginated discovery: caps=%d err=%v", len(caps), err)
 	}
 	tools := byName(caps)
@@ -77,6 +81,13 @@ func TestMCPResultKindsAndBoundaries(t *testing.T) {
 	structured, err := call("structured", ctx)
 	if err != nil || structured["is_error"] != false || structured["structured_content"].(map[string]any)["id"] != "42" {
 		t.Fatalf("structured result lost: %v %v", structured, err)
+	}
+	delegated, err := call("delegated", ctx)
+	if err != nil || delegated["delegated_usage"].(map[string]any)["total_tokens"] != float64(1234) {
+		t.Fatalf("delegated usage lost: %v %v", delegated, err)
+	}
+	if _, ok := structured["delegated_usage"]; ok {
+		t.Fatalf("a result without delegated usage reported some: %v", structured)
 	}
 	resource, err := call("resource", ctx)
 	if err != nil || resource["resource_links"].([]any)[0].(map[string]any)["uri"] != "artifact://run/42" {

@@ -65,6 +65,17 @@ func ConnectStream(ctx context.Context, stream io.ReadWriteCloser, prefix string
 	return capabilities, session.Close, nil
 }
 
+// DelegatedUsageKey is the _meta key under which a tool reports the model
+// tokens another agent spent answering it, as {"total_tokens": n}.
+const DelegatedUsageKey = "openneko/delegated_usage"
+
+func delegatedUsage(meta protocol.Meta) any {
+	if meta == nil {
+		return nil
+	}
+	return meta[DelegatedUsageKey]
+}
+
 // Capabilities lists the tools of an open session. A tool whose prefixed name
 // or input schema the agent cannot admit is left out.
 func Capabilities(ctx context.Context, session *protocol.ClientSession, prefix string, effects map[string]string) ([]agent.Capability, error) {
@@ -179,7 +190,8 @@ func call(ctx context.Context, session *protocol.ClientSession, name string, inp
 		Resources  []resourceLink `json:"resource_links,omitempty"`
 		Structured any            `json:"structured_content,omitempty"`
 		IsError    bool           `json:"is_error"`
-	}{texts, resources, result.StructuredContent, result.IsError})
+		Delegated  any            `json:"delegated_usage,omitempty"`
+	}{texts, resources, result.StructuredContent, result.IsError, delegatedUsage(result.Meta)})
 	if err != nil || len(encoded) > maxResultBytes {
 		return nil, fmt.Errorf("MCP result exceeds limit")
 	}

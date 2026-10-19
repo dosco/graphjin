@@ -121,3 +121,41 @@ func TestObservedTokenBudgetStopsBeforeNextModelRequest(t *testing.T) {
 		t.Fatalf("admissions=%d", admissions)
 	}
 }
+
+// TestDelegatedTokensCountAgainstTheBudget: a tool that reports tokens
+// another agent spent for the run (GraphJin's agent answering a data
+// question) uses up the run's token budget like the run's own calls.
+func TestDelegatedTokensCountAgainstTheBudget(t *testing.T) {
+	answers := []string{
+		`{"javascriptCode":"final('Ask the data agent',{});"}`,
+		`{"javascriptCode":"const answer=ask({instruction:'revenue'}); console.log(JSON.stringify(answer));"}`,
+		`{"javascriptCode":"final('Report',{});"}`,
+		`{"answer":"done"}`,
+	}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		index := int(calls.Add(1)) - 1
+		if index >= len(answers) {
+			http.Error(w, "unexpected call", 400)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop")),
+			"usage", ax.Object("prompt_tokens", 80, "completion_tokens", 20, "total_tokens", 100)))
+	}))
+	defer server.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+	ask := Capability{Name: "ask", Version: "1", Origin: "fixture", Effect: "read", Description: "Ask the data agent.",
+		InputSchema: json.RawMessage(`{"type":"object","required":["instruction"],"properties":{"instruction":{"type":"string"}}}`),
+		Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			return json.RawMessage(`{"content":["Revenue was 1200."],"is_error":false,"delegated_usage":{"total_tokens":50000}}`), nil
+		}}
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "delegated", InputID: "input", Prompt: "Answer", MaxModelTokens: 20000, MaxOperations: 4},
+		client, Tools{Capabilities: []Capability{ask}}, func(Event) error { return nil })
+	if err != nil || result.Status != "failed" || result.Code != "model_token_budget_exceeded" {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
+	}
+	if result.Usage == nil || result.Usage.DelegatedTokens != 50000 {
+		t.Fatalf("usage=%+v", result.Usage)
+	}
+}
