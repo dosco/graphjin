@@ -31,7 +31,8 @@ export async function resolveGraphjinTarget(input: {
   orgId: string;
   configFile?: string;
 }): Promise<GraphjinTarget> {
-  type Serv = { production?: boolean; auth?: { type?: string }; secrets_keystore_configured?: boolean };
+  // GraphJin reports serv.auth with its Go field names ({"Type":"jwt"}).
+  type Serv = { production?: boolean; auth?: { type?: string; Type?: string }; secrets_keystore_configured?: boolean };
   const result = await graphjinQuery<{ gj_config?: { serv?: Serv | string } | Array<{ serv?: Serv | string }> }>({
     baseUrl: input.endpoint,
     configurationOnly: true,
@@ -48,7 +49,7 @@ export async function resolveGraphjinTarget(input: {
   const serv: Serv = typeof row.serv === "string" ? JSON.parse(row.serv) as Serv : row.serv ?? {};
   if (serv.production !== true) {
     // A GraphJin without auth sees OpenNeko as anonymous whatever token it sends.
-    const authType = String(serv.auth?.type ?? "").trim().toLowerCase();
+    const authType = String(serv.auth?.type ?? serv.auth?.Type ?? "").trim().toLowerCase();
     const keystoreConfigured = typeof serv.secrets_keystore_configured === "boolean" ? serv.secrets_keystore_configured : undefined;
     return { mode: "api", endpoint: input.endpoint, orgId: input.orgId, anonymous: authType === "" || authType === "none", keystoreConfigured };
   }

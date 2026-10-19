@@ -20,6 +20,13 @@ describe("pack GraphJin target", () => {
       .resolves.toEqual({ mode: "api", endpoint: "http://gj:8080", orgId: "org", anonymous: false });
   });
 
+  it("reads the auth type that GraphJin reports under its Go field name", async () => {
+    // gj_config serializes serv.auth without JSON tags: {"Type":"jwt", ...}.
+    graphjinQuery.mockResolvedValue({ data: { gj_config: { serv: { production: false, auth: { Type: "jwt", JWT: { Secret: "[REDACTED]" } } } } } });
+    await expect(resolveGraphjinTarget({ endpoint: "http://gj:8080", orgId: "org" }))
+      .resolves.toMatchObject({ mode: "api", anonymous: false });
+  });
+
   it("marks a GraphJin without auth as anonymous", async () => {
     graphjinQuery.mockResolvedValue({ data: { gj_config: { serv: JSON.stringify({ production: false, auth: { type: "none" } }) } } });
     await expect(resolveGraphjinTarget({ endpoint: "http://gj:8080", orgId: "org" }))
