@@ -29,21 +29,15 @@ type WatchSeed struct {
 }
 
 // OperatorSeed declares the local development operator a zero-configuration
-// project boots as: the owner of everything the project seeds, and the identity
-// the console offers when the browser has none.
+// project boots as: the owner of everything the project seeds.
 type OperatorSeed struct {
 	UserID string
 	// Role is the role seeded watches run under. Watch subscriptions execute
 	// with the owner's stored role, so this is what decides what a standing
 	// question can see — keep it least-privilege.
-	Role string
-	// ConsoleRole is the role the console adopts, when it differs from Role.
-	// Reading the control-plane roots the console renders needs wider access
-	// than running a watch does, so the two are allowed to diverge rather than
-	// forcing watches to run with console-shaped privileges.
-	ConsoleRole string
-	AccountID   string
-	Watches     []WatchSeed
+	Role      string
+	AccountID string
+	Watches   []WatchSeed
 
 	// Report receives one line per watch so the caller can render progress in
 	// its own status stream. It is never called with an error the caller is
@@ -72,14 +66,6 @@ func (seed *OperatorSeed) operatorSeedRole() string {
 		return role
 	}
 	return "user"
-}
-
-// consoleSeedRole is the role the console should adopt for this operator.
-func (seed *OperatorSeed) consoleSeedRole() string {
-	if role := strings.TrimSpace(seed.ConsoleRole); role != "" {
-		return role
-	}
-	return seed.operatorSeedRole()
 }
 
 // seedOperatorWatches creates the project's declared standing questions. It is

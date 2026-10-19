@@ -19,7 +19,7 @@ Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL, Snowflake, Redshif
 - **One governed surface for many systems** - Query operational databases, warehouses, MongoDB, object stores, local files, CodeSQL source indexes, workflows, and GraphJin system roots through GraphQL and MCP.
 - **Smart discovery before action** - Agents start with `query_catalog(search: "<user instruction>")`, `graphql_help`, relationship evidence, examples, config recipes, and safety notes before writing or running queries.
 - **Guarded action, not raw access** - Source-mode access, query allow-lists, read-only boundaries, policy-aware MCP tools, local encrypted secrets, and `gj_config` preview/apply keep changes auditable.
-- **Operational awareness** - `gj_security`, `gj_runtime`, and the built-in console expose policy and bounded runtime status so agents can check what is safe before they act.
+- **Operational awareness** - `gj_security` and `gj_runtime` expose policy and bounded runtime status so agents can check what is safe before they act.
 - **Standing questions, not just answers** - Hand a cursor-paginated subscription to `gj_watch` and GraphJin keeps answering it under the owner's permissions, resumes from persisted cursors across restarts, treats absence as a first-class event, and files what it finds in a durable inbox (`gj_watch_event`), a webhook, or a workflow. Evaluation runs on database polls, not model calls - a model writes the watch once, and nothing calls one again unless you turn on optional per-watch triage. See [Watches](#watches-and-standing-questions).
 - **Durable memory** - Saved queries, fragments, and workflows live in the owner-scoped `gj_artifacts` store. Normal watches are durable by default; explicit ephemeral watches use TTL leases.
 
@@ -85,7 +85,6 @@ this:
 ```
 GraphJin started
 ───────────────────────
-  Web UI:      http://localhost:8083/
   GraphQL:     http://localhost:8083/api/v1/graphql
   REST API:    http://localhost:8083/api/v1/rest/
   Workflows:   http://localhost:8083/api/v1/workflows/<name>
@@ -102,7 +101,7 @@ curl -sS localhost:8083/api/v1/agent \
   -d '{"instruction": "Which account is most at risk of churning?"}'
 ```
 
-Answers come back as `{status, answer, data, evidence, actions, next}`, grounded by server-side protocol guards. You can also chat with it in the built-in web console at `localhost:8083/agent` — it streams every tool call live as it works. See [Server-Side Agent](#server-side-agent) below, [AGENTIC.md](AGENTIC.md#server-side-agent), and [graphjin.com/agentic/server-agent](https://graphjin.com/agentic/server-agent/).
+Answers come back as `{status, answer, data, evidence, actions, next}`, grounded by server-side protocol guards. See [Server-Side Agent](#server-side-agent) below, [AGENTIC.md](AGENTIC.md#server-side-agent), and [graphjin.com/agentic/server-agent](https://graphjin.com/agentic/server-agent/).
 
 **More demo verticals**
 
@@ -575,7 +574,6 @@ federation:
 | `/api/v1/auth/login` | `GET` | OIDC login redirect. |
 | `/api/v1/auth/callback` | `GET` | OIDC callback. |
 | `/health` | `GET` | Liveness probe. **No auth.** |
-| `/` | `GET` | Built-in Web UI. Defaults on in `dev` and `agentic` modes, off in `prod`; set `web_ui` explicitly to override. The UI uses `/api/v1/graphql` and GraphJin system roots such as `gj_catalog`, `gj_security`, `gj_runtime`, `gj_code`, and `gj_config`; there is no separate admin REST API. |
 
 **Mode flags that change which routes are live:**
 - `mcp.disable: true` — removes `/api/v1/mcp` and `/api/v1/mcp/message`.
@@ -919,7 +917,7 @@ graphjin serve new myapp && cd myapp
 graphjin serve
 ```
 
-Built-in web UI at `http://localhost:8080` for query development.
+The web console moved to the OpenNeko admin app (`/admin/graphjin`). Standalone GraphJin users keep the CLI, MCP, and the OpenAPI document at `/api/v1/openapi.json`.
 
 ## Documentation
 

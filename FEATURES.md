@@ -1639,7 +1639,8 @@ in the same run.
 
 ## Mission Control
 
-The built-in console exposes the agentic ladder to people at `/mission`.
+The OpenNeko admin app exposes the agentic ladder to people at
+`/admin/graphjin/activity`; GraphJin no longer embeds a console.
 Mission Control polls the same governed GraphQL roots used by agents and keeps
 each feature independent, so disabling tasks, watches, or artifacts degrades
 only that panel.

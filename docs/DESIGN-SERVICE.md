@@ -74,7 +74,6 @@ Key configuration fields:
 |---------|-------|---------|
 | Serv | `HostPort` | Server bind address (default: `0.0.0.0:8080`) |
 | Serv | `Production` | Enable production mode |
-| Serv | `WebUI` | Serve embedded React UI |
 | Serv | `WatchAndReload` | File watching in development |
 | Serv | `RateLimiter` | IP-based rate limiting config |
 | Admin | `HotDeploy` | Enable database-backed deployment |
@@ -99,7 +98,6 @@ Configuration loading via Viper supports YAML/TOML/JSON with environment variabl
 | `/api/v1/openapi.json` | `openAPIHandler` | OpenAPI 3.0 specification |
 | `/api/v1/deploy` | `adminDeployHandler` | Hot deployment (admin) |
 | `/api/v1/deploy/rollback` | `adminRollbackHandler` | Rollback config (admin) |
-| `/*` | `webuiHandler` | Embedded React UI |
 
 ### 4. Middleware Stack (`http.go`)
 
@@ -158,12 +156,12 @@ type wsConn struct {
 | `start` / `subscribe` | `data` / `next` |
 | `complete` / `stop` | `error` |
 
-### 8. Web UI (`webui.go`, `web/`)
+### 8. Web UI (removed)
 
-Embedded React application using Go's `embed` package:
-- Static files served from `web/build`
-- Root path redirects to include GraphQL endpoint parameter
-- Production-ready build with source maps
+GraphJin no longer embeds a web console. It moved to the OpenNeko admin app
+(`/admin/graphjin`); standalone users keep the CLI, MCP, and the OpenAPI
+document at `/api/v1/openapi.json`. The `web_ui` config key still loads but
+does nothing, for one release.
 
 ### 9. Hot Deployment System (`deploy.go`, `admin.go`)
 
@@ -283,12 +281,10 @@ HTTP Request
     │                              ▼
     │                         JSON Response
     │
-    ├─── /api/v1/rest/* ─────► apiV1Rest
-    │                              │
-    │                              ▼
-    │                         s.gj.GraphQLByName()
-    │
-    └─── /* ─────────────────► webuiHandler (static files)
+    └─── /api/v1/rest/* ─────► apiV1Rest
+                                   │
+                                   ▼
+                              s.gj.GraphQLByName()
 ```
 
 ## Key Design Patterns
@@ -358,7 +354,6 @@ admin:
 | `routes.go` | Route registration |
 | `http.go` | Request handlers, middleware, GraphQL/REST |
 | `ws.go` | WebSocket subscription handling |
-| `webui.go` | Embedded React UI serving |
 | `db.go` | Database connection, pooling, TLS |
 | `deploy.go` | Hot deployment, bundle management |
 | `admin.go` | Admin API handlers, secret validation |
@@ -371,4 +366,3 @@ admin:
 | `migrate.go` | Admin schema migrations |
 | `internal/etags/` | HTTP ETag caching middleware |
 | `internal/util/` | Logger and Viper utilities |
-| `web/` | React Web UI source and build |

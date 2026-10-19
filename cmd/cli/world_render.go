@@ -18,7 +18,6 @@ func renderWorldConfig(world worldSpec) string {
 	fmt.Fprintf(&out, "app_name: %s\n", world.Name)
 	out.WriteString(`mode: dev
 host_port: 0.0.0.0:8084
-web_ui: true
 log_level: "info"
 log_format: "plain"
 production: false

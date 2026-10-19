@@ -48,8 +48,6 @@ type Config struct {
 	dirty    bool
 	viper    *viper.Viper
 
-	webUIExplicit bool
-
 	// parsedConfig is true only for configurations created through ReadInConfig
 	// or NewConfig. Mode-aware defaults intentionally do not apply to callers
 	// that construct Config values directly in Go.
@@ -109,8 +107,9 @@ type Serv struct {
 	// Enables the Server-Timing HTTP header
 	ServerTiming bool `mapstructure:"server_timing" jsonschema:"title=Server Timing HTTP Header,default=true"`
 
-	// Enable the web UI. Defaults on in dev and agentic modes, off in prod.
-	WebUI bool `mapstructure:"web_ui" jsonschema:"title=Enable Web UI,default=false"`
+	// No-op, kept for one release so configs that set it still load: the web
+	// console moved to OpenNeko admin. Remove it in the next release.
+	WebUI bool `mapstructure:"web_ui" jsonschema:"title=Web UI (deprecated no-op),default=false"`
 
 	// Evaluation report state directory for the non-production Trainer console.
 	// Relative paths resolve from config_path. Set to "off" to disable the API.
@@ -358,7 +357,7 @@ type MCPConfig struct {
 	// Default user role for stdio transport (CLI). Can be overridden by GRAPHJIN_USER_ROLE env var.
 	StdioUserRole string `mapstructure:"stdio_user_role" jsonschema:"title=Stdio User Role"`
 
-	// Run in MCP-only mode - disables GraphQL, REST saved-query API, WebUI, and OpenAPI endpoints.
+	// Run in MCP-only mode - disables GraphQL, REST saved-query API, and OpenAPI endpoints.
 	// Health check and MCP endpoints remain available. Legacy HTTP helper endpoints
 	// also remain available only when legacy_discovery is enabled.
 	Only bool `mapstructure:"only" jsonschema:"title=MCP Only Mode,default=false"`
@@ -752,7 +751,6 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	config.parsedConfig = true
 	config.explicitSettings = captureRuntimeDefaultExplicitSettings(viper)
 
-	webUIExplicit := webUISettingExplicit(viper)
 	if err := validateRemovedMCPSettings(viper); err != nil {
 		return nil, err
 	}
@@ -772,9 +770,7 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	if err := normalizeDiscoveryAndSemanticConfig(config); err != nil {
 		return nil, err
 	}
-	normalizeWebUIDefault(config, webUIExplicit)
 	config.MCP.disableExplicit = viper.IsSet("mcp.disable")
-	config.webUIExplicit = webUIExplicit
 
 	return config, nil
 }
@@ -806,7 +802,6 @@ func NewConfig(config, format string) (*Config, error) {
 	c := &Config{viper: viper, parsedConfig: true}
 	c.explicitSettings = captureRuntimeDefaultExplicitSettings(viper)
 
-	webUIExplicit := webUISettingExplicit(viper)
 	if err := validateRemovedMCPSettings(viper); err != nil {
 		return nil, err
 	}
@@ -826,9 +821,7 @@ func NewConfig(config, format string) (*Config, error) {
 	if err := normalizeDiscoveryAndSemanticConfig(c); err != nil {
 		return nil, err
 	}
-	normalizeWebUIDefault(c, webUIExplicit)
 	c.MCP.disableExplicit = viper.IsSet("mcp.disable")
-	c.webUIExplicit = webUIExplicit
 
 	return c, nil
 }
@@ -1005,28 +998,6 @@ func applyRuntimeModeDefaults(c *Config) {
 	if !c.settingExplicit("mcp.include_tools_with_agent") {
 		c.MCP.IncludeToolsWithAgent = true
 	}
-}
-
-func normalizeWebUIDefault(c *Config, explicit bool) {
-	if c == nil || explicit {
-		return
-	}
-	c.Serv.WebUI = c.Core.Mode == "dev" || c.Core.Mode == "agentic"
-}
-
-func webUISettingExplicit(v *viper.Viper) bool {
-	if v == nil {
-		return false
-	}
-	if v.InConfig("web_ui") {
-		return true
-	}
-	for _, key := range []string{"GJ_WEB_UI", "SG_WEB_UI", "SJ_WEB_UI"} {
-		if value, ok := os.LookupEnv(key); ok && strings.TrimSpace(value) != "" {
-			return true
-		}
-	}
-	return false
 }
 
 func normalizeCatalogAutoBools(v *viper.Viper) error {

@@ -38,7 +38,6 @@ system:
 | Setting | Development | Production |
 | --- | --- | --- |
 | `mode` | `dev` | `prod` |
-| `web_ui` | `true` | `false` |
 | `auth_fail_block` | `false` | `true` |
 | `disable_allow_list` | `true` | `false` |
 | `debug` | `true` | `false` |

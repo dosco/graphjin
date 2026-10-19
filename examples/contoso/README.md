@@ -14,7 +14,7 @@ graphjin serve --demo --path examples/contoso
 ```
 
 Once running:
-- **Web UI & GraphQL Playground:** http://localhost:8084
+- **GraphQL:** http://localhost:8084/api/v1/graphql
 - **Database Engine:** Embedded SQLite (in-process, zero Docker required)
 
 ## Domain Entities

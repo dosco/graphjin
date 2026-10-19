@@ -16,7 +16,6 @@ bin
 wasm
 cmd/graphjin
 cmd/cmd
-serv/web/node_modules
 tests/.snowflake-capture
 
 *.log

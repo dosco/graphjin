@@ -13,8 +13,6 @@ import (
 	"github.com/dosco/graphjin/auth/v3"
 )
 
-const evalReportsCapability = "eval.reports"
-
 var evalReportRunIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 
 type evalReportsListResponse struct {
@@ -74,10 +72,8 @@ func (s1 *HttpService) apiV1EvalReports(_ *string) http.Handler {
 			return
 		}
 		ctx := s.applyIdentityContext(r.Context())
-		roots := consoleReadableRoots(s.conf, runtimeRoleClass(ctx))
-		features := consoleEnabledFeatures(s.conf)
-		if !consoleAdminWorkspaceAvailable(roots, features) {
-			writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": "operator_access_required", "message": "Trainer reports require operator access to the GraphJin console."})
+		if !operatorAccessAllowed(s.conf, runtimeRoleClass(ctx)) {
+			writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": "operator_access_required", "message": "Trainer reports require GraphJin operator access."})
 			return
 		}
 
@@ -206,18 +202,6 @@ func evalReportsConfigured(conf *Config) bool {
 		return false
 	}
 	return !strings.EqualFold(strings.TrimSpace(conf.Serv.EvalStateDir), "off")
-}
-
-func evalReportsDirectoryAvailable(conf *Config) bool {
-	if !evalReportsConfigured(conf) {
-		return false
-	}
-	stateDir, err := resolveEvalReportsStateDir(conf)
-	if err != nil {
-		return false
-	}
-	info, err := os.Stat(stateDir)
-	return err == nil && info.IsDir()
 }
 
 func resolveEvalReportsStateDir(conf *Config) (string, error) {

@@ -61,10 +61,8 @@ func (s1 *HttpService) apiV1EvalScore(_ *string) http.Handler {
 			return
 		}
 		ctx := s.applyIdentityContext(r.Context())
-		roots := consoleReadableRoots(s.conf, runtimeRoleClass(ctx))
-		features := consoleEnabledFeatures(s.conf)
-		if !consoleAdminWorkspaceAvailable(roots, features) {
-			writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": "operator_access_required", "message": "Scoring requires operator access to the GraphJin console."})
+		if !operatorAccessAllowed(s.conf, runtimeRoleClass(ctx)) {
+			writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": "operator_access_required", "message": "Scoring requires GraphJin operator access."})
 			return
 		}
 

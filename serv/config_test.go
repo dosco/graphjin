@@ -607,69 +607,22 @@ sources:
 	}
 }
 
-func TestWebUIDefaultsFollowMode(t *testing.T) {
+// web_ui is a no-op kept for one release: configs that set it must still load.
+func TestWebUIKeyStillLoads(t *testing.T) {
 	clearWebUIEnv(t)
 
-	tests := []struct {
-		name   string
-		config string
-		want   bool
-	}{
-		{name: "implicit dev", config: `app_name: test`, want: true},
-		{name: "dev", config: `mode: dev`, want: true},
-		{name: "agentic", config: `mode: agentic`, want: true},
-		{name: "prod", config: `mode: prod`, want: false},
-		{name: "legacy production", config: `production: true`, want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			conf, err := NewConfig(tt.config, "yaml")
-			if err != nil {
-				t.Fatalf("NewConfig: %v", err)
-			}
-			if conf.Serv.WebUI != tt.want {
-				t.Fatalf("web_ui = %v, want %v", conf.Serv.WebUI, tt.want)
-			}
-		})
-	}
-}
-
-func TestWebUIExplicitOverride(t *testing.T) {
-	clearWebUIEnv(t)
-
-	tests := []struct {
-		name   string
-		config string
-		want   bool
-	}{
-		{name: "dev disabled", config: `
-mode: dev
-web_ui: false
-`, want: false},
-		{name: "agentic disabled", config: `
-mode: agentic
-web_ui: false
-`, want: false},
-		{name: "prod enabled", config: `
-mode: prod
-web_ui: true
-`, want: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			conf, err := NewConfig(tt.config, "yaml")
-			if err != nil {
-				t.Fatalf("NewConfig: %v", err)
-			}
-			if conf.Serv.WebUI != tt.want {
-				t.Fatalf("web_ui = %v, want %v", conf.Serv.WebUI, tt.want)
-			}
-			if !conf.webUIExplicit {
-				t.Fatal("web_ui explicit marker should be set")
-			}
-		})
+	for _, config := range []string{
+		"mode: dev\nweb_ui: true\n",
+		"mode: agentic\nweb_ui: false\n",
+		"mode: prod\nweb_ui: true\n",
+	} {
+		conf, err := NewConfig(config, "yaml")
+		if err != nil {
+			t.Fatalf("NewConfig(%q): %v", config, err)
+		}
+		if conf.Serv.WebUI != strings.Contains(config, "web_ui: true") {
+			t.Fatalf("web_ui = %v for %q", conf.Serv.WebUI, config)
+		}
 	}
 }
 

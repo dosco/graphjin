@@ -1218,7 +1218,7 @@
 				"only": {
 					"type": "boolean",
 					"title": "MCP Only Mode",
-					"description": "Run in MCP-only mode - disables GraphQL, REST saved-query API, WebUI, and OpenAPI endpoints.\nHealth check and MCP endpoints remain available. Legacy HTTP helper endpoints\nalso remain available only when legacy_discovery is enabled.",
+					"description": "Run in MCP-only mode - disables GraphQL, REST saved-query API, and OpenAPI endpoints.\nHealth check and MCP endpoints remain available. Legacy HTTP helper endpoints\nalso remain available only when legacy_discovery is enabled.",
 					"default": false
 				},
 				"cursor_cache_ttl": {
@@ -2750,8 +2750,8 @@
 		},
 		"web_ui": {
 			"type": "boolean",
-			"title": "Enable Web UI",
-			"description": "Enable the web UI. Defaults on in dev and agentic modes, off in prod.",
+			"title": "Web UI (deprecated no-op)",
+			"description": "No-op, kept for one release so configs that set it still load: the web\nconsole moved to OpenNeko admin. Remove it in the next release.",
 			"default": false
 		},
 		"eval_state_dir": {

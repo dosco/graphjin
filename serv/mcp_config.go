@@ -330,7 +330,7 @@ func (ms *mcpServer) registerConfigTools() {
 			mcp.WithStringItems(),
 		),
 		mcp.WithObject("serv",
-			mcp.Description("Merge-patch for server-side settings (serv.Config). Writable v1 keys: agent (model, structured_output_mode, response_format [deprecated alias], service_tier, max_steps, timeout_seconds, read_only, return_trace, seed_limit, catalog_default_limit, rate_limit), log_level, log_format, web_ui, http_compress, server_timing, rate_limiter (rate, bucket, ip_header). "+
+			mcp.Description("Merge-patch for server-side settings (serv.Config). Writable v1 keys: agent (model, structured_output_mode, response_format [deprecated alias], service_tier, max_steps, timeout_seconds, read_only, return_trace, seed_limit, catalog_default_limit, rate_limit), log_level, log_format, web_ui (no-op, kept for one release), http_compress, server_timing, rate_limiter (rate, bucket, ip_header). "+
 				"agent changes are read live; the rest are persisted and take effect on the next restart (automatic when reload_on_config_change is enabled). "+
 				"Secret-bearing sections (auth, redis, uploads) are read-only on gj_config and cannot be patched here. scope reports serv or mixed and reload_mode reports hot or restart."),
 		),
@@ -2523,7 +2523,7 @@ var servWritableReload = map[string]string{
 	"agent":         servReloadHot, // the agent runtime reads config per request
 	"log_level":     servReloadRestart,
 	"log_format":    servReloadRestart,
-	"web_ui":        servReloadRestart,
+	"web_ui":        servReloadHot, // no-op kept for one release; the console moved to OpenNeko admin
 	"http_compress": servReloadRestart,
 	"server_timing": servReloadRestart,
 	"rate_limiter":  servReloadRestart,
