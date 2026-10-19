@@ -1149,7 +1149,7 @@ func validateWebhookResolvedHost(ctx context.Context, u *url.URL, allow []string
 
 func resolveWebhookDialIP(ctx context.Context, host string, allow []string) (net.IP, error) {
 	if ip := net.ParseIP(host); ip != nil {
-		if isBlockedWebhookIP(ip) && !watchAllowContainsLiteralIP(host, allow) {
+		if isBlockedWebhookIP(ip) && !watchAllowNamesHost(host, allow) {
 			return nil, fmt.Errorf("webhook IP %s is private or local", ip)
 		}
 		return ip, nil
@@ -1167,7 +1167,7 @@ func resolveWebhookDialIP(ctx context.Context, host string, allow []string) (net
 		if first == nil {
 			first = ip
 		}
-		if isBlockedWebhookIP(ip) {
+		if isBlockedWebhookIP(ip) && !watchAllowNamesHost(host, allow) {
 			return nil, fmt.Errorf("webhook host %s resolved to private or local IP %s", host, ip)
 		}
 	}
@@ -1215,11 +1215,11 @@ func watchWebhookAllowMatch(u *url.URL, allow []string) bool {
 	return false
 }
 
-func watchAllowContainsLiteralIP(host string, allow []string) bool {
+// watchAllowNamesHost reports whether an allowlist entry names this exact host,
+// as an IP or a hostname. Such a host may be private or local, as a service
+// on the same network is: the operator named it, not just its domain.
+func watchAllowNamesHost(host string, allow []string) bool {
 	ip := net.ParseIP(host)
-	if ip == nil {
-		return false
-	}
 	for _, entry := range allow {
 		entry = strings.TrimSpace(entry)
 		if entry == "" {
@@ -1229,7 +1229,11 @@ func watchAllowContainsLiteralIP(host string, allow []string) bool {
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			continue
 		}
-		if parsed := net.ParseIP(u.Hostname()); parsed != nil && parsed.Equal(ip) {
+		if ip != nil {
+			if parsed := net.ParseIP(u.Hostname()); parsed != nil && parsed.Equal(ip) {
+				return true
+			}
+		} else if strings.EqualFold(u.Hostname(), host) {
 			return true
 		}
 	}

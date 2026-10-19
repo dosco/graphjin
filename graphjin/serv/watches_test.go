@@ -1413,6 +1413,13 @@ func TestWatchWebhookDenyByDefault(t *testing.T) {
 	if ip, err := resolveWebhookDialIP(context.Background(), "100.64.0.1", []string{"http://100.64.0.1"}); err != nil || !ip.Equal(net.ParseIP("100.64.0.1")) {
 		t.Fatalf("exact literal allowlist should permit CGNAT admin escape hatch, ip=%v err=%v", ip, err)
 	}
+	// localhost resolves to loopback: blocked unless an entry names that host.
+	if _, err := resolveWebhookDialIP(context.Background(), "localhost", []string{"http://other.local"}); err == nil || !strings.Contains(err.Error(), "private or local") {
+		t.Fatalf("a private host not named in the allowlist should be blocked, got %v", err)
+	}
+	if ip, err := resolveWebhookDialIP(context.Background(), "localhost", []string{"http://localhost:4100/admin/events/watcher"}); err != nil || !isBlockedWebhookIP(ip) {
+		t.Fatalf("an allowlist entry naming the host should permit its private address, ip=%v err=%v", ip, err)
+	}
 }
 
 func TestWatchWebhookSecurityPolicyFlagsUnsafeAllowlist(t *testing.T) {

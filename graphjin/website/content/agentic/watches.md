@@ -264,7 +264,7 @@ Creating a watch in dev mode registers its named subscription as a `saved_query`
 
 ## Delivery
 
-Multiple replicas may evaluate the same watch, but fires and deliveries are deduplicated: event IDs are deterministic from `watch_id + data_hash`, plus the canonical flow hash when a flow is configured, so identical data reuses a verdict while a deliberate flow revision is evaluated again. Webhook/workflow delivery is claimed atomically so exactly one replica performs it. Webhooks get 3 attempts with a 10s timeout, an HMAC-SHA256 signature header, and an `Idempotency-Key`; targets must match the `watches.webhook_allow` allowlist (empty means all webhooks are denied).
+Multiple replicas may evaluate the same watch, but fires and deliveries are deduplicated: event IDs are deterministic from `watch_id + data_hash`, plus the canonical flow hash when a flow is configured, so identical data reuses a verdict while a deliberate flow revision is evaluated again. Webhook/workflow delivery is claimed atomically so exactly one replica performs it. Webhooks get 3 attempts with a 10s timeout, an HMAC-SHA256 signature header, and an `Idempotency-Key`; targets must match the `watches.webhook_allow` allowlist (empty means all webhooks are denied). A target that resolves to a private or local address is refused unless an allowlist entry names that exact host or IP, such as `http://worker:4100/hooks` for a service on the same network.
 
 Workflow and webhook delivery are autonomous actions. Creating or changing one pauses the watch with `action_approval: "pending"` and returns an `action_hash` that pins the query, variables, flow, delivery, and resolved workflow source. After the user confirms that exact proposal, approve it through the same root:
 
