@@ -636,7 +636,7 @@ func startPostgresDemo(ctx context.Context, name, dataDir string, status demoSta
 
 	return terminateFn(container), &DemoConnInfo{
 		Host:     host,
-		Port:     uint16(port.Int()),
+		Port:     port.Num(),
 		User:     "graphjin",
 		Password: "graphjin",
 		DBName:   "graphjin_demo",
@@ -693,7 +693,7 @@ func startMySQLDemo(ctx context.Context, name, dataDir string, status demoStatus
 
 	return terminateFn(container), &DemoConnInfo{
 		Host:     host,
-		Port:     uint16(port.Int()),
+		Port:     port.Num(),
 		User:     "graphjin",
 		Password: "graphjin",
 		DBName:   "graphjin_demo",
@@ -764,7 +764,7 @@ func startMariaDBDemo(ctx context.Context, name, dataDir string, status demoStat
 
 	return terminateFn(container), &DemoConnInfo{
 		Host:     host,
-		Port:     uint16(port.Int()),
+		Port:     port.Num(),
 		User:     "graphjin",
 		Password: "graphjin",
 		DBName:   "graphjin_demo",
@@ -898,7 +898,7 @@ func startOracleDemo(ctx context.Context, name, dataDir string, status demoStatu
 
 	return terminateFn(container), &DemoConnInfo{
 		Host:     host,
-		Port:     uint16(port.Int()),
+		Port:     port.Num(),
 		User:     "graphjin",
 		Password: "graphjin_password",
 		DBName:   "FREEPDB1",
@@ -981,7 +981,7 @@ func startMSSQLDemo(ctx context.Context, name, dataDir string, status demoStatus
 
 	return terminateFn(container), &DemoConnInfo{
 		Host:     host,
-		Port:     uint16(port.Int()),
+		Port:     port.Num(),
 		User:     "sa",
 		Password: "GraphJin!Passw0rd",
 		DBName:   "graphjin_demo",
@@ -1045,7 +1045,7 @@ func startMongoDBDemo(ctx context.Context, name, dataDir string, status demoStat
 	}
 	return cleanup, &DemoConnInfo{
 		Host:    host,
-		Port:    uint16(port.Int()),
+		Port:    port.Num(),
 		DBName:  "graphjin_demo",
 		ConnStr: connStr,
 		Type:    "mongodb",
