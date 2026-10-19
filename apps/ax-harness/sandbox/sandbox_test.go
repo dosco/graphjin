@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -146,4 +147,111 @@ func processesOf(uid int) []int {
 		}
 	}
 	return pids
+}
+
+// TestSandboxKeepsRunsApart stages two runs as the launcher does: owned by
+// the host, shared with its group, closed to others. Each run's user reaches
+// only its own stage, and what it writes stays readable by the shared group.
+func TestSandboxKeepsRunsApart(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("switching run users needs root")
+	}
+	const shared = 4242
+	root := t.TempDir()
+	_ = os.Chmod(root, 0o755)
+	_ = os.Chmod(filepath.Dir(root), 0o755)
+	workspaces := filepath.Join(root, "runs")
+	stage := func(name string) string {
+		dir := filepath.Join(workspaces, name, "workspace", "org")
+		if err := os.MkdirAll(dir, 0o770); err != nil {
+			t.Fatal(err)
+		}
+		for p := dir; p != workspaces; p = filepath.Dir(p) {
+			_ = os.Chown(p, 0, shared)
+			_ = os.Chmod(p, 0o2770)
+		}
+		return dir
+	}
+	_ = os.MkdirAll(workspaces, 0o770)
+	_ = os.Chown(workspaces, 0, shared)
+	_ = os.Chmod(workspaces, 0o2770)
+	a, b := stage("owner.boot.aaaa"), stage("owner.boot.bbbb")
+	if err := os.WriteFile(filepath.Join(b, "secret.txt"), []byte("run b only"), 0o660); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Chown(filepath.Join(b, "secret.txt"), 0, shared)
+
+	server := &Server{Workspaces: workspaces, Homes: filepath.Join(root, "homes"), BaseUID: 23100, Users: 4, GID: shared, SwitchUsers: true, PATH: "/usr/bin:/bin"}
+	socket := filepath.Join(root, "sandbox.sock")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- server.ListenAndServe(ctx, socket) }()
+	t.Cleanup(func() { cancel(); <-done })
+	for i := 0; i < 100; i++ {
+		if _, err := os.Stat(socket); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	runA, runB := NewClient(socket, a), NewClient(socket, b)
+	res, err := runA.Exec(context.Background(), "id -G; echo made > mine.txt; cat mine.txt", "", 10, 10_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errors.Is(err, errNoACL) || strings.Contains(res.Output, "POSIX ACL") {
+		t.Skip("this filesystem has no POSIX ACLs")
+	}
+	if res.ExitCode != 0 || !strings.Contains(res.Output, "made") {
+		t.Fatalf("run A could not use its own stage: %+v", res)
+	}
+	if groups := strings.Fields(strings.SplitN(res.Output, "\n", 2)[0]); len(groups) != 1 || groups[0] == strconv.Itoa(shared) {
+		t.Fatalf("run A's groups = %v, want only its own", groups)
+	}
+	if _, err := runB.Exec(context.Background(), "true", "", 10, 10_000); err != nil {
+		t.Fatal(err)
+	}
+	for _, cmd := range []string{"cat " + filepath.Join(b, "secret.txt"), "ls " + workspaces, "touch " + filepath.Join(b, "planted")} {
+		res, err := runA.Exec(context.Background(), cmd, "", 10, 10_000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.ExitCode == 0 {
+			t.Fatalf("run A could %q in another run's stage: %s", cmd, res.Output)
+		}
+	}
+	// What run A wrote carries the shared group's grant, so the host can
+	// copy it back.
+	acl := make([]byte, 256)
+	n, err := syscall.Getxattr(filepath.Join(a, "mine.txt"), "system.posix_acl_access", acl)
+	if err != nil {
+		t.Fatalf("run A's file has no ACL: %v", err)
+	}
+	if !aclHasGroup(acl[:n], shared) {
+		t.Fatal("run A's file is not shared with the host's group")
+	}
+	if !aclHasGroup(acl[:n], server.BaseUID) {
+		t.Fatal("run A's file is not granted to run A's group")
+	}
+	// Ending the run takes its group off the stage, so a later run that gets
+	// the same ID cannot reach it.
+	if err := runA.Close(); err != nil {
+		t.Fatal(err)
+	}
+	n, err = syscall.Getxattr(filepath.Join(a, "mine.txt"), "system.posix_acl_access", acl)
+	if err != nil || aclHasGroup(acl[:n], server.BaseUID) || !aclHasGroup(acl[:n], shared) {
+		t.Fatalf("ending run A left its group on the stage (err %v)", err)
+	}
+}
+
+func aclHasGroup(acl []byte, gid int) bool {
+	for i := 4; i+8 <= len(acl); i += 8 {
+		tag := uint16(acl[i]) | uint16(acl[i+1])<<8
+		id := uint32(acl[i+4]) | uint32(acl[i+5])<<8 | uint32(acl[i+6])<<16 | uint32(acl[i+7])<<24
+		perm := uint16(acl[i+2]) | uint16(acl[i+3])<<8
+		if tag == aclGroup && int(id) == gid && perm&6 == 6 {
+			return true
+		}
+	}
+	return false
 }

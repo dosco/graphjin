@@ -1,9 +1,12 @@
 // Package sandbox runs the agent's terminal commands away from the process
 // that holds model keys. The openneko binary's sandbox role calls Main.
 //
-// The sandbox holds no secrets. Each run gets its own user and its own home
-// folder; a command runs in the run's workspace with only PATH, HOME, TMPDIR
-// and SKILL_DIR set. Serve reaches it over a Unix socket:
+// The sandbox holds no secrets. Each run gets its own user and group and its
+// own home folder; a command runs in the run's workspace with only PATH,
+// HOME, TMPDIR and SKILL_DIR set. A run's group reaches only that run's
+// staged folder: ACLs grant it and the shared group (serve and the hosts that
+// stage runs) on the folder, and the runs folder can be crossed but not
+// listed. Serve reaches it over a Unix socket:
 //
 //	POST   /v1/runs/{run}/exec  {"workspace","command","skill_dir","timeout_seconds","max_output"}
 //	DELETE /v1/runs/{run}       kills the run's commands and removes its home
@@ -59,17 +62,20 @@ type Server struct {
 	Skills string
 	// Homes holds each run's home folder.
 	Homes string
-	// BaseUID and Users bound the user IDs given to runs. GID is the group
-	// that shares workspaces with serve and the worker.
+	// BaseUID and Users bound the user and group IDs given to runs. GID is
+	// the group that shares workspaces with serve and the worker; run users
+	// are not in it.
 	BaseUID, Users, GID int
 	// SwitchUsers runs each command as its run's user; it needs root.
 	SwitchUsers bool
 	// PATH is the command search path.
 	PATH string
 
-	mu   sync.Mutex
-	runs map[string]int // run → uid
-	used map[int]bool
+	mu     sync.Mutex
+	runs   map[string]int    // run → uid, also its gid
+	stages map[string]string       // run → staged folder its group was granted
+	grants map[string]map[int]bool // staged folder → run groups granted it
+	used   map[int]bool
 }
 
 // Main parses args and serves until SIGINT or SIGTERM.
@@ -123,6 +129,13 @@ func (s *Server) ListenAndServe(ctx context.Context, path string) error {
 
 // Serve serves on listener until ctx ends.
 func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
+	if s.SwitchUsers {
+		// Run users are not in the shared group, so they cross the runs
+		// folder as others: they may pass through it but not list it.
+		if info, err := os.Stat(s.Workspaces); err == nil {
+			_ = os.Chmod(s.Workspaces, info.Mode().Perm()|0o001|os.ModeSetgid&info.Mode())
+		}
+	}
 	httpServer := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -163,6 +176,12 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
+	if s.SwitchUsers {
+		if err := s.grantStage(run, uid, workspace); err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+	}
 	home, err := s.home(run, uid)
 	if err != nil {
 		http.Error(w, "run home unavailable", http.StatusInternalServerError)
@@ -174,14 +193,14 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request) {
 	}
 	exec := localtool.ExecRequest{
 		Dir: workspace,
-		// Files the run writes stay writable by the group that shares the workspace.
-		Command:        "umask 002\n" + req.Command,
+		// The stage's default ACL shares what the run writes; others get nothing.
+		Command:        "umask 007\n" + req.Command,
 		Env:            env,
 		TimeoutSeconds: req.TimeoutSeconds,
 		MaxOutput:      req.MaxOutput,
 	}
 	if s.SwitchUsers {
-		exec.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(s.GID), NoSetGroups: true}
+		exec.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(uid), Groups: []uint32{}}
 	}
 	result, err := localtool.Exec(r.Context(), exec)
 	if err != nil {
@@ -201,6 +220,9 @@ func (s *Server) end(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	uid, ok := s.runs[run]
 	delete(s.runs, run)
+	if ok {
+		s.revokeStage(run, uid)
+	}
 	s.mu.Unlock()
 	if ok && s.SwitchUsers {
 		killUser(uid)
@@ -210,6 +232,64 @@ func (s *Server) end(w http.ResponseWriter, r *http.Request) {
 	delete(s.used, uid)
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// grantStage gives run's group the staged folder that holds workspace, once:
+// the folder directly under the workspaces root.
+func (s *Server) grantStage(run string, gid int, workspace string) error {
+	root, err := filepath.EvalSymlinks(s.Workspaces)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(root, workspace)
+	if err != nil || rel == "." || !filepath.IsLocal(rel) {
+		return errors.New("the workspace must be inside a staged run folder")
+	}
+	stage := filepath.Join(root, strings.SplitN(rel, string(filepath.Separator), 2)[0])
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stages[run] == stage {
+		return nil
+	}
+	if s.stages == nil {
+		s.stages, s.grants = map[string]string{}, map[string]map[int]bool{}
+	}
+	if s.grants[stage] == nil {
+		s.grants[stage] = map[int]bool{}
+	}
+	s.grants[stage][gid] = true
+	if err := grantTree(stage, s.stageGroups(stage)); err != nil {
+		delete(s.grants[stage], gid)
+		return err
+	}
+	s.stages[run] = stage
+	return nil
+}
+
+// revokeStage takes run's group off its staged folder, so a later run that
+// reuses the ID cannot reach it. The caller holds s.mu.
+func (s *Server) revokeStage(run string, gid int) {
+	stage, ok := s.stages[run]
+	if !ok {
+		return
+	}
+	delete(s.stages, run)
+	delete(s.grants[stage], gid)
+	if _, err := os.Stat(stage); err == nil {
+		_ = grantTree(stage, s.stageGroups(stage))
+	}
+	if len(s.grants[stage]) == 0 {
+		delete(s.grants, stage)
+	}
+}
+
+// stageGroups is the shared group and every run group granted stage.
+func (s *Server) stageGroups(stage string) []int {
+	groups := []int{s.GID}
+	for gid := range s.grants[stage] {
+		groups = append(groups, gid)
+	}
+	return groups
 }
 
 // user gives run a user ID of its own, the same one for every command.
@@ -244,7 +324,7 @@ func (s *Server) home(run string, uid int) (string, error) {
 	}
 	if s.SwitchUsers {
 		for _, dir := range []string{home, filepath.Join(home, "tmp")} {
-			if err := os.Chown(dir, uid, s.GID); err != nil {
+			if err := os.Chown(dir, uid, uid); err != nil {
 				return "", err
 			}
 		}
