@@ -187,6 +187,24 @@ MCP clients can RFC 6570-expand `graphjin://watch-events/unseen/{watch_id}` for 
 
 {{< verified by="TestMCPAxExactWatchSubscriptionAndRecovery" file="serv/mcp_protocol_test.go" line="388" >}}
 
+## Polled watches
+
+A subscription watch follows a cursor, so it suits new rows. An aggregate, or a query over an API source, has no cursor. Give such a watch `poll_json` and a plain `query`: the runner then runs the query as the owner every `interval_seconds` (10 to 86400) and records an event each time the result changes, including a return to an earlier result.
+
+```graphql
+mutation {
+  gj_watch(insert: {
+    name: "refund_rate"
+    query: "query refund_rate($since: String) { refunds(where: { created_at: { gte: $since } }) { count_id } }"
+    poll_json: { interval_seconds: 300, variables: { since: { kind: "seconds_ago", seconds: 86400 } } }
+  }) { id status }
+}
+```
+
+`poll_json.variables` are computed on each poll: `{ kind: "now" }` and `{ kind: "seconds_ago", seconds: N }` give RFC3339 times, merged over `variables_json`. GraphJin does not compare the result with a threshold; the event carries the result, and the receiver decides.
+
+{{< verified by="TestPolledWatchRecordsEachChangedResult" file="serv/watch_poll_test.go" line="49" >}}
+
 ## Rollup watches
 
 A **rollup watch** is a durable watch whose subscription root is `gj_watch_event`. Use it for cross-watch correlation:
@@ -269,6 +287,8 @@ mutation {
   }
 }
 ```
+
+A webhook signs with the secret in `secret_env`, or with `secret_source: "keystore"`, which derives a per-watch secret from the keystore key: hex(HMAC-SHA256(key, "graphjin-watch-webhook:v1:" + watch id)). A receiver that holds the keystore key derives the same secret.
 
 An agent must stop for confirmation after proposing the action; it cannot create or change the delivery and approve it in the same run. A relevant definition or workflow-source change invalidates approval and pauses the watch again.
 

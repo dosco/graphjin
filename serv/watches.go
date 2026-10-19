@@ -20,7 +20,7 @@ const (
 	watchValidationProbeTimeout = 10 * time.Second
 )
 
-const watchStoreFields = `id name task_id description query saved_query_name variables_json condition_js delivery_json enrich_json absence_json evidence_json lifecycle lease_expires_at lease_owner_id status approval enabled account_id owner_id owner_role last_data_hash last_cursor_json last_fired_at last_error failure_count created_at updated_at`
+const watchStoreFields = `id name task_id description query saved_query_name variables_json condition_js delivery_json enrich_json absence_json poll_json evidence_json lifecycle lease_expires_at lease_owner_id status approval enabled account_id owner_id owner_role last_data_hash last_cursor_json last_fired_at last_error failure_count created_at updated_at`
 
 const watchEventStoreFields = `id watch_id data_hash data_json data_truncated evidence_json delivery_status delivery_attempts delivery_json receipt_json enrichment_json seen seen_at snoozed_until account_id owner_id created_at updated_at`
 
@@ -64,6 +64,7 @@ func watchColumns() []core.ManagedColumn {
 		cpCol("delivery_json", "json", false),
 		cpCol("enrich_json", "json", false),
 		cpCol("absence_json", "json", false),
+		cpCol("poll_json", "json", false),
 		cpCol("flow_review_json", "json", false),
 		cpCol("action_review_json", "json", false),
 		cpCol("flow_hash", "text", false),
@@ -310,7 +311,16 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	query := strings.TrimSpace(stringInput(root.Input, "query", ""))
 	savedQuery := strings.TrimSpace(stringInput(root.Input, "saved_query_name", ""))
 	variablesJSON := jsonStringInput(root.Input, "variables_json")
-	evidence, err := h.validateWatchDefinition(ctx, id, query, savedQuery, variablesJSON)
+	pollJSON, poll, polled, err := normalizeWatchPollJSON(jsonStringInput(root.Input, "poll_json"))
+	if err != nil {
+		return nil, fmt.Errorf("gj_watch %w", err)
+	}
+	var evidence map[string]any
+	if polled {
+		evidence, err = h.validatePolledWatchDefinition(ctx, query, savedQuery, variablesJSON, poll)
+	} else {
+		evidence, err = h.validateWatchDefinition(ctx, id, query, savedQuery, variablesJSON)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -448,7 +458,8 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 		definitionChanged = query != stringMapValue(existing, "query") ||
 			savedQuery != stringMapValue(existing, "saved_query_name") ||
 			variablesJSON != jsonMapString(existing, "variables_json") ||
-			absenceJSON != jsonMapString(existing, "absence_json")
+			absenceJSON != jsonMapString(existing, "absence_json") ||
+			pollJSON != jsonMapString(existing, "poll_json")
 		_, existingEnrichCfg, existingEnrichEnabled, existingEnrichErr := normalizeWatchEnrichmentJSON(jsonMapString(existing, "enrich_json"))
 		existingFlowRequired := existingEnrichErr == nil && existingEnrichEnabled && existingEnrichCfg.Kind == "flow"
 		flowChanged = flowRequired != existingFlowRequired ||
@@ -490,7 +501,7 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	input := map[string]any{
 		"id": id, "name": name, "task_id": taskID, "description": description, "query": query, "saved_query_name": savedQuery,
 		"variables_json": nullableJSONString(variablesJSON), "condition_js": conditionJS,
-		"delivery_json": nullableJSONString(deliveryJSON), "enrich_json": nullableJSONString(enrichJSON), "absence_json": nullableJSONString(absenceJSON), "evidence_json": nullableJSONString(evidenceJSON),
+		"delivery_json": nullableJSONString(deliveryJSON), "enrich_json": nullableJSONString(enrichJSON), "absence_json": nullableJSONString(absenceJSON), "poll_json": nullableJSONString(pollJSON), "evidence_json": nullableJSONString(evidenceJSON),
 		"lifecycle": lifecycle, "lease_expires_at": nullableJSONString(leaseExpiresAt), "lease_owner_id": leaseOwnerID,
 		"status": status, "approval": approval, "enabled": enabled, "account_id": accountID, "owner_id": ownerID, "owner_role": ownerRole,
 		"last_data_hash": lastDataHash, "last_cursor_json": nullableJSONString(lastCursorJSON), "last_fired_at": nullableJSONString(lastFiredAt), "last_error": lastError, "failure_count": failureCount,
@@ -662,6 +673,46 @@ func (h watchControlPlane) updateWatchEvent(ctx context.Context, root core.Manag
 		result["seen_at"] = nullableSeenAt(seen, now)
 	}
 	return result, nil
+}
+
+// validatePolledWatchDefinition checks a poll_json watch. Its query is a plain
+// query, not a subscription, so it needs no cursor. A probe runs it once as
+// the caller.
+func (h watchControlPlane) validatePolledWatchDefinition(
+	ctx context.Context,
+	query, savedQuery, variablesJSON string,
+	poll watchPollConfig,
+) (map[string]any, error) {
+	query = strings.TrimSpace(query)
+	if query == "" || strings.TrimSpace(savedQuery) != "" {
+		return nil, fmt.Errorf("gj_watch poll_json needs query and no saved_query_name")
+	}
+	header, err := core.Operation(query)
+	if err != nil {
+		return nil, err
+	}
+	if header.Type != core.OpQuery {
+		return nil, fmt.Errorf("gj_watch poll_json query must be a query operation")
+	}
+	vars, err := poll.pollVariables(variablesJSON, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("gj_watch %w", err)
+	}
+	evidence := map[string]any{
+		"validated_at":   time.Now().UTC().Format(time.RFC3339),
+		"operation":      "query",
+		"operation_name": header.Name,
+		"poll":           true,
+	}
+	if h.service != nil && h.service.gj != nil {
+		probeCtx, cancel := context.WithTimeout(ctx, watchValidationProbeTimeout)
+		defer cancel()
+		if _, err := h.service.gj.GraphQL(probeCtx, query, vars, nil); err != nil {
+			return nil, fmt.Errorf("gj_watch query probe failed: %w", err)
+		}
+		evidence["probe"] = "ok"
+	}
+	return evidence, nil
 }
 
 func (h watchControlPlane) validateWatchDefinition(
@@ -1122,6 +1173,7 @@ condition_js TEXT NOT NULL DEFAULT '',
 delivery_json JSONB,
 enrich_json JSONB,
 absence_json JSONB,
+poll_json JSONB,
 evidence_json JSONB,
 lifecycle TEXT NOT NULL DEFAULT 'durable',
 lease_expires_at TIMESTAMPTZ,
@@ -1180,6 +1232,7 @@ condition_js LONGTEXT NOT NULL,
 delivery_json LONGTEXT,
 enrich_json LONGTEXT,
 absence_json LONGTEXT,
+poll_json LONGTEXT,
 evidence_json LONGTEXT,
 lifecycle VARCHAR(32) NOT NULL DEFAULT 'durable',
 lease_expires_at VARCHAR(64),
@@ -1233,6 +1286,7 @@ condition_js TEXT NOT NULL DEFAULT '',
 delivery_json TEXT,
 enrich_json TEXT,
 absence_json TEXT,
+poll_json TEXT,
 evidence_json TEXT,
 lifecycle TEXT NOT NULL DEFAULT 'durable',
 lease_expires_at TEXT,
@@ -1294,6 +1348,7 @@ func watchMigrationDDL(dbType, schema string) []string {
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS lease_owner_id TEXT NOT NULL DEFAULT ''`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS absence_json JSONB`, watches),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS poll_json JSONB`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS data_truncated BOOLEAN NOT NULL DEFAULT FALSE`, events),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS snoozed_until TIMESTAMPTZ`, events),
 	}
@@ -1352,6 +1407,9 @@ func (s *graphjinService) migrateWatchSchema(ctx context.Context, db *sql.DB, db
 		absenceDef = "LONGTEXT"
 	}
 	if err := ensureSQLColumn(ctx, db, dbType, watches, "absence_json", absenceDef); err != nil {
+		return err
+	}
+	if err := ensureSQLColumn(ctx, db, dbType, watches, "poll_json", absenceDef); err != nil {
 		return err
 	}
 	events := artifactTableName(dbType, schema, "watch_events")
@@ -1435,6 +1493,7 @@ func watchStoreRow(row map[string]any, rawIDs bool) map[string]any {
 		"delivery_json":    row["delivery_json"],
 		"enrich_json":      row["enrich_json"],
 		"absence_json":     row["absence_json"],
+		"poll_json":        row["poll_json"],
 		"evidence_json":    row["evidence_json"],
 		"lifecycle":        watchLifecycle(stringMapValue(row, "lifecycle")),
 		"lease_expires_at": stringMapValue(row, "lease_expires_at"),

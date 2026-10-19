@@ -55,6 +55,9 @@ func normalizeWatchDeliveryJSON(raw string) (string, watchDeliveryConfig, bool, 
 		if cfg.Webhook.SecretEnv != "" {
 			value["secret_env"] = cfg.Webhook.SecretEnv
 		}
+		if cfg.Webhook.SecretSource != "" {
+			value["secret_source"] = cfg.Webhook.SecretSource
+		}
 		if len(cfg.Webhook.Headers) != 0 {
 			value["headers"] = cfg.Webhook.Headers
 		}

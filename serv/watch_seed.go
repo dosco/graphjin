@@ -26,6 +26,7 @@ type WatchSeed struct {
 	DeliveryJSON   string
 	AbsenceJSON    string
 	EnrichJSON     string
+	PollJSON       string
 }
 
 // OperatorSeed declares the local development operator a zero-configuration
@@ -153,6 +154,7 @@ func (w WatchSeed) mutationInput(name string) map[string]any {
 		"delivery_json":    w.DeliveryJSON,
 		"absence_json":     w.AbsenceJSON,
 		"enrich_json":      w.EnrichJSON,
+		"poll_json":        w.PollJSON,
 	} {
 		if strings.TrimSpace(value) != "" {
 			input[key] = value
