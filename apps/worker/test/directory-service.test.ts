@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { app_user, db, eq, organization, pool } from "@neko/db";
-import type { DirectoryChange, ListDirectoryResult } from "@open-neko/plugin-types";
+import type { DirectoryChange, ListDirectoryResult } from "../src/directory/types";
 import { createAdminHandler } from "../src/admin-server";
 import {
   DirectorySyncError,
@@ -19,9 +19,8 @@ const describeIfDb = reachable ? describe : describe.skip;
 function source(pages: ListDirectoryResult[] | (() => never), changes: DirectoryChange[] = [], createUser = false): DirectorySource {
   return {
     getDirectoryProvider: () => ({
-      pluginId: "scalekit",
-      pluginName: "@open-neko/plugin-scalekit",
-      declaration: {
+      id: "scalekit",
+      capabilities: {
         providerLabel: "Scalekit",
         read: { users: true, groups: true, memberships: true },
         write: { createUser, deactivateUser: false },
@@ -59,7 +58,7 @@ describe("collectDirectorySnapshot", () => {
     );
     expect(snapshot).toMatchObject({
       tenantId: "t1",
-      provider: "@open-neko/plugin-scalekit",
+      provider: "scalekit",
       createUsers: true,
       groups: [{ externalId: "g1", displayName: "Sales" }],
       memberships: [{ userExternalId: "u1", groupExternalId: "g1" }],
@@ -75,7 +74,7 @@ describe("collectDirectorySnapshot", () => {
     ).rejects.toThrow("changed tenant");
   });
 
-  it("fails without a directory plugin", async () => {
+  it("fails without a directory provider", async () => {
     await expect(
       collectDirectorySnapshot({ ...source([]), getDirectoryProvider: () => null }, "org"),
     ).rejects.toBeInstanceOf(DirectorySyncError);
@@ -83,7 +82,7 @@ describe("collectDirectorySnapshot", () => {
 });
 
 describe("createDirectoryUser", () => {
-  it("creates the user only when the plugin declares the write", async () => {
+  it("creates the user only when the provider accepts the write", async () => {
     const changes: DirectoryChange[] = [];
     await expect(createDirectoryUser(source([], changes), { email: "a@x.test", name: null })).rejects.toMatchObject({ code: "unsupported" });
     expect(await createDirectoryUser(source([], changes, true), { email: "a@x.test", name: "Ana" })).toMatchObject({ user: { externalId: "usr_1" } });

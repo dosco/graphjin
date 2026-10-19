@@ -36,7 +36,7 @@ export default async function SettingsSsoPage() {
       initial={status}
       loadError={null}
       workspaceConnected={deployment.some(
-        (d) => d.pluginName === "@open-neko/plugin-scalekit",
+        (d) => d.pluginName === "scalekit",
       )}
     />
   );

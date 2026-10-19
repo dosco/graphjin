@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   _resetProviderCache,
   _setProviderStatusRequestForTest,
-  isAuthPluginInstalled,
+  isSignInGateLive,
 } from "../src/proxy";
 import {
   readAuthGateMarker,
@@ -43,20 +43,20 @@ afterEach(() => {
 describe("auth gate while the worker is unreachable", () => {
   it("stays open when SSO was never seen live", async () => {
     _setProviderStatusRequestForTest(failing);
-    expect(await isAuthPluginInstalled()).toBe(false);
+    expect(await isSignInGateLive()).toBe(false);
   });
 
   it("fails closed once a live answer reported a provider", async () => {
     _setProviderStatusRequestForTest(() =>
       Promise.resolve(jsonResponse({ provider: { pluginName: "scalekit" } })),
     );
-    expect(await isAuthPluginInstalled()).toBe(true);
+    expect(await isSignInGateLive()).toBe(true);
     expect(readAuthGateMarker()?.provider?.pluginName).toBe("scalekit");
 
     // Worker goes away (restart window). The gate must hold.
     _setProviderStatusRequestForTest(failing);
     resetAuthGateCaches();
-    expect(await isAuthPluginInstalled()).toBe(true);
+    expect(await isSignInGateLive()).toBe(true);
   });
 
   it("re-opens after a live answer reports SSO removed", async () => {
@@ -64,11 +64,11 @@ describe("auth gate while the worker is unreachable", () => {
     _setProviderStatusRequestForTest(() =>
       Promise.resolve(jsonResponse({ provider: null })),
     );
-    expect(await isAuthPluginInstalled()).toBe(false);
+    expect(await isSignInGateLive()).toBe(false);
 
     _setProviderStatusRequestForTest(failing);
     resetAuthGateCaches();
-    expect(await isAuthPluginInstalled()).toBe(false);
+    expect(await isSignInGateLive()).toBe(false);
   });
 
   it("marker survives a fresh process (persisted, not just cached)", async () => {
@@ -76,20 +76,20 @@ describe("auth gate while the worker is unreachable", () => {
     // Simulate a fresh process: drop every in-memory copy, keep the file.
     resetAuthGateCaches();
     _setProviderStatusRequestForTest(failing);
-    expect(await isAuthPluginInstalled()).toBe(true);
+    expect(await isSignInGateLive()).toBe(true);
   });
 
   it("_resetProviderCache clears the proxy cache too (single invalidation)", async () => {
     _setProviderStatusRequestForTest(() =>
       Promise.resolve(jsonResponse({ provider: null })),
     );
-    expect(await isAuthPluginInstalled()).toBe(false);
+    expect(await isSignInGateLive()).toBe(false);
 
     // SSO becomes live; without invalidation the 1s cache would lag.
     _setProviderStatusRequestForTest(() =>
       Promise.resolve(jsonResponse({ provider: { pluginName: "scalekit" } })),
     );
     _resetProviderCache();
-    expect(await isAuthPluginInstalled()).toBe(true);
+    expect(await isSignInGateLive()).toBe(true);
   });
 });

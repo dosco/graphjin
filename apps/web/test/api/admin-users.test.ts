@@ -169,13 +169,13 @@ describe("POST /api/admin/users", () => {
     expect(mocks.inserted).toHaveLength(0);
   });
 
-  it("refuses to add a person when no sign-in plugin is installed", async () => {
+  it("refuses to add a person when sign-in is not set up", async () => {
     mocks.signInProvider = null;
     // Nobody can sign in, so the row would promise an account that cannot
     // exist, and the form would collect a real address to do it.
     const res = await POST(postRequest({ email: "visitor@gmail.com", role: "admin" }) as never);
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ error: expect.stringContaining("sign-in plugin") });
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining("set up sign-in") });
     expect(mocks.inserted).toHaveLength(0);
   });
 

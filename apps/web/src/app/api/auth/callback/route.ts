@@ -4,7 +4,7 @@
  * Handles the redirect from the IdP. Steps:
  *   1. Read the state cookie. If absent / forged, fail closed.
  *   2. Verify `state` query param matches the cookie (login-CSRF gate).
- *   3. Call the auth plugin's complete_auth with the code, get an
+ *   3. Ask the sign-in provider to complete with the code, get an
  *      identity assertion.
  *   4. Upsert app_user from the identity.
  *   5. Set the signed session cookie, redirect to the original

@@ -5,13 +5,16 @@ const mocks = vi.hoisted(() => ({
     provider: null as unknown,
     pending: null as unknown,
   },
-  setAuthPluginSecrets: vi.fn(async (values: unknown) => {
+  setSignInSecrets: vi.fn(async (values: unknown) => {
     void values;
     return undefined;
   }),
   beginAuth: vi.fn(async (params: unknown) => {
     void params;
     return { authorizationUrl: "https://x" };
+  }),
+  selectSignInProvider: vi.fn(async (provider: unknown) => {
+    void provider;
   }),
 }));
 
@@ -22,13 +25,15 @@ vi.mock("@/lib/admin-auth", () => ({
 
 vi.mock("@/lib/auth", () => ({
   getAuthGateStatus: async () => mocks.gate,
-  setAuthPluginSecrets: mocks.setAuthPluginSecrets,
+  setSignInSecrets: mocks.setSignInSecrets,
   beginAuth: mocks.beginAuth,
+  selectSignInProvider: mocks.selectSignInProvider,
   buildRedirectUri: () => "http://localhost/api/auth/callback",
 }));
 
 import { POST as postProvider } from "@/app/api/admin/signin/email-provider/route";
 import { POST as postTest } from "@/app/api/admin/signin/test/route";
+import { POST as postSignInProvider } from "@/app/api/admin/signin/provider/route";
 
 function request(url: string, body: unknown): Request {
   return new Request(url, {
@@ -43,7 +48,7 @@ const testUrl = "http://localhost/api/admin/signin/test";
 
 function magicLinkPending(configuredEnv: string[] = []) {
   return {
-    pluginName: "@open-neko/plugin-magic-link",
+    pluginName: "magic-link",
     providerLabel: "Email link",
     provisioning: "manual",
     loginHintRequired: true,
@@ -68,7 +73,7 @@ describe("POST /api/admin/signin/email-provider", () => {
       }) as never,
     );
     expect(res.status).toBe(200);
-    expect(mocks.setAuthPluginSecrets).toHaveBeenCalledWith({
+    expect(mocks.setSignInSecrets).toHaveBeenCalledWith({
       MAGIC_LINK_FROM: "OpenNeko <signin@c.co>",
       POSTMARK_SERVER_TOKEN: "pm_key",
       RESEND_API_KEY: null,
@@ -88,7 +93,7 @@ describe("POST /api/admin/signin/email-provider", () => {
       }) as never,
     );
     expect(res.status).toBe(200);
-    const values = mocks.setAuthPluginSecrets.mock.calls[0][0] as Record<
+    const values = mocks.setSignInSecrets.mock.calls[0][0] as Record<
       string,
       unknown
     >;
@@ -102,7 +107,7 @@ describe("POST /api/admin/signin/email-provider", () => {
       request(providerUrl, { provider: "resend", from: "a <b@c.co>" }) as never,
     );
     expect(res.status).toBe(400);
-    expect(mocks.setAuthPluginSecrets).not.toHaveBeenCalled();
+    expect(mocks.setSignInSecrets).not.toHaveBeenCalled();
   });
 
   it("rejects unknown providers and a missing From", async () => {
@@ -126,10 +131,10 @@ describe("POST /api/admin/signin/email-provider", () => {
     ).toBe(400);
   });
 
-  it("refuses when the installed auth plugin is not magic-link", async () => {
+  it("refuses when email-link sign-in is not the chosen provider", async () => {
     mocks.gate = {
       provider: {
-        pluginName: "@open-neko/plugin-scalekit",
+        pluginName: "scalekit",
         providerLabel: "Scalekit",
       },
       pending: null,
@@ -164,7 +169,7 @@ describe("POST /api/admin/signin/test", () => {
     expect(params.loginHint).toBe("admin@company.com");
   });
 
-  it("rejects invalid emails without touching the plugin", async () => {
+  it("rejects invalid emails without starting sign-in", async () => {
     const res = await postTest(request(testUrl, { email: "nope" }) as never);
     expect(res.status).toBe(400);
     expect(mocks.beginAuth).not.toHaveBeenCalled();
@@ -180,5 +185,17 @@ describe("POST /api/admin/signin/test", () => {
     expect(res.status).toBe(502);
     const body = (await res.json()) as { error: string };
     expect(body.error).toContain("sender not verified");
+  });
+});
+
+describe("POST /api/admin/signin/provider", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("chooses or clears the sign-in provider and rejects anything else", async () => {
+    const url = "http://localhost/api/admin/signin/provider";
+    expect((await postSignInProvider(request(url, { provider: "magic-link" }) as never)).status).toBe(200);
+    expect((await postSignInProvider(request(url, { provider: null }) as never)).status).toBe(200);
+    expect((await postSignInProvider(request(url, { provider: "@open-neko/plugin-magic-link" }) as never)).status).toBe(400);
+    expect(mocks.selectSignInProvider.mock.calls.map((call) => call[0])).toEqual(["magic-link", null]);
   });
 });

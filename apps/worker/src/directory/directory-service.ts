@@ -7,8 +7,12 @@ import {
   type DirectorySnapshot,
   type DirectorySyncStats,
 } from "@neko/db";
-import type { ApplyDirectoryChangeResult, DirectoryChange, ListDirectoryResult } from "@open-neko/plugin-types";
-import type { DirectoryProviderInfo } from "../plugins/plugin-registry.js";
+import type { ApplyDirectoryChangeResult, DirectoryCapabilities, DirectoryChange, ListDirectoryResult } from "./types.js";
+
+export interface DirectoryProviderInfo {
+  id: string;
+  capabilities: DirectoryCapabilities;
+}
 
 export interface DirectorySource {
   getDirectoryProvider(): DirectoryProviderInfo | null;
@@ -43,10 +47,10 @@ export async function directoryStatus(source: DirectorySource | null, orgId: str
   return {
     provider: provider
       ? {
-          pluginName: provider.pluginName,
-          providerLabel: provider.declaration.providerLabel,
-          canCreateUsers: provider.declaration.write.createUser,
-          canDeactivateUsers: provider.declaration.write.deactivateUser,
+          pluginName: provider.id,
+          providerLabel: provider.capabilities.providerLabel,
+          canCreateUsers: provider.capabilities.write.createUser,
+          canDeactivateUsers: provider.capabilities.write.deactivateUser,
         }
       : null,
     state: {
@@ -59,18 +63,18 @@ export async function directoryStatus(source: DirectorySource | null, orgId: str
   };
 }
 
-/** Reads every page from the directory plugin, then reconciles in one transaction. */
+/** Reads every page from the directory provider, then reconciles in one transaction. */
 export async function collectDirectorySnapshot(
   source: DirectorySource,
   orgId: string,
 ): Promise<DirectorySnapshot> {
   const provider = source.getDirectoryProvider();
-  if (!provider) throw new DirectorySyncError("no_provider", "no directory plugin installed");
+  if (!provider) throw new DirectorySyncError("no_provider", "no directory provider is configured");
   const snapshot: DirectorySnapshot = {
     orgId,
-    provider: provider.pluginName,
+    provider: provider.id,
     tenantId: "",
-    createUsers: provider.declaration.read.users,
+    createUsers: provider.capabilities.read.users,
     users: [],
     groups: [],
     memberships: [],
@@ -79,7 +83,7 @@ export async function collectDirectorySnapshot(
   for (let page = 0; page < MAX_PAGES; page++) {
     const result = await source.listDirectory(cursor);
     if (snapshot.tenantId && snapshot.tenantId !== result.tenantId) {
-      throw new DirectorySyncError("invalid", "directory plugin changed tenant between pages");
+      throw new DirectorySyncError("invalid", "directory provider changed tenant between pages");
     }
     snapshot.tenantId = result.tenantId;
     snapshot.users.push(...result.users);
@@ -88,15 +92,15 @@ export async function collectDirectorySnapshot(
     cursor = result.nextCursor ?? null;
     if (!cursor) return snapshot;
   }
-  throw new DirectorySyncError("invalid", `directory plugin returned more than ${MAX_PAGES} pages`);
+  throw new DirectorySyncError("invalid", `directory provider returned more than ${MAX_PAGES} pages`);
 }
 
 export async function runDirectorySync(source: DirectorySource, orgId: string): Promise<DirectorySyncStats> {
   const provider = source.getDirectoryProvider();
-  if (!provider) throw new DirectorySyncError("no_provider", "no directory plugin installed");
+  if (!provider) throw new DirectorySyncError("no_provider", "no directory provider is configured");
   const claimed = await db().execute(sql`
     insert into directory_sync_state (org_id, provider, status, started_at, finished_at, last_error, updated_at)
-    values (${orgId}, ${provider.pluginName}, 'running', now(), null, null, now())
+    values (${orgId}, ${provider.id}, 'running', now(), null, null, now())
     on conflict (org_id) do update set
       provider = excluded.provider, status = 'running', started_at = now(), finished_at = null, last_error = null, updated_at = now()
     where directory_sync_state.status <> 'running' or directory_sync_state.started_at < now() - interval '1 hour'
@@ -132,9 +136,9 @@ export async function createDirectoryUser(
   input: { email: string; name: string | null },
 ): Promise<ApplyDirectoryChangeResult> {
   const provider = source.getDirectoryProvider();
-  if (!provider) throw new DirectorySyncError("no_provider", "no directory plugin installed");
-  if (!provider.declaration.write.createUser) {
-    throw new DirectorySyncError("unsupported", `${provider.declaration.providerLabel} does not create users`);
+  if (!provider) throw new DirectorySyncError("no_provider", "no directory provider is configured");
+  if (!provider.capabilities.write.createUser) {
+    throw new DirectorySyncError("unsupported", `${provider.capabilities.providerLabel} does not create users`);
   }
   return source.applyDirectoryChange({ op: "create_user", email: input.email, name: input.name });
 }

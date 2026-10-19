@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   const actor = user ? await getCurrentActor() : null;
   // `signedIn` says the visitor holds a session cookie, so the app offers
-  // Sign out. It stays true while the worker or the plugin is unreachable.
+  // Sign out. It stays true while the worker is unreachable.
   const signedIn = Boolean(request?.cookies?.get(SESSION_COOKIE_NAME)?.value);
   return NextResponse.json({
     user,

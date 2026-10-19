@@ -56,6 +56,8 @@ import {
   SsoSetupService,
   startSsoSetupPoller,
 } from "./sso/sso-setup-service.js";
+import { CoreSecrets } from "./secrets/core-secrets.js";
+import { SignInService, type SignInProviderId } from "./signin/signin-service.js";
 import {
   applyGroupGrants,
   disableGroupGrants,
@@ -475,8 +477,14 @@ async function runMetricRefreshSweep() {
 // admin handler can lazily reach a freshly-installed auth plugin
 // without a server restart.
 let pluginRegistry: PluginRegistry | null = null;
+let coreSecrets: CoreSecrets | null = null;
 let recordsImportAdminSurface: RecordsImportHandlerSurface | null = null;
 let ssoSetupService: SsoSetupService | null = null;
+let signInService: SignInService | null = null;
+function signIn(): SignInService {
+  if (!signInService) throw new Error("sign-in service not ready");
+  return signInService;
+}
 let actionRequestPreflightReady = false;
 function recordsImportSurface(): RecordsImportHandlerSurface {
   if (!recordsImportAdminSurface) {
@@ -524,39 +532,17 @@ const server = createServer(
   createAdminHandler({
     scheduler: { getHealth: getWorkflowSchedulerHealth },
     auth: {
-      getAuthProvider: () => pluginRegistry?.getAuthProvider() ?? null,
-      authSignInReady: () => pluginRegistry?.authSignInReady() ?? false,
-      getAuthEnvGaps: () => pluginRegistry?.getAuthEnvGaps() ?? null,
-      getAuthConfiguredEnvKeys: () =>
-        pluginRegistry?.getAuthConfiguredEnvKeys() ?? [],
-      getAuthDeclaredEnvKeys: () =>
-        pluginRegistry?.getAuthDeclaredEnvKeys() ?? [],
+      getAuthProvider: () => signInService?.getAuthProvider() ?? null,
+      authSignInReady: () => signInService?.authSignInReady() ?? false,
+      getAuthEnvGaps: () => signInService?.getAuthEnvGaps() ?? null,
+      getAuthConfiguredEnvKeys: () => signInService?.getAuthConfiguredEnvKeys() ?? [],
+      getAuthDeclaredEnvKeys: () => signInService?.getAuthDeclaredEnvKeys() ?? [],
       soloAdminNeedsEmail: async () => soloAdminNeedsEmail(await getOrgId()),
       hasProvisionedAdmin: async () => (await activeAdministratorIds(await getOrgId())).length > 0,
-      setAuthSecret: async (key, value) => {
-        if (!pluginRegistry) {
-          throw new Error("plugin registry not initialised");
-        }
-        const provider = pluginRegistry.getAuthProvider();
-        if (!provider) throw new Error("no auth plugin installed");
-        if (value === null) {
-          await pluginRegistry.deletePluginSecret(provider.pluginName, key);
-        } else {
-          await pluginRegistry.setPluginSecret(provider.pluginName, key, value);
-        }
-      },
-      beginAuth: (params) => {
-        if (!pluginRegistry) {
-          throw new Error("plugin registry not initialised");
-        }
-        return pluginRegistry.beginAuth(params);
-      },
-      completeAuth: (params) => {
-        if (!pluginRegistry) {
-          throw new Error("plugin registry not initialised");
-        }
-        return pluginRegistry.completeAuth(params);
-      },
+      setAuthSecret: (key, value) => signIn().setAuthSecret(key, value),
+      selectProvider: (provider) => signIn().selectProvider(provider as SignInProviderId | null),
+      beginAuth: (params) => signIn().beginAuth(params),
+      completeAuth: (params) => signIn().completeAuth(params),
     },
     plugins: {
       status: () =>
@@ -667,15 +653,9 @@ const server = createServer(
       },
     },
     directory: {
-      status: async () => directoryStatus(pluginRegistry, await getOrgId()),
-      sync: async () => {
-        if (!pluginRegistry) throw new Error("plugin registry not initialised");
-        return runDirectorySync(pluginRegistry, await getOrgId());
-      },
-      createUser: async (input) => {
-        if (!pluginRegistry) throw new Error("plugin registry not initialised");
-        return createDirectoryUser(pluginRegistry, input);
-      },
+      status: async () => directoryStatus(signInService, await getOrgId()),
+      sync: async () => runDirectorySync(signIn(), await getOrgId()),
+      createUser: async (input) => createDirectoryUser(signIn(), input),
     },
     packs: {
       checkContextUpdates: async () => {
@@ -702,27 +682,15 @@ const server = createServer(
       updateMagentoStoreManagement: (input) => packService.updateMagentoStoreManagement(input),
     },
     connect: {
-      getConnectProviders: () => pluginRegistry?.getConnectProviders() ?? [],
+      getConnectProviders: () => signInService?.getConnectProviders() ?? [],
       getOperatorConnectStatus: (operatorId) =>
-        pluginRegistry?.getOperatorConnectStatus(operatorId) ?? [],
+        signInService?.getOperatorConnectStatus(operatorId) ?? [],
       getDeploymentConnectStatus: () =>
-        pluginRegistry?.getDeploymentConnectStatus() ?? [],
-      beginConnect: (pluginName, params) => {
-        if (!pluginRegistry) throw new Error("plugin registry not initialised");
-        return pluginRegistry.beginConnect(pluginName, params);
-      },
-      completeConnect: (pluginName, params) => {
-        if (!pluginRegistry) throw new Error("plugin registry not initialised");
-        return pluginRegistry.completeConnect(pluginName, params);
-      },
-      refreshConnect: (pluginName, operatorId) => {
-        if (!pluginRegistry) throw new Error("plugin registry not initialised");
-        return pluginRegistry.refreshConnect(pluginName, operatorId);
-      },
-      disconnect: (pluginName, operatorId) => {
-        if (!pluginRegistry) throw new Error("plugin registry not initialised");
-        return pluginRegistry.disconnect(pluginName, operatorId);
-      },
+        signInService?.getDeploymentConnectStatus() ?? [],
+      beginConnect: (name, params) => signIn().beginConnect(name, params),
+      completeConnect: (name, params) => signIn().completeConnect(name, params),
+      refreshConnect: (name, operatorId) => signIn().refreshConnect(name, operatorId),
+      disconnect: (name, operatorId) => signIn().disconnect(name, operatorId),
     },
     ssoSetup: ssoSetupSurface(),
     channels: {
@@ -971,7 +939,21 @@ pluginRegistry = new PluginRegistry({
 });
 await pluginRegistry.start();
 setPluginRegistryInstance(pluginRegistry);
-ssoSetupService = new SsoSetupService(() => pluginRegistry);
+coreSecrets = new CoreSecrets(secretsResolver ? { resolver: secretsResolver } : {});
+await coreSecrets.start();
+signInService = new SignInService(coreSecrets);
+{
+  const moved = await signInService.migrateLegacy().catch((err) => {
+    console.warn(`[worker] sign-in settings migration failed: ${err instanceof Error ? err.message : err}`);
+    return [];
+  });
+  if (moved.length > 0) console.log(`[worker] moved sign-in settings from ${moved.join(", ")}`);
+  const provider = signInService.getAuthProvider();
+  if (provider) {
+    console.log(`[worker] sign-in provider: ${provider.providerLabel}${signInService.authSignInReady() ? "" : " (setup pending)"}`);
+  }
+}
+ssoSetupService = new SsoSetupService(signInService);
 startSsoSetupPoller({ service: ssoSetupService, orgId: ADMIN_ORG_ID });
 registerChannelOutputDelivery();
 {
@@ -1538,9 +1520,9 @@ await b.work(
 );
 
 await b.work(QUEUE.DIRECTORY_SYNC, async () => {
-  if (!pluginRegistry?.getDirectoryProvider()) return;
+  if (!signInService?.getDirectoryProvider()) return;
   try {
-    const stats = await runDirectorySync(pluginRegistry, await getOrgId());
+    const stats = await runDirectorySync(signInService, await getOrgId());
     console.log(`[directory-sync] ${JSON.stringify(stats)}`);
   } catch (e) {
     console.warn(`[directory-sync] failed: ${e instanceof Error ? e.message : e}`);
@@ -1830,6 +1812,7 @@ const shutdown = async (signal: string) => {
   workflowScheduler.stop();
   workflowApiDispatcher.stop();
   channelInbound.stop();
+  coreSecrets?.stop();
   unregisterRecordSchemaPreflight();
   unregisterRecordNewFieldsPreflight();
   unregisterRecordImportPreflight();

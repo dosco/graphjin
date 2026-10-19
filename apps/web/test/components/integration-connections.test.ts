@@ -25,7 +25,7 @@ function render(props: Partial<ComponentProps<typeof IntegrationsList>> = {}) {
 }
 const disconnect = () => state.buttons.find(button => button.children === "Disconnect")!;
 
-describe("plugin connection actions", () => {
+describe("integration connection actions", () => {
   it("does not disconnect when confirmation is cancelled", async () => {
     const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
     state.confirm.mockResolvedValue(false);
@@ -38,7 +38,7 @@ describe("plugin connection actions", () => {
     state.confirm.mockResolvedValue(true);
     render(); disconnect().onClick!();
     await vi.waitFor(() => expect(state.success).toHaveBeenCalledWith("Disconnected Scalekit workspace"));
-    expect(fetch).toHaveBeenCalledWith("/api/integrations/disconnect/%40open-neko%2Fplugin-scalekit", { method: "POST" });
+    expect(fetch).toHaveBeenCalledWith("/api/integrations/disconnect/scalekit", { method: "POST" });
     fetch.mockResolvedValue({ ok: false, status: 502, json: async () => ({ error: "Service unavailable" }) });
     disconnect().onClick!();
     await vi.waitFor(() => expect(state.error).toHaveBeenCalledWith("Could not disconnect Scalekit workspace. Try again.", { description: "Service unavailable" }));

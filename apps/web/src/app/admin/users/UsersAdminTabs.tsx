@@ -52,7 +52,7 @@ export function UsersAdminTabs({
                   ? "Your local account is ready to use. Add your email before you turn on SSO; your work stays with this account."
                   : signInProvider
                     ? "Add users before their first sign-in, choose administrators, and disable accounts. Group membership decides which items each user holds."
-                    : "This installation runs as a single operator until you install a sign-in plugin."}
+                    : "This installation runs as a single operator until you set up sign-in."}
               </p>
             </div>
             <div className="settings-source">

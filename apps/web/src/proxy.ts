@@ -3,19 +3,18 @@
  *
  * Two-mode model:
  *
- *   1. No SSO plugin installed → the app runs fully open. Every browser
- *      user gets the full app, no sign-in required. This is the
+ *   1. No sign-in provider is live → the app runs fully open. Every
+ *      browser user gets the full app, no sign-in required. This is the
  *      single-operator / laptop deployment.
  *
- *   2. An SSO plugin is installed (worker reports a provider on
+ *   2. A sign-in provider is live (worker reports a provider on
  *      /admin/auth/status) → every route is gated. A request without a
  *      valid signed session cookie is 302'd to /signin with returnTo
  *      pointing at the original URL.
  *
  * The mode is detected per-request (cached 1s) by asking the worker,
- * so installing or removing the plugin takes effect on the next cache
- * miss without a web restart — same hot-reload model as the rest of
- * the plugin system.
+ * so turning sign-in on or off takes effect on the next cache miss
+ * without a web restart.
  *
  * Paths exempt from the gate:
  *   - /signin                — the sign-in page itself
@@ -116,9 +115,9 @@ function workerAdminBase(): string {
 }
 
 /**
- * Ask the worker whether an SSO plugin is installed. Cached for one
+ * Ask the worker whether a sign-in provider is live. Cached for one
  * second to keep proxy overhead negligible under load while still
- * picking up `openneko install` within a second of the manifest write.
+ * picking up a sign-in settings change within a second.
  *
  * When the worker is unreachable, the persisted auth-gate marker decides:
  * an install where SSO was ever live fails CLOSED (valid session cookies
@@ -127,7 +126,7 @@ function workerAdminBase(): string {
  * configured SSO keeps failing open — a dev environment with no worker
  * running shouldn't be locked out.
  */
-export async function isAuthPluginInstalled(): Promise<boolean> {
+export async function isSignInGateLive(): Promise<boolean> {
   const now = Date.now();
   if (providerCache && now - providerCache.at < PROVIDER_CACHE_TTL_MS) {
     return providerCache.installed;
@@ -275,7 +274,7 @@ async function gate(request: NextRequest): Promise<NextResponse> {
   if (policy.rule === "public" || policy.rule === "token") {
     return NextResponse.next();
   }
-  if (!(await isAuthPluginInstalled())) {
+  if (!(await isSignInGateLive())) {
     // Single-operator install: one person runs everything.
     return NextResponse.next();
   }

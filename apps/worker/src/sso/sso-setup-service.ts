@@ -1,13 +1,13 @@
-// SSO admin-setup orchestration. The agent (or /admin/settings/sso) drives
-// the Scalekit workspace MCP tools through the auth plugin: generate an admin
-// portal link (guides the operator through IdP setup), then poll connection
-// state until it reports COMPLETED. The active environment defaults to Dev
-// (free trial); Prod is an explicit opt-in switch. Sign-in credentials
-// (env URL + client id + one-time secret) are written into the encrypted
-// vault by the admin-gated settings page.
+// SSO admin-setup orchestration. /admin/settings/sso drives the Scalekit
+// workspace MCP tools through the sign-in service: generate an admin portal
+// link (guides the operator through IdP setup), then poll connection state
+// until it reports COMPLETED. The active environment defaults to Dev (free
+// trial); Prod is an explicit opt-in switch. Sign-in credentials (env URL +
+// client id + one-time secret) are written into the encrypted vault by the
+// admin-gated settings page, which makes Scalekit the sign-in provider.
 
 import { db, eq, organization, sso_setup } from "@neko/db";
-import type { PluginRegistry } from "../plugins/plugin-registry.js";
+import type { SignInService } from "../signin/signin-service.js";
 
 export type SsoSetupStatus =
   | "not_started"
@@ -54,44 +54,14 @@ interface SetupRow {
 }
 
 export class SsoSetupService {
-  constructor(private readonly getRegistry: () => PluginRegistry | null) {}
-
-  private registry(): PluginRegistry {
-    const r = this.getRegistry();
-    if (!r) throw new Error("plugin registry not initialised");
-    return r;
-  }
-
-  private authPlugin(): { pluginId: string; pluginName: string } {
-    const provider = this.registry().getAuthProvider();
-    if (!provider) {
-      throw new Error(
-        "no auth plugin installed — install one with `openneko install <name>` (e.g. @open-neko/plugin-scalekit)",
-      );
-    }
-    return { pluginId: provider.pluginId, pluginName: provider.pluginName };
-  }
+  constructor(private readonly signIn: SignInService) {}
 
   private async invoke(
     kind: string,
     payload: Record<string, unknown>,
-    orgId: string,
-  ): Promise<{ text: string; isError: boolean }> {
-    const outcome = await this.registry().invokeAction(
-      this.authPlugin().pluginId,
-      kind,
-      payload,
-      orgId,
-    );
-    const result = (outcome.result ?? {}) as Record<string, unknown>;
-    const isError = result.isError === true;
-    const text = typeof result.text === "string" ? result.text : "";
-    if (isError || (!text && !result)) {
-      throw new Error(
-        text || `Scalekit tool ${kind} returned no result — is the workspace connected?`,
-      );
-    }
-    return { text, isError: false };
+    _orgId: string,
+  ): Promise<{ text: string }> {
+    return { text: await this.signIn.callWorkspaceTool(kind, payload) };
   }
 
   private async readRow(orgId: string): Promise<SetupRow | null> {
@@ -147,18 +117,12 @@ export class SsoSetupService {
   }
 
   private signInConfigured(): boolean {
-    try {
-      const { pluginName } = this.authPlugin();
-      const env = this.registry().getPluginEnv(pluginName);
-      if (!env) return false;
-      return Boolean(
-        env.SCALEKIT_ENVIRONMENT_URL &&
-          env.SCALEKIT_CLIENT_ID &&
-          env.SCALEKIT_CLIENT_SECRET,
-      );
-    } catch {
-      return false;
-    }
+    const env = this.signIn.providerValues("scalekit");
+    return Boolean(
+      env.SCALEKIT_ENVIRONMENT_URL &&
+        env.SCALEKIT_CLIENT_ID &&
+        env.SCALEKIT_CLIENT_SECRET,
+    );
   }
 
   /**
@@ -232,7 +196,7 @@ export class SsoSetupService {
 
   /**
    * Pin the active Scalekit environment/organization (Dev default, Prod opt-in).
-   * The organization also becomes the plugin's SCALEKIT_ORGANIZATION_ID for directory sync.
+   * The organization also becomes SCALEKIT_ORGANIZATION_ID for directory sync.
    */
   async setScalekitIds(
     orgId: string,
@@ -263,13 +227,16 @@ export class SsoSetupService {
       .update(organization)
       .set({ scalekit_org_id: input.organizationId, updated_at: new Date() })
       .where(eq(organization.id, orgId));
-    const provider = this.getRegistry()?.getAuthProvider();
-    if (provider) {
-      await this.registry().setPluginSecret(provider.pluginName, "SCALEKIT_ORGANIZATION_ID", input.organizationId);
-    }
+    await this.signIn.setProviderValues("scalekit", {
+      SCALEKIT_ORGANIZATION_ID: input.organizationId,
+      SCALEKIT_ENVIRONMENT_ID: input.environmentId,
+    });
   }
 
-  /** Write the sign-in credentials into the encrypted vault (admin-gated). */
+  /**
+   * Write the sign-in credentials into the encrypted vault (admin-gated)
+   * and make Scalekit the sign-in provider.
+   */
   async setSignInCredentials(
     orgId: string,
     input: { environmentUrl: string; clientId: string; clientSecret: string },
@@ -278,19 +245,12 @@ export class SsoSetupService {
     if (!input.environmentUrl || !input.clientId || !input.clientSecret) {
       throw new Error("environmentUrl, clientId and clientSecret are required");
     }
-    const { pluginName } = this.authPlugin();
-    const registry = this.registry();
-    await registry.setPluginSecret(
-      pluginName,
-      "SCALEKIT_ENVIRONMENT_URL",
-      input.environmentUrl,
-    );
-    await registry.setPluginSecret(pluginName, "SCALEKIT_CLIENT_ID", input.clientId);
-    await registry.setPluginSecret(
-      pluginName,
-      "SCALEKIT_CLIENT_SECRET",
-      input.clientSecret,
-    );
+    await this.signIn.setProviderValues("scalekit", {
+      SCALEKIT_ENVIRONMENT_URL: input.environmentUrl,
+      SCALEKIT_CLIENT_ID: input.clientId,
+      SCALEKIT_CLIENT_SECRET: input.clientSecret,
+    });
+    await this.signIn.selectProvider("scalekit");
   }
 
   private async resolveIds(
@@ -303,9 +263,8 @@ export class SsoSetupService {
         organizationId: row.scalekit_organization_id,
       };
     }
-    // Fallback: operator-provided env overrides on the auth plugin.
-    const { pluginName } = this.authPlugin();
-    const env = this.registry().getPluginEnv(pluginName) ?? {};
+    // Fallback: values an operator set directly in the secrets store.
+    const env = this.signIn.providerValues("scalekit");
     if (env.SCALEKIT_ENVIRONMENT_ID && env.SCALEKIT_ORGANIZATION_ID) {
       return {
         environmentId: env.SCALEKIT_ENVIRONMENT_ID,
@@ -435,7 +394,7 @@ export class SsoSetupService {
 
   /**
    * Poll only while there is something to watch. Returns immediately
-   * (no plugin invoke) when the row is not in a polling state.
+   * (no workspace call) when the row is not in a polling state.
    */
   async poll(orgId: string): Promise<SsoSetupStatusResult> {
     const current = await this.getStatus(orgId);

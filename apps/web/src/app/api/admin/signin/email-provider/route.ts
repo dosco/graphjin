@@ -1,7 +1,7 @@
 /**
  * POST /api/admin/signin/email-provider — configure magic-link email
  * delivery in one shot: the chosen provider's API key is written and
- * the other providers' keys are deleted (the plugin requires exactly
+ * the other providers' keys are deleted (sign-in requires exactly
  * one), plus the From address. Keys live in the worker's encrypted
  * secrets store; this route never reads a secret back.
  *
@@ -14,9 +14,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
-import { getAuthGateStatus, setAuthPluginSecrets } from "@/lib/auth";
+import { getAuthGateStatus, setSignInSecrets } from "@/lib/auth";
 
-const MAGIC_LINK_PLUGIN = "@open-neko/plugin-magic-link";
+const MAGIC_LINK = "magic-link";
 const PROVIDER_KEYS: Record<string, string> = {
   resend: "RESEND_API_KEY",
   postmark: "POSTMARK_SERVER_TOKEN",
@@ -28,10 +28,10 @@ export async function POST(request: NextRequest) {
   if (isDenied(actor)) return actor;
 
   const gate = await getAuthGateStatus();
-  const plugin = (gate.provider ?? gate.pending)?.pluginName;
-  if (plugin !== MAGIC_LINK_PLUGIN) {
+  const provider = (gate.provider ?? gate.pending)?.pluginName;
+  if (provider !== MAGIC_LINK) {
     return NextResponse.json(
-      { error: `the installed auth plugin is not ${MAGIC_LINK_PLUGIN}` },
+      { error: "email-link sign-in is not the chosen sign-in provider" },
       { status: 409 },
     );
   }
@@ -43,8 +43,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
   }
 
-  const provider = typeof body.provider === "string" ? body.provider : "";
-  const chosenKey = PROVIDER_KEYS[provider];
+  const emailProvider = typeof body.provider === "string" ? body.provider : "";
+  const chosenKey = PROVIDER_KEYS[emailProvider];
   if (!chosenKey) {
     return NextResponse.json(
       { error: "provider must be resend, postmark, or sendgrid" },
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     (gate.pending?.configuredEnv ?? []).includes(chosenKey);
   if (apiKey === undefined && !keepingStoredKey && !gate.provider) {
     return NextResponse.json(
-      { error: `paste the ${provider} API key — none is stored yet` },
+      { error: `paste the ${emailProvider} API key — none is stored yet` },
       { status: 400 },
     );
   }
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await setAuthPluginSecrets(values);
+    await setSignInSecrets(values);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json(

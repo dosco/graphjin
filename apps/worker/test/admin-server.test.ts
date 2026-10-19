@@ -634,7 +634,7 @@ describe("worker admin /admin/auth/*", () => {
         auth: {
           authSignInReady: () => true,
           getAuthProvider: () => ({
-            pluginName: "@open-neko/plugin-scalekit",
+            pluginName: "scalekit",
             providerLabel: "Scalekit",
           }),
           beginAuth: async () => ({ authorizationUrl: "https://x" }),
@@ -651,7 +651,7 @@ describe("worker admin /admin/auth/*", () => {
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({
         provider: {
-          pluginName: "@open-neko/plugin-scalekit",
+          pluginName: "scalekit",
           providerLabel: "Scalekit",
           provisioning: "automatic",
           loginHintRequired: false,
@@ -673,7 +673,7 @@ describe("worker admin /admin/auth/*", () => {
         hasProvisionedAdmin: async () => hasAdmin,
         soloAdminNeedsEmail: async () => provisioning === "automatic" && !hasAdmin,
         getAuthProvider: () => ({
-          pluginName: "@open-neko/plugin-magic-link",
+          pluginName: "magic-link",
           providerLabel: "Email link",
           provisioning,
           loginHintRequired: true,
@@ -709,7 +709,7 @@ describe("worker admin /admin/auth/*", () => {
         pending: unknown;
       };
       expect(liveBody.provider?.pluginName).toBe(
-        "@open-neko/plugin-magic-link",
+        "magic-link",
       );
       expect(liveBody.pending).toBeNull();
     } finally {
@@ -726,7 +726,7 @@ describe("worker admin /admin/auth/*", () => {
           getAuthConfiguredEnvKeys: () => ["MAGIC_LINK_SIGNING_SECRET"],
           hasProvisionedAdmin: async () => true,
           getAuthProvider: () => ({
-            pluginName: "@open-neko/plugin-magic-link",
+            pluginName: "magic-link",
             providerLabel: "Email link",
             provisioning: "manual",
             loginHintRequired: true,
@@ -765,7 +765,7 @@ describe("worker admin /admin/auth/*", () => {
             writes.push([key, value]);
           },
           getAuthProvider: () => ({
-            pluginName: "@open-neko/plugin-magic-link",
+            pluginName: "magic-link",
             providerLabel: "Email link",
             provisioning: "manual",
             loginHintRequired: true,
@@ -802,6 +802,37 @@ describe("worker admin /admin/auth/*", () => {
         },
       );
       expect(undeclared.status).toBe(400);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("POST /admin/auth/provider chooses or clears the sign-in provider", async () => {
+    const chosen: Array<string | null> = [];
+    const srv = await startServer(
+      createAdminHandler({
+        auth: {
+          authSignInReady: () => false,
+          getAuthProvider: () => null,
+          selectProvider: async (provider) => {
+            chosen.push(provider);
+          },
+          beginAuth: async () => ({ authorizationUrl: "https://x" }),
+          completeAuth: async () => ({ sub: "u", email: "u@e.com", groups: [] }),
+        },
+      }),
+    );
+    const post = (provider: unknown) =>
+      fetch(`http://127.0.0.1:${srv.port}/admin/auth/provider`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+    try {
+      expect((await post("magic-link")).status).toBe(200);
+      expect((await post(null)).status).toBe(200);
+      expect((await post("@open-neko/plugin-scalekit")).status).toBe(400);
+      expect(chosen).toEqual(["magic-link", null]);
     } finally {
       await srv.close();
     }

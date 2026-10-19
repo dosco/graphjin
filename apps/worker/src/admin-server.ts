@@ -12,25 +12,25 @@
  *                               pg-boss singleton holds the old creds and
  *                               there's no clean way to re-register handlers
  *                               in-place against a fresh pool.
- *   GET  /admin/auth/status   → 200 + { provider: null | {pluginName, providerLabel} }
- *                               Tells the web app whether an SSO plugin is
- *                               installed so the sign-in page can render
- *                               the appropriate button.
+ *   GET  /admin/auth/status   → 200 + { provider: null | {pluginName, providerLabel}, pending }
+ *                               Tells the web app which sign-in provider is
+ *                               live so the sign-in page can render the
+ *                               appropriate button.
+ *   POST /admin/auth/provider → { provider: "scalekit" | "magic-link" | null }
+ *                               chooses the sign-in provider.
  *   POST /admin/auth/begin    → 200 + { authorizationUrl }
  *                               Body: { redirectUri, state, loginHint? }
- *                               Proxies to the installed auth plugin's
- *                               begin_auth RPC.
+ *                               Starts sign-in with the chosen provider.
  *   POST /admin/auth/complete → 200 + { identity }
  *                               Body: { code, redirectUri, state }
- *                               Proxies to the installed auth plugin's
- *                               complete_auth RPC.
+ *                               Finishes sign-in with the chosen provider.
  *   GET  /admin/plugins/status → 200 + registry health/status summary.
  *   GET  /admin/plugins/settings → each installed plugin's declared settings
  *                               (secrets report only whether they are set).
  *   POST /admin/plugins/settings → { plugin, values: { KEY: string | null } }.
  *   GET  /admin/plugins/catalog → official marketplace plugins not yet installed.
  *   POST /admin/plugins/install → { name }; installs and lists missing settings.
- *   GET  /admin/directory/status → directory plugin and last sync state.
+ *   GET  /admin/directory/status → directory provider and last sync state.
  *   POST /admin/directory/sync  → run a full directory sync now.
  *   POST /admin/directory/users → create a user in the identity provider ({ email, name? }).
  *   POST /admin/graphjin/group-grants → apply group grants now ({ immediate: true }) or in a batch.
@@ -43,12 +43,12 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { ConnectorCredential } from "@open-neko/plugin-install/secrets";
 import type {
   AuthIdentity,
   BeginConnectParams,
   CompleteConnectParams,
-  ConnectorCredential,
-} from "@open-neko/plugin-types";
+} from "./signin/types.js";
 import { getAuditLoggingHealth } from "@neko/llm/workflows";
 import { packFailurePayload, type PackErrorPhase } from "./packs/errors.js";
 
@@ -98,8 +98,10 @@ export interface AuthHandlerSurface {
   hasProvisionedAdmin?(): Promise<boolean>;
   /** A bootstrapped solo owner must supply a real email before sign-in activates. */
   soloAdminNeedsEmail?(): Promise<boolean>;
-  /** Write (string) or delete (null) one auth-plugin env value. */
+  /** Write (string) or delete (null) one value of the chosen provider. */
   setAuthSecret?(key: string, value: string | null): Promise<void>;
+  /** Chooses the sign-in provider; null turns sign-in off. */
+  selectProvider?(provider: string | null): Promise<void>;
   beginAuth(params: {
     redirectUri: string;
     state: string;
@@ -538,6 +540,10 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
     }
     if (req.method === "POST" && req.url === "/admin/auth/secrets") {
       void handleAuthSecrets(req, res, auth);
+      return;
+    }
+    if (req.method === "POST" && req.url === "/admin/auth/provider") {
+      void handleAuthProvider(req, res, auth);
       return;
     }
     if (req.method === "POST" && req.url === "/admin/auth/begin") {
@@ -1243,9 +1249,37 @@ async function handleAuthStatus(
 }
 
 /**
- * POST /admin/auth/secrets — write or delete env values for the
- * installed auth plugin. Body: { values: { KEY: string | null } }.
- * Keys are restricted to the plugin's declared env; loopback-only like
+ * POST /admin/auth/provider — choose the sign-in provider. Body:
+ * { provider: "scalekit" | "magic-link" | null }. The provider goes live
+ * once its required values are set; null turns sign-in off.
+ */
+async function handleAuthProvider(
+  req: IncomingMessage,
+  res: ServerResponse,
+  auth: AuthHandlerSurface | null,
+) {
+  if (!auth?.selectProvider) {
+    json(res, 503, { error: "sign-in is unavailable" });
+    return;
+  }
+  const body = (await readJson(req).catch(() => null)) as { provider?: unknown } | null;
+  const provider = body?.provider;
+  if (provider !== null && provider !== "scalekit" && provider !== "magic-link") {
+    json(res, 400, { error: "provider must be scalekit, magic-link, or null" });
+    return;
+  }
+  try {
+    await auth.selectProvider(provider);
+    json(res, 200, { ok: true });
+  } catch (err) {
+    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+/**
+ * POST /admin/auth/secrets — write or delete values of the chosen
+ * sign-in provider. Body: { values: { KEY: string | null } }.
+ * Keys are restricted to the provider's declared values; loopback-only like
  * every admin route, and the web re-gates it behind an admin session.
  */
 async function handleAuthSecrets(
@@ -1271,7 +1305,7 @@ async function handleAuthSecrets(
   }
   for (const [key, value] of entries) {
     if (!declared.has(key)) {
-      json(res, 400, { error: `"${key}" is not a declared env var of the auth plugin` });
+      json(res, 400, { error: `"${key}" is not a declared value of the sign-in provider` });
       return;
     }
     if (value !== null && (typeof value !== "string" || value.length === 0)) {

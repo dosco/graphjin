@@ -63,7 +63,7 @@ describe("manual-provisioning gate on /api/auth/begin", () => {
 
   it("silently redirects unknown emails to the link-sent notice without touching the plugin", async () => {
     mocks.getAuthProvider.mockResolvedValue({
-      pluginName: "@open-neko/plugin-magic-link",
+      pluginName: "magic-link",
       providerLabel: "Email link",
       provisioning: "manual",
       loginHintRequired: true,
@@ -77,7 +77,7 @@ describe("manual-provisioning gate on /api/auth/begin", () => {
 
   it("starts the flow for a provisioned email and redirects to the plugin URL", async () => {
     mocks.getAuthProvider.mockResolvedValue({
-      pluginName: "@open-neko/plugin-magic-link",
+      pluginName: "magic-link",
       providerLabel: "Email link",
       provisioning: "manual",
       loginHintRequired: true,
@@ -96,7 +96,7 @@ describe("manual-provisioning gate on /api/auth/begin", () => {
 
   it("rejects a hint-less request when the provider requires one", async () => {
     mocks.getAuthProvider.mockResolvedValue({
-      pluginName: "@open-neko/plugin-magic-link",
+      pluginName: "magic-link",
       providerLabel: "Email link",
       provisioning: "manual",
       loginHintRequired: true,
@@ -109,7 +109,7 @@ describe("manual-provisioning gate on /api/auth/begin", () => {
 
   it("masks a plugin send failure as the same link-sent notice", async () => {
     mocks.getAuthProvider.mockResolvedValue({
-      pluginName: "@open-neko/plugin-magic-link",
+      pluginName: "magic-link",
       providerLabel: "Email link",
       provisioning: "manual",
       loginHintRequired: true,
@@ -123,7 +123,7 @@ describe("manual-provisioning gate on /api/auth/begin", () => {
 
   it("leaves automatic-provisioning providers untouched (no user lookup)", async () => {
     mocks.getAuthProvider.mockResolvedValue({
-      pluginName: "@open-neko/plugin-scalekit",
+      pluginName: "scalekit",
       providerLabel: "Scalekit",
       provisioning: "automatic",
       loginHintRequired: false,

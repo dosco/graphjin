@@ -8,7 +8,7 @@
  * before a user's first login (the sub attaches on that login).
  *
  * Body: { email: string, name?: string, role: "admin" | "member", addToDirectory?: boolean }
- * `addToDirectory` also creates the user in the directory plugin's identity provider.
+ * `addToDirectory` also creates the user in the directory provider (Scalekit).
  */
 
 import { randomBytes } from "node:crypto";

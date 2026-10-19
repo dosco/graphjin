@@ -94,8 +94,8 @@ export default async function AdminPage() {
       href: "/admin/users",
       title: "Users",
       copy: authProviderInstalled
-        ? "Admin and member accounts from the installed auth plugin."
-        : "No auth plugin installed; this deployment runs with solo admin access.",
+        ? "Admin and member accounts from the sign-in provider."
+        : "No sign-in provider is set up; this deployment runs with solo admin access.",
       status: authProviderInstalled
         ? `${activeUserCount} active - ${adminCount} admin`
         : "Solo admin",

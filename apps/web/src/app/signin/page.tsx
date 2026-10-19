@@ -112,9 +112,6 @@ function SignInBody() {
               ? "Email me a sign-in link"
               : `Sign in with ${provider.providerLabel}`}
           </Button>
-          <p className="entry-provider-note">
-            Provided by <code>{provider.pluginName}</code>
-          </p>
         </form>
       ) : pendingLabel ? (
         <div className="entry-empty">
@@ -128,13 +125,12 @@ function SignInBody() {
       ) : (
         <div className="entry-empty">
           <p className="entry-section-kicker">Single-operator mode</p>
-          <h3>No SSO plugin is installed</h3>
+          <h3>Sign-in is not set up</h3>
           <p>
-            An operator with shell access can install an authentication plugin
-            to enable enterprise sign-in. Until then, OpenNeko remains in
+            An administrator can turn on single sign-on or email-link sign-in
+            under Admin, Settings. Until then, OpenNeko remains in
             single-operator mode.
           </p>
-          <code>openneko install @open-neko/plugin-scalekit</code>
         </div>
       )}
     </EntryShell>

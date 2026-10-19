@@ -2,15 +2,15 @@
  * GET /api/auth/begin — start the SSO flow.
  *
  * Mint a CSRF state token, persist it (plus the return path) in an
- * httpOnly cookie, ask the auth plugin for its IdP authorization URL,
+ * httpOnly cookie, ask the sign-in provider for its authorization URL,
  * and 302 the user there. The IdP eventually bounces back to
  * /api/auth/callback with `code` + `state`, where the cookie's state
  * is checked against the IdP-echoed state to defeat login-CSRF.
  *
  * Providers with `provisioning: "manual"` (magic link) get an extra
- * gate here: the flow only reaches the plugin when the typed email
+ * gate here: the flow only reaches the provider when the typed email
  * belongs to a pre-provisioned, non-disabled user. Unknown emails get
- * the exact same "link sent" redirect without any plugin call, so the
+ * the exact same "link sent" redirect without any provider call, so the
  * endpoint can't be used to enumerate accounts or spam mailboxes.
  *
  * Query params:
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
   const provider = await getAuthProvider();
   if (!provider) {
     return NextResponse.json(
-      { error: "no SSO plugin installed" },
+      { error: "sign-in is not set up" },
       { status: 503 },
     );
   }

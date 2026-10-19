@@ -1,19 +1,17 @@
 /**
  * SSO integration for the web app.
  *
- * Today OpenNeko's only auth is "share the password with whoever needs
- * in" — fine for a laptop deployment, fatal for any org with an IdP.
- * This module wires the web's sign-in flow through an installed auth
- * plugin (e.g. Scalekit) so an enterprise operator gets standard
- * OIDC SSO without the core having to know which IdP they use.
+ * Without a sign-in provider OpenNeko runs in single-operator mode —
+ * fine for a laptop deployment, fatal for any org with an IdP. This
+ * module wires the web's sign-in flow through the provider the admin
+ * chose (Scalekit SSO or email-link sign-in) so an enterprise operator
+ * gets standard OIDC SSO without the web knowing which IdP they use.
  *
- * Topology: the auth plugin lives in the worker's sandbox VM,
- * not in this Next process. We reach it through the worker's admin
- * HTTP endpoint on localhost (loopback inside the deployment, never
- * exposed). That gives us:
- *   - Secrets stay inside the worker's per-plugin VM.
+ * Topology: the providers run in the worker, not in this Next process.
+ * We reach them through the worker's admin HTTP endpoint on localhost
+ * (loopback inside the deployment, never exposed). That gives us:
+ *   - Secrets stay in the worker's encrypted secrets store.
  *   - The web process never needs the IdP client_secret.
- *   - Hot reload of the plugin doesn't restart the web.
  *
  * Session model: a stateless signed cookie. The session_id is the
  * app_user.id; an HMAC over `${user_id}.${expiresAt}` prevents
@@ -62,7 +60,7 @@ export interface AuthProviderInfo {
   pluginName: string;
   providerLabel: string;
   /**
-   * "manual": the plugin's identity is self-asserted (magic link proves
+   * "manual": the provider's identity is self-asserted (magic link proves
    * mailbox possession only), so sign-in is restricted to users an admin
    * pre-provisioned. "automatic": IdP-attested — first sign-in may create
    * the app_user. Older workers omit the field; treat as "automatic".
@@ -73,7 +71,7 @@ export interface AuthProviderInfo {
 }
 
 /**
- * An installed auth plugin that is not live yet, and why. Admin-only
+ * The chosen sign-in provider while it is not live yet, and why. Admin-only
  * surface (setup UI); the public status route reduces it to a label.
  */
 export interface PendingAuthProviderInfo extends AuthProviderInfo {
@@ -129,9 +127,8 @@ function sessionSecret(): string {
 }
 
 /**
- * Ask the worker whether an SSO plugin is installed. Cached for one
- * second to keep the sign-in page snappy under concurrent loads —
- * the worker's hot-reload window is in seconds anyway.
+ * Ask the worker which sign-in provider is live. Cached for one second
+ * to keep the sign-in page snappy under concurrent loads.
  */
 let providerCache: { value: AuthGateStatus; at: number } | null = null;
 const PROVIDER_CACHE_TTL_MS = 1000;
@@ -210,11 +207,32 @@ export function _resetAuthProviderCache() {
 }
 
 /**
- * Write (string) or delete (null) env values for the installed auth
- * plugin, restricted worker-side to its declared keys. Admin routes
- * only — callers must already be behind requireAdminActor.
+ * Choose the sign-in provider ("scalekit" or "magic-link"); null turns
+ * sign-in off. Admin routes only — callers must already be behind
+ * requireAdminActor.
  */
-export async function setAuthPluginSecrets(
+export async function selectSignInProvider(
+  provider: "scalekit" | "magic-link" | null,
+): Promise<void> {
+  const res = await fetch(`${workerAdminBase()}/admin/auth/provider`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `sign-in provider change failed (${res.status})`);
+  }
+  _resetAuthProviderCache();
+}
+
+/**
+ * Write (string) or delete (null) values of the chosen sign-in provider,
+ * restricted worker-side to its declared keys. Admin routes only —
+ * callers must already be behind requireAdminActor.
+ */
+export async function setSignInSecrets(
   values: Record<string, string | null>,
 ): Promise<void> {
   const res = await fetch(`${workerAdminBase()}/admin/auth/secrets`, {
@@ -245,14 +263,14 @@ export async function beginAuth(params: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
-    // A cold plugin sandbox takes about 20s to start. Giving up early
-    // sends no email at all, which reads to the person as silence.
+    // Sending the email-link can take a while on a slow provider. Giving
+    // up early sends no email at all, which reads to the person as silence.
     signal: AbortSignal.timeout(45_000),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `auth plugin begin failed (${res.status}): ${text || res.statusText}`,
+      `sign-in begin failed (${res.status}): ${text || res.statusText}`,
     );
   }
   return (await res.json()) as { authorizationUrl: string };
@@ -359,7 +377,7 @@ export async function completeAuth(params: {
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `auth plugin complete failed (${res.status}): ${text || res.statusText}`,
+      `sign-in complete failed (${res.status}): ${text || res.statusText}`,
     );
   }
   const body = (await res.json()) as { identity: AuthIdentity };

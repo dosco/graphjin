@@ -99,14 +99,14 @@ export default async function SettingsPage() {
     ),
     getContextRemote(orgId),
   ]);
-  const signInPlugin = authGate.provider?.pluginName ?? null;
-  const pendingPlugin = authGate.pending?.pluginName ?? null;
-  const authStatus = (plugin: string) =>
-    signInPlugin === plugin
+  const liveProvider = authGate.provider?.pluginName ?? null;
+  const pendingProvider = authGate.pending?.pluginName ?? null;
+  const authStatus = (provider: "scalekit" | "magic-link") =>
+    liveProvider === provider
       ? { status: "Live", statusTone: "success" as const }
-      : pendingPlugin === plugin
+      : pendingProvider === provider
         ? { status: "Setup pending", statusTone: "watch" as const }
-        : { status: "Not installed", statusTone: "neutral" as const };
+        : { status: "Off", statusTone: "neutral" as const };
   const extraMarketplaces = installPolicy.allowedMarketplaces.length;
   const securityStatus = installPolicy.allowUnverified || installPolicy.allowGitUrlInstalls
     ? { status: "Exceptions allowed", statusTone: "watch" as const }
@@ -204,13 +204,13 @@ export default async function SettingsPage() {
           href: "/admin/settings/sso",
           title: "Single sign-on",
           copy: "People sign in with Okta, Entra ID, or another identity provider. Their groups map to roles.",
-          ...authStatus("@open-neko/plugin-scalekit"),
+          ...authStatus("scalekit"),
         },
         {
           href: "/admin/settings/signin",
           title: "Email-link sign-in",
           copy: "Invited people sign in with a one-time link sent to their email.",
-          ...authStatus("@open-neko/plugin-magic-link"),
+          ...authStatus("magic-link"),
         },
         {
           href: "/admin/settings/security",
