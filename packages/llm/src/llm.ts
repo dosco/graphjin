@@ -11,6 +11,7 @@ import {
 import { maybeDecryptSecret } from "./secrets";
 import { GoogleAuth } from "google-auth-library";
 import { vertexOpenAiBaseUrl } from "./provider-runtime";
+import { modelFetchOptions } from "./model-gateway";
 
 type ProviderSource = "org" | "env" | "default" | "draft";
 
@@ -234,7 +235,7 @@ export async function buildLlm(
       apiKey: token,
       apiURL: buildVertexApiUrl(resolved),
       config: { model: resolved.model, stream: false },
-      options: { ...LLM_RETRY_OPTIONS },
+      options: { ...LLM_RETRY_OPTIONS, ...modelFetchOptions() },
     } as never);
   }
 
@@ -245,17 +246,17 @@ export async function buildLlm(
       resourceName: String(resolved.config.resourceName),
       deploymentName: String(resolved.config.deploymentName),
       config: { model: resolved.model, stream: false },
-      options: { ...LLM_RETRY_OPTIONS },
+      options: { ...LLM_RETRY_OPTIONS, ...modelFetchOptions() },
     } as never);
   }
 
   if (resolved.provider === "ollama") {
     return ai({
       name: "ollama",
-      apiKey: "",
+      // Ollama takes no key; Ax supplies its placeholder only when none is passed.
       url: String(resolved.config.url),
       config: { model: resolved.model, stream: false },
-      options: { ...LLM_RETRY_OPTIONS },
+      options: { ...LLM_RETRY_OPTIONS, ...modelFetchOptions() },
     } as never);
   }
 
@@ -278,7 +279,7 @@ export async function buildLlm(
           }
         : {}),
     },
-    options: { ...LLM_RETRY_OPTIONS },
+    options: { ...LLM_RETRY_OPTIONS, ...modelFetchOptions() },
   } as never);
 }
 

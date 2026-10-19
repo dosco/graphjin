@@ -21,6 +21,7 @@
  */
 
 import { ax } from "@ax-llm/ax";
+import { modelFetch } from "./model-gateway";
 import { and, db, eq, llm_provider_config } from "@neko/db";
 import {
   type EditableProviderConfig,
@@ -357,7 +358,7 @@ async function runDeepResearch(
   attempt = 1,
 ): Promise<string> {
   try {
-    const res = await fetch(PERPLEXITY_API_URL, {
+    const res = await modelFetch()(PERPLEXITY_API_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${research.secrets.apiKey}`,
@@ -431,7 +432,7 @@ export async function testResearchProvider(
     return { provider: "disabled", model: "", source: resolved.source };
   }
 
-  const res = await fetch(PERPLEXITY_API_URL, {
+  const res = await modelFetch()(PERPLEXITY_API_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${resolved.secrets.apiKey}`,

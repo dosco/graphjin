@@ -58,6 +58,14 @@ through the per-run broker.
    artifacts and skill edits back, and deletes the run folder. Folders a
    restart left behind are swept at the next start.
 
+The host's own model calls, the ones that are not agent turns (summaries,
+classification, transcript compaction, research, the provider test), also go
+through serve when `OPENNEKO_SERVE_SOCKET` is set: `buildLlm` gives Ax a fetch
+that sends each request to serve as a `fetch` frame, and serve makes the call
+and streams the response back (`apps/ax-harness/serve/gateway.go`). Serve is
+then the one process that reaches model providers. Without the socket, as in
+local development, those calls go out directly.
+
 `runChatTurn` keeps its split: the **prologue** (build the prompt) and
 **epilogue** (parse action/workflow fences, persist, scrub) run in the trusted
 host; only the agent loop runs in the runner.

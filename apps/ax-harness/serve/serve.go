@@ -9,6 +9,9 @@
 //	serve → worker  {"type":"mcp","message":{...}}    the harness's tool client
 //	serve → worker  {"type":"exit","code":0,"error":""}
 //
+// A connection that opens with a fetch frame is one model call instead: see
+// gateway.go.
+//
 // Closing the connection cancels the turn. Serve holds the model keys for
 // the turn: the worker names the variable and sends the org's key in
 // model_keys, or serve reads it from its own environment. A key never goes
@@ -25,6 +28,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"regexp"
@@ -60,6 +64,12 @@ type Frame struct {
 	// GraphJin, on a start frame, lets the turn ask the GraphJin agent that
 	// serve hosts, as the user the token names.
 	GraphJin *GraphJinIdentity `json:"graphjin,omitempty"`
+	// Request, Status, Headers and Data carry a model call through the
+	// gateway.
+	Request *FetchRequest     `json:"request,omitempty"`
+	Status  int               `json:"status,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Data    []byte            `json:"data,omitempty"`
 }
 
 // GraphJinIdentity is who a turn asks GraphJin as: the JWT the host minted
@@ -115,6 +125,8 @@ type Server struct {
 	Run func(context.Context, harness.Turn) (int, error)
 	// Ask is the GraphJin agent serve hosts; nil leaves turns on the bridge.
 	Ask Asker
+	// Client makes the gateway's model calls; nil uses a default client.
+	Client *http.Client
 
 	mu      sync.Mutex
 	running int
@@ -226,6 +238,10 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 		_ = out.write(frame)
 	}
 	start, err := readFrame(reader)
+	if err == nil && start.Type == "fetch" {
+		s.fetch(parent, conn, reader, out, start.Request)
+		return
+	}
 	if err != nil || start.Type != "start" || len(start.Spec) == 0 {
 		exit(2, errors.New("expected a start frame with a run specification"))
 		return
