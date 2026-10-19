@@ -179,7 +179,7 @@ export class ScriptedEvalBackend implements AgentBackend {
           totalTokens: 0,
         },
       });
-      return { finalText, status: "completed", backendState: {} };
+      return { finalText, status: "completed", threadState: {} };
     } finally {
       await Promise.allSettled([...clients.values()].map((client) => client.close()));
     }

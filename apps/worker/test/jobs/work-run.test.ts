@@ -180,7 +180,7 @@ describeIfDb("runChatTurn", () => {
       return {
         finalText: "Hello from the agent.",
         status: "completed",
-        backendState: {},
+        threadState: {},
       };
     });
 
@@ -257,7 +257,7 @@ describeIfDb("runChatTurn", () => {
       return {
         finalText: "Resume code: AW-RESUME-CODE-7Q4M",
         status: "completed",
-        backendState: { sessionId: "replacement-state" },
+        threadState: { sessionId: "replacement-state" },
       };
     });
 
@@ -274,10 +274,10 @@ describeIfDb("runChatTurn", () => {
     );
 
     const [stored] = await db()
-      .select({ backendState: work_thread.backend_state })
+      .select({ threadState: work_thread.backend_state })
       .from(work_thread)
       .where(eq(work_thread.id, thread.id));
-    expect(stored?.backendState).toEqual({
+    expect(stored?.threadState).toEqual({
       sessionId: "replacement-state",
       compaction,
     });
@@ -312,7 +312,7 @@ describeIfDb("runChatTurn", () => {
       return {
         finalText: "Invented delivered total: $3.2M",
         status: "completed",
-        backendState: {},
+        threadState: {},
       };
     });
 
@@ -405,7 +405,7 @@ describeIfDb("runChatTurn", () => {
       return {
         finalText: "private answer",
         status: "completed",
-        backendState: {},
+        threadState: {},
       };
     });
     const emit = buildEmit({ orgId, threadId: thread.id, runId: run.id });
@@ -587,7 +587,7 @@ describeIfDb("runChatTurn", () => {
       onEvent: (e: AgentEvent) => Promise<void>;
     }) => {
       await opts.onEvent({ type: "message", role: "assistant", content: finalText });
-      return { finalText, status: "completed", backendState: {} };
+      return { finalText, status: "completed", threadState: {} };
     });
 
     const emit = buildEmit({ orgId, threadId: thread.id, runId: run.id });
@@ -677,7 +677,7 @@ describeIfDb("runChatTurn", () => {
       onEvent: (e: AgentEvent) => Promise<void>;
     }) => {
       await opts.onEvent({ type: "message", role: "assistant", content: finalText });
-      return { finalText, status: "completed", backendState: {} };
+      return { finalText, status: "completed", threadState: {} };
     });
 
     const emit = buildEmit({ orgId, threadId: thread.id, runId: run.id });
@@ -755,7 +755,7 @@ describeIfDb("runChatTurn", () => {
     mockBackendRun.mockImplementation(async () => ({
       finalText: "ok",
       status: "completed",
-      backendState: {},
+      threadState: {},
     }));
 
     const emit = buildEmit({ orgId, threadId: thread.id, runId: run.id });

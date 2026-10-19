@@ -22,7 +22,7 @@ import {
   registerWorkSemanticTraceSink,
   runAgentBackend,
   runChatTurn,
-  setWorkThreadBackendState,
+  setWorkThreadState,
   shutdownAgentBroker,
   traceAgentControlPlane,
   workSemanticDigest,
@@ -1762,8 +1762,8 @@ async function observeStateMachine(input: {
     const recalled = input.finalText.includes(STATE_COMPACTION_MARKER);
     if (recalled) sequence.push("summary.recalled");
     const thread = await getWorkThread(input.fixture.orgId, input.threadId);
-    const backendState = record(thread?.backend_state);
-    const compaction = record(backendState?.compaction);
+    const threadState = record(thread?.backend_state);
+    const compaction = record(threadState?.compaction);
     Object.assign(terminal, {
       "compaction.summary_recalled": recalled,
       "compaction.watermark": compaction?.throughMessageId ?? null,
@@ -2948,7 +2948,7 @@ export function createOpenNekoBackendDriver(context: {
               content: `Recent unrelated turn ${index + 1}; it contains no resume code.`,
             });
           }
-          await setWorkThreadBackendState(thread.id, {
+          await setWorkThreadState(thread.id, {
             compaction: {
               summary: `The operator selected ${STATE_COMPACTION_MARKER} as the exact resume code.`,
               throughMessageId: watermark.id,

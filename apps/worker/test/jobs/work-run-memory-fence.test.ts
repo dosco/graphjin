@@ -146,7 +146,7 @@ describeIfDb("runChatTurn — neko_memory fence persistence", () => {
     mockBackendRun.mockResolvedValue({
       finalText: fenced,
       status: "completed",
-      backendState: {},
+      threadState: {},
     });
 
     const events: AgentEvent[] = [];
@@ -200,7 +200,7 @@ describeIfDb("runChatTurn — neko_memory fence persistence", () => {
     mockBackendRun.mockResolvedValue({
       finalText: "Plain answer, no fence here.",
       status: "completed",
-      backendState: {},
+      threadState: {},
     });
 
     await runChatTurn(
@@ -238,7 +238,7 @@ describeIfDb("runChatTurn — neko_memory fence persistence", () => {
     mockBackendRun.mockResolvedValue({
       finalText: fenced,
       status: "completed",
-      backendState: {},
+      threadState: {},
     });
 
     await runChatTurn(

@@ -135,10 +135,10 @@ describeIfDb("/api/work/threads", () => {
     expect(res.status).toBe(200);
     const body = res.body as { thread: { id: string } };
     const [thread] = await db()
-      .select({ backendState: work_thread.backend_state })
+      .select({ threadState: work_thread.backend_state })
       .from(work_thread)
       .where(eq(work_thread.id, body.thread.id));
-    expect(thread?.backendState).toEqual({ recordContext });
+    expect(thread?.threadState).toEqual({ recordContext });
   });
 
   it("rejects malformed records context instead of changing data surfaces", async () => {

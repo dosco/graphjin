@@ -280,7 +280,7 @@ export type AgentRunOptions = {
   skills?: string[];
   signal?: AbortSignal;
   onEvent?: (event: AgentEvent) => Promise<void> | void;
-  backendState?: Record<string, unknown>;
+  threadState?: Record<string, unknown>;
   mcpServers?: Record<string, unknown>;
   /** Per-run context for backends that mount MCP servers as stdio child
    *  processes instead of in-process SDK instances. The bridge
@@ -315,7 +315,7 @@ export type AgentRunResult = {
    */
   rawText?: string;
   status: "completed" | "failed" | "cancelled";
-  backendState?: Record<string, unknown>;
+  threadState?: Record<string, unknown>;
   error?: string;
   /** The turn hit its wall-clock budget; work in the run directory survives. */
   timedOut?: boolean;

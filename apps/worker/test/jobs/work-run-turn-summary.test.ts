@@ -143,7 +143,7 @@ describeIfDb("runChatTurn — answers without final text", () => {
         }],
       });
       await event({ type: "message", role: "assistant", content: "That is confirmed above." });
-      return { finalText: "", status: "completed", backendState: {} };
+      return { finalText: "", status: "completed", threadState: {} };
     });
 
     await runChatTurn({ orgId, threadId: thread.id, runId: run.id, message: "how do tools relate to orders?", emit: async () => {} }, makeDeps());
@@ -165,7 +165,7 @@ describeIfDb("runChatTurn — answers without final text", () => {
         input: {},
         usageSnapshot: { inputTokens: 900, outputTokens: 40, estimatedCostUsd: 0.42, costStatus: "estimated", coverage: "complete" },
       });
-      return { finalText: "", status: "cancelled", backendState: {} };
+      return { finalText: "", status: "cancelled", threadState: {} };
     });
     const events: AgentEvent[] = [];
 
@@ -182,7 +182,7 @@ describeIfDb("runChatTurn — answers without final text", () => {
   it("saves no answer when the turn left nothing to carry forward", async () => {
     const thread = await insertThread(orgId);
     const run = await insertRun(orgId, thread.id);
-    mockBackendRun.mockResolvedValue({ finalText: "", status: "completed", backendState: {} });
+    mockBackendRun.mockResolvedValue({ finalText: "", status: "completed", threadState: {} });
 
     await runChatTurn({ orgId, threadId: thread.id, runId: run.id, message: "hello", emit: async () => {} }, makeDeps());
 

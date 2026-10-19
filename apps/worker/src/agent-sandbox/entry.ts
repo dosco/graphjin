@@ -47,7 +47,7 @@ interface SandboxJob {
   backendId: AgentBackendId;
   ax?: AxBackendConfig;
   model?: string;
-  backendState?: Record<string, unknown>;
+  threadState?: Record<string, unknown>;
   pluginActions?: RunAgentBackendInput["pluginActions"];
   packActions?: RunAgentBackendInput["packActions"];
   sourceConfigEnabled?: boolean;
@@ -81,7 +81,7 @@ interface SandboxJob {
     | "debug"
     | "tag"
     | "skills"
-    | "backendState"
+    | "threadState"
     | "nativeDelegation"
     | "wantsCards"
     | "reasoningEffort"
@@ -300,7 +300,7 @@ async function runJob(
       threadId: job.threadId,
       runId: job.runId,
       workspace: job.workspace,
-      backendState: job.backendState,
+      threadState: job.threadState,
       pluginActions: job.pluginActions ?? [],
       packActions: job.packActions ?? [],
       sourceConfigEnabled: job.sourceConfigEnabled ?? false,

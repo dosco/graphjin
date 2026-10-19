@@ -26,7 +26,7 @@ import {
 } from "@/lib/neko-run-registry";
 import {
   createWorkMessage,
-  setWorkThreadBackendState,
+  setWorkThreadState,
   suggestWorkThreadTitle,
   touchWorkThread,
 } from "@/lib/work-store";
@@ -88,12 +88,12 @@ async function postRun(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
 
-  const backendState = thread.backend_state && typeof thread.backend_state === "object"
+  const threadState = thread.backend_state && typeof thread.backend_state === "object"
     && !Array.isArray(thread.backend_state)
     ? thread.backend_state as Record<string, unknown>
     : {};
-  const appContext = parseAppWorkContext(backendState.appContext);
-  const legacyRecordContext = parseRecordWorkContext(backendState.recordContext);
+  const appContext = parseAppWorkContext(threadState.appContext);
+  const legacyRecordContext = parseRecordWorkContext(threadState.recordContext);
   if (body.recordContext !== undefined) {
     const owningAppId = appContext?.appId ?? legacyRecordContext?.appId;
     if (!owningAppId) {
@@ -109,11 +109,11 @@ async function postRun(request: NextRequest, context: RouteContext) {
         actorRole: actor.role,
         recordContext: body.recordContext,
       });
-      const nextState = { ...backendState };
+      const nextState = { ...threadState };
       nextState.appContext = resolved.appContext;
       if (resolved.recordContext) nextState.recordContext = resolved.recordContext;
       else delete nextState.recordContext;
-      await setWorkThreadBackendState(threadId, nextState);
+      await setWorkThreadState(threadId, nextState);
     } catch (error) {
       if (error instanceof AppChatContextError) {
         return NextResponse.json({ error: error.message }, { status: 400 });

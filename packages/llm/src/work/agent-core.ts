@@ -51,7 +51,7 @@ export interface RunAgentBackendInput {
   threadId: string;
   runId: string;
   workspace: AgentWorkspace;
-  backendState?: Record<string, unknown>;
+  threadState?: Record<string, unknown>;
   /** Skill names the run's actor holds. Undefined means every skill. */
   allowedSkills?: readonly string[];
   /** Team library files the actor holds. Undefined means the whole team library. */
@@ -100,7 +100,7 @@ export async function runAgentBackend(
     threadId,
     runId,
     workspace,
-    backendState,
+    threadState,
     pluginActions,
     packActions = [],
     sourceConfigEnabled = false,
@@ -118,10 +118,10 @@ export async function runAgentBackend(
   const mcp = backend.capabilities.mcpTools;
   const recordsOnly = dataSurface === "records";
   const appContext = recordsOnly
-    ? parseAppWorkContext(backendState?.appContext)
+    ? parseAppWorkContext(threadState?.appContext)
     : null;
   const recordContext = recordsOnly
-    ? parseRecordWorkContext(backendState?.recordContext)
+    ? parseRecordWorkContext(threadState?.recordContext)
     : null;
   // Legacy record-context threads retain their original exact-object scope.
   // App-owned chat uses the actor's normal records grants across apps.
@@ -254,7 +254,7 @@ export async function runAgentBackend(
     userMessage,
     orgId,
     workspace,
-    backendState,
+    threadState,
     onEvent: emit,
     mcpServers,
     // ACP backends mount the same servers as stdio bridge children — ship the

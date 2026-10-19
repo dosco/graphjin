@@ -10,7 +10,7 @@ export {
   parseRecordWorkContext,
   deleteWorkThread,
   getWorkThread,
-  setWorkThreadBackendState,
+  setWorkThreadState,
   touchWorkThread,
   createWorkRun,
   markWorkRunRunning,

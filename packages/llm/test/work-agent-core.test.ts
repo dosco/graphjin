@@ -209,7 +209,7 @@ describe("runAgentBackend", () => {
       pluginActions: [],
       sourceConfigEnabled: true,
       dataSurface: "records",
-      backendState: {
+      threadState: {
         recordContext: {
           surface: "list",
           appId: "crm",
@@ -256,7 +256,7 @@ describe("runAgentBackend", () => {
       controlPlane,
       pluginActions: [],
       dataSurface: "records",
-      backendState: {
+      threadState: {
         appContext: { appId: "crm", appLabel: "CRM" },
         recordContext: {
           surface: "detail",

@@ -77,7 +77,7 @@ const h = vi.hoisted(() => {
       ? state.execLines ?? [
           'noise before\n',
           `\n__openneko_event__${JSON.stringify({ type: "message", role: "assistant", content: "hi" })}\n`,
-          `\n__openneko_agent_result__${JSON.stringify({ status: "completed", finalText: "hi there", backendState: { t: 1 } })}\n`,
+          `\n__openneko_agent_result__${JSON.stringify({ status: "completed", finalText: "hi there", threadState: { t: 1 } })}\n`,
         ]
       : []);
     let closed = false;
@@ -286,7 +286,7 @@ function fakeInput(
     threadId: "thr-1",
     runId: "run-1",
     workspace: fullWorkspace("/tmp/ws/org-1"),
-    backendState: undefined,
+    threadState: undefined,
     pluginActions: [],
     emit,
   };
@@ -691,7 +691,7 @@ describe("makeSandboxRunCore", () => {
       message: "Agent is working…",
     });
     // result parsed from the RESULT line:
-    expect(result).toEqual({ status: "completed", finalText: "hi there", backendState: { t: 1 } });
+    expect(result).toEqual({ status: "completed", finalText: "hi there", threadState: { t: 1 } });
     // The detached main process keeps the box ready; exec runs the bundle:
     expect(h.calls[0]?.args).toContain("ghcr.io/open-neko/agent:test");
     expect(h.calls[0]?.args).toContain("--policy");
@@ -959,7 +959,7 @@ describe("makeSandboxRunCore", () => {
     const execArgs = h.calls.find((call) => call.args.includes("exec"))?.args ?? [];
     expect(execArgs[execArgs.indexOf("--timeout") + 1]).toBe("1920");
     expect(job).not.toHaveProperty("model");
-    expect(job).not.toHaveProperty("backendState");
+    expect(job).not.toHaveProperty("threadState");
     expect(job).not.toHaveProperty("pluginActions");
     expect(h.calls.filter((c) => c.args.includes("create"))).toHaveLength(1);
     expect(h.calls.filter((c) => c.args.includes("exec"))).toHaveLength(1);

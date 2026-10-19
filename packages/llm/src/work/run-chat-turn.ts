@@ -56,7 +56,7 @@ import {
   markWorkRunRunning,
   saveAssistantWorkMessage,
   setWorkRunValue,
-  setWorkThreadBackendState,
+  setWorkThreadState,
 } from "./store";
 import type { GraphjinDataPath, GraphjinMcpToolPolicy } from "./graphjin-tool-policy";
 import type { PluginActionDescriptor } from "./tools";
@@ -265,10 +265,10 @@ async function runChatTurnTraced(
     return { status: "failed", finalText: "", error: errMsg };
   }
   const appContext = parseAppWorkContext(
-    bundle.thread.backendState.appContext,
+    bundle.thread.threadState.appContext,
   );
   const recordContext = parseRecordWorkContext(
-    bundle.thread.backendState.recordContext,
+    bundle.thread.threadState.recordContext,
   );
   const dataSurface: WorkDataSurface = appContext || recordContext
     ? "records"
@@ -431,7 +431,7 @@ async function runChatTurnTraced(
     let retainedCompaction: ThreadCompaction | undefined;
     if (inlineTranscript) {
       const prior = (
-        bundle.thread.backendState as { compaction?: ThreadCompaction }
+        bundle.thread.threadState as { compaction?: ThreadCompaction }
       ).compaction;
       retainedCompaction = prior;
       const compacted = await startupPhase("context.compaction", () => compactIfNeeded({
@@ -560,7 +560,7 @@ async function runChatTurnTraced(
       threadId,
       runId,
       workspace,
-      backendState: bundle.thread.backendState,
+      threadState: bundle.thread.threadState,
       pluginActions: customerSurface ? heldPluginActions : [],
       packActions: customerSurface ? heldPackActions : [],
       sourceConfigEnabled: supportsSourceConfigTool,
@@ -615,11 +615,11 @@ async function runChatTurnTraced(
       outputBytes: Buffer.byteLength(result.finalText, "utf8"),
     });
 
-    const backendStateChanged =
-      result.backendState && result.backendState !== bundle.thread.backendState;
-    if (backendStateChanged || newCompaction) {
+    const threadStateChanged =
+      result.threadState && result.threadState !== bundle.thread.threadState;
+    if (threadStateChanged || newCompaction) {
       const base = (
-        backendStateChanged ? result.backendState : bundle.thread.backendState
+        threadStateChanged ? result.threadState : bundle.thread.threadState
       ) as Record<string, unknown>;
       const protectedBase = {
         ...base,
@@ -630,7 +630,7 @@ async function runChatTurnTraced(
       // return a fresh backend-state object every turn; replacing the stored
       // object must not silently discard an existing rolling summary.
       const compaction = newCompaction ?? retainedCompaction;
-      await setWorkThreadBackendState(
+      await setWorkThreadState(
         threadId,
         compaction
           ? { ...protectedBase, compaction }

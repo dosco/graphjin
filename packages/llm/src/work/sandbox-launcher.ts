@@ -217,7 +217,7 @@ type SerializableAgentRunOptions = Pick<
   | "debug"
   | "tag"
   | "skills"
-  | "backendState"
+  | "threadState"
   | "nativeDelegation"
   | "wantsCards"
   | "reasoningEffort"
@@ -234,7 +234,7 @@ function serializableAgentRunOptions(
     ...(run.debug !== undefined ? { debug: run.debug } : {}),
     ...(run.tag !== undefined ? { tag: run.tag } : {}),
     ...(run.skills !== undefined ? { skills: run.skills } : {}),
-    ...(run.backendState !== undefined ? { backendState: run.backendState } : {}),
+    ...(run.threadState !== undefined ? { threadState: run.threadState } : {}),
     ...(run.nativeDelegation !== undefined
       ? { nativeDelegation: run.nativeDelegation }
       : {}),
@@ -702,7 +702,7 @@ function makeSandboxCore(
       ...(input.allowedSkills ? { allowedSkills: [...input.allowedSkills] } : {}),
       ...(kind === "work"
         ? {
-            backendState: (input as RunAgentBackendInput).backendState,
+            threadState: (input as RunAgentBackendInput).threadState,
             pluginActions: (input as RunAgentBackendInput).pluginActions,
             packActions: (input as RunAgentBackendInput).packActions,
             sourceConfigEnabled:

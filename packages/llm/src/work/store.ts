@@ -63,7 +63,7 @@ export type WorkThreadBundle = {
   thread: {
     id: string;
     title: string;
-    backendState: Record<string, unknown>;
+    threadState: Record<string, unknown>;
     createdAt: string;
     updatedAt: string;
     lastMessageAt: string;
@@ -151,7 +151,7 @@ export async function createWorkThread(
   title = "",
   channel = "web",
   createdByUserId: string | null = null,
-  backendState: Record<string, unknown> = {},
+  threadState: Record<string, unknown> = {},
 ) {
   const rows = await db()
     .insert(work_thread)
@@ -160,7 +160,7 @@ export async function createWorkThread(
       title,
       channel,
       created_by_user_id: createdByUserId,
-      backend_state: backendState,
+      backend_state: threadState,
     })
     .returning();
   return rows[0];
@@ -226,7 +226,7 @@ export async function deleteWorkThread(orgId: string, threadId: string): Promise
 // Truncates the thread at and after the given run: deletes that run plus
 // every later run in the thread (events cascade via FK), wipes the user
 // + assistant messages tied to those runs, and clears the thread's
-// backendState so a resumed run cannot re-inject the dropped turns
+// threadState so a resumed run cannot re-inject the dropped turns
 // from its persisted SDK session. Returns the run's `created_at` so the
 // caller can verify it pointed at a real row.
 export async function truncateWorkThreadFromRun(
@@ -287,14 +287,14 @@ export async function getWorkThread(orgId: string, threadId: string) {
   return rows[0] ?? null;
 }
 
-export async function setWorkThreadBackendState(
+export async function setWorkThreadState(
   threadId: string,
-  backendState: Record<string, unknown>,
+  threadState: Record<string, unknown>,
 ) {
   await db()
     .update(work_thread)
     .set({
-      backend_state: backendState,
+      backend_state: threadState,
       updated_at: new Date(),
     })
     .where(eq(work_thread.id, threadId));
@@ -740,7 +740,7 @@ export async function getWorkThreadBundle(
     thread: {
       id: thread.id,
       title: thread.title || "Untitled thread",
-      backendState: (thread.backend_state ?? {}) as Record<string, unknown>,
+      threadState: (thread.backend_state ?? {}) as Record<string, unknown>,
       createdAt: thread.created_at.toISOString(),
       updatedAt: thread.updated_at.toISOString(),
       lastMessageAt: thread.last_message_at.toISOString(),
