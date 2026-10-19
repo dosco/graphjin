@@ -3,7 +3,7 @@ name: magento-investigate-refunds
 description: Investigate Magento refund-value or cancellation spikes, reconcile credit memos, and locate affected stores, orders, or SKUs. Use for refund-rate changes, cancellation anomalies, credit-memo questions, or the refund/cancellation watcher; use magento-investigate-order for a single known order.
 license: Apache-2.0
 metadata:
-  hermes:
+  openneko:
     tags: [magento, refunds, cancellations, credit-memo, revenue, investigation]
     category: commerce
     requires_toolsets: [graphjin]

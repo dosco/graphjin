@@ -3,7 +3,7 @@ name: magento-manage-catalog
 description: Prepare and execute governed Magento product, category, assignment, and price changes with clear approval requirements, limits, before images, reconciliation, and safe inverse drafts. Use when a user asks to create, edit, bulk update, move, assign, price, or delete catalog entities.
 license: Apache-2.0
 metadata:
-  hermes:
+  openneko:
     tags: [magento, catalog, products, categories, pricing, change-set]
     category: commerce
     requires_toolsets: [graphjin, pack-actions]

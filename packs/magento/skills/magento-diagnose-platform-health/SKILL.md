@@ -3,7 +3,7 @@ name: magento-diagnose-platform-health
 description: Diagnose Magento cron failures, stale running jobs, unhealthy indexers, data freshness, and Magento pack connectivity or readiness. Use for cron/indexer watcher findings, stale dashboards, API or analytics health questions, and pack-doctor remediation; do not use for ordinary sales or inventory analysis.
 license: Apache-2.0
 metadata:
-  hermes:
+  openneko:
     tags: [magento, cron, indexers, diagnostics, freshness, pack-doctor]
     category: commerce
     requires_toolsets: [graphjin]

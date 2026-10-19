@@ -3,7 +3,7 @@ name: google-workspace-calendar
 description: Read calendars and request approved event creation, updates, and deletion through the Google Workspace pack.
 license: Apache-2.0
 metadata:
-  hermes:
+  openneko:
     tags: [google-workspace, calendar, events]
     category: productivity
     requires_toolsets: [graphjin, pack-actions]
