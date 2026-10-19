@@ -200,7 +200,8 @@ func TestServeCancelsOnHangupAndBoundsTurns(t *testing.T) {
 		return 1, ctx.Err()
 	}}
 	socket := startServer(t, server)
-	first := dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(spec), Environ: []string{"OPENNEKO_MCP_BRIDGE=/x", "ANTHROPIC_API_KEY=leak", "A=1"}})
+	first := dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(spec), Environ: []string{"OPENNEKO_MCP_BRIDGE=/x", "ANTHROPIC_API_KEY=leak", "A=1"},
+		ModelKeys: map[string]string{"MODEL_API_KEY": "turn-key", "DATABASE_PASSWORD": "x"}})
 	<-started
 	for _, entry := range seen.Environ {
 		if strings.HasPrefix(entry, "OPENNEKO_MCP_BRIDGE=") || strings.HasPrefix(entry, "ANTHROPIC_API_KEY=") {
@@ -208,6 +209,12 @@ func TestServeCancelsOnHangupAndBoundsTurns(t *testing.T) {
 		}
 	}
 	if got := seen.Secrets("DATABASE_URL"); got != "" {
+		t.Fatalf("a non-key variable was readable as a secret: %q", got)
+	}
+	if got := seen.Secrets("HARNESS_MODEL_API_KEY"); got != "turn-key" {
+		t.Fatalf("the turn's key = %q, want the one in model_keys", got)
+	}
+	if got := seen.Secrets("DATABASE_PASSWORD"); got != "" {
 		t.Fatalf("a non-key variable was readable as a secret: %q", got)
 	}
 

@@ -3,15 +3,16 @@
 //
 // One connection is one turn. Both sides write newline-delimited JSON frames:
 //
-//	worker → serve  {"type":"start","environ":[...],"spec":{...},"bridge":true,"model_key_env":"MODEL_API_KEY"}
+//	worker → serve  {"type":"start","environ":[...],"spec":{...},"bridge":true,"model_key_env":"MODEL_API_KEY","model_keys":{...}}
 //	worker → serve  {"type":"mcp","message":{...}}    the worker's tool server
 //	serve → worker  {"type":"event","event":{...}}    a harness lifecycle event
 //	serve → worker  {"type":"mcp","message":{...}}    the harness's tool client
 //	serve → worker  {"type":"exit","code":0,"error":""}
 //
-// Closing the connection cancels the turn. Serve holds the model keys: the
-// worker names the variable and serve reads it from its own environment, so
-// a key never crosses the socket and never reaches the run's tools.
+// Closing the connection cancels the turn. Serve holds the model keys for
+// the turn: the worker names the variable and sends the org's key in
+// model_keys, or serve reads it from its own environment. A key never goes
+// into the run's environment, so the run's tools and terminal never see it.
 package serve
 
 import (
@@ -46,15 +47,16 @@ var keyEnvName = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,126}_API_KEY$`)
 
 // Frame is one line of the protocol.
 type Frame struct {
-	Type        string          `json:"type"`
-	Environ     []string        `json:"environ,omitempty"`
-	Spec        json.RawMessage `json:"spec,omitempty"`
-	Bridge      bool            `json:"bridge,omitempty"`
-	ModelKeyEnv string          `json:"model_key_env,omitempty"`
-	Event       json.RawMessage `json:"event,omitempty"`
-	Message     json.RawMessage `json:"message,omitempty"`
-	Code        *int            `json:"code,omitempty"`
-	Error       string          `json:"error,omitempty"`
+	Type        string            `json:"type"`
+	Environ     []string          `json:"environ,omitempty"`
+	Spec        json.RawMessage   `json:"spec,omitempty"`
+	Bridge      bool              `json:"bridge,omitempty"`
+	ModelKeyEnv string            `json:"model_key_env,omitempty"`
+	ModelKeys   map[string]string `json:"model_keys,omitempty"`
+	Event       json.RawMessage   `json:"event,omitempty"`
+	Message     json.RawMessage   `json:"message,omitempty"`
+	Code        *int              `json:"code,omitempty"`
+	Error       string            `json:"error,omitempty"`
 }
 
 // Server runs turns for connections on a listener.
@@ -181,7 +183,7 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 
 	turn := harness.Turn{
 		Environ: s.environ(start.Environ),
-		Secrets: s.secrets(start.ModelKeyEnv),
+		Secrets: s.secrets(start.ModelKeyEnv, start.ModelKeys),
 		In:      bytes.NewReader(start.Spec),
 		Out:     &lineWriter{emit: func(line []byte) error { return out.write(Frame{Type: "event", Event: line}) }},
 	}
@@ -239,9 +241,10 @@ func (s *Server) environ(in []string) []string {
 	return out
 }
 
-// secrets reads model keys from serve's environment. HARNESS_MODEL_API_KEY
-// reads the variable the worker named; route keys read their own names.
-func (s *Server) secrets(modelKeyEnv string) func(string) string {
+// secrets reads model keys from the turn's keys, then serve's environment.
+// HARNESS_MODEL_API_KEY reads the variable the worker named; route keys read
+// their own names.
+func (s *Server) secrets(modelKeyEnv string, keys map[string]string) func(string) string {
 	return func(name string) string {
 		if name == "HARNESS_MODEL_API_KEY" {
 			if modelKeyEnv == "" {
@@ -251,6 +254,9 @@ func (s *Server) secrets(modelKeyEnv string) func(string) string {
 		}
 		if !keyEnvName.MatchString(name) {
 			return ""
+		}
+		if value := keys[name]; value != "" {
+			return value
 		}
 		return s.Getenv(name)
 	}
