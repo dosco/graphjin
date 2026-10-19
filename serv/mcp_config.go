@@ -266,6 +266,10 @@ func (ms *mcpServer) registerConfigTools() {
 				},
 			}),
 		),
+		mcp.WithBoolean("reload_from_disk",
+			mcp.Description("Replace the running configuration with the config file and keystore on disk, through the same staged reload as other updates. "+
+				"Use it to roll back after restoring an earlier config file. It cannot be combined with other changes."),
+		),
 		mcp.WithBoolean("create_if_not_exists",
 			mcp.Description("Dev mode only. When true, creates databases on the server if they don't exist before connecting. "+
 				"Works for PostgreSQL, MySQL/MariaDB, MSSQL, and Oracle. "+
@@ -938,6 +942,19 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	stagedCore := cloneCoreConfig(ms.service.conf.Core)
 	conf := &stagedCore
 
+	reloadFromDisk, _ := args["reload_from_disk"].(bool)
+	if reloadFromDisk {
+		disk, err := ms.diskCoreConfig(args)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("reload_from_disk: %v", err))
+		} else {
+			// Always reload: a restored keystore can change secret values
+			// behind unchanged gjsecret:// references.
+			stagedCore = disk
+			changes = append(changes, "reloaded configuration from disk")
+		}
+	}
+
 	// Parse create_if_not_exists early
 	createIfNotExists := false
 	if ci, ok := args["create_if_not_exists"].(bool); ok {
@@ -1460,7 +1477,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	var sealedSecretRefs map[string]struct{}
 	var reloadPlan configRuntimeReloadPlan
 	var impact configUpdateImpact
-	coreChanged := !reflect.DeepEqual(stagedCore, ms.service.conf.Core)
+	coreChanged := reloadFromDisk || !reflect.DeepEqual(stagedCore, ms.service.conf.Core)
 	if coreChanged {
 		reloadPlan = classifyConfigRuntimeReload(oldCore, stagedCore)
 		if reloadPlan.mode == "source_scoped" && ms.service.systemNanoDB == nil && ms.service.metadataGraphEnabledForCore(&stagedCore) {
@@ -1688,6 +1705,12 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		} else if err := ms.service.refreshCatalogAfterCoreConfigChange(oldCore, persistedCore, "config mutation"); err != nil {
 			errors = append(errors, fmt.Sprintf("catalog refresh error: %s", redactRuntimeError(err)))
 		}
+		// Cached responses were built under the previous config.
+		if ms.service.cache != nil {
+			if err := ms.service.cache.Reset(ctx); err != nil {
+				ms.service.log.Warnf("response cache reset failed: %s", err)
+			}
+		}
 		if ms.service.gj != nil && ms.service.gj.SchemaReady() {
 			if reloadPlan.mode == "source_scoped" {
 				changes = append(changes, "configuration validated and runtime reloaded source-scoped")
@@ -1791,8 +1814,9 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		}
 	}
 
-	// Save to disk only after successful reload (dev mode only)
-	if len(changes) > 0 && !ms.service.conf.Serv.Production {
+	// Save to disk only after successful reload (dev mode only). A reload
+	// from disk already matches the file.
+	if len(changes) > 0 && !reloadFromDisk && !ms.service.conf.Serv.Production {
 		if err := ms.saveConfigToDisk(); err != nil {
 			msg := redactRuntimeError(err)
 			ms.service.log.Warnf("Failed to save config to disk: %s", msg)
@@ -4442,6 +4466,39 @@ func (ms *mcpServer) tryInitializeGraphJin(createIfNotExists bool) ([]string, er
 }
 
 // saveConfigToDisk persists the current configuration to the config file
+// diskCoreConfig reads the core config from the file the service loaded.
+func (ms *mcpServer) diskCoreConfig(args map[string]interface{}) (core.Config, error) {
+	for key := range args {
+		switch key {
+		case "reload_from_disk", "mode", "preview_id", "expected_catalog_revision", "id":
+		default:
+			return core.Config{}, fmt.Errorf("cannot be combined with %s", key)
+		}
+	}
+	v := ms.service.conf.viper
+	if v == nil || v.ConfigFileUsed() == "" {
+		return core.Config{}, fmt.Errorf("config file not available")
+	}
+	disk, err := readInConfig(v.ConfigFileUsed(), nil)
+	if err != nil {
+		return core.Config{}, err
+	}
+	// Derive the same values the service derived at startup (see init.go).
+	disk.managedArtifactStore = ms.service.conf.managedArtifactStore
+	applySourceCapabilitySourceDefaults(disk)
+	if err := normalizeServiceSources(disk); err != nil {
+		return core.Config{}, err
+	}
+	if disk.DBType == "" {
+		disk.DBType = ms.service.conf.DBType
+	}
+	if disk.Auth.Type == "" || disk.Auth.Type == "none" {
+		disk.DefaultBlock = false
+	}
+	disk.CacheTrackingEnabled = ms.service.conf.CacheTrackingEnabled
+	return cloneCoreConfig(disk.Core), nil
+}
+
 func (ms *mcpServer) saveConfigToDisk() error {
 	v := ms.service.conf.viper
 	if v == nil {

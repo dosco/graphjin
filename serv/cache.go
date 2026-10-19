@@ -24,6 +24,10 @@ type ResponseCache interface {
 	// tracking is insufficient, such as external source reindexing.
 	InvalidateTables(ctx context.Context, tables []string) error
 
+	// Reset drops every cached response. A config change calls it, since
+	// cache keys do not cover the config a response was built with.
+	Reset(ctx context.Context) error
+
 	// SubmitRefresh enqueues a stale-while-revalidate refresh on the worker pool.
 	// Returns false if SWR is disabled or the pool is full/shutdown.
 	SubmitRefresh(key string, fn core.RefreshFn) bool

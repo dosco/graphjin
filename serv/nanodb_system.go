@@ -490,6 +490,7 @@ func configNanoColumns() []core.NanoColumn {
 		{Name: "source_patches", Type: "json"},
 		{Name: "update_saved_queries", Type: "json"},
 		{Name: "remove_saved_queries", Type: "json"},
+		{Name: "reload_from_disk", Type: "boolean"},
 		{Name: "valid", Type: "boolean"},
 		{Name: "applied", Type: "boolean"},
 		{Name: "expires_at", Type: "text"},

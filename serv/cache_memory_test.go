@@ -598,3 +598,24 @@ func memoryCacheIndexContains(
 	_, ok := keys[key]
 	return ok
 }
+
+func TestMemoryCache_Reset(t *testing.T) {
+	mc, err := NewMemoryCache(CachingConfig{TTL: 60}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mc.Close() //nolint:errcheck
+	ctx := context.Background()
+	if err := mc.Set(ctx, "k", []byte(`{"a":1}`), nil, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, found := mc.Get(ctx, "k"); !found {
+		t.Fatal("expected cached response before reset")
+	}
+	if err := mc.Reset(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, found := mc.Get(ctx, "k"); found {
+		t.Fatal("reset left a cached response")
+	}
+}

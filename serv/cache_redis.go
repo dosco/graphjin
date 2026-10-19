@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -55,6 +56,9 @@ type RedisCache struct {
 	available    atomic.Bool
 	lastCheck    atomic.Int64
 	excludeTable map[string]bool
+	// generation is part of every response key; Reset bumps it so earlier
+	// responses are no longer found and expire by TTL.
+	generation atomic.Int64
 
 	// OpenTelemetry metric instruments
 	otelHitCounter          metric.Int64Counter
@@ -126,7 +130,16 @@ func NewRedisCache(redisURL string, conf CachingConfig) (*RedisCache, error) {
 
 // Key building methods
 func (c *RedisCache) respKey(hash string) string {
+	if gen := c.generation.Load(); gen != 0 {
+		return cachePrefix + ":" + respKeyPrefix + strconv.FormatInt(gen, 10) + ":" + hash
+	}
 	return cachePrefix + ":" + respKeyPrefix + hash
+}
+
+// Reset makes every earlier response unreachable for this process.
+func (c *RedisCache) Reset(ctx context.Context) error {
+	c.generation.Add(1)
+	return nil
 }
 
 func (c *RedisCache) rowKey(table, id string) string {
