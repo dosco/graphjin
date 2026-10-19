@@ -23,6 +23,11 @@
 					"title": "Agent API Key Environment Variable",
 					"default": "OPENAI_API_KEY"
 				},
+				"api_key_file": {
+					"type": "string",
+					"title": "Agent API Key File",
+					"description": "File that holds the provider key; read for each run and preferred over api_key_env"
+				},
 				"base_url": {
 					"type": "string",
 					"title": "Agent Provider Base URL"
@@ -1659,6 +1664,9 @@
 					"type": "string"
 				},
 				"api_key_env": {
+					"type": "string"
+				},
+				"api_key_file": {
 					"type": "string"
 				},
 				"base_url": {

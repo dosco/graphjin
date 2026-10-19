@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -247,7 +246,7 @@ func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient
 	}
 	timeoutSeconds := gjagent.EffectiveTimeoutSeconds(conf.TimeoutSeconds)
 
-	apiKeyConfigured := strings.TrimSpace(os.Getenv(apiKeyEnv)) != ""
+	apiKeyConfigured := strings.TrimSpace(conf.APIKey()) != ""
 	serverModelReady := apiKeyConfigured || (len(injectedServerClient) != 0 && injectedServerClient[0])
 	status := "ready"
 	message := "GraphJin agent is ready."
@@ -390,11 +389,7 @@ func writeAgentError(w http.ResponseWriter, status int, message string) {
 }
 
 func configuredAgentSecret(conf gjagent.Config) string {
-	apiKeyEnv := strings.TrimSpace(conf.APIKeyEnv)
-	if apiKeyEnv == "" {
-		apiKeyEnv = defaultAgentAPIKeyEnv
-	}
-	return os.Getenv(apiKeyEnv)
+	return conf.APIKey()
 }
 
 func agentPublicFailure(conf gjagent.Config, err error) (gjagent.ErrorInfo, error) {

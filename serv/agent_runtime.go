@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -43,6 +44,10 @@ func agentConfigFromService(conf *Config) gjagent.Config {
 	}
 	cfg := conf.Agent
 	cfg.TimeoutSeconds = gjagent.EffectiveTimeoutSeconds(cfg.TimeoutSeconds)
+	// A relative api_key_file is relative to the config directory.
+	if path := strings.TrimSpace(cfg.APIKeyFile); path != "" && !filepath.IsAbs(path) && conf.ConfigPath != "" {
+		cfg.APIKeyFile = filepath.Join(conf.ConfigPath, path)
+	}
 	return cfg
 }
 

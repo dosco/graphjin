@@ -73,9 +73,9 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 				mux.Handle(routeEvalReportsPrefix, s1.EvalReports(ah))
 			}
 			mux.Handle(routeAgentStatus, s1.AgentStatus(ah))
-			if s.conf.agentEnabled() {
-				mux.Handle(routeAgent, s1.Agent(ah))
-			}
+			// Always mounted: the handler checks agent.enabled per request, so
+			// gj_config can turn the agent on or off without a restart.
+			mux.Handle(routeAgent, s1.Agent(ah))
 			if s.watchesEnabled() {
 				mux.Handle(routeWatches, s1.Watches(ah))
 				mux.Handle(routeWatches+"/", s1.Watches(ah))
@@ -96,9 +96,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 				mux.Handle(routeEvalReportsPrefix, s1.EvalReportsWithNS(ah, *ns))
 			}
 			mux.Handle(routeAgentStatus, s1.AgentStatusWithNS(ah, *ns))
-			if s.conf.agentEnabled() {
-				mux.Handle(routeAgent, s1.AgentWithNS(ah, *ns))
-			}
+			mux.Handle(routeAgent, s1.AgentWithNS(ah, *ns))
 			if s.watchesEnabled() {
 				mux.Handle(routeWatches, s1.WatchesWithNS(ah, *ns))
 				mux.Handle(routeWatches+"/", s1.WatchesWithNS(ah, *ns))

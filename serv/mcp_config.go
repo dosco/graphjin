@@ -2471,10 +2471,15 @@ var servWritableReload = map[string]string{
 	"rate_limiter":  servReloadRestart,
 }
 
-// agentWritableFields is the subset of agent settings safe to change at
-// runtime. Structural fields (enabled, provider, api_key_env, base_url) gate
-// startup wiring or name secrets and are excluded.
+// agentWritableFields are the agent settings gj_config can change at runtime.
+// The agent route is always mounted and checks enabled per request, and each
+// run builds its provider client from the current config, reading the key
+// from api_key_file or api_key_env then. The MCP ask_graphjin_agent tool is
+// registered at start, so turning the agent on or off changes the MCP tool
+// list only after a restart.
 var agentWritableFields = map[string]bool{
+	"enabled": true, "provider": true, "base_url": true, "reasoning": true,
+	"api_key_env": true, "api_key_file": true,
 	"model": true, "max_steps": true, "timeout_seconds": true,
 	"structured_output_mode": true,
 	// response_format is the deprecated alias of structured_output_mode; it
@@ -2526,6 +2531,18 @@ func validateServConfigPatch(patch map[string]any) (changes []string, reload str
 			for f := range m {
 				if !agentWritableFields[f] {
 					return nil, "", fmt.Errorf("serv.agent.%s is not writable; writable agent fields: %s", f, strings.Join(sortedKeys(agentWritableFields), ", "))
+				}
+			}
+			for _, f := range []string{"provider", "base_url", "reasoning", "api_key_env", "api_key_file"} {
+				if v, ok := m[f]; ok {
+					if _, isString := v.(string); !isString {
+						return nil, "", fmt.Errorf("serv.agent.%s must be a string", f)
+					}
+				}
+			}
+			if v, ok := m["enabled"]; ok {
+				if _, isBool := v.(bool); !isBool {
+					return nil, "", fmt.Errorf("serv.agent.enabled must be a boolean")
 				}
 			}
 			structuredMode, legacyFormat := "", ""
@@ -2645,6 +2662,24 @@ func applyServConfigPatch(conf *Config, patch map[string]any) {
 }
 
 func applyAgentConfigPatch(a *AgentConfig, m map[string]any) {
+	if v, ok := m["enabled"].(bool); ok {
+		a.Enabled = v
+	}
+	if v, ok := m["provider"].(string); ok {
+		a.Provider = strings.TrimSpace(v)
+	}
+	if v, ok := m["base_url"].(string); ok {
+		a.BaseURL = strings.TrimSpace(v)
+	}
+	if v, ok := m["reasoning"].(string); ok {
+		a.Reasoning = strings.TrimSpace(v)
+	}
+	if v, ok := m["api_key_env"].(string); ok {
+		a.APIKeyEnv = strings.TrimSpace(v)
+	}
+	if v, ok := m["api_key_file"].(string); ok {
+		a.APIKeyFile = strings.TrimSpace(v)
+	}
 	if v, ok := m["model"].(string); ok {
 		a.Model = v
 	}
