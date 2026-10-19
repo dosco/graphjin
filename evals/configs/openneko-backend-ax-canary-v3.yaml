@@ -1,33 +1,20 @@
 schema_version: openneko.eval/v1
-id: openneko-backend-hermes-canary-v2
-description: One-repetition Hermes canary covering every OpenNeko capability gate plus representative GraphJin count, ratio, ranking, join, purchasing, production, and short-window questions.
+id: openneko-backend-ax-canary-v3
+description: One-repetition Ax canary for mutation ordering and all six v3 state machines.
 adapter: openneko.work-backend
 semantics: { ref: ../semantics.yaml }
 pricing: { ref: ../pricing/standard-2026-07-09.yaml }
 suite:
-  ref: ../suites/openneko-backend-v2.yaml
+  ref: ../suites/openneko-backend-v3.yaml
   cases:
     - b00-api-selection
+    - s01-workflow-build
+    - s02-watcher-build-fire
+    - s03-workflow-action-approve
+    - s04-workflow-action-reject
+    - s05-records-blueprint
+    - s06-compaction-resume
     - b12-safety
-    - b01-graphjin-direct
-    - b02-memory-present
-    - b03-memory-absent
-    - b04-skill-present
-    - b05-skill-absent
-    - b06-library-present
-    - b07-library-stale-only
-    - b08-workflow-present
-    - b09-workflow-absent
-    - b10-prefetched-memory
-    - b11-composition
-    - g01-graphjin
-    - g08-graphjin
-    - g15-graphjin
-    - g21-graphjin
-    - g30-graphjin
-    - g34-graphjin
-    - g38-graphjin
-    - g40-graphjin
 datasets:
   - ref: ../datasets/openneko-backend/dataset.yaml
     snapshot: v1
@@ -38,10 +25,10 @@ defaults:
   concurrency: 1
   cache_state: cold
   content_capture: metadata
-  max_attempts: 1
+  max_attempts: 2
 variants:
-  - id: hermes-gemini-parity
-    backend: hermes
+  - id: ax-gemini-parity
+    backend: ax
     outer_model:
       provider: google-gemini
       model: gemini-3.6-flash
@@ -53,10 +40,10 @@ variants:
       require_observed_model_identity: true
       max_tool_calls: 30
 budgets:
-  max_wall_time: 8h
-  max_estimated_cost_usd: 30
+  max_wall_time: 4h
+  max_estimated_cost_usd: 12
 artifacts:
-  check_in: none
+  check_in: scored
   raw_dir: ../../.openneko/evals/raw
   state_dir: ../../.openneko/evals/state
   results_dir: ../../evals/results

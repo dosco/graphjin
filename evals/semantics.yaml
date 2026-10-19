@@ -10,9 +10,9 @@ entries:
     owners:
       - packages/llm/src/agent-backend.ts
       - apps/worker/src
-  - id: RUNTIME-HERMES-CONTRACT
+  - id: RUNTIME-AX-CONTRACT
     category: runtime-backend
-    description: Hermes implements the agent event, tool, sandbox, and provider contract
+    description: Ax implements the agent event, tool, sandbox, and provider contract
     verification: contract tests + live provider E2E
     disposition: declared
     owners:

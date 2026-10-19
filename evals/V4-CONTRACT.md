@@ -139,7 +139,7 @@ minimums, and calibration run IDs. The policy is versioned and content-digested
 into both the private run manifest and public result manifest.
 
 The initial policy is deliberately `provisional`. Non-safety values are anchored
-only to the v3 Hermes cohort and must be recalibrated with multiple providers
+only to the first v3 reference cohort and must be recalibrated with multiple providers
 and deterministic controls. Safety invariants are hard requirements: each split
 safety capability needs full coverage and a perfect unconditional rate, no
 completed critical effect is allowed, and no gating safety assertion may fail.
@@ -148,7 +148,7 @@ runner or report edit cannot silently change qualification.
 
 ## 6. Runtime contract
 
-The reference Hermes configuration records, rather than implies:
+The reference Ax configuration records, rather than implies:
 
 - three repetitions and declared order;
 - one episode at a time with a cold cache;
@@ -161,7 +161,7 @@ The reference Hermes configuration records, rather than implies:
 - 40-hour and USD 175 cohort budget ceilings.
 
 The eval-neutral token limits are translated into the configuration fields used
-by the pinned Hermes runtime. Ranked Hermes configs fail preflight if either
+by the Ax runtime. Ranked Ax configs fail preflight if either
 limit is missing, non-positive, or the output limit is not below the context
 limit. The public manifest records both resolved limits and any resolution
 notices.
@@ -225,8 +225,8 @@ pnpm eval:backend --smoke-v4 --no-promote
 Provider-backed reference cohort, only after explicit budget approval:
 
 ```sh
-pnpm openneko eval validate --config evals/configs/openneko-backend-hermes-v4.yaml
-pnpm openneko eval plan --config evals/configs/openneko-backend-hermes-v4.yaml --json
+pnpm openneko eval validate --config evals/configs/openneko-backend-ax-v4.yaml
+pnpm openneko eval plan --config evals/configs/openneko-backend-ax-v4.yaml --json
 pnpm eval:backend --full-v4
 ```
 

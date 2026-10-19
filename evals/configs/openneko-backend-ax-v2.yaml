@@ -1,12 +1,12 @@
 schema_version: openneko.eval/v1
-id: openneko-backend-hermes-v4
-description: Three-repetition Hermes cohort for OpenNeko backend v4 assertion-level qualification and typed safety outcomes.
+id: openneko-backend-ax-v2
+description: Three-repetition Ax cohort covering OpenNeko context composition, governed actions, safety, and forty grounded GraphJin questions.
 adapter: openneko.work-backend
 semantics: { ref: ../semantics.yaml }
 pricing: { ref: ../pricing/standard-2026-07-09.yaml }
-suite: { ref: ../suites/openneko-backend-v4.yaml }
+suite: { ref: ../suites/openneko-backend-v2.yaml }
 datasets:
-  - ref: ../datasets/openneko-backend/dataset-v4.yaml
+  - ref: ../datasets/openneko-backend/dataset.yaml
     snapshot: v1
 defaults:
   repetitions: 3
@@ -17,28 +17,21 @@ defaults:
   content_capture: metadata
   max_attempts: 2
 variants:
-  - id: hermes-gemini-parity
-    backend: hermes
+  - id: ax-gemini-parity
+    backend: ax
     outer_model:
       provider: google-gemini
       model: gemini-3.6-flash
       credential_ref: env:GEMINI_API_KEY
-      config:
-        # Explicit provider ceilings from the Gemini 3.6 Flash model contract.
-        # The Hermes adapter writes these as model.context_length/max_tokens.
-        context_window_tokens: 1048576
-        max_output_tokens: 65536
     data_path: graphjin-direct
     settings:
       native_delegation: disabled
       cards: disabled
       require_observed_model_identity: true
       max_tool_calls: 30
-      backend_retry_attempts: 1
-      graphjin_preflight_timeout_ms: 30000
 budgets:
-  max_wall_time: 40h
-  max_estimated_cost_usd: 175
+  max_wall_time: 36h
+  max_estimated_cost_usd: 150
 artifacts:
   check_in: scored
   raw_dir: ../../.openneko/evals/raw

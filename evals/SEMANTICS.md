@@ -37,7 +37,7 @@ state transition, delivery, denial, audit record, or user-visible contract.
 | ID | Semantic outcome | Primary verification |
 |---|---|---|
 | `RUNTIME-INGRESS` | Web, channel, job, and workflow ingress create the correct org/user/service principal, thread, and run | E2E DB state + trace |
-| `RUNTIME-HERMES-CONTRACT` | Hermes implements the agent event, tool, sandbox, and provider contract | contract tests + live provider E2E |
+| `RUNTIME-AX-CONTRACT` | Ax implements the agent event, tool, sandbox, and provider contract | contract tests + live provider E2E |
 | `RUNTIME-BACKEND-NATIVE` | Backend-native delegation, session resume, permission hooks, and MCP behavior work when advertised | capability-specific E2E |
 | `RUNTIME-MODEL-RESOLUTION` | Requested provider/model/credential resolve to the actual backend configuration without secret exposure | contract + telemetry |
 | `RUNTIME-STREAM` | Messages, tool lifecycle, status, cards, artifacts, and completion stream in causal order | event-sequence oracle |

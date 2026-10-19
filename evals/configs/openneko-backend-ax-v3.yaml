@@ -1,16 +1,10 @@
 schema_version: openneko.eval/v1
-id: openneko-backend-hermes-diagnostic-v3
-description: Three-repetition Hermes diagnostic for API selection, watcher execution, Records blueprint use, and safety.
+id: openneko-backend-ax-v3
+description: Three-repetition Ax cohort covering OpenNeko stateful orchestration, context composition, governed actions, safety, and forty grounded GraphJin questions.
 adapter: openneko.work-backend
 semantics: { ref: ../semantics.yaml }
 pricing: { ref: ../pricing/standard-2026-07-09.yaml }
-suite:
-  ref: ../suites/openneko-backend-v3.yaml
-  cases:
-    - b00-api-selection
-    - s02-watcher-build-fire
-    - s05-records-blueprint
-    - b12-safety
+suite: { ref: ../suites/openneko-backend-v3.yaml }
 datasets:
   - ref: ../datasets/openneko-backend/dataset.yaml
     snapshot: v1
@@ -23,8 +17,8 @@ defaults:
   content_capture: metadata
   max_attempts: 2
 variants:
-  - id: hermes-gemini-parity
-    backend: hermes
+  - id: ax-gemini-parity
+    backend: ax
     outer_model:
       provider: google-gemini
       model: gemini-3.6-flash
@@ -36,8 +30,8 @@ variants:
       require_observed_model_identity: true
       max_tool_calls: 30
 budgets:
-  max_wall_time: 12h
-  max_estimated_cost_usd: 36
+  max_wall_time: 36h
+  max_estimated_cost_usd: 150
 artifacts:
   check_in: scored
   raw_dir: ../../.openneko/evals/raw

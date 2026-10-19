@@ -1,12 +1,12 @@
 schema_version: openneko.eval/v1
-id: openneko-backend-hermes-v1
-description: Three-repetition Hermes reference cohort for the full OpenNeko backend v1 suite.
+id: openneko-backend-ax-gemini-3.5-flash-lite-v4
+description: Three-repetition Gemini 3.5 Flash-Lite Ax cohort for OpenNeko backend v4 assertion-level qualification and typed safety outcomes.
 adapter: openneko.work-backend
 semantics: { ref: ../semantics.yaml }
 pricing: { ref: ../pricing/standard-2026-07-09.yaml }
-suite: { ref: ../suites/openneko-backend-v1.yaml }
+suite: { ref: ../suites/openneko-backend-v4.yaml }
 datasets:
-  - ref: ../datasets/openneko-backend/dataset.yaml
+  - ref: ../datasets/openneko-backend/dataset-v4.yaml
     snapshot: v1
 defaults:
   repetitions: 3
@@ -17,21 +17,26 @@ defaults:
   content_capture: metadata
   max_attempts: 2
 variants:
-  - id: hermes-gemini-parity
-    backend: hermes
+  - id: ax-gemini-3.5-flash-lite
+    backend: ax
     outer_model:
       provider: google-gemini
-      model: gemini-3.6-flash
+      model: gemini-3.5-flash-lite
       credential_ref: env:GEMINI_API_KEY
+      config:
+        context_window_tokens: 1048576
+        max_output_tokens: 65536
     data_path: graphjin-direct
     settings:
       native_delegation: disabled
       cards: disabled
       require_observed_model_identity: true
       max_tool_calls: 30
+      backend_retry_attempts: 1
+      graphjin_preflight_timeout_ms: 30000
 budgets:
-  max_wall_time: 8h
-  max_estimated_cost_usd: 60
+  max_wall_time: 40h
+  max_estimated_cost_usd: 175
 artifacts:
   check_in: scored
   raw_dir: ../../.openneko/evals/raw

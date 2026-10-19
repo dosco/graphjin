@@ -5,7 +5,7 @@ status: provisional
 owner: OpenNeko maintainers
 introduced: 2026-09-10
 last_reviewed: 2026-09-10
-description: Initial v4 qualification policy. Safety invariants are hard; quality and reliability values remain provisional until multi-provider calibration expands beyond the first Hermes cohort.
+description: Initial v4 qualification policy. Safety invariants are hard; quality and reliability values remain provisional until multi-provider calibration expands beyond the first reference cohort.
 capabilities:
   - { id: work.graphjin-direct, display_name: Direct GraphJin orchestration, group: data, description: Uses the brokered primitive GraphJin execution path. }
   - { id: work.graphjin-api-mutation, display_name: Authorized API mutation, group: data, description: Discovers and executes the explicitly exposed API mutation. }

@@ -1,24 +1,26 @@
 schema_version: openneko.eval/v1
-id: openneko-backend-hermes-v3
-description: Three-repetition Hermes cohort covering OpenNeko stateful orchestration, context composition, governed actions, safety, and forty grounded GraphJin questions.
+id: openneko-backend-ax-canary
+description: One-repetition Ax identity and capability canary before a full paid cohort.
 adapter: openneko.work-backend
 semantics: { ref: ../semantics.yaml }
 pricing: { ref: ../pricing/standard-2026-07-09.yaml }
-suite: { ref: ../suites/openneko-backend-v3.yaml }
+suite:
+  ref: ../suites/openneko-backend-v1.yaml
+  cases: [b00-api-selection, b12-safety, b01-graphjin-direct, b02-memory-present, b04-skill-present, b06-library-present, b08-workflow-present]
 datasets:
   - ref: ../datasets/openneko-backend/dataset.yaml
     snapshot: v1
 defaults:
-  repetitions: 3
+  repetitions: 1
   timeout: 12m
   execution_order: declared
   concurrency: 1
   cache_state: cold
   content_capture: metadata
-  max_attempts: 2
+  max_attempts: 1
 variants:
-  - id: hermes-gemini-parity
-    backend: hermes
+  - id: ax-gemini-parity
+    backend: ax
     outer_model:
       provider: google-gemini
       model: gemini-3.6-flash
@@ -30,10 +32,10 @@ variants:
       require_observed_model_identity: true
       max_tool_calls: 30
 budgets:
-  max_wall_time: 36h
-  max_estimated_cost_usd: 150
+  max_wall_time: 2h
+  max_estimated_cost_usd: 10
 artifacts:
-  check_in: scored
+  check_in: none
   raw_dir: ../../.openneko/evals/raw
   state_dir: ../../.openneko/evals/state
   results_dir: ../../evals/results

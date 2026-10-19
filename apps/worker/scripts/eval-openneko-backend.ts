@@ -64,7 +64,7 @@ import {
 } from "@neko/llm";
 import { loadRecordAppBlueprint } from "@neko/records";
 import { callGraphjinMcpTool } from "@neko/llm/graphjin";
-import { closeSandboxPools } from "@neko/llm/work/sandbox-launcher";
+import { closeSandboxReapers } from "@neko/llm/work/sandbox-launcher";
 import {
   dbReachable,
   deleteTestOrg,
@@ -3265,7 +3265,7 @@ export function createOpenNekoBackendDriver(context: {
     },
     async close() {
       await oraclePool.end();
-      await closeSandboxPools();
+      await closeSandboxReapers();
       await shutdownAgentBroker();
       const providerCleanupFailures: string[] = [];
       for (const providerName of evalProviderNames) {

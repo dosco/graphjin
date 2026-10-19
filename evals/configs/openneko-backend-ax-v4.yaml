@@ -1,9 +1,9 @@
 schema_version: openneko.eval/v1
-id: openneko-backend-hermes-gemini-3.8-flash-v4
-description: Three-repetition Gemini 3.8 Flash Hermes cohort for OpenNeko backend v4 assertion-level qualification and typed safety outcomes.
+id: openneko-backend-ax-v4
+description: Three-repetition Ax cohort for OpenNeko backend v4 assertion-level qualification and typed safety outcomes.
 adapter: openneko.work-backend
 semantics: { ref: ../semantics.yaml }
-pricing: { ref: ../pricing/gemini-3.8-flash-2026-09-13.yaml }
+pricing: { ref: ../pricing/standard-2026-07-09.yaml }
 suite: { ref: ../suites/openneko-backend-v4.yaml }
 datasets:
   - ref: ../datasets/openneko-backend/dataset-v4.yaml
@@ -17,13 +17,15 @@ defaults:
   content_capture: metadata
   max_attempts: 2
 variants:
-  - id: hermes-gemini-3.8-flash
-    backend: hermes
+  - id: ax-gemini-parity
+    backend: ax
     outer_model:
       provider: google-gemini
-      model: gemini-3.8-flash
+      model: gemini-3.6-flash
       credential_ref: env:GEMINI_API_KEY
       config:
+        # Explicit provider ceilings from the Gemini 3.6 Flash model contract.
+        # Ax receives these as context_window_tokens/max_output_tokens.
         context_window_tokens: 1048576
         max_output_tokens: 65536
     data_path: graphjin-direct

@@ -1,6 +1,6 @@
 schema_version: openneko.eval/v1
 id: adventureworks-harness-factorial
-description: Full 2×2 provider/data-path experiment through Hermes with one externally provisioned GraphJin inner model.
+description: Full 2×2 provider/data-path experiment through Ax with one externally provisioned GraphJin inner model.
 adapter: adventureworks.metric
 semantics:
   ref: ../semantics.yaml
@@ -24,24 +24,24 @@ defaults:
   max_attempts: 2
 
 variants:
-  - id: hermes-anthropic-direct
-    backend: hermes
+  - id: ax-anthropic-direct
+    backend: ax
     outer_model:
       provider: anthropic
       model: claude-opus-4-7
       credential_ref: env:ANTHROPIC_API_KEY
     data_path: graphjin-direct
 
-  - id: hermes-gemini-direct
-    backend: hermes
+  - id: ax-gemini-direct
+    backend: ax
     outer_model:
       provider: google-gemini
       model: gemini-3.6-flash
       credential_ref: env:GEMINI_API_KEY
     data_path: graphjin-direct
 
-  - id: hermes-anthropic-delegated
-    extends: hermes-anthropic-direct
+  - id: ax-anthropic-delegated
+    extends: ax-anthropic-direct
     data_path: graphjin-agent
     inner_model:
       provider: google-gemini
@@ -50,8 +50,8 @@ variants:
       config:
         provisioning: external-graphjin
 
-  - id: hermes-gemini-delegated
-    extends: hermes-gemini-direct
+  - id: ax-gemini-delegated
+    extends: ax-gemini-direct
     data_path: graphjin-agent
     inner_model:
       provider: google-gemini

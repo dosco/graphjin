@@ -1,10 +1,12 @@
 schema_version: openneko.eval/v1
-id: openneko-backend-hermes-v2
-description: Three-repetition Hermes cohort covering OpenNeko context composition, governed actions, safety, and forty grounded GraphJin questions.
+id: openneko-backend-ax-composition
+description: Mutation-first, three-repetition Ax composition and model-provenance canary.
 adapter: openneko.work-backend
 semantics: { ref: ../semantics.yaml }
 pricing: { ref: ../pricing/standard-2026-07-09.yaml }
-suite: { ref: ../suites/openneko-backend-v2.yaml }
+suite:
+  ref: ../suites/openneko-backend-v1.yaml
+  cases: [b00-api-selection, b12-safety, b11-composition]
 datasets:
   - ref: ../datasets/openneko-backend/dataset.yaml
     snapshot: v1
@@ -17,8 +19,8 @@ defaults:
   content_capture: metadata
   max_attempts: 2
 variants:
-  - id: hermes-gemini-parity
-    backend: hermes
+  - id: ax-gemini-parity
+    backend: ax
     outer_model:
       provider: google-gemini
       model: gemini-3.6-flash
@@ -30,10 +32,10 @@ variants:
       require_observed_model_identity: true
       max_tool_calls: 30
 budgets:
-  max_wall_time: 36h
-  max_estimated_cost_usd: 150
+  max_wall_time: 3h
+  max_estimated_cost_usd: 10
 artifacts:
-  check_in: scored
+  check_in: none
   raw_dir: ../../.openneko/evals/raw
   state_dir: ../../.openneko/evals/state
   results_dir: ../../evals/results

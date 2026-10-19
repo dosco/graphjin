@@ -1,6 +1,6 @@
 schema_version: openneko.eval/v1
-id: openneko-backend-hermes-canary-v3
-description: One-repetition Hermes canary for mutation ordering and all six v3 state machines.
+id: openneko-backend-ax-diagnostic-v3
+description: Three-repetition Ax diagnostic for API selection, watcher execution, Records blueprint use, and safety.
 adapter: openneko.work-backend
 semantics: { ref: ../semantics.yaml }
 pricing: { ref: ../pricing/standard-2026-07-09.yaml }
@@ -8,18 +8,14 @@ suite:
   ref: ../suites/openneko-backend-v3.yaml
   cases:
     - b00-api-selection
-    - s01-workflow-build
     - s02-watcher-build-fire
-    - s03-workflow-action-approve
-    - s04-workflow-action-reject
     - s05-records-blueprint
-    - s06-compaction-resume
     - b12-safety
 datasets:
   - ref: ../datasets/openneko-backend/dataset.yaml
     snapshot: v1
 defaults:
-  repetitions: 1
+  repetitions: 3
   timeout: 12m
   execution_order: declared
   concurrency: 1
@@ -27,8 +23,8 @@ defaults:
   content_capture: metadata
   max_attempts: 2
 variants:
-  - id: hermes-gemini-parity
-    backend: hermes
+  - id: ax-gemini-parity
+    backend: ax
     outer_model:
       provider: google-gemini
       model: gemini-3.6-flash
@@ -40,8 +36,8 @@ variants:
       require_observed_model_identity: true
       max_tool_calls: 30
 budgets:
-  max_wall_time: 4h
-  max_estimated_cost_usd: 12
+  max_wall_time: 12h
+  max_estimated_cost_usd: 36
 artifacts:
   check_in: scored
   raw_dir: ../../.openneko/evals/raw
