@@ -1,0 +1,194 @@
+openapi: 3.0.3
+info:
+  title: Slack Web API
+  version: 1.0.0
+  description: The Slack Web API methods this pack uses. Posting and reacting are reviewed actions; lookups are reads.
+servers:
+  - url: https://slack.com
+security:
+  - bearer: []
+paths:
+  /api/chat.postMessage:
+    post:
+      operationId: postMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PostMessageRequest" }
+      responses:
+        "200":
+          description: Slack envelope. Slack reports errors with ok false and HTTP 200.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string }
+                  channel: { type: string }
+                  ts: { type: string }
+  /api/reactions.add:
+    post:
+      operationId: addReaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddReactionRequest" }
+      responses:
+        "200":
+          description: Slack envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string }
+  /api/users.lookupByEmail:
+    get:
+      operationId: lookupUserByEmail
+      parameters:
+        - { name: email, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/UserEnvelope" }
+  /api/users.info:
+    get:
+      operationId: getUser
+      parameters:
+        - { name: user, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/UserEnvelope" }
+  /api/users.list:
+    get:
+      operationId: listUsers
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string }
+                  members:
+                    type: array
+                    items: { $ref: "#/components/schemas/User" }
+                  response_metadata: { $ref: "#/components/schemas/ResponseMetadata" }
+  /api/conversations.info:
+    get:
+      operationId: getConversation
+      parameters:
+        - { name: channel, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Conversation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string }
+                  channel: { $ref: "#/components/schemas/Conversation" }
+  /api/conversations.list:
+    get:
+      operationId: listConversations
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: types, in: query, schema: { type: string }, description: "Comma-separated: public_channel, private_channel, mpim, im" }
+        - { name: exclude_archived, in: query, schema: { type: boolean } }
+      responses:
+        "200":
+          description: Conversations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string }
+                  channels:
+                    type: array
+                    items: { $ref: "#/components/schemas/Conversation" }
+                  response_metadata: { $ref: "#/components/schemas/ResponseMetadata" }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer }
+  schemas:
+    # A channel, DM, or user id (C…, G…, D…, U…, W…). Posting to a user id
+    # delivers to that user's DM with the app. Names are refused, so a
+    # policy's channel list always matches the real destination.
+    ConversationId:
+      type: string
+      pattern: '^[CGDUW][A-Z0-9]{2,}$'
+    PostMessageRequest:
+      type: object
+      additionalProperties: false
+      required: [channel, text]
+      properties:
+        channel: { $ref: "#/components/schemas/ConversationId" }
+        text: { type: string, minLength: 1, maxLength: 40000 }
+        blocks:
+          type: array
+          maxItems: 50
+          items: { type: object, additionalProperties: true }
+        thread_ts: { type: string, pattern: '^[0-9]+\.[0-9]+$' }
+        reply_broadcast: { type: boolean }
+        unfurl_links: { type: boolean }
+        unfurl_media: { type: boolean }
+        mrkdwn: { type: boolean }
+    AddReactionRequest:
+      type: object
+      additionalProperties: false
+      required: [channel, timestamp, name]
+      properties:
+        channel: { $ref: "#/components/schemas/ConversationId" }
+        timestamp: { type: string, pattern: '^[0-9]+\.[0-9]+$' }
+        name: { type: string, pattern: '^[a-z0-9_+\-]{1,100}$', description: Emoji name without colons }
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        real_name: { type: string }
+        deleted: { type: boolean }
+        is_bot: { type: boolean }
+        tz: { type: string }
+        profile:
+          type: object
+          properties:
+            display_name: { type: string }
+            real_name: { type: string }
+            email: { type: string }
+            title: { type: string }
+    Conversation:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        is_channel: { type: boolean }
+        is_private: { type: boolean }
+        is_im: { type: boolean }
+        is_archived: { type: boolean }
+        is_member: { type: boolean }
+        num_members: { type: integer }
+    ResponseMetadata:
+      type: object
+      properties:
+        next_cursor: { type: string }
+  responses:
+    UserEnvelope:
+      description: One user
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              ok: { type: boolean }
+              error: { type: string }
+              user: { $ref: "#/components/schemas/User" }

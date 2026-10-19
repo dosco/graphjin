@@ -1,0 +1,15 @@
+key: policy.slack_approved_channels
+targetRef: slack.policy.approved_channels
+name: Slack approved channels
+description: Posts and reactions run without approval in the listed channel and user ids, such as C0123ABCD. Add ids, then enable. Any other destination falls through to the approval policy.
+appliesToKinds: [slack.message]
+appliesToScopes: [external]
+mode: auto
+priority: 5
+enabled: true
+allowedTargets:
+  patterns: []
+  on_miss: next
+limits:
+  retry: never
+  requireCompletePayload: true

@@ -1,0 +1,14 @@
+key: policy.slack_governed_messages
+targetRef: slack.policy.governed_messages
+name: Slack governed messages
+description: Every Slack post and reaction needs administrator approval.
+appliesToKinds: [slack.message]
+appliesToScopes: [external]
+mode: ask
+approverRole: admin
+priority: 10
+enabled: true
+allowedTargets: {}
+limits:
+  retry: never
+  requireCompletePayload: true

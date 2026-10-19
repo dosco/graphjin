@@ -1,0 +1,33 @@
+key: action.slack_message
+targetRef: slack.message
+kind: slack.message
+description: Post a Slack message to a channel, a thread, or a user's DM with the app, or add an emoji reaction to a message.
+readiness:
+  capability: operator
+  unavailableReasons: [secret_not_configured, graphjin_restart_required]
+inputSchema:
+  type: object
+  additionalProperties: false
+  required: [operation, body]
+  properties:
+    operation: { type: string, enum: [post_message, add_reaction] }
+    body: { type: object }
+example:
+  operation: post_message
+  body:
+    channel: C0123ABCD
+    text: "Germany hourly revenue is down 62% against its baseline."
+# The policy engine reads the destination id, so a policy can allow or deny
+# channels. The spec accepts ids only, never names.
+targets:
+  fields: [body.channel]
+  as: value
+adapter:
+  kind: graphjin_api_operation
+  source: slack
+  spec: slack
+  operations:
+    post_message: { operationId: postMessage, mutationRoot: slack_post_message, reversible: false }
+    add_reaction: { operationId: addReaction, mutationRoot: slack_add_reaction, reversible: false }
+  ambiguousOutcome: reconcile_required
+  retry: never
