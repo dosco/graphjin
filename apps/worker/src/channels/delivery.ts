@@ -1,7 +1,7 @@
 // Channel delivery + inbound dispatch — the worker glue that turns the V2
 // channel contract into a live capability. Outbound: a newly-emitted workflow
-// output fans out to every enabled delivery_binding via the plugin's deliver
-// RPC. Inbound: an IntentEvent (parsed in-VM) routes to the SAME agent entry
+// output fans out to every enabled delivery_binding through the built-in
+// channel's deliver. Inbound: an IntentEvent routes to the SAME agent entry
 // points the web uses — approve/reject an action_request, or start a chat run.
 import { and, db, delivery_binding, eq, processing_job } from "@neko/db";
 import { audienceReceivesOutput } from "./audience.js";
@@ -26,7 +26,12 @@ import {
   getWorkThread,
   type RunChannel,
 } from "@neko/llm/work";
-import { getPluginRegistryInstance } from "../plugins/registry-instance.js";
+import { builtInChannel } from "@neko/channels";
+import {
+  deliverOnChannel,
+  parseChannelInbound,
+  verifyChannelInbound,
+} from "./runtime.js";
 import {
   beginInboundUpdate,
   inboundUpdateKey,
@@ -34,13 +39,10 @@ import {
   recordInboundFailure,
 } from "./inbound-store.js";
 
-/** "@open-neko/channel-telegram" → "telegram". Channel-inbound runs are never
- *  "web", so they get no a2ui rendering. See docs/PER_CHANNEL_RENDERING.md. */
-function channelFromPlugin(pluginName: string): RunChannel {
-  // channel-telegram → telegram; the Slack channel ships inside the
-  // action plugin (@open-neko/plugin-slack), so plugin- maps too.
-  const m = pluginName.match(/(?:channel|plugin)-([a-z0-9-]+)$/i);
-  return (m ? m[1].toLowerCase() : pluginName) as RunChannel;
+/** Channel ids are run channels ("telegram", "slack", …). Channel-inbound runs
+ *  are never "web", so they get no a2ui rendering. See docs/PER_CHANNEL_RENDERING.md. */
+function channelFromPlugin(channelId: string): RunChannel {
+  return channelId as RunChannel;
 }
 
 // Stable per-conversation key from the channel-native recipient (+ thread),
@@ -94,9 +96,8 @@ async function enqueueChannelDelivery(
  * pg-boss retry with backoff (network blips) and survives restarts.
  */
 export async function runChannelDelivery(payload: ChannelDeliverPayload): Promise<void> {
-  const reg = getPluginRegistryInstance();
-  if (!reg) throw new Error("channel-delivery: plugin registry unavailable");
-  const res = await reg.deliverOnChannel(
+  const res = await deliverOnChannel(
+    payload.orgId,
     payload.channelPlugin,
     payload.recipient,
     payload.events,
@@ -481,12 +482,7 @@ export async function processInboundUpdate(
     return true;
   }
   try {
-    const reg = getPluginRegistryInstance();
-    if (!reg) throw new Error("plugin registry unavailable");
-    const { intents, recipient, sender } = await reg.parseInbound(
-      pluginName,
-      raw,
-    );
+    const { intents, recipient, sender } = await parseChannelInbound(pluginName, raw);
     // CH2: the sender's workspace decides the org; first contact binds
     // to the caller's default org.
     const resolvedOrgId = await resolveInboundOrg(
@@ -531,16 +527,17 @@ export async function processInboundUpdate(
   }
 }
 
-/** Webhook ingest: verify (in-VM) → parse (in-VM) → dispatch, deduped. */
+/** Webhook ingest: verify → parse → dispatch, deduped. */
 export async function ingestInboundWebhook(
   orgId: string,
   pluginName: string,
   headers: Record<string, string>,
   rawBody: string,
 ): Promise<{ ok: boolean; dispatched: number }> {
-  const reg = getPluginRegistryInstance();
-  if (!reg) return { ok: false, dispatched: 0 };
-  const verified = await reg.verifyInbound(pluginName, headers, rawBody);
+  // Webhooks registered while the channel was a plugin still post to its package name.
+  const channelId = builtInChannel(pluginName)?.id;
+  if (!channelId) return { ok: false, dispatched: 0 };
+  const verified = await verifyChannelInbound(orgId, channelId, headers, rawBody);
   if (!verified) return { ok: false, dispatched: 0 };
   let raw: unknown;
   try {
@@ -548,6 +545,6 @@ export async function ingestInboundWebhook(
   } catch {
     return { ok: false, dispatched: 0 };
   }
-  const ok = await processInboundUpdate(orgId, pluginName, raw);
+  const ok = await processInboundUpdate(orgId, channelId, raw);
   return { ok, dispatched: ok ? 1 : 0 };
 }

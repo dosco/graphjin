@@ -12,8 +12,9 @@ vi.mock("../../src/channels/inbound-store.js", () => ({
   loadPollCursor: vi.fn(async () => undefined),
   pruneInboundDedup: vi.fn(async () => 0),
 }));
-vi.mock("../../src/plugins/registry-instance.js", () => ({
-  getPluginRegistryInstance: vi.fn(),
+vi.mock("../../src/channels/runtime.js", () => ({
+  getChannelProviders: vi.fn(async () => []),
+  pollChannelInbound: vi.fn(),
 }));
 
 import { processInboundUpdate } from "../../src/channels/delivery.js";
@@ -21,7 +22,7 @@ import { savePollCursor } from "../../src/channels/inbound-store.js";
 import { runPollIteration } from "../../src/channels/inbound-poll";
 
 const ORG = "org-1";
-const PLUGIN = "@open-neko/channel-telegram";
+const PLUGIN = "telegram";
 
 function poller(updates: unknown[], next?: string) {
   return { pollInbound: vi.fn(async () => ({ updates, ...(next ? { cursor: next } : {}) })) };

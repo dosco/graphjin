@@ -126,6 +126,14 @@ import {
   runChannelDelivery,
 } from "./channels/delivery.js";
 import { startChannelInbound } from "./channels/inbound-poll.js";
+import {
+  channelSettings,
+  deliverOnChannel,
+  getChannelProviders,
+  migrateLegacyChannelSecrets,
+  setChannelSettings,
+  setChannelsChangedHook,
+} from "./channels/runtime.js";
 import type PgBossLib from "pg-boss";
 import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
 import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
@@ -718,13 +726,13 @@ const server = createServer(
     },
     ssoSetup: ssoSetupSurface(),
     channels: {
-      getChannelProviders: () => pluginRegistry?.getChannelProviders() ?? [],
-      deliver: (pluginName, recipient, events) => {
-        if (!pluginRegistry) throw new Error("plugin registry not initialised");
-        return pluginRegistry.deliverOnChannel(pluginName, recipient, events);
-      },
-      ingestInbound: (pluginName, headers, body) =>
-        ingestInboundWebhook(ADMIN_ORG_ID, pluginName, headers, body),
+      getChannelProviders: () => getChannelProviders(ADMIN_ORG_ID),
+      deliver: (channelId, recipient, events) =>
+        deliverOnChannel(ADMIN_ORG_ID, channelId, recipient, events),
+      ingestInbound: (channelId, headers, body) =>
+        ingestInboundWebhook(ADMIN_ORG_ID, channelId, headers, body),
+      settings: () => channelSettings(ADMIN_ORG_ID),
+      setSettings: (channelId, values) => setChannelSettings(channelId, values),
     },
   }),
 );
@@ -966,6 +974,13 @@ setPluginRegistryInstance(pluginRegistry);
 ssoSetupService = new SsoSetupService(() => pluginRegistry);
 startSsoSetupPoller({ service: ssoSetupService, orgId: ADMIN_ORG_ID });
 registerChannelOutputDelivery();
+{
+  const moved = await migrateLegacyChannelSecrets().catch((err) => {
+    console.warn(`[worker] channel secrets migration failed: ${err instanceof Error ? err.message : err}`);
+    return [];
+  });
+  if (moved.length > 0) console.log(`[worker] moved channel settings from ${moved.join(", ")}`);
+}
 await seedOpenNekoOpsWorkflow(ADMIN_ORG_ID);
 {
   const s = pluginRegistry.status();
@@ -1798,6 +1813,12 @@ server.listen(PORT, () => {
 });
 
 const channelInbound = startChannelInbound(ADMIN_ORG_ID);
+setChannelsChangedHook((orgId) => {
+  if (orgId !== ADMIN_ORG_ID) return;
+  void channelInbound.refresh().catch((err) => {
+    console.warn(`[channel-inbound] refresh failed: ${err instanceof Error ? err.message : err}`);
+  });
+});
 
 const shutdown = async (signal: string) => {
   console.log(`[worker] received ${signal}; shutting down`);

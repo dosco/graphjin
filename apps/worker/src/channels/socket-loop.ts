@@ -1,8 +1,8 @@
-// Slack Socket Mode transport, worker-side. The single-shot plugin runner can't
-// hold a persistent socket, so the worker owns the connection and hands each
-// inbound payload to processInboundUpdate (which parses it in the plugin VM).
+// Slack Socket Mode transport, worker-side. The worker owns the persistent
+// connection and hands each inbound payload to processInboundUpdate, which
+// parses it with the built-in Slack channel.
 // Dependency-free on purpose: Node's global WebSocket + fetch.
-import { getPluginRegistryInstance } from "../plugins/registry-instance.js";
+import { channelEnv } from "./runtime.js";
 import { processInboundUpdate } from "./delivery.js";
 import { pollBackoffMs } from "./poll-backoff.js";
 
@@ -53,7 +53,7 @@ export async function handleFrame(
     ws.close();
     return;
   }
-  // Ack before processing — Slack requires it within 3s and parsing spins up the VM.
+  // Ack before processing — Slack requires it within 3s.
   if (frame.envelope_id) ws.send(JSON.stringify({ envelope_id: frame.envelope_id }));
   if (
     frame.payload &&
@@ -96,8 +96,8 @@ function pumpConnection(
 }
 
 /**
- * Slack Socket Mode loop for a channel plugin: connect, pump, reconnect with
- * backoff. No-op (warns once) when the plugin has no SLACK_APP_TOKEN.
+ * Slack Socket Mode loop: connect, pump, reconnect with
+ * backoff. No-op (warns once) when the channel has no SLACK_APP_TOKEN.
  */
 export async function runSlackSocketLoop(opts: {
   orgId: string;
@@ -115,9 +115,7 @@ export async function runSlackSocketLoop(opts: {
   let failureStreak = 0;
   while (!isStopped()) {
     try {
-      const reg = getPluginRegistryInstance();
-      if (!reg) return;
-      const appToken = (reg.getPluginEnv(pluginName) ?? {}).SLACK_APP_TOKEN;
+      const appToken = (await channelEnv(pluginName)).SLACK_APP_TOKEN;
       if (!appToken) {
         if (!warnedNoToken) {
           console.warn(

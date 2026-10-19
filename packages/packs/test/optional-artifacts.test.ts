@@ -14,3 +14,10 @@ it("accepts a skills-only pack but requires compatibility for GraphJin artifacts
     sources: "sources.yaml", relationships: "relationships.yaml", specs: [], savedQueries: "queries",
   } } })).toThrow("GraphJin artifacts require GraphJin compatibility");
 });
+
+it("turns on built-in channels and rejects unknown or duplicate ones", () => {
+  expect(parseManifest(manifest).channels).toBeUndefined();
+  expect(parseManifest({ ...manifest, channels: ["slack", "telegram"] }).channels).toEqual(["slack", "telegram"]);
+  expect(() => parseManifest({ ...manifest, channels: ["discord"] })).toThrow();
+  expect(() => parseManifest({ ...manifest, channels: ["slack", "slack"] })).toThrow("duplicate channel");
+});

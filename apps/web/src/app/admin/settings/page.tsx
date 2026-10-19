@@ -146,6 +146,11 @@ export default async function SettingsPage() {
           statusTone: "success",
         },
         {
+          href: "/admin/settings/channels",
+          title: "Channels",
+          copy: "Slack, Telegram, and other places where people talk to OpenNeko. A pack turns each one on.",
+        },
+        {
           href: "/admin/settings/graphjin",
           title: "Data access rules",
           copy: "How OpenNeko signs in to each source, and what each role can read.",

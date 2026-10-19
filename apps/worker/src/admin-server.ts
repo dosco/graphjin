@@ -202,28 +202,31 @@ export interface SsoSetupHandlerSurface {
 }
 
 /**
- * Channel (frontend) surface. The worker delegates `deliver` to the
- * PluginRegistry's deliver RPC and `ingestInbound` to the channel delivery
- * module (verify → parse in-VM → dispatch to the existing agent entry points).
+ * Channel (frontend) surface. The built-in channels (Slack, Telegram, HUD)
+ * run in-process; a pack turns each one on. `ingestInbound` hands webhooks
+ * to the channel delivery module (verify → parse → dispatch to the existing
+ * agent entry points).
  */
 export interface ChannelHandlerSurface {
-  getChannelProviders(): Array<{
-    pluginId: string;
-    pluginName: string;
+  getChannelProviders(): Promise<Array<{
+    id: string;
     providerLabel: string;
     directions: string[];
     ingress: string;
-  }>;
+  }>>;
   deliver(
-    pluginName: string,
+    channelId: string,
     recipient: Record<string, unknown>,
     events: unknown[],
   ): Promise<{ delivered: boolean; ref?: string }>;
   ingestInbound(
-    pluginName: string,
+    channelId: string,
     headers: Record<string, string>,
     body: string,
   ): Promise<{ ok: boolean; dispatched: number }>;
+  /** Each channel's declared settings; secrets report only whether they are set. */
+  settings?(): Promise<unknown[]>;
+  setSettings?(channelId: string, values: Record<string, string | null>): Promise<void>;
 }
 
 /**
@@ -788,7 +791,11 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       }
     }
     if (req.method === "GET" && req.url === "/admin/channels/providers") {
-      handleChannelProviders(res, channels);
+      void handleChannelProviders(res, channels);
+      return;
+    }
+    if (req.url === "/admin/channels/settings") {
+      void handleChannelSettings(req, res, channels);
       return;
     }
     if (req.method === "POST" && req.url?.startsWith("/admin/channels/")) {
@@ -1888,11 +1895,52 @@ async function handleConnectDisconnect(
 
 // ─── Channel (frontend) ────────────────────────────────────────────────
 
-function handleChannelProviders(
+async function handleChannelProviders(
   res: ServerResponse,
   channels: ChannelHandlerSurface | null,
 ) {
-  json(res, 200, { providers: channels?.getChannelProviders() ?? [] });
+  try {
+    json(res, 200, { providers: (await channels?.getChannelProviders()) ?? [] });
+  } catch (err) {
+    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+const CHANNEL_ID = /^[a-z][a-z0-9-]{0,63}$/;
+
+async function handleChannelSettings(
+  req: IncomingMessage,
+  res: ServerResponse,
+  channels: ChannelHandlerSurface | null,
+) {
+  try {
+    if (req.method === "GET") {
+      if (!channels?.settings) return json(res, 503, { error: "channel subsystem disabled" });
+      return json(res, 200, { channels: await channels.settings() });
+    }
+    if (req.method === "POST") {
+      if (!channels?.setSettings) return json(res, 503, { error: "channel subsystem disabled" });
+      const body = (await readJson(req).catch(() => null)) as { channel?: unknown; values?: unknown } | null;
+      const channel = typeof body?.channel === "string" ? body.channel : "";
+      const values = body?.values;
+      if (!CHANNEL_ID.test(channel)) return json(res, 400, { error: "channel must be a channel id" });
+      if (!values || typeof values !== "object" || Array.isArray(values) || Object.keys(values).length === 0) {
+        return json(res, 400, { error: "values must map at least one setting to a string or null" });
+      }
+      for (const value of Object.values(values)) {
+        if (value !== null && (typeof value !== "string" || value.length === 0 || value.length > MAX_SETTING_LENGTH)) {
+          return json(res, 400, { error: `each value must be null or a string of 1 to ${MAX_SETTING_LENGTH} characters` });
+        }
+      }
+      await channels.setSettings(channel, values as Record<string, string | null>);
+      return json(res, 200, { ok: true });
+    }
+    return json(res, 405, { error: "method not allowed" });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const status = err instanceof Error && err.name === "ChannelSettingsError" ? 400 : 500;
+    return json(res, status, { error: message });
+  }
 }
 
 async function handleChannelDeliver(

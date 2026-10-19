@@ -11,15 +11,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../src/channels/delivery.js", () => ({
   processInboundUpdate: vi.fn(async () => true),
 }));
-vi.mock("../../src/plugins/registry-instance.js", () => ({
-  getPluginRegistryInstance: vi.fn(() => ({
-    getPluginEnv: () => ({ SLACK_APP_TOKEN: "xapp-test" }),
-  })),
+vi.mock("../../src/channels/runtime.js", () => ({
+  channelEnv: vi.fn(async () => ({ SLACK_APP_TOKEN: "xapp-test" })),
 }));
 
 import { runSlackSocketLoop } from "../../src/channels/socket-loop";
 import { processInboundUpdate } from "../../src/channels/delivery.js";
-import { getPluginRegistryInstance } from "../../src/plugins/registry-instance.js";
+import { channelEnv } from "../../src/channels/runtime.js";
 
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const accept = (key: string) => createHash("sha1").update(key + WS_GUID).digest("base64");
@@ -143,13 +141,13 @@ describe("runSlackSocketLoop (integration: real WebSocket transport)", () => {
     stopped = false;
     loop = runSlackSocketLoop({
       orgId: "org-1",
-      pluginName: "@open-neko/plugin-slack",
+      pluginName: "slack",
       isStopped: () => stopped,
     });
 
     await waitFor(() => srv!.conns.length >= 1 && srv!.conns[0].received.length >= 1);
     expect(srv.conns[0].received).toContain(JSON.stringify({ envelope_id: "e1" }));
-    expect(processInboundUpdate).toHaveBeenCalledWith("org-1", "@open-neko/plugin-slack", EVENT);
+    expect(processInboundUpdate).toHaveBeenCalledWith("org-1", "slack", EVENT);
 
     // disconnect frame → close → 3s backoff → reconnect
     await waitFor(() => srv!.conns.length >= 2, 8000);
@@ -157,9 +155,7 @@ describe("runSlackSocketLoop (integration: real WebSocket transport)", () => {
   }, 15000);
 
   it("bails without connecting when SLACK_APP_TOKEN is absent", async () => {
-    vi.mocked(getPluginRegistryInstance).mockReturnValueOnce({
-      getPluginEnv: () => ({}),
-    } as never);
+    vi.mocked(channelEnv).mockResolvedValueOnce({});
     srv = await startWsServer(() => {});
     realFetch = globalThis.fetch;
     const fetchSpy = vi.fn();
@@ -168,7 +164,7 @@ describe("runSlackSocketLoop (integration: real WebSocket transport)", () => {
     stopped = false;
     await runSlackSocketLoop({
       orgId: "o",
-      pluginName: "@open-neko/plugin-slack",
+      pluginName: "slack",
       isStopped: () => stopped,
     });
 

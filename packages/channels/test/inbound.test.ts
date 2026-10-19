@@ -12,13 +12,17 @@ describe("parseSlackInbound", () => {
     expect(parseSlackInbound(raw)).toEqual([{ kind: "decision", decisionRef: "ar-9", choice: "reject" }]);
   });
 
-  it("maps an option button to a select", () => {
-    const raw = { type: "block_actions", actions: [{ action_id: "select:opt-a", value: "ar-7:opt-a" }] };
-    expect(parseSlackInbound(raw)).toEqual([{ kind: "select", ref: "ar-7", optionId: "opt-a" }]);
+  it("maps an option button to the option label as a threaded reply", () => {
+    const raw = {
+      type: "block_actions",
+      message: { ts: "171.2" },
+      actions: [{ action_id: "select:opt-a", value: "ar-7:opt-a", text: { type: "plain_text", text: "Option A" } }],
+    };
+    expect(parseSlackInbound(raw)).toEqual([{ kind: "utterance", text: "Option A", threadRef: "171.2" }]);
   });
 
   it("maps a human message to an utterance carrying the thread", () => {
-    const raw = { type: "event_callback", event: { type: "message", text: "what's our churn?", thread_ts: "171.99" } };
+    const raw = { type: "event_callback", event: { type: "message", channel_type: "im", text: "what's our churn?", thread_ts: "171.99" } };
     expect(parseSlackInbound(raw)).toEqual([{ kind: "utterance", text: "what's our churn?", threadRef: "171.99" }]);
   });
 

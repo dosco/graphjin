@@ -1412,20 +1412,21 @@ describe("worker channel routes", () => {
     overrides: Partial<NonNullable<Parameters<typeof createAdminHandler>[0]["channels"]>> = {},
   ): NonNullable<Parameters<typeof createAdminHandler>[0]["channels"]> {
     return {
-      getChannelProviders: overrides.getChannelProviders ?? (() => []),
+      getChannelProviders: overrides.getChannelProviders ?? (async () => []),
       deliver: overrides.deliver ?? (async () => ({ delivered: true, ref: "1" })),
       ingestInbound: overrides.ingestInbound ?? (async () => ({ ok: true, dispatched: 0 })),
+      ...(overrides.settings ? { settings: overrides.settings } : {}),
+      ...(overrides.setSettings ? { setSettings: overrides.setSettings } : {}),
     };
   }
 
-  it("GET /admin/channels/providers returns the registry's channels", async () => {
+  it("GET /admin/channels/providers returns the turned-on channels", async () => {
     const srv = await startServer(
       createAdminHandler({
         channels: fakeChannel({
-          getChannelProviders: () => [
+          getChannelProviders: async () => [
             {
-              pluginId: "open-neko-channel-telegram",
-              pluginName: "@open-neko/channel-telegram",
+              id: "telegram",
               providerLabel: "Telegram",
               directions: ["outbound", "inbound"],
               ingress: "webhook",
@@ -1468,7 +1469,7 @@ describe("worker channel routes", () => {
     );
     try {
       const res = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/channels/@open-neko%2Fchannel-telegram/deliver`,
+        `http://127.0.0.1:${srv.port}/admin/channels/telegram/deliver`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1477,7 +1478,7 @@ describe("worker channel routes", () => {
       );
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ delivered: true, ref: "278" });
-      expect(captured.plugin).toBe("@open-neko/channel-telegram");
+      expect(captured.plugin).toBe("telegram");
       expect((captured.recipient as { chatId: number }).chatId).toBe(5);
       expect(captured.events).toHaveLength(1);
     } finally {
@@ -1527,7 +1528,7 @@ describe("worker channel routes", () => {
     );
     try {
       const res = await fetch(
-        `http://127.0.0.1:${srv.port}/channels/@open-neko%2Fchannel-telegram/inbound`,
+        `http://127.0.0.1:${srv.port}/channels/telegram/inbound`,
         {
           method: "POST",
           headers: {
@@ -1539,9 +1540,45 @@ describe("worker channel routes", () => {
       );
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ ok: true, dispatched: 1 });
-      expect(captured.plugin).toBe("@open-neko/channel-telegram");
+      expect(captured.plugin).toBe("telegram");
       expect(captured.headers?.["x-telegram-bot-api-secret-token"]).toBe("s3cret");
       expect(captured.body).toContain("approve:ar-1");
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("GET and POST /admin/channels/settings read and write channel settings", async () => {
+    let written: { channel?: string; values?: Record<string, string | null> } = {};
+    const srv = await startServer(
+      createAdminHandler({
+        channels: fakeChannel({
+          settings: async () => [{ id: "slack", enabled: true, missing: ["SLACK_BOT_TOKEN"] }],
+          setSettings: async (channel, values) => {
+            written = { channel, values };
+          },
+        }),
+      }),
+    );
+    try {
+      const read = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/settings`);
+      expect(read.status).toBe(200);
+      expect(((await read.json()) as { channels: Array<{ id: string }> }).channels[0]?.id).toBe("slack");
+
+      const save = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel: "slack", values: { SLACK_BOT_TOKEN: "xoxb-1", SLACK_APP_TOKEN: null } }),
+      });
+      expect(save.status).toBe(200);
+      expect(written).toEqual({ channel: "slack", values: { SLACK_BOT_TOKEN: "xoxb-1", SLACK_APP_TOKEN: null } });
+
+      const bad = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel: "@open-neko/plugin-slack", values: { SLACK_BOT_TOKEN: "x" } }),
+      });
+      expect(bad.status).toBe(400);
     } finally {
       await srv.close();
     }

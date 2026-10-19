@@ -65,8 +65,10 @@ vi.mock("../../src/channels/inbound-store.js", () => ({
   markInboundDone: vi.fn(async () => {}),
   recordInboundFailure: vi.fn(async () => ({ dead: false, attempts: 1 })),
 }));
-vi.mock("../../src/plugins/registry-instance.js", () => ({
-  getPluginRegistryInstance: vi.fn(),
+vi.mock("../../src/channels/runtime.js", () => ({
+  deliverOnChannel: vi.fn(),
+  parseChannelInbound: vi.fn(),
+  verifyChannelInbound: vi.fn(),
 }));
 
 import { enqueue } from "@neko/db/jobs";
@@ -91,7 +93,11 @@ import {
   markInboundDone,
   recordInboundFailure,
 } from "../../src/channels/inbound-store.js";
-import { getPluginRegistryInstance } from "../../src/plugins/registry-instance.js";
+import {
+  deliverOnChannel,
+  parseChannelInbound,
+  verifyChannelInbound,
+} from "../../src/channels/runtime.js";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -146,7 +152,7 @@ describe("dispatchInboundIntent — utterance", () => {
     await dispatchInboundIntent(
       "org-1",
       { kind: "utterance", text: "how are sales?", threadRef: "42" },
-      "@open-neko/channel-telegram",
+      "telegram",
       { chatId: 7 },
     );
     expect(getOrCreateChannelThread).toHaveBeenCalled();
@@ -158,7 +164,7 @@ describe("dispatchInboundIntent — utterance", () => {
         runId: "run-1",
         threadId: "thread-1",
         channel: "telegram",
-        channelPlugin: "@open-neko/channel-telegram",
+        channelPlugin: "telegram",
         recipient: { chatId: 7 },
       }),
     );
@@ -174,14 +180,14 @@ describe("dispatchInboundIntent — spend budget", () => {
     await dispatchInboundIntent(
       "org-1",
       { kind: "utterance", text: "how are sales?", threadRef: "42" },
-      "@open-neko/channel-telegram",
+      "telegram",
       { chatId: 7 },
     );
     expect(enqueue).not.toHaveBeenCalledWith("work_run", expect.anything());
     expect(enqueue).toHaveBeenCalledWith(
       "channel_deliver",
       expect.objectContaining({
-        channelPlugin: "@open-neko/channel-telegram",
+        channelPlugin: "telegram",
         recipient: { chatId: 7 },
         events: [
           expect.objectContaining({
@@ -200,7 +206,7 @@ describe("dispatchInboundIntent — select (continuation fallback)", () => {
     await dispatchInboundIntent(
       "org-1",
       { kind: "select", ref: "ar-9", optionId: "Option B" },
-      "@open-neko/channel-telegram",
+      "telegram",
       { chatId: 7 },
     );
     expect(getOrCreateChannelThread).toHaveBeenCalled();
@@ -208,7 +214,7 @@ describe("dispatchInboundIntent — select (continuation fallback)", () => {
       "work_run",
       expect.objectContaining({
         message: "Option B",
-        channelPlugin: "@open-neko/channel-telegram",
+        channelPlugin: "telegram",
       }),
     );
   });
@@ -220,7 +226,7 @@ describe("dispatchInboundIntent — channel thread-reply gate (W3.2)", () => {
     await dispatchInboundIntent(
       "org-1",
       { kind: "utterance", text: "and last quarter?", threadRef: "171.5" },
-      "@open-neko/plugin-slack",
+      "slack",
       { kind: "slack", channel: "C9", thread_ts: "171.5", requireThread: true },
     );
     expect(getOrCreateChannelThread).not.toHaveBeenCalled();
@@ -232,7 +238,7 @@ describe("dispatchInboundIntent — channel thread-reply gate (W3.2)", () => {
     await dispatchInboundIntent(
       "org-1",
       { kind: "utterance", text: "and last quarter?", threadRef: "171.5" },
-      "@open-neko/plugin-slack",
+      "slack",
       { kind: "slack", channel: "C9", thread_ts: "171.5", requireThread: true },
     );
     expect(getOrCreateChannelThread).toHaveBeenCalled();
@@ -261,47 +267,46 @@ describe("conversationKeyFor", () => {
 });
 
 describe("runChannelDelivery (durable CHANNEL_DELIVER job body)", () => {
-  it("delivers via the plugin and resolves on delivered=true", async () => {
-    const deliverOnChannel = vi.fn(async () => ({ delivered: true, ref: "299" }));
-    vi.mocked(getPluginRegistryInstance).mockReturnValue({ deliverOnChannel } as never);
+  it("delivers via the built-in channel and resolves on delivered=true", async () => {
+    vi.mocked(deliverOnChannel).mockResolvedValue({ delivered: true, ref: "299" });
     await runChannelDelivery({
       orgId: "org-1",
-      channelPlugin: "@open-neko/channel-telegram",
+      channelPlugin: "telegram",
       recipient: { chatId: 7 },
       events: [{ kind: "converse", text: "hi" }],
     });
     expect(deliverOnChannel).toHaveBeenCalledWith(
-      "@open-neko/channel-telegram",
+      "org-1",
+      "telegram",
       { chatId: 7 },
       [{ kind: "converse", text: "hi" }],
     );
   });
 
-  it("THROWS when the plugin reports delivered=false (so pg-boss retries)", async () => {
-    const deliverOnChannel = vi.fn(async () => ({ delivered: false }));
-    vi.mocked(getPluginRegistryInstance).mockReturnValue({ deliverOnChannel } as never);
+  it("THROWS when the channel reports delivered=false (so pg-boss retries)", async () => {
+    vi.mocked(deliverOnChannel).mockResolvedValue({ delivered: false });
     await expect(
       runChannelDelivery({ orgId: "o", channelPlugin: "p", recipient: {}, events: [] }),
     ).rejects.toThrow(/delivered=false/);
   });
 
-  it("THROWS when the registry is unavailable (retry rather than drop)", async () => {
-    vi.mocked(getPluginRegistryInstance).mockReturnValue(null);
+  it("THROWS when the channel is not turned on (retry rather than drop)", async () => {
+    vi.mocked(deliverOnChannel).mockRejectedValue(new Error("channel p is not turned on"));
     await expect(
       runChannelDelivery({ orgId: "o", channelPlugin: "p", recipient: {}, events: [] }),
-    ).rejects.toThrow(/registry unavailable/);
+    ).rejects.toThrow(/not turned on/);
   });
 });
 
 describe("deliverChatReply (channel reply path)", () => {
   it("enqueues a durable converse delivery keyed by run id with backoff opts", async () => {
-    await deliverChatReply("org-1", "@open-neko/channel-telegram", { chatId: 7 }, "run-9", "We have 290 employees.");
+    await deliverChatReply("org-1", "telegram", { chatId: 7 }, "run-9", "We have 290 employees.");
     expect(enqueue).toHaveBeenCalledTimes(1);
     const [queue, payload, opts] = vi.mocked(enqueue).mock.calls[0];
     expect(queue).toBe("channel_deliver");
     expect(payload).toMatchObject({
       orgId: "org-1",
-      channelPlugin: "@open-neko/channel-telegram",
+      channelPlugin: "telegram",
       recipient: { chatId: 7 },
       events: [{ kind: "converse", id: "run-9", role: "assistant", text: "We have 290 employees." }],
     });
@@ -322,7 +327,7 @@ describe("deliverChatReply (channel reply path)", () => {
 describe("output → channel fan-out (registerChannelOutputDelivery)", () => {
   it("enqueues one durable delivery per enabled binding, keyed by output+plugin", async () => {
     h.selectRows = [
-      { channel_plugin: "@open-neko/channel-telegram", recipient: { chatId: 1 } },
+      { channel_plugin: "telegram", recipient: { chatId: 1 } },
       { channel_plugin: "@open-neko/channel-slack", recipient: { chatId: 2 } },
       { channel_plugin: "@open-neko/channel-slack", recipient: { chatId: 3 }, audience: "finance" },
     ];
@@ -333,7 +338,7 @@ describe("output → channel fan-out (registerChannelOutputDelivery)", () => {
     expect(enqueue).toHaveBeenCalledTimes(2);
     const keys = vi.mocked(enqueue).mock.calls.map((c) => (c[2] as { singletonKey: string }).singletonKey);
     expect(keys).toEqual([
-      "output-o1-@open-neko/channel-telegram",
+      "output-o1-telegram",
       "output-o1-@open-neko/channel-slack",
     ]);
     expect(vi.mocked(enqueue).mock.calls.every((c) => c[0] === "channel_deliver")).toBe(true);
@@ -350,10 +355,8 @@ describe("output → channel fan-out (registerChannelOutputDelivery)", () => {
 
 describe("ingestInboundWebhook", () => {
   const fakeReg = {
-    verifyInbound: vi.fn(async () => true),
-    parseInbound: vi.fn(async () => ({
-      intents: [{ kind: "decision", decisionRef: "ar-1", choice: "approve" }],
-    })),
+    verifyInbound: vi.mocked(verifyChannelInbound),
+    parseInbound: vi.mocked(parseChannelInbound),
   };
 
   beforeEach(() => {
@@ -361,12 +364,11 @@ describe("ingestInboundWebhook", () => {
     fakeReg.parseInbound.mockResolvedValue({
       intents: [{ kind: "decision", decisionRef: "ar-1", choice: "approve" }],
     });
-    vi.mocked(getPluginRegistryInstance).mockReturnValue(fakeReg as never);
     vi.mocked(getActionRequest).mockResolvedValue({ id: "ar-1", status: "pending_approval", kind: "k" } as never);
   });
 
   it("verifies, parses, dispatches, and marks done when the signature is valid", async () => {
-    const res = await ingestInboundWebhook("org-1", "@open-neko/channel-telegram", { "x-secret": "s" }, '{"callback_query":{}}');
+    const res = await ingestInboundWebhook("org-1", "telegram", { "x-secret": "s" }, '{"callback_query":{}}');
     expect(res).toEqual({ ok: true, dispatched: 1 });
     expect(fakeReg.verifyInbound).toHaveBeenCalled();
     expect(fakeReg.parseInbound).toHaveBeenCalled();
@@ -376,7 +378,7 @@ describe("ingestInboundWebhook", () => {
 
   it("DEDUPES a duplicate update — begin says skip ⇒ no parse, no dispatch, still ok", async () => {
     vi.mocked(beginInboundUpdate).mockResolvedValue({ proceed: false, attempts: 1, dead: false });
-    const res = await ingestInboundWebhook("org-1", "@open-neko/channel-telegram", { "x-secret": "s" }, '{"callback_query":{}}');
+    const res = await ingestInboundWebhook("org-1", "telegram", { "x-secret": "s" }, '{"callback_query":{}}');
     expect(res).toEqual({ ok: true, dispatched: 1 });
     expect(fakeReg.parseInbound).not.toHaveBeenCalled();
     expect(approveActionRequest).not.toHaveBeenCalled();
@@ -384,7 +386,7 @@ describe("ingestInboundWebhook", () => {
 
   it("SKIPS a dead-lettered update — never re-dispatches a poison message", async () => {
     vi.mocked(beginInboundUpdate).mockResolvedValue({ proceed: false, attempts: 30, dead: true });
-    const res = await ingestInboundWebhook("org-1", "@open-neko/channel-telegram", { "x-secret": "s" }, '{"callback_query":{}}');
+    const res = await ingestInboundWebhook("org-1", "telegram", { "x-secret": "s" }, '{"callback_query":{}}');
     expect(res).toEqual({ ok: true, dispatched: 1 });
     expect(fakeReg.parseInbound).not.toHaveBeenCalled();
   });
@@ -392,11 +394,11 @@ describe("ingestInboundWebhook", () => {
   it("records the failure + reports ok:false while still retrying (provider can redeliver)", async () => {
     fakeReg.parseInbound.mockRejectedValue(new Error("VM down"));
     vi.mocked(recordInboundFailure).mockResolvedValue({ dead: false, attempts: 3 });
-    const res = await ingestInboundWebhook("org-1", "@open-neko/channel-telegram", { "x-secret": "s" }, '{"callback_query":{}}');
+    const res = await ingestInboundWebhook("org-1", "telegram", { "x-secret": "s" }, '{"callback_query":{}}');
     expect(res).toEqual({ ok: false, dispatched: 0 });
     expect(recordInboundFailure).toHaveBeenCalledWith(
       "org-1",
-      "@open-neko/channel-telegram",
+      "telegram",
       "update-key",
       30,
       expect.anything(),
@@ -407,22 +409,29 @@ describe("ingestInboundWebhook", () => {
   it("DEAD-LETTERS after the attempt cap ⇒ consumed (ok:true), not retried again", async () => {
     fakeReg.parseInbound.mockRejectedValue(new Error("still broken"));
     vi.mocked(recordInboundFailure).mockResolvedValue({ dead: true, attempts: 30 });
-    const res = await ingestInboundWebhook("org-1", "@open-neko/channel-telegram", { "x-secret": "s" }, '{"callback_query":{}}');
+    const res = await ingestInboundWebhook("org-1", "telegram", { "x-secret": "s" }, '{"callback_query":{}}');
     expect(res).toEqual({ ok: true, dispatched: 1 });
   });
 
   it("refuses (no parse/dispatch) when verification fails", async () => {
     fakeReg.verifyInbound.mockResolvedValue(false);
-    const res = await ingestInboundWebhook("org-1", "@open-neko/channel-telegram", {}, "{}");
+    const res = await ingestInboundWebhook("org-1", "telegram", {}, "{}");
     expect(res).toEqual({ ok: false, dispatched: 0 });
     expect(fakeReg.parseInbound).not.toHaveBeenCalled();
     expect(approveActionRequest).not.toHaveBeenCalled();
   });
 
-  it("returns ok:false when no registry is available", async () => {
-    vi.mocked(getPluginRegistryInstance).mockReturnValue(null);
-    const res = await ingestInboundWebhook("org-1", "@open-neko/channel-telegram", {}, "{}");
+  it("returns ok:false for an unknown channel without verifying", async () => {
+    const res = await ingestInboundWebhook("org-1", "discord", {}, "{}");
     expect(res).toEqual({ ok: false, dispatched: 0 });
+    expect(fakeReg.verifyInbound).not.toHaveBeenCalled();
+  });
+
+  it("accepts the legacy plugin package name in the webhook path", async () => {
+    const res = await ingestInboundWebhook("org-1", "@open-neko/channel-telegram", { "x-secret": "s" }, '{"callback_query":{}}');
+    expect(res).toEqual({ ok: true, dispatched: 1 });
+    expect(fakeReg.verifyInbound).toHaveBeenCalledWith("org-1", "telegram", { "x-secret": "s" }, '{"callback_query":{}}');
+    expect(fakeReg.parseInbound).toHaveBeenCalledWith("telegram", { callback_query: {} });
   });
 });
 
@@ -433,11 +442,11 @@ describe("ensureInboundBinding (auto-bind on first inbound)", () => {
   });
 
   it("writes a binding when none exists for (org, channel)", async () => {
-    await ensureInboundBinding("org-1", "@open-neko/channel-telegram", { kind: "telegram", chatId: 99 });
+    await ensureInboundBinding("org-1", "telegram", { kind: "telegram", chatId: 99 });
     expect(h.binds).toHaveLength(1);
     expect(h.binds[0]).toMatchObject({
       org_id: "org-1",
-      channel_plugin: "@open-neko/channel-telegram",
+      channel_plugin: "telegram",
       recipient: { kind: "telegram", chatId: 99 },
       enabled: true,
     });
@@ -445,7 +454,7 @@ describe("ensureInboundBinding (auto-bind on first inbound)", () => {
 
   it("is idempotent — skips writing when a binding already exists", async () => {
     h.selectRows = [{ id: "b1" }];
-    await ensureInboundBinding("org-1", "@open-neko/channel-telegram", { kind: "telegram", chatId: 99 });
+    await ensureInboundBinding("org-1", "telegram", { kind: "telegram", chatId: 99 });
     expect(h.binds).toHaveLength(0);
   });
 });
@@ -461,7 +470,7 @@ describe("deliverChatReply threads the a2ui surface as converse.enrichment", () 
   it("attaches the agent's surface so a rich channel can render it", async () => {
     vi.mocked(enqueue).mockClear();
     const surfaces = [{ version: "v0.9", createSurface: { surfaceId: "s1", catalogId: "x" } }];
-    await deliverChatReply("org-1", "@open-neko/channel-telegram", { chatId: 1 }, "run-1", "hi", surfaces);
+    await deliverChatReply("org-1", "telegram", { chatId: 1 }, "run-1", "hi", surfaces);
     const ev = deliveredEvent();
     expect(ev.kind).toBe("converse");
     expect(ev.text).toBe("hi");

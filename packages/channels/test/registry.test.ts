@@ -32,16 +32,16 @@ describe("ChannelRegistry routing", () => {
     const providers = build().getChannelProviders();
     expect(providers).toHaveLength(3);
     expect(providers.find((p) => p.pluginName === "web")?.builtIn).toBe(true);
-    expect(providers.find((p) => p.pluginName === "@open-neko/plugin-slack")?.builtIn).toBe(false);
+    expect(providers.find((p) => p.pluginName === "slack")?.builtIn).toBe(false);
   });
 
   it("fans one inform out to web (implicit) + every bound channel", async () => {
     const registry = build();
-    registry.bind({ audience: "coo", channelPlugin: "@open-neko/plugin-slack", recipient: { kind: "slack", channel: "#exec" } });
+    registry.bind({ audience: "coo", channelPlugin: "slack", recipient: { kind: "slack", channel: "#exec" } });
 
     const report = await registry.deliver("coo", [inform]);
     const reached = report.deliveries.map((d) => d.channelPlugin).sort();
-    expect(reached).toEqual(["@open-neko/plugin-slack", "web"]);
+    expect(reached).toEqual(["slack", "web"]);
     expect(report.deliveries.every((d) => d.result.delivered)).toBe(true);
   });
 
@@ -54,12 +54,12 @@ describe("ChannelRegistry routing", () => {
     const registry = build();
     registry.bind({
       audience: "ops",
-      channelPlugin: "@open-neko/channel-voice",
+      channelPlugin: "voice",
       recipient: { kind: "voice", to: "+15551111" },
       filter: (event) => event.kind === "inform",
     });
     const report = await registry.deliver("ops", [converse, inform]);
-    const voice = report.deliveries.find((d) => d.channelPlugin === "@open-neko/channel-voice");
+    const voice = report.deliveries.find((d) => d.channelPlugin === "voice");
     const native = voice?.native as VoiceProjectionResult;
     expect(native.ssml).toContain("Q3 revenue landed");
     expect(native.ssml).not.toContain("On it.");
