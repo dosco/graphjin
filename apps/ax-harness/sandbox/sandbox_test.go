@@ -276,3 +276,53 @@ func TestSandboxPassesOnlyRunPathsInsideTheRunsFolder(t *testing.T) {
 		}
 	}
 }
+
+// TestSandboxReopensTheRunsFolder: Docker puts the runs folder back to its
+// image mode (closed to others) whenever a container starts on the empty
+// volume. A run's command must still start after that.
+func TestSandboxReopensTheRunsFolder(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("switching run users needs root")
+	}
+	const shared = 4243
+	root := t.TempDir()
+	_ = os.Chmod(root, 0o755)
+	_ = os.Chmod(filepath.Dir(root), 0o755)
+	workspaces := filepath.Join(root, "runs")
+	dir := filepath.Join(workspaces, "owner.boot.cccc", "workspace")
+	if err := os.MkdirAll(dir, 0o770); err != nil {
+		t.Fatal(err)
+	}
+	for p := dir; p != root; p = filepath.Dir(p) {
+		_ = os.Chown(p, 0, shared)
+		_ = os.Chmod(p, 0o2770)
+	}
+	server := &Server{Workspaces: workspaces, Homes: filepath.Join(root, "homes"), BaseUID: 23200, Users: 2, GID: shared, SwitchUsers: true, PATH: "/usr/bin:/bin"}
+	socket := filepath.Join(root, "sandbox.sock")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- server.ListenAndServe(ctx, socket) }()
+	t.Cleanup(func() { cancel(); <-done })
+	for i := 0; i < 100; i++ {
+		if _, err := os.Stat(socket); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// Another container started after the sandbox and reset the folder.
+	_ = os.Chmod(workspaces, 0o2770)
+
+	res, err := NewClient(socket, dir).Exec(context.Background(), "pwd", "", nil, 10, 10_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(res.Output, "POSIX ACL") {
+		t.Skip("this filesystem has no POSIX ACLs")
+	}
+	if res.ExitCode != 0 || strings.TrimSpace(res.Output) != dir {
+		t.Fatalf("the run's command did not start in its workspace: %+v", res)
+	}
+	if info, _ := os.Stat(workspaces); info.Mode().Perm()&0o001 == 0 {
+		t.Fatalf("runs folder mode = %v, want others' execute bit", info.Mode())
+	}
+}

@@ -134,11 +134,7 @@ func (s *Server) ListenAndServe(ctx context.Context, path string) error {
 // Serve serves on listener until ctx ends.
 func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 	if s.SwitchUsers {
-		// Run users are not in the shared group, so they cross the runs
-		// folder as others: they may pass through it but not list it.
-		if info, err := os.Stat(s.Workspaces); err == nil {
-			_ = os.Chmod(s.Workspaces, info.Mode().Perm()|0o001|os.ModeSetgid&info.Mode())
-		}
+		_ = s.openRunsFolder()
 	}
 	httpServer := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
@@ -298,6 +294,22 @@ func pathWithin(root, path string) bool {
 	return err == nil && (rel == "." || filepath.IsLocal(rel))
 }
 
+// openRunsFolder lets run users pass through the runs folder. They are not in
+// the shared group, so they cross it as others: they may pass through it but
+// not list it. Docker resets the folder's mode whenever a container starts on
+// the empty volume, copying it from that container's image, so the sandbox
+// checks before every command rather than once.
+func (s *Server) openRunsFolder() error {
+	info, err := os.Stat(s.Workspaces)
+	if err != nil {
+		return err
+	}
+	if info.Mode().Perm()&0o001 != 0 {
+		return nil
+	}
+	return os.Chmod(s.Workspaces, info.Mode().Perm()|0o001|os.ModeSetgid&info.Mode())
+}
+
 // grantStage gives run's group the staged folder that holds workspace, once:
 // the folder directly under the workspaces root.
 func (s *Server) grantStage(run string, gid int, workspace string) error {
@@ -310,6 +322,9 @@ func (s *Server) grantStage(run string, gid int, workspace string) error {
 		return errors.New("the workspace must be inside a staged run folder")
 	}
 	stage := filepath.Join(root, strings.SplitN(rel, string(filepath.Separator), 2)[0])
+	if err := s.openRunsFolder(); err != nil {
+		return fmt.Errorf("runs folder unavailable: %w", err)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.stages[run] == stage {

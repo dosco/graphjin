@@ -339,8 +339,8 @@ RUN groupadd --system --gid 1001 neko \
     && useradd --system --create-home --uid 1001 --gid neko neko
 # Shared agent-run folders. Fresh named volumes mounted here take this
 # ownership: runs (setgid, group neko) are shared by the runner, serve and the
-# sandbox's run users; /run/openneko holds serve's and the sandbox's sockets.
-RUN install -d -o 1001 -g 1001 -m 2770 /var/lib/openneko/agent-runs \
+# sandbox's run users, who may pass through it (o+x) but not list it; /run/openneko holds serve's and the sandbox's sockets.
+RUN install -d -o 1001 -g 1001 -m 2771 /var/lib/openneko/agent-runs \
     && install -d -o root -g root -m 0711 /var/lib/openneko/sandbox-homes \
     && install -d -o 1001 -g 1001 -m 0770 /run/openneko
 RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-tmp \
@@ -411,8 +411,8 @@ RUN groupadd --system --gid 1001 neko \
     && useradd --system --create-home --uid 1001 --gid neko neko
 # Shared agent-run folders. Fresh named volumes mounted here take this
 # ownership: runs (setgid, group neko) are shared by the runner, serve and the
-# sandbox's run users; /run/openneko holds serve's and the sandbox's sockets.
-RUN install -d -o 1001 -g 1001 -m 2770 /var/lib/openneko/agent-runs \
+# sandbox's run users, who may pass through it (o+x) but not list it; /run/openneko holds serve's and the sandbox's sockets.
+RUN install -d -o 1001 -g 1001 -m 2771 /var/lib/openneko/agent-runs \
     && install -d -o root -g root -m 0711 /var/lib/openneko/sandbox-homes \
     && install -d -o 1001 -g 1001 -m 0770 /run/openneko
 # /cache is mounted by the demo-mode adventureworks-init step; pre-creating
@@ -466,8 +466,8 @@ RUN groupadd --system --gid 1001 neko \
     && useradd --system --create-home --uid 1001 --gid neko neko
 # Shared agent-run folders. Fresh named volumes mounted here take this
 # ownership: runs (setgid, group neko) are shared by the runner, serve and the
-# sandbox's run users; /run/openneko holds serve's and the sandbox's sockets.
-RUN install -d -o 1001 -g 1001 -m 2770 /var/lib/openneko/agent-runs \
+# sandbox's run users, who may pass through it (o+x) but not list it; /run/openneko holds serve's and the sandbox's sockets.
+RUN install -d -o 1001 -g 1001 -m 2771 /var/lib/openneko/agent-runs \
     && install -d -o root -g root -m 0711 /var/lib/openneko/sandbox-homes \
     && install -d -o 1001 -g 1001 -m 0770 /run/openneko
 # serve runs as neko by default. Compose runs the sandbox as root (user 0:0)
