@@ -327,7 +327,14 @@ func ParseArgValue(argVal string, json bool) (*Node, error) {
 		items: l.items,
 		json:  json,
 	}
-	return p.parseValue()
+	node, err := p.parseValue()
+	if err != nil {
+		return nil, err
+	}
+	if !p.peek(itemEOF) {
+		return nil, errors.New("unexpected input after argument value")
+	}
+	return node, nil
 }
 
 func (p *Parser) parseFields(fields []Field) ([]Field, error) {
@@ -650,7 +657,10 @@ func (p *Parser) parseList() (*Node, error) {
 
 	var ty ParserType
 	for {
-		if p.peek(itemEOF, itemListClose) {
+		if p.peek(itemEOF) {
+			return nil, errors.New("end reached before list was closed")
+		}
+		if p.peek(itemListClose) {
 			p.ignore()
 			break
 		}
@@ -690,7 +700,10 @@ func (p *Parser) parseObj() (*Node, error) {
 	parent.CMap = make(map[string]*Node)
 
 	for {
-		if p.peek(itemEOF, itemObjClose) {
+		if p.peek(itemEOF) {
+			return nil, errors.New("end reached before object was closed")
+		}
+		if p.peek(itemObjClose) {
 			p.ignore()
 			break
 		}

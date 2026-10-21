@@ -346,11 +346,6 @@ func lexName(l *lexer) StateFn {
 	for {
 		r := l.next()
 
-		if r == eof {
-			l.emit(itemEOF)
-			return nil
-		}
-
 		if !isAlphaNumeric(r) {
 			l.backup()
 			val := l.current()
