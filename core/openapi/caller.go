@@ -197,7 +197,11 @@ func (c *Caller) doOnce(ctx context.Context, p CallParams) (CallResult, error) {
 		}
 		req.Header.Set(name, val)
 	}
-	req.Header.Set("Accept", "application/json")
+	accept := "application/json"
+	if len(c.op.ResponseMediaTypes) != 0 {
+		accept = strings.Join(c.op.ResponseMediaTypes, ", ")
+	}
+	req.Header.Set("Accept", accept)
 	if len(p.BodyJSON) != 0 {
 		req.Header.Set("Content-Type", c.op.RequestMediaType)
 	}
