@@ -38,6 +38,10 @@ export OPENNEKO_GRAPHJIN_CONFIG="$OPENNEKO_DEV_STATE/graphjin/agentic.yml"
 export OPENNEKO_RECORDS_GRAPHJIN_URL="http://127.0.0.1:${OPENNEKO_RECORDS_GRAPHJIN_PORT:-8090}"
 export OPENNEKO_RECORDS_WATCH_GRAPHJIN_URL="http://127.0.0.1:${OPENNEKO_RECORDS_WATCH_GRAPHJIN_PORT:-8091}"
 export OPENNEKO_RECORDS_GRAPHJIN_CONFIG_DIR="$OPENNEKO_DEV_STATE/records-graphjin"
+# The host worker writes records configs owner-only, so the records GraphJin
+# containers run as the host user to read them (compose.dev.yml).
+export OPENNEKO_DEV_UID="${OPENNEKO_DEV_UID:-$(id -u)}"
+export OPENNEKO_DEV_GID="${OPENNEKO_DEV_GID:-$(id -g)}"
 # Records GraphJin runs in Docker and reaches the records database by name.
 export OPENNEKO_RECORDS_GRAPHJIN_DB_HOST="${OPENNEKO_RECORDS_GRAPHJIN_DB_HOST:-records-db}"
 export OPENNEKO_RECORDS_GRAPHJIN_DB_PORT="${OPENNEKO_RECORDS_GRAPHJIN_DB_PORT:-5432}"

@@ -18,7 +18,9 @@ for arg do
   set -- "$@" "$arg"
 done
 
-set -- --entrypoint graphjin records-graphjin "$@"
+# Run as the host user: the worker writes the configs it validates owner-only.
+set -- --user "${OPENNEKO_DEV_UID:-$(id -u)}:${OPENNEKO_DEV_GID:-$(id -g)}" \
+  --entrypoint graphjin records-graphjin "$@"
 if [ -n "$work" ]; then
   set -- -v "$work:/work" "$@"
 fi

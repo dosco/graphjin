@@ -23,17 +23,30 @@ services:
     ports:
       - "127.0.0.1:${OPENNEKO_LIBRARIAN_PORT:-5001}:5001"
 
+  # The host worker writes the records configs owner-only, so the directory
+  # and both records GraphJin instances belong to the host user
+  # (scripts/dev-env.sh), not the image's worker user.
   records-graphjin-config-init:
+    entrypoint: !override
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        mkdir -p /config/watch
+        chown -R ${OPENNEKO_DEV_UID:-1001}:${OPENNEKO_DEV_GID:-1001} /config
+        chmod 0700 /config /config/watch
     volumes: !override
       - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/records-graphjin:/config
 
   records-graphjin:
+    user: "${OPENNEKO_DEV_UID:-1001}:${OPENNEKO_DEV_GID:-999}"
     ports:
       - "127.0.0.1:${OPENNEKO_RECORDS_GRAPHJIN_PORT:-8090}:8090"
     volumes: !override
       - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/records-graphjin:/config:ro
 
   records-watch-graphjin:
+    user: "${OPENNEKO_DEV_UID:-1001}:${OPENNEKO_DEV_GID:-999}"
     ports:
       - "127.0.0.1:${OPENNEKO_RECORDS_WATCH_GRAPHJIN_PORT:-8091}:8090"
     volumes: !override
