@@ -418,12 +418,32 @@ func lexNumber(l *lexer) StateFn {
 func (l *lexer) scanNumber() bool {
 	// Optional leading sign.
 	l.accept(signsToken)
+	integerStart := l.pos
 	l.acceptRun(digitToken)
+	integerEnd := l.pos
+	hasInteger := integerEnd > integerStart
+	exponent := false
 	if _, ok := l.accept(dotToken); ok {
 		l.acceptRun(digitToken)
 	}
-	// Is it imaginary?
-	l.accept([]byte("i"))
+	if _, ok := l.accept([]byte("eE")); ok {
+		exponent = true
+		if !hasInteger || l.input[l.start] == '+' ||
+			(integerEnd-integerStart > 1 && l.input[integerStart] == '0') ||
+			l.input[l.pos-2] == '.' {
+			return false
+		}
+		l.accept(signsToken)
+		start := l.pos
+		l.acceptRun(digitToken)
+		if start == l.pos {
+			return false
+		}
+	}
+	// Preserve the existing imaginary-number extension for non-exponent values.
+	if !exponent {
+		l.accept([]byte("i"))
+	}
 	// Next thing mustn't be alphanumeric.
 	if isAlphaNumeric(l.peek()) {
 		l.next()
