@@ -257,6 +257,7 @@ func equalsAndNotEquals(args []string, equals bool, field bool) (fn qcode.ValidF
 		val = []byte(args[0])
 	}
 	fn = func(vars qcode.Vars, c qcode.Constraint) bool {
+		expected := val
 		v1, ok := vars[c.VarName]
 		if !ok {
 			return false
@@ -266,12 +267,12 @@ func equalsAndNotEquals(args []string, equals bool, field bool) (fn qcode.ValidF
 			if !ok {
 				return false
 			}
-			val = v2
+			expected = v2
 		}
 		if equals {
-			return bytes.Equal(v1, val)
+			return bytes.Equal(v1, expected)
 		} else {
-			return !bytes.Equal(v1, val)
+			return !bytes.Equal(v1, expected)
 		}
 	}
 	return
@@ -383,6 +384,7 @@ func greaterAndLessThanAndOrEquals(args []string, greater, equals, field bool) (
 		}
 	}
 	fn = func(vars qcode.Vars, c qcode.Constraint) bool {
+		expected := val
 		v1, ok := vars[c.VarName]
 		if !ok {
 			return false
@@ -392,10 +394,11 @@ func greaterAndLessThanAndOrEquals(args []string, greater, equals, field bool) (
 			if !ok {
 				return false
 			}
-			val, err = strconv.Atoi(string(v2))
-			if err != nil {
+			parsed, parseErr := strconv.Atoi(string(v2))
+			if parseErr != nil {
 				return false
 			}
+			expected = parsed
 		}
 		n, err := strconv.Atoi(string(v1))
 		if err != nil {
@@ -403,13 +406,13 @@ func greaterAndLessThanAndOrEquals(args []string, greater, equals, field bool) (
 		}
 		switch {
 		case greater && !equals:
-			return n > val
+			return n > expected
 		case greater && equals:
-			return n >= val
+			return n >= expected
 		case !greater && !equals:
-			return n < val
+			return n < expected
 		case !greater && equals:
-			return n <= val
+			return n <= expected
 		default:
 			return false
 		}
