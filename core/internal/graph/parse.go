@@ -113,12 +113,14 @@ func (n *Node) Free() {
 }
 
 type Parser struct {
-	frags map[string]Fragment
-	input []byte // the string being scanned
-	pos   int
-	items []item
-	json  bool
-	err   error
+	frags     map[string]Fragment
+	fragPos   map[string]int
+	resolving map[string]bool
+	input     []byte // the string being scanned
+	pos       int
+	items     []item
+	json      bool
+	err       error
 }
 
 func Parse(gql []byte) (op Operation, err error) {
@@ -142,6 +144,8 @@ func Parse(gql []byte) (op Operation, err error) {
 
 	qs := -1
 	qf := false
+	inOperation := false
+	depth, argsDepth := 0, 0
 
 	for {
 		if p.peek(itemEOF) {
@@ -149,23 +153,44 @@ func Parse(gql []byte) (op Operation, err error) {
 			break
 		}
 
-		if p.peek(itemName) && p.peekVal(fragmentToken) {
+		if !inOperation && p.peek(itemName) && p.peekVal(fragmentToken) {
 			p.ignore()
-			if _, err = p.parseFragment(); err != nil {
+			if err = p.indexFragment(); err != nil {
 				return
 			}
 
 		} else {
-			if !qf &&
-				((p.peek(itemName) && p.peekVal(queryToken, mutationToken, fragmentToken, subscriptionToken)) ||
+			if !inOperation &&
+				((p.peek(itemName) && p.peekVal(queryToken, mutationToken, subscriptionToken)) ||
 					p.peek(itemObjOpen)) {
-				qs = p.pos
-				qf = true
+				inOperation = true
+				if !qf {
+					qs = p.pos
+					qf = true
+				}
 			}
-			p.ignore()
+			token := p.next()
+			switch token._type {
+			case itemArgsOpen:
+				argsDepth++
+			case itemArgsClose:
+				argsDepth--
+			case itemObjOpen:
+				depth++
+			case itemObjClose:
+				depth--
+				if depth == 0 && argsDepth == 0 {
+					inOperation = false
+				}
+			}
 		}
 	}
 
+	for name := range p.fragPos {
+		if _, err = p.resolveFragment(name); err != nil {
+			return
+		}
+	}
 	p.reset(qs)
 	if op, err = p.parseOp(); err != nil {
 		return
@@ -182,6 +207,67 @@ func Parse(gql []byte) (op Operation, err error) {
 		}
 	}
 	return
+}
+
+// indexFragment records a definition without resolving its spreads. Definitions
+// may refer to fragments appearing later in the document.
+func (p *Parser) indexFragment() error {
+	pos := p.pos
+	if !p.peek(itemName, itemBoolVal) {
+		return errors.New("fragment: missing name")
+	}
+	name := p.val(p.next())
+	if p.fragPos == nil {
+		p.fragPos = make(map[string]int)
+	}
+	if _, exists := p.fragPos[name]; exists {
+		return fmt.Errorf("fragment defined more than once: %s", name)
+	}
+	p.fragPos[name] = pos
+	for !p.peek(itemObjOpen) {
+		if p.peek(itemEOF) {
+			return errors.New("fragment: missing selection set")
+		}
+		p.ignore()
+	}
+	depth := 0
+	for {
+		token := p.next()
+		switch token._type {
+		case itemObjOpen:
+			depth++
+		case itemObjClose:
+			depth--
+			if depth == 0 {
+				return nil
+			}
+		case itemEOF:
+			return errors.New("fragment: end reached before selection set was closed")
+		}
+	}
+}
+
+func (p *Parser) resolveFragment(name string) (Fragment, error) {
+	if frag, ok := p.frags[name]; ok {
+		return frag, nil
+	}
+	pos, ok := p.fragPos[name]
+	if !ok {
+		return Fragment{}, fmt.Errorf("fragment not defined: %s", name)
+	}
+	if p.resolving[name] {
+		return Fragment{}, fmt.Errorf("cyclic fragment reference: %s", name)
+	}
+	if p.resolving == nil {
+		p.resolving = make(map[string]bool)
+	}
+	p.resolving[name] = true
+	saved := p.pos
+	p.reset(pos)
+	frag, err := p.parseFragment()
+	p.reset(saved)
+	delete(p.resolving, name)
+	return frag, err
 }
 
 func (p *Parser) parseFragment() (frag Fragment, err error) {
@@ -416,7 +502,6 @@ func (p *Parser) parseNormalFields(st *Stack, fields []Field) ([]Field, error) {
 func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error) {
 	var err error
 	var fr Fragment
-	var ok bool
 
 	pid := st.Peek()
 
@@ -445,14 +530,17 @@ func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error)
 
 		name := p.val(p.next())
 
-		fr, ok = p.frags[name]
-		if !ok {
-			return nil, fmt.Errorf("fragment not defined: %s", name)
+		fr, err = p.resolveFragment(name)
+		if err != nil {
+			return nil, err
 		}
 
 		ff := fr.Fields
 
 		n := int32(len(fields))
+		if len(fields)+len(ff) > maxFields {
+			return nil, fmt.Errorf("too many fields (max %d)", maxFields)
+		}
 		fields = append(fields, ff...)
 
 		for i := 0; i < len(ff); i++ {
