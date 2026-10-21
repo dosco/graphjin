@@ -243,9 +243,22 @@ func (al *List) saveItem(item Item) (err error) {
 		return
 	}
 
+	jf := filepath.Join(QUERY_PATH, (queryFile + ".json"))
+	if len(item.ActionJSON) == 0 {
+		// A replacement without variable metadata must not reload the old
+		// sidecar. FS has no delete operation, so clear it without creating
+		// a sidecar for queries that never had one.
+		exists, err := al.fs.Exists(jf)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return al.fs.Put(jf, []byte("{}"))
+		}
+		return nil
+	}
 	if len(item.ActionJSON) != 0 {
 		var vars []byte
-		jf := filepath.Join(QUERY_PATH, (queryFile + ".json"))
 		vars, err = json.MarshalIndent(item.ActionJSON, "", "  ")
 		if err != nil {
 			return
