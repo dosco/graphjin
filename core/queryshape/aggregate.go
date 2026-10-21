@@ -62,7 +62,7 @@ func Aggregates(query string) ([]Aggregate, error) {
 			}
 		}
 		if len(f.Children) == 0 {
-			fn, col, ok := strings.Cut(f.Name, "_")
+			fn, col, ok := aggregatePrefix(f.Name)
 			if ok && aggregateOp(fn) && col != "" && len(f.Args) == 0 {
 				out = append(out, Aggregate{Table: table, Operation: fn, Column: col})
 			} else if aggregateOp(f.Name) {
@@ -89,8 +89,20 @@ func Aggregates(query string) ([]Aggregate, error) {
 
 func aggregateOp(name string) bool {
 	switch name {
-	case "count", "sum", "avg", "min", "max", "stddev", "variance":
+	case "count", "sum", "avg", "min", "max", "stddev", "variance",
+		"stddev_pop", "stddev_samp", "var_pop", "var_samp":
 		return true
 	}
 	return false
+}
+
+// Match the longest registered operation before treating the remainder as a
+// column name. Both aggregate names and column names can contain underscores.
+func aggregatePrefix(name string) (string, string, bool) {
+	for end := strings.LastIndexByte(name, '_'); end >= 0; end = strings.LastIndexByte(name[:end], '_') {
+		if aggregateOp(name[:end]) && end+1 < len(name) {
+			return name[:end], name[end+1:], true
+		}
+	}
+	return "", "", false
 }
