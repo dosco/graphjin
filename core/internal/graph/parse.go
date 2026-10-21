@@ -213,7 +213,7 @@ func Parse(gql []byte) (op Operation, err error) {
 // may refer to fragments appearing later in the document.
 func (p *Parser) indexFragment() error {
 	pos := p.pos
-	if !p.peek(itemName) {
+	if !p.peek(itemName, itemBoolVal) {
 		return errors.New("fragment: missing name")
 	}
 	name := p.val(p.next())

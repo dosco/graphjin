@@ -44,3 +44,19 @@ func TestExpandedFragmentsRespectFieldLimit(t *testing.T) {
 		t.Fatal("accepted fragment expansion beyond field limit")
 	}
 }
+
+func TestFragmentIndexAcceptsContextualBooleanNames(t *testing.T) {
+	for _, name := range []string{"true", "false"} {
+		l, err := lex([]byte(name + " on products { id }"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := Parser{input: l.input, pos: -1, items: l.items}
+		if err := p.indexFragment(); err != nil {
+			t.Fatalf("index %s: %v", name, err)
+		}
+		if _, ok := p.fragPos[name]; !ok {
+			t.Fatalf("fragment %s not indexed", name)
+		}
+	}
+}
