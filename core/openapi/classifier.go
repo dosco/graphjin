@@ -576,6 +576,9 @@ func deriveResultPath(schema *openapi3.SchemaRef) ([]string, bool) {
 				continue
 			}
 			isArr := isType(prop.Value, "array")
+			if !isArr && !isType(prop.Value, "object") {
+				continue
+			}
 			return []string{name}, isArr
 		}
 	}
