@@ -588,6 +588,9 @@ func isType(s *openapi3.Schema, t string) bool {
 	if s == nil {
 		return false
 	}
+	if t == "null" && s.Nullable {
+		return true
+	}
 	for _, x := range s.Type.Slice() {
 		if x == t {
 			return true

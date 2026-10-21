@@ -123,3 +123,31 @@ func TestComposedResponseSchemaDoesNotMutateSharedTypes(t *testing.T) {
 		t.Fatalf("recursive composition lost direct fields: %+v", cols)
 	}
 }
+
+func TestComposedResponseShapeIsIdempotentAndIntersectsNull(t *testing.T) {
+	nullableInteger := openapi3.NewIntegerSchema()
+	nullableInteger.Nullable = true
+	nullableNumber := openapi3.NewFloat64Schema()
+	nullableNumber.Nullable = true
+	requiredNumber := openapi3.NewFloat64Schema()
+	for _, tc := range []struct {
+		name     string
+		branch   *openapi3.Schema
+		nullable bool
+	}{
+		{"nullable intersection", nullableNumber, true},
+		{"non-null intersection", requiredNumber, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			composed := &openapi3.Schema{AllOf: openapi3.SchemaRefs{{Value: nullableInteger}, {Value: tc.branch}}}
+			for range 2 {
+				if isType(composed, "null") != tc.nullable || !isType(composed, "integer") || isType(composed, "number") {
+					t.Fatalf("unexpected effective types for %s", tc.name)
+				}
+			}
+			if len(composed.AllOf) != 2 || !nullableInteger.Nullable {
+				t.Fatal("shared component was changed")
+			}
+		})
+	}
+}

@@ -146,6 +146,7 @@ func responseSchemaShape(schema *openapi3.Schema, seen map[*openapi3.Schema]bool
 	seen[schema] = true
 	defer delete(seen, schema)
 	out := *schema
+	out.AllOf = nil
 	out.Nullable = schema.Type == nil || schema.PermitsNull()
 	out.Properties = make(openapi3.Schemas, len(schema.Properties))
 	for name, property := range schema.Properties {
