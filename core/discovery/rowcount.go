@@ -3,7 +3,6 @@ package discovery
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -152,23 +151,15 @@ func bigqueryRowCount(ctx context.Context, db *sql.DB, schema *core.TableSchema)
 }
 
 func sqliteRowCount(ctx context.Context, db *sql.DB, schema *core.TableSchema) (int64, bool) {
-	var stat sql.NullString
+	var n sql.NullInt64
 	err := db.QueryRowContext(ctx,
-		`SELECT stat FROM sqlite_stat1 WHERE tbl = ? LIMIT 1`,
+		`SELECT MAX(CAST(substr(stat,1,instr(stat||' ',' ')-1) AS INTEGER)) FROM sqlite_stat1 WHERE tbl = ?`,
 		schema.Name,
-	).Scan(&stat)
-	if err != nil || !stat.Valid || stat.String == "" {
+	).Scan(&n)
+	if err != nil || !n.Valid || n.Int64 <= 0 {
 		return 0, false
 	}
-	fields := strings.Fields(stat.String)
-	if len(fields) == 0 {
-		return 0, false
-	}
-	var n int64
-	if _, err := fmt.Sscanf(fields[0], "%d", &n); err != nil || n <= 0 {
-		return 0, false
-	}
-	return n, true
+	return n.Int64, true
 }
 
 func oracleRowCount(ctx context.Context, db *sql.DB, schema *core.TableSchema) (int64, bool) {
@@ -315,13 +306,16 @@ WHERE TABLE_TYPE = 'BASE TABLE'
 }
 
 func sqliteNamespaceRowCounts(ctx context.Context, db *sql.DB) (map[string]int64, error) {
-	// LEFT JOIN: tables without sqlite_stat1 entries get NULL → skipped.
+	// ANALYZE records one estimate per index. Use the largest estimate per
+	// table so multiple indexes do not duplicate rows and partial indexes do
+	// not replace a full-table estimate. Missing stats remain NULL → skipped.
 	const q = `
 SELECT m.name,
-       CAST(substr(s.stat,1,instr(s.stat||' ',' ')-1) AS INTEGER)
+       MAX(CAST(substr(s.stat,1,instr(s.stat||' ',' ')-1) AS INTEGER))
 FROM sqlite_master m
 LEFT JOIN sqlite_stat1 s ON s.tbl = m.name
-WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%'`
+WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%'
+GROUP BY m.name`
 	return scanRowCountPairs(ctx, db, q)
 }
 

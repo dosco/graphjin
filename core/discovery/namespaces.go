@@ -194,7 +194,9 @@ func sqliteNamespaceRollup(ctx context.Context, db *sql.DB) ([]NamespaceRollup, 
 	const q = `
 SELECT 'main' AS db, '' AS sch,
        (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%') AS table_count,
-       COALESCE((SELECT SUM(CAST(substr(stat,1,instr(stat||' ',' ')-1) AS INTEGER)) FROM sqlite_stat1), 0) AS approx_row_total`
+       COALESCE((SELECT SUM(row_count)
+                 FROM (SELECT MAX(CAST(substr(stat,1,instr(stat||' ',' ')-1) AS INTEGER)) AS row_count
+                       FROM sqlite_stat1 GROUP BY tbl)), 0) AS approx_row_total`
 	return scanNamespaceRollup(ctx, db, q, true)
 }
 
