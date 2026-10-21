@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -190,5 +192,46 @@ func TestNewLocal_RejectsMissingRoot(t *testing.T) {
 	}
 	if _, err := NewLocal(LocalConfig{Root: filepath.Join(os.TempDir(), "definitely-does-not-exist-12345")}); err == nil {
 		t.Errorf("expected error for missing root")
+	}
+}
+
+// Prefixes address object keys, including partial path components.
+func TestLocal_ListPartialKeyPrefix(t *testing.T) {
+	b, root := newLocal(t)
+	keys := []string{"reports/2026-01.csv", "reports/2026-02.csv", "reports/2025-12.csv", "reports-extra/2026.csv"}
+	for _, key := range keys {
+		writeFile(t, root, key, []byte("x"))
+	}
+	for _, prefix := range []string{"reports/2026-", "reports", "reports/", "reports/2026-01.csv"} {
+		t.Run(prefix, func(t *testing.T) {
+			var want []string
+			for _, key := range keys {
+				if strings.HasPrefix(key, prefix) {
+					want = append(want, key)
+				}
+			}
+			sort.Strings(want)
+			var got []string
+			after := ""
+			for {
+				entries, next, err := b.List(context.Background(), ListOpts{Prefix: prefix, Limit: 1, After: after})
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, entry := range entries {
+					got = append(got, entry.Key)
+				}
+				if next == "" {
+					break
+				}
+				if next == after {
+					t.Fatal("pagination did not advance")
+				}
+				after = next
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("prefix %q: got %v, want %v", prefix, got, want)
+			}
+		})
 	}
 }

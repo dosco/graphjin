@@ -94,7 +94,14 @@ func (l *Local) List(ctx context.Context, opts ListOpts) ([]Entry, string, error
 	prefix := strings.TrimPrefix(filepath.ToSlash(opts.Prefix), "/")
 	walkRoot := l.root
 	if prefix != "" {
-		walkRoot = filepath.Join(l.root, filepath.FromSlash(prefix))
+		// An object-key prefix can end within a path component. Walk its
+		// containing directory and filter keys below; a trailing slash
+		// already names the directory we need to walk.
+		walkPrefix := prefix
+		if !strings.HasSuffix(prefix, "/") {
+			walkPrefix = filepath.Dir(filepath.FromSlash(prefix))
+		}
+		walkRoot = filepath.Join(l.root, filepath.FromSlash(walkPrefix))
 	}
 
 	// We collect everything under walkRoot, sort lexicographically so
@@ -117,6 +124,9 @@ func (l *Local) List(ctx context.Context, opts ListOpts) ([]Entry, string, error
 		key, err := l.relKey(path)
 		if err != nil {
 			return err
+		}
+		if !strings.HasPrefix(key, prefix) {
+			return nil
 		}
 		all = append(all, Entry{
 			Key:         key,
