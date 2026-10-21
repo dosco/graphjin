@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func compileConstraint(t *testing.T, dialect, directive string) *qcode.QCode {
+func compileStringConstraint(t *testing.T, dialect, directive string) *qcode.QCode {
 	t.Helper()
 	cols := []sdata.DBColumn{{Schema: "public", Table: "users", Name: "id", Type: "bigint", PrimaryKey: true}}
 	schema, err := sdata.NewDBSchema(sdata.NewDBInfo(dialect, 160000, "public", "db", cols, nil, nil), nil)
@@ -38,7 +38,7 @@ func TestConstraintStringLiteralsMatchJSONVariables(t *testing.T) {
 					if validator == "oneOf" {
 						directive = validator + ": [" + string(encoded) + "]"
 					}
-					compiled := compileConstraint(t, dialect, directive)
+					compiled := compileStringConstraint(t, dialect, directive)
 					if errs := compiled.ProcessConstraints(qcode.Vars{"target": encoded}); len(errs) != 0 {
 						t.Fatalf("equal JSON string rejected: %v", errs)
 					}
