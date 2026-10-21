@@ -2,6 +2,7 @@ package qcode
 
 import (
 	"bytes"
+	"encoding/json"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/util"
@@ -43,7 +44,16 @@ func GetQTypeByName(t string) QType {
 func graphNodeToJSON(node *graph.Node, w *bytes.Buffer) {
 	switch node.Type {
 	case graph.NodeStr:
-		w.WriteString(`"` + node.Val + `"`)
+		value, _ := json.Marshal(node.Val)
+		w.Write(value)
+
+	case graph.NodeLabel:
+		if node.Val == "null" {
+			w.WriteString("null")
+		} else {
+			value, _ := json.Marshal(node.Val)
+			w.Write(value)
+		}
 
 	case graph.NodeNum, graph.NodeBool:
 		w.WriteString(node.Val)
