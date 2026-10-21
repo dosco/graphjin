@@ -132,6 +132,8 @@ func classifyOne(
 		return d
 	}
 
+	d.ResponseMediaTypes = []string{mediaType}
+
 	// Parameters live in two places — on the path item (shared across
 	// methods) and on the operation itself. Merge and bucket by location.
 	pathParams, queryParams, headerParams := collectParams(pathItem, op)
@@ -251,6 +253,18 @@ func classifyMutation(d OpDescriptor, op *openapi3.Operation, pathItem *openapi3
 		return d
 	}
 	d.SuccessStatuses = statuses
+	seenMedia := make(map[string]bool)
+	for _, status := range statuses {
+		if status == 204 {
+			continue
+		}
+		response := op.Responses.Value(fmt.Sprint(status))
+		_, mediaType := pickMutationJSONContent(response.Value)
+		if !seenMedia[mediaType] {
+			d.ResponseMediaTypes = append(d.ResponseMediaTypes, mediaType)
+			seenMedia[mediaType] = true
+		}
+	}
 	d.ResponseSchema = responseSchema
 	d.AllowedRoles = canonicalRoles(override.AllowedRoles)
 	d.RetryOnAuthFailure = override.RetryOnAuthFailure
