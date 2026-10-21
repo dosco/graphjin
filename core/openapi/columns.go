@@ -21,7 +21,7 @@ func SynthesiseColumns(schema, table string, ref *openapi3.SchemaRef, resultPath
 		return nil
 	}
 	if isType(s, "array") && s.Items != nil && s.Items.Value != nil {
-		s = s.Items.Value
+		s = responseSchemaShape(s.Items.Value, nil)
 	}
 	if !isType(s, "object") || len(s.Properties) == 0 {
 		return nil
@@ -57,10 +57,14 @@ func SynthesiseMutationColumns(schema, table string, ref *openapi3.SchemaRef) []
 	for _, col := range cols {
 		reserved[strings.ToLower(col.Name)] = struct{}{}
 	}
-	if ref != nil && ref.Value != nil && isType(ref.Value, "object") {
-		extra := make([]sdata.DBColumn, 0, len(ref.Value.Properties))
-		required := requiredSet(ref.Value)
-		for name, prop := range ref.Value.Properties {
+	var response *openapi3.Schema
+	if ref != nil {
+		response = responseSchemaShape(ref.Value, nil)
+	}
+	if isType(response, "object") {
+		extra := make([]sdata.DBColumn, 0, len(response.Properties))
+		required := requiredSet(response)
+		for name, prop := range response.Properties {
 			if _, exists := reserved[strings.ToLower(name)]; exists {
 				continue
 			}
@@ -111,6 +115,7 @@ func hasDefault(op OpDescriptor, name string) bool {
 func walkResultPath(s *openapi3.Schema, path []string) *openapi3.Schema {
 	cur := s
 	for _, k := range path {
+		cur = responseSchemaShape(cur, nil)
 		if cur == nil || cur.Properties == nil {
 			return nil
 		}
@@ -120,7 +125,70 @@ func walkResultPath(s *openapi3.Schema, path []string) *openapi3.Schema {
 		}
 		cur = ref.Value
 	}
-	return cur
+	return responseSchemaShape(cur, nil)
+}
+
+// responseSchemaShape combines the column-facing facts of allOf branches.
+// It copies maps and slices so discovery never changes the shared document.
+func responseSchemaShape(schema *openapi3.Schema, seen map[*openapi3.Schema]bool) *openapi3.Schema {
+	if schema == nil {
+		return nil
+	}
+	if len(schema.AllOf) == 0 {
+		return schema
+	}
+	if seen == nil {
+		seen = make(map[*openapi3.Schema]bool)
+	}
+	if seen[schema] {
+		return nil
+	}
+	seen[schema] = true
+	defer delete(seen, schema)
+	out := *schema
+	out.AllOf = nil
+	out.Nullable = schema.Type == nil || schema.PermitsNull()
+	out.Properties = make(openapi3.Schemas, len(schema.Properties))
+	for name, property := range schema.Properties {
+		out.Properties[name] = property
+	}
+	out.Required = append([]string(nil), schema.Required...)
+	for _, ref := range schema.AllOf {
+		if ref == nil {
+			continue
+		}
+		branch := responseSchemaShape(ref.Value, seen)
+		if branch == nil {
+			continue
+		}
+		out.Nullable = out.Nullable && (branch.Type == nil || branch.PermitsNull())
+		if out.Type == nil {
+			out.Type = branch.Type
+		} else if branch.Type != nil {
+			intersection := make(openapi3.Types, 0)
+			for _, name := range out.Type.Slice() {
+				switch {
+				case branch.Type.Includes(name), name == "integer" && branch.Type.Includes("number"):
+					intersection = append(intersection, name)
+				case name == "number" && branch.Type.Includes("integer"):
+					intersection = append(intersection, "integer")
+				}
+			}
+			out.Type = &intersection
+		}
+		if out.Items == nil {
+			out.Items = branch.Items
+		}
+		out.Required = append(out.Required, branch.Required...)
+		for name, property := range branch.Properties {
+			if prior, ok := out.Properties[name]; ok && prior != property {
+				out.Properties[name] = &openapi3.SchemaRef{Value: &openapi3.Schema{AllOf: openapi3.SchemaRefs{prior, property}}}
+			} else {
+				out.Properties[name] = property
+			}
+		}
+	}
+	return &out
 }
 
 func requiredSet(s *openapi3.Schema) map[string]bool {
@@ -135,7 +203,11 @@ func openapiSchemaToSQLType(ref *openapi3.SchemaRef) string {
 	if ref == nil || ref.Value == nil {
 		return "text"
 	}
-	for _, t := range ref.Value.Type.Slice() {
+	schema := responseSchemaShape(ref.Value, nil)
+	if schema == nil {
+		return "text"
+	}
+	for _, t := range schema.Type.Slice() {
 		return paramTypeToSQL(t)
 	}
 	return "text"
