@@ -92,7 +92,8 @@ func (co *Compiler) newConstraint(varName string, dargs []graph.Arg) (con Constr
 }
 
 func quoteStr(v string) string {
-	return `"` + v + `"`
+	encoded, _ := json.Marshal(v)
+	return string(encoded)
 }
 
 type ValidErr struct {
