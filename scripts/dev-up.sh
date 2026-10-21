@@ -31,16 +31,6 @@ compose run --rm --no-deps graphjin-config-init
 GRAPHJIN_SOURCES_CONFIG="$OPENNEKO_GRAPHJIN_CONFIG" \
   pnpm --filter @neko/worker exec tsx ../../packages/llm/src/graphjin/init-secret.mjs
 
-# Compose reuses a built image after the GraphJin pin moves. Rebuild each
-# GraphJin image that reports another version, or the worker stops at start.
-for service in neko-graphjin graphjin records-graphjin; do
-  if ! compose run --rm --no-deps -T --entrypoint graphjin "$service" version 2>/dev/null \
-    | grep -q "GraphJin $graphjin_version"; then
-    echo "Rebuilding $service for GraphJin $graphjin_version"
-    compose build "$service"
-  fi
-done
-
 compose up -d \
   neko-graphjin graphjin records-graphjin records-watch-graphjin \
   embedding librarian \
