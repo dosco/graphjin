@@ -32,7 +32,7 @@ func SynthesiseColumns(schema, table string, ref *openapi3.SchemaRef, resultPath
 		col := sdata.DBColumn{
 			Schema: schema, Table: table, Name: name,
 			Type:    openapiSchemaToSQLType(prop),
-			NotNull: required[name],
+			NotNull: required[name] && !schemaAllowsNull(prop),
 		}
 		cols = append(cols, col)
 	}
@@ -64,7 +64,7 @@ func SynthesiseMutationColumns(schema, table string, ref *openapi3.SchemaRef) []
 			if _, exists := reserved[strings.ToLower(name)]; exists {
 				continue
 			}
-			extra = append(extra, sdata.DBColumn{Schema: schema, Table: table, Name: name, Type: openapiSchemaToSQLType(prop), NotNull: required[name]})
+			extra = append(extra, sdata.DBColumn{Schema: schema, Table: table, Name: name, Type: openapiSchemaToSQLType(prop), NotNull: required[name] && !schemaAllowsNull(prop)})
 		}
 		sort.Slice(extra, func(i, j int) bool { return extra[i].Name < extra[j].Name })
 		cols = append(cols, extra...)
@@ -136,9 +136,15 @@ func openapiSchemaToSQLType(ref *openapi3.SchemaRef) string {
 		return "text"
 	}
 	for _, t := range ref.Value.Type.Slice() {
-		return paramTypeToSQL(t)
+		if t != "null" {
+			return paramTypeToSQL(t)
+		}
 	}
 	return "text"
+}
+
+func schemaAllowsNull(ref *openapi3.SchemaRef) bool {
+	return ref != nil && ref.Value != nil && (ref.Value.Nullable || isType(ref.Value, "null"))
 }
 
 func paramTypeToSQL(t string) string {
