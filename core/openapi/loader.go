@@ -193,13 +193,14 @@ func canonicaliseOpKeys(cfg SpecConfig, doc *openapi3.T) SpecConfig {
 		return cfg
 	}
 	canonical := map[string]string{}
-	for _, item := range doc.Paths.Map() {
+	for path, item := range doc.Paths.Map() {
 		if item == nil {
 			continue
 		}
-		for _, op := range item.Operations() {
-			if op != nil && op.OperationID != "" {
-				canonical[strings.ToLower(op.OperationID)] = op.OperationID
+		for method, op := range item.Operations() {
+			if op != nil {
+				id := operationID(op, method, path)
+				canonical[strings.ToLower(id)] = id
 			}
 		}
 	}
