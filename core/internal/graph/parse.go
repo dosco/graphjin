@@ -557,6 +557,14 @@ func (p *Parser) parseOpParams(op *Operation) (err error) {
 func (p *Parser) parseVarDef(op *Operation) (err error) {
 	name := p.val(p.next())
 
+	// Variable type declarations precede defaults in standard GraphQL syntax.
+	if p.peek(itemColon) {
+		p.ignore()
+		for p.peek(itemName, itemListOpen, itemListClose, itemRequired) {
+			p.ignore()
+		}
+	}
+
 	if !p.peek(itemEquals) {
 		return
 	}
