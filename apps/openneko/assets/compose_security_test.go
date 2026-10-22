@@ -189,9 +189,6 @@ func TestPackagedComposeKeepsRuntimeTrafficOnDockerNetwork(t *testing.T) {
 			t.Fatalf("%s OPENNEKO_GRAPHJIN_URL = %q, want the subscriptions GraphJin in openneko-serve", name, got)
 		}
 	}
-	if got := core.Services["openneko-serve"].Environment["OPENNEKO_SUBSCRIPTIONS_DB"]; got != "neko-db:5432/neko" {
-		t.Fatalf("openneko-serve OPENNEKO_SUBSCRIPTIONS_DB = %q, want neko-db:5432/neko", got)
-	}
 
 	migrate := core.Services["neko-migrate"]
 	if migrate.Environment["NEKO_PG_HOST"] != "neko-db" {

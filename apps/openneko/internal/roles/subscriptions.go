@@ -4,36 +4,39 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	gjserv "github.com/dosco/graphjin/serv/v3"
 )
 
-// The subscriptions GraphJin serves workflow subscriptions to the worker
-// from neko-db. `openneko serve` runs it beside the customer GraphJin when
-// OPENNEKO_SUBSCRIPTIONS_DB names the database as host:port/dbname. It
-// connects as neko_subscriptions, a role that may only read
-// workflow_output, with the password graphjin-secret-init writes to
-// subscriptions.password in the GraphJin config folder.
+// The subscriptions GraphJin serves the worker's workflow subscriptions from
+// neko-db. Core features depend on it, so `openneko serve --path` always runs
+// it beside the customer GraphJin. It connects as neko_subscriptions, a role
+// that may only read workflow_output, with the password graphjin-secret-init
+// writes to subscriptions.password in the GraphJin config folder.
 const (
-	subscriptionsDBEnv     = "OPENNEKO_SUBSCRIPTIONS_DB"
-	subscriptionsListenEnv = "OPENNEKO_SUBSCRIPTIONS_LISTEN"
-	subscriptionsPassword  = "subscriptions.password"
-	subscriptionsRole      = "neko_subscriptions"
-	subscriptionsRetry     = 5 * time.Second
+	subscriptionsListen   = "0.0.0.0:8089"
+	subscriptionsHost     = "neko-db"
+	subscriptionsPort     = 5432
+	subscriptionsDBName   = "neko"
+	subscriptionsRole     = "neko_subscriptions"
+	subscriptionsPassword = "subscriptions.password"
+	subscriptionsPoll     = 2 * time.Second
 )
 
 // subscriptionsConfig is GraphJin's config for the subscriptions service.
 // It serves no MCP, no agent and no auth: only web and the worker reach it,
-// on the stack's private network. reload_on_config_change stays off, since
-// GraphJin reloads by re-executing the process, which would end every turn
-// serve is running.
+// on the stack's private network. GraphJin's own reload_on_config_change
+// stays off, since it reloads by re-executing the process; serve swaps the
+// service in place instead.
 const subscriptionsConfig = `app_name: OpenNeko subscriptions
-host_port: %s
 production: false
 log_format: plain
 log_level: info
@@ -64,36 +67,103 @@ databases:
     max_retries: 3
 `
 
-// startSubscriptions starts the subscriptions GraphJin in the background
-// when it is configured. It keeps retrying until neko-db accepts the role,
-// so a slow database delays subscriptions but never the agent runtime.
-func startSubscriptions(configDir string) {
-	target := strings.TrimSpace(os.Getenv(subscriptionsDBEnv))
-	if target == "" {
-		return
-	}
-	listen := strings.TrimSpace(os.Getenv(subscriptionsListenEnv))
-	if listen == "" {
-		listen = "0.0.0.0:8089"
-	}
-	go func() {
-		for {
-			err := runSubscriptions(configDir, target, listen)
-			fmt.Fprintf(os.Stderr, "openneko serve: subscriptions GraphJin unavailable, retrying: %v\n", err)
-			time.Sleep(subscriptionsRetry)
-		}
-	}()
+// subscriptionsServer owns the :8089 listener for the life of serve and
+// routes it to the current GraphJin. When the role password changes it
+// builds a new GraphJin, switches requests to it and closes the old one, so
+// nothing restarts. New schema reaches GraphJin through its schema poll.
+type subscriptionsServer struct {
+	dir     string
+	handler atomic.Value // http.Handler
+
+	mu       sync.Mutex
+	current  *gjserv.HttpService
+	cleanup  func()
+	password string
+	lastErr  string
 }
 
-// runSubscriptions serves until GraphJin stops or fails to start.
-func runSubscriptions(configDir, target, listen string) error {
-	password, err := os.ReadFile(filepath.Join(configDir, subscriptionsPassword))
+// startSubscriptions binds the subscriptions listener and keeps a GraphJin
+// behind it. Until the first GraphJin is up, requests get 503.
+func startSubscriptions(configDir string) error {
+	listener, err := net.Listen("tcp", subscriptionsListen)
 	if err != nil {
-		return err
+		return fmt.Errorf("subscriptions GraphJin: %w", err)
 	}
-	config, err := renderSubscriptionsConfig(target, listen, strings.TrimSpace(string(password)))
+	s := &subscriptionsServer{dir: configDir}
+	server := &http.Server{Handler: s, ReadHeaderTimeout: 10 * time.Second}
+	go func() {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			fmt.Fprintf(os.Stderr, "openneko serve: subscriptions GraphJin listener stopped: %v\n", err)
+			os.Exit(1)
+		}
+	}()
+	go func() {
+		for {
+			s.refresh()
+			time.Sleep(subscriptionsPoll)
+		}
+	}()
+	return nil
+}
+
+func (s *subscriptionsServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	handler, _ := s.handler.Load().(http.Handler)
+	if handler == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"errors":[{"message":"subscriptions GraphJin is starting"}]}`))
+		return
+	}
+	handler.ServeHTTP(w, r)
+}
+
+// refresh starts a GraphJin when there is none or the password changed.
+// Failures are logged once each and retried on the next poll.
+func (s *subscriptionsServer) refresh() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	raw, err := os.ReadFile(filepath.Join(s.dir, subscriptionsPassword))
 	if err != nil {
-		return err
+		s.report(err)
+		return
+	}
+	password := strings.TrimSpace(string(raw))
+	if s.current != nil && password == s.password {
+		return
+	}
+	next, cleanup, err := newSubscriptionsGraphJin(password)
+	if err != nil {
+		s.report(err)
+		return
+	}
+	mux := http.NewServeMux()
+	if err := next.Attach(mux); err != nil {
+		_ = next.Close()
+		cleanup()
+		s.report(err)
+		return
+	}
+	s.handler.Store(http.Handler(mux))
+	if s.current != nil {
+		_ = s.current.Close()
+		s.cleanup()
+		fmt.Fprintln(os.Stderr, "openneko serve: subscriptions GraphJin switched to the new role password")
+	}
+	s.current, s.cleanup, s.password, s.lastErr = next, cleanup, password, ""
+}
+
+func (s *subscriptionsServer) report(err error) {
+	if msg := err.Error(); msg != s.lastErr {
+		s.lastErr = msg
+		fmt.Fprintf(os.Stderr, "openneko serve: subscriptions GraphJin unavailable, retrying: %v\n", err)
+	}
+}
+
+// newSubscriptionsGraphJin builds a GraphJin for the role password.
+func newSubscriptionsGraphJin(password string) (*gjserv.HttpService, func(), error) {
+	config, err := renderSubscriptionsConfig(password)
+	if err != nil {
+		return nil, nil, err
 	}
 	// NewConfig reads only this text: GraphJin's GJ_* environment
 	// overrides, which some overlays set for the customer GraphJin, would
@@ -101,40 +171,31 @@ func runSubscriptions(configDir, target, listen string) error {
 	// dev-mode files under its config path, so give it a private folder.
 	conf, err := gjserv.NewConfig(config, "yaml")
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	dir, err := os.MkdirTemp("", "openneko-subscriptions-")
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	defer os.RemoveAll(dir) //nolint:errcheck
+	cleanup := func() { _ = os.RemoveAll(dir) }
 	conf.ConfigPath = dir
 	gj, err := gjserv.NewGraphJinService(conf)
 	if err != nil {
-		return err
+		cleanup()
+		return nil, nil, err
 	}
-	// Start blocks while GraphJin serves and returns once it is shut down.
-	if err := gj.Start(); err != nil {
-		return err
-	}
-	return errors.New("stopped")
+	return gj, cleanup, nil
 }
 
-// renderSubscriptionsConfig fills the config from host:port/dbname. String
-// values are JSON-quoted, which YAML reads as plain strings.
-func renderSubscriptionsConfig(target, listen, password string) (string, error) {
+// renderSubscriptionsConfig fills in the role password. String values are
+// JSON-quoted, which YAML reads as plain strings.
+func renderSubscriptionsConfig(password string) (string, error) {
 	if password == "" {
 		return "", errors.New(subscriptionsPassword + " is empty")
-	}
-	hostPort, dbname, ok := strings.Cut(target, "/")
-	host, port, okPort := strings.Cut(hostPort, ":")
-	portNumber, err := strconv.Atoi(port)
-	if !ok || !okPort || host == "" || err != nil || portNumber <= 0 || dbname == "" {
-		return "", fmt.Errorf("%s=%q, want host:port/dbname", subscriptionsDBEnv, target)
 	}
 	quote := func(value string) string {
 		raw, _ := json.Marshal(value)
 		return string(raw)
 	}
-	return fmt.Sprintf(subscriptionsConfig, quote(listen), quote(host), portNumber, quote(dbname), quote(subscriptionsRole), quote(password)), nil
+	return fmt.Sprintf(subscriptionsConfig, quote(subscriptionsHost), subscriptionsPort, quote(subscriptionsDBName), quote(subscriptionsRole), quote(password)), nil
 }

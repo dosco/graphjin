@@ -1,14 +1,15 @@
 package roles
 
 import (
-	"strings"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	gjserv "github.com/dosco/graphjin/serv/v3"
 )
 
 func TestRenderSubscriptionsConfigReadsAsGraphJinConfig(t *testing.T) {
-	config, err := renderSubscriptionsConfig("neko-db:5432/neko", "0.0.0.0:8089", `p"w:d`)
+	config, err := renderSubscriptionsConfig(`p"w:d`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,13 +30,21 @@ func TestRenderSubscriptionsConfigReadsAsGraphJinConfig(t *testing.T) {
 	}
 }
 
-func TestRenderSubscriptionsConfigRejectsBadInput(t *testing.T) {
-	for _, target := range []string{"", "neko-db/neko", "neko-db:x/neko", "neko-db:5432", ":5432/neko"} {
-		if _, err := renderSubscriptionsConfig(target, "0.0.0.0:8089", "pw"); err == nil || !strings.Contains(err.Error(), subscriptionsDBEnv) {
-			t.Fatalf("target %q: err = %v", target, err)
-		}
-	}
-	if _, err := renderSubscriptionsConfig("neko-db:5432/neko", "0.0.0.0:8089", ""); err == nil {
+func TestRenderSubscriptionsConfigRejectsEmptyPassword(t *testing.T) {
+	if _, err := renderSubscriptionsConfig(""); err == nil {
 		t.Fatal("empty password accepted")
+	}
+}
+
+func TestSubscriptionsServerAnswers503UntilGraphJinIsUp(t *testing.T) {
+	s := &subscriptionsServer{dir: t.TempDir()}
+	s.refresh() // no password file yet: stays down, never panics
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/graphql", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 while no GraphJin is up", rec.Code)
+	}
+	if s.lastErr == "" {
+		t.Fatal("missing password file was not reported")
 	}
 }

@@ -45,7 +45,6 @@ services:
     environment: !override
       GO_ENV: agentic
       GRAPHJIN_AGENT_API_KEY: ${GRAPHJIN_AGENT_API_KEY:-}
-      OPENNEKO_SUBSCRIPTIONS_DB: neko-db:5432/neko
     volumes: !override
       - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/graphjin:/config
       - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/bin/openneko:/usr/local/bin/openneko:ro

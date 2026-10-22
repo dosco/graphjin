@@ -184,7 +184,6 @@ services:
       GRAPHJIN_AGENT_API_KEY: ${GRAPHJIN_AGENT_API_KEY:-}
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
       OPENNEKO_SANDBOX_SOCKET: /run/openneko/sandbox.sock
-      OPENNEKO_SUBSCRIPTIONS_DB: neko-db:5432/neko
     volumes:
       - openneko-graphjin-cli:/config
       - openneko-run:/run/openneko
@@ -195,7 +194,7 @@ services:
         - "CMD"
         - "node"
         - "-e"
-        - "require('fs').statSync('/run/openneko/serve.sock');const get=(u,next)=>require('http').get(u,next).on('error',()=>process.exit(1));get('http://127.0.0.1:8080/api/v1/graphql',()=>get('http://127.0.0.1:8089/api/v1/graphql',()=>process.exit(0)))"
+        - "require('fs').statSync('/run/openneko/serve.sock');const get=(u,next)=>require('http').get(u,next).on('error',()=>process.exit(1));get('http://127.0.0.1:8080/api/v1/graphql',()=>get('http://127.0.0.1:8089/api/v1/graphql',r=>process.exit(r.statusCode===503?1:0)))"
       interval: 5s
       timeout: 3s
       retries: 20

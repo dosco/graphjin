@@ -419,7 +419,7 @@ CI runs this with `--check` and fails on drift.
 
 **GraphJin connection fails.** `--mode demo` uses internal `http://openneko-serve:8080` (pre-filled). Dev mode (`pnpm dev`) on the host uses `http://localhost:8080`.
 
-**Workflow subscriptions don't fire.** `openneko-serve` must be healthy; its subscriptions GraphJin listens on port 8089 and logs `subscriptions GraphJin unavailable` while it cannot connect. The worker logs `subscription manager ready (N active)` on boot — if `N=0` despite subscriptions in the DB, the subscriptions GraphJin is unreachable; check `openneko logs openneko-serve`, then `openneko stop && openneko start`.
+**Workflow subscriptions don't fire.** `openneko-serve` must be healthy; its subscriptions GraphJin listens on port 8089 and logs `subscriptions GraphJin unavailable` while it cannot connect. The worker logs `subscription manager ready (N active)` on boot — if `N=0` despite subscriptions in the DB, the subscriptions GraphJin is unreachable; `openneko logs openneko-serve` says why. It retries on its own and picks up a new role password without a restart.
 
 **Provider key fails.** Confirm it's active, has billing/quota, and matches the provider in `/settings`.
 
