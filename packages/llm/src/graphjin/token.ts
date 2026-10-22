@@ -50,6 +50,16 @@ export function graphjinKeystoreKeyB64(): string {
 }
 
 /**
+ * The password of `neko_subscriptions`, the read-only role the subscriptions
+ * GraphJin in `openneko serve` connects as. It is derived from the OpenNeko
+ * secret key, so it never needs storing and a restore re-derives it. Hex, so
+ * it is safe inside an ALTER ROLE literal.
+ */
+export function subscriptionsRolePassword(): string {
+  return deriveSigningSecret("neko-subscriptions-role:v1").toString("hex");
+}
+
+/**
  * The HMAC key for token signing. GraphJin uses the config string
  * LITERALLY as the key (it does not base64-decode `auth.jwt.secret`),
  * so both sides key off the base64 STRING — verified live against

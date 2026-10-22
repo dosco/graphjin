@@ -438,26 +438,10 @@ COPY --from=go-build /out/openneko /openneko
 ENTRYPOINT ["/openneko"]
 CMD ["--help"]
 
-# ─── 6. neko-graphjin runtime ──────────────────────────────────────────
-# OpenNeko's own GraphJin instance — exposes the metadata Postgres
-# (workflow_definition, workflow_run, workflow_output, observation,
-# subscription, action_*) so the worker can subscribe to output-match
-# firings and dogfood query features. Distinct from the customer-data
-# graphjin in compose.adventureworks.yml.
-#
-# The entrypoint re-templates db/graphjin/neko.yml from the openneko
-# config.json on every start, so password rotation via /setup just
-# requires `docker compose restart neko-graphjin`. The credential templater is
-# a small static Go binary; Node is not present in either GraphJin image.
+# ─── 6. graphjin runtime ───────────────────────────────────────────────
+# The openneko binary linked as graphjin, for CI config validation and the
+# AdventureWorks eval stack.
 FROM alpine:3.22 AS graphjin-runtime
 RUN apk add --no-cache ca-certificates curl tini
 COPY --from=go-build /out/openneko /usr/local/bin/openneko
 RUN ln -s openneko /usr/local/bin/graphjin && graphjin version
-
-FROM graphjin-runtime AS neko-graphjin
-COPY scripts/neko-graphjin-entrypoint.sh /usr/local/bin/neko-graphjin-entrypoint.sh
-RUN chmod +x /usr/local/bin/neko-graphjin-entrypoint.sh
-COPY db/graphjin/neko.yml /seed/neko.yml
-EXPOSE 8089
-ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/neko-graphjin-entrypoint.sh"]
-CMD ["serve", "--path", "/config"]

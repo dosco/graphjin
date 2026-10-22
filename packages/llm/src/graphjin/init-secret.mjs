@@ -64,6 +64,25 @@ async function readLocalConfig() {
   return {};
 }
 
+// The subscriptions GraphJin in `openneko serve` reads neko-db as the
+// read-only neko_subscriptions role (migration 0128). Its password is derived
+// from the secret key; this sets it on the role and hands it to serve in a
+// file beside the GraphJin config, so serve never holds the secret key or the
+// neko password.
+const SUBSCRIPTIONS_PASSWORD_FILE =
+  process.env.OPENNEKO_SUBSCRIPTIONS_PASSWORD_FILE?.trim() ||
+  (CONFIG_PATH ? join(dirname(CONFIG_PATH), "subscriptions.password") : "");
+
+async function reconcileSubscriptionsRole(client) {
+  if (!SUBSCRIPTIONS_PASSWORD_FILE) return;
+  const { subscriptionsRolePassword } = await import("./token.ts");
+  const password = subscriptionsRolePassword();
+  await client.query(`alter role neko_subscriptions with login password '${password}'`);
+  await mkdir(dirname(SUBSCRIPTIONS_PASSWORD_FILE), { recursive: true, mode: 0o700 });
+  await atomicWriteFile(SUBSCRIPTIONS_PASSWORD_FILE, `${password}\n`, { mode: 0o600 });
+  console.log(`[graphjin-secret-init] set the subscriptions role password in ${SUBSCRIPTIONS_PASSWORD_FILE}`);
+}
+
 const localConfig = await readLocalConfig();
 const localPg =
   localConfig.pg && typeof localConfig.pg === "object" ? localConfig.pg : {};
@@ -112,6 +131,7 @@ try {
     console.log(`[graphjin-secret-init] created organization ${orgId}`);
   }
   await client.query("commit");
+  await reconcileSubscriptionsRole(client);
 } catch (e) {
   await client.query("rollback").catch(() => {});
   throw e;

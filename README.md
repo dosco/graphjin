@@ -90,9 +90,9 @@ frozen AdventureWorks snapshot, each graded against a GraphQL oracle. See
 
 `openneko start|setup|upgrade --mode prod|dev|demo` picks which Compose layers the
 CLI deploys. Every mode shares the same core: app Postgres, migrations, web,
-worker, the internal GraphJin for app subscriptions, plus the customer-facing GraphJin in
-sources (agentic) mode, which `openneko serve` hosts together with the agent
-runtime. The agent runtime (`openneko serve` and `agent-sandbox`)
+worker, embedding, and `openneko serve`, one process that hosts the
+customer-facing GraphJin in sources (agentic) mode, the agent runtime, and the
+GraphJin that serves workflow subscriptions from the app database. The agent runtime (`openneko serve` and `agent-sandbox`)
 is part of the core — it is the only way agents run, in every mode.
 
 | Mode | Layers on top of core | What's different |

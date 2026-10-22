@@ -27,7 +27,6 @@ db/graphjin/*
 !db/graphjin/dev.example.yml
 !db/graphjin/dev.sources.example.yml
 !db/graphjin/customer.sources.example.yml
-!db/graphjin/neko.yml
 
 # local onboarding scratch
 adventureworks-onboarding.md

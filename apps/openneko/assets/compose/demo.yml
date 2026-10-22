@@ -87,7 +87,7 @@ services:
   openneko-serve:
     # Data-source GraphJin over the AdventureWorks DB. This is what the
     # setup wizard's "GraphJin URL" defaults to (http://openneko-serve:8080).
-    # Distinct from neko-graphjin (over neko-db, for subscriptions).
+    # The same process serves workflow subscriptions from neko-db on :8089.
     restart: unless-stopped
     depends_on:
       adventureworks-init:

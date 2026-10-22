@@ -1,7 +1,7 @@
 // Package roles runs the programs that the openneko binary carries besides
 // the operator CLI. Every Go process in an install runs this one binary and
 // picks its role from the name it runs under (a link named graphjin,
-// ax-harness, lazy-service, graphjin-config, serve or sandbox) or from its first argument.
+// ax-harness, lazy-service, serve or sandbox) or from its first argument.
 package roles
 
 import (
@@ -14,7 +14,6 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/harness"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 
-	"github.com/open-neko/neko/apps/openneko/internal/graphjinconfig"
 	"github.com/open-neko/neko/apps/openneko/internal/version"
 )
 
@@ -23,8 +22,6 @@ const (
 	GraphJin    = "graphjin"
 	AxHarness   = "ax-harness"
 	LazyService = "lazy-service"
-	// GraphJinConfig writes the metadata GraphJin config; see graphjinconfig.
-	GraphJinConfig = "graphjin-config"
 	// Serve runs agent turns for the worker over a local socket; see serve.
 	Serve = "serve"
 	// Sandbox runs the agent's terminal commands with no secrets; see sandbox.
@@ -47,8 +44,6 @@ func Run(args []string) bool {
 		harness.Main()
 	case LazyService:
 		lazy.Main(rest)
-	case GraphJinConfig:
-		graphjinconfig.Main(rest)
 	case Serve:
 		runServe(rest)
 	case Sandbox:
@@ -82,7 +77,7 @@ func Pick(args []string) (name string, rest []string, ok bool) {
 }
 
 func isRole(name string) bool {
-	return name == GraphJin || name == AxHarness || name == LazyService || name == GraphJinConfig || name == Serve || name == Sandbox
+	return name == GraphJin || name == AxHarness || name == LazyService || name == Serve || name == Sandbox
 }
 
 // runGraphJin runs the GraphJin CLI, which reads os.Args itself.

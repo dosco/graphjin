@@ -30,7 +30,7 @@ GRAPHJIN_SOURCES_CONFIG="$OPENNEKO_GRAPHJIN_CONFIG" \
   pnpm --filter @neko/worker exec tsx ../../packages/llm/src/graphjin/init-secret.mjs
 
 compose up -d \
-  neko-graphjin openneko-serve \
+  openneko-serve \
   embedding \
   adventureworks-simulator adventureworks-scenario-injector
 

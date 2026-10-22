@@ -172,15 +172,25 @@ func TestPackagedComposeExposesOnlyWebToLAN(t *testing.T) {
 
 func TestPackagedComposeKeepsRuntimeTrafficOnDockerNetwork(t *testing.T) {
 	core, _ := readComposeForTest(t, "core.yml")
-	for service, port := range map[string]string{
-		"neko-db":        "5432",
-		"openneko-serve": "8080",
-		"neko-graphjin":  "8089",
+	for service, ports := range map[string]string{
+		"neko-db": "5432",
+		// GraphJin's API, and the subscriptions GraphJin.
+		"openneko-serve": "8080,8089",
 	} {
-		got := core.Services[service].Expose
-		if len(got) != 1 || got[0] != port {
-			t.Fatalf("%s expose = %v, want internal port %s", service, got, port)
+		if got := strings.Join(core.Services[service].Expose, ","); got != ports {
+			t.Fatalf("%s expose = %v, want internal ports %s", service, got, ports)
 		}
+	}
+	if _, exists := core.Services["neko-graphjin"]; exists {
+		t.Fatal("packaged Compose still defines neko-graphjin; openneko-serve serves subscriptions")
+	}
+	for _, name := range []string{"web", "worker"} {
+		if got := core.Services[name].Environment["OPENNEKO_GRAPHJIN_URL"]; got != "http://openneko-serve:8089" {
+			t.Fatalf("%s OPENNEKO_GRAPHJIN_URL = %q, want the subscriptions GraphJin in openneko-serve", name, got)
+		}
+	}
+	if got := core.Services["openneko-serve"].Environment["OPENNEKO_SUBSCRIPTIONS_DB"]; got != "neko-db:5432/neko" {
+		t.Fatalf("openneko-serve OPENNEKO_SUBSCRIPTIONS_DB = %q, want neko-db:5432/neko", got)
 	}
 
 	migrate := core.Services["neko-migrate"]

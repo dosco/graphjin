@@ -16,7 +16,7 @@ func TestClassifyStack(t *testing.T) {
 		{"all up + one-shot migrate done", []composeService{
 			{Service: "web", State: "running", Health: "healthy"},
 			{Service: "worker", State: "running", Health: "healthy"},
-			{Service: "neko-graphjin", State: "running", Health: "healthy"},
+			{Service: "openneko-serve", State: "running", Health: "healthy"},
 			{Service: "neko-db", State: "running", Health: "healthy"},
 			{Service: "storage-reconcile", State: "exited", ExitCode: 0},
 			{Service: "neko-migrate", State: "exited", ExitCode: 0},
@@ -27,7 +27,7 @@ func TestClassifyStack(t *testing.T) {
 		}, serving},
 		{"unhealthy is degraded, not down", []composeService{
 			{Service: "web", State: "running", Health: "healthy"},
-			{Service: "neko-graphjin", State: "running", Health: "unhealthy"},
+			{Service: "openneko-serve", State: "running", Health: "unhealthy"},
 		}, degraded},
 		{"starting is degraded", []composeService{
 			{Service: "worker", State: "running", Health: "starting"},
@@ -42,7 +42,7 @@ func TestClassifyStack(t *testing.T) {
 		{"a failed one-shot setup job is degraded, not down", []composeService{
 			{Service: "web", State: "running", Health: "healthy"},
 			{Service: "worker", State: "running", Health: "healthy"},
-			{Service: "neko-graphjin", State: "running", Health: "healthy"},
+			{Service: "openneko-serve", State: "running", Health: "healthy"},
 			{Service: "neko-db", State: "running", Health: "healthy"},
 			{Service: "neko-adventureworks-seed", State: "exited", ExitCode: 1},
 		}, degraded},

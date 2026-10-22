@@ -395,7 +395,6 @@ func openNekoImageRepos() map[string]bool {
 	return map[string]bool{
 		"ghcr.io/open-neko/neko-cli":       true,
 		"ghcr.io/open-neko/neko-db":        true,
-		"ghcr.io/open-neko/neko-graphjin":  true,
 		"ghcr.io/open-neko/neko-web":       true,
 		"ghcr.io/open-neko/neko-worker":    true,
 		"ghcr.io/open-neko/neko-embedding": true,
@@ -407,6 +406,9 @@ func openNekoImageRepos() map[string]bool {
 		"ghcr.io/open-neko/records-graphjin":    true,
 		"ghcr.io/open-neko/records-storage-ops": true,
 		"ghcr.io/open-neko/neko-backup":         true,
+		// Legacy subscriptions GraphJin image; openneko-serve serves
+		// subscriptions now.
+		"ghcr.io/open-neko/neko-graphjin": true,
 		// Legacy images (plugins, the OpenShell sandbox supervisor and the
 		// Docling librarian were removed); kept so upgrades prune old copies
 		// left on the host.

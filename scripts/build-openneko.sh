@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds the openneko binary, which carries GraphJin (from graphjin/),
-# ax-harness, lazy-service and graphjin-config as roles. Used by the image
+# ax-harness, lazy-service, serve and sandbox as roles. Used by the image
 # builds. Usage: scripts/build-openneko.sh OUTPUT
 # OPENNEKO_VERSION and OPENNEKO_COMMIT name the build; both default to
 # "container".

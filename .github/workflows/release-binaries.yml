@@ -58,14 +58,6 @@ jobs:
             target: embedding
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-          - image: neko-graphjin
-            target: neko-graphjin
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: neko-graphjin
-            target: neko-graphjin
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
           - image: neko-cli
             target: neko-cli
             platform: linux/amd64
@@ -184,7 +176,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [neko-web, neko-worker, neko-embedding, neko-graphjin, neko-cli, neko-db, agent, openshell-supervisor]
+        image: [neko-web, neko-worker, neko-embedding, neko-cli, neko-db, agent, openshell-supervisor]
     steps:
       - name: Resolve release tag
         id: tag
@@ -268,7 +260,7 @@ jobs:
             "${{ steps.tag.outputs.value }}" \
             "${{ matrix.arch }}" \
             "$MAX_MIB" \
-            neko-web neko-worker neko-embedding neko-graphjin neko-cli \
+            neko-web neko-worker neko-embedding neko-cli \
             neko-db agent openshell-supervisor \
             postgres:16-alpine busybox:latest \
             "ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.1.2}"

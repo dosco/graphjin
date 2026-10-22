@@ -33,6 +33,7 @@ func runServe(args []string) {
 		fmt.Fprintf(os.Stderr, "openneko serve: GraphJin unavailable: %v\n", err)
 		os.Exit(2)
 	}
+	startSubscriptions(dir)
 	serve.MainWith(args, serve.Options{Ask: graphJinAsker(gj)})
 }
 

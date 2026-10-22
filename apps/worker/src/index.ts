@@ -595,17 +595,18 @@ console.log(
   `[worker] concurrency: globalCap=${concurrency.globalCap} (configure in /admin/settings/agent; restart required)`,
 );
 
-// GraphJin URL — the worker is a client of neko-graphjin, the OpenNeko
-// metadata GraphJin service. Default targets localhost so `pnpm dev`
-// works against a compose-up'd neko-graphjin (port 8089 exposed). The
-// containerized deploy sets OPENNEKO_GRAPHJIN_URL=http://neko-graphjin:8089
-// in compose.yml so service-DNS lookup wins there. Customer-data
+// GraphJin URL — the worker subscribes to workflow outputs through the
+// subscriptions GraphJin that openneko-serve runs on port 8089 over neko-db.
+// Default targets localhost so `pnpm dev` works against the dev stack, which
+// publishes 8089. The containerized deploy sets
+// OPENNEKO_GRAPHJIN_URL=http://openneko-serve:8089 so service-DNS lookup
+// wins there. Customer-data
 // graphjin (used by the agent CLI path) is a separate service on
 // port 8080.
 // Normalize any GraphJin base (origin or full) to the full GraphQL endpoint.
 // The subscription/query clients treat baseUrl as the complete
 // `/api/v1/graphql` URL and never append a path, so both the env-configured
-// neko-graphjin URL (often just an origin) and the data_source URLs (already
+// subscriptions GraphJin URL (often just an origin) and the data_source URLs (already
 // full) must land on the same shape.
 function toGraphqlEndpoint(url: string): string {
   const trimmed = url.replace(/\/+$/, "");
@@ -617,7 +618,7 @@ function toGraphqlEndpoint(url: string): string {
 const GRAPHJIN_URL = toGraphqlEndpoint(
   process.env.OPENNEKO_GRAPHJIN_URL ?? "http://127.0.0.1:8089",
 );
-console.log(`[worker] neko graphjin client targeting ${GRAPHJIN_URL}`);
+console.log(`[worker] subscriptions GraphJin client targeting ${GRAPHJIN_URL}`);
 
 if (process.env.OPENNEKO_AGENT_IMAGE) {
   try { await prepareSandboxCapacity(); }

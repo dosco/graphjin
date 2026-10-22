@@ -23,7 +23,6 @@ func TestPick(t *testing.T) {
 		{[]string{"lazy-service", "-listen", ":5001", "node"}, LazyService, []string{"-listen", ":5001", "node"}, true},
 		{[]string{"openneko", "lazy-service", "node"}, LazyService, []string{"node"}, true},
 		{[]string{"openneko", "--instance", "a", "graphjin", "serve"}, "", nil, false},
-		{[]string{"openneko", "graphjin-config", "a", "b", "c", "d"}, GraphJinConfig, []string{"a", "b", "c", "d"}, true},
 		{[]string{"openneko", "serve", "--socket", "/tmp/s.sock"}, Serve, []string{"--socket", "/tmp/s.sock"}, true},
 		{[]string{"/usr/bin/serve"}, Serve, []string{}, true},
 		{[]string{"openneko", "sandbox"}, Sandbox, []string{}, true},

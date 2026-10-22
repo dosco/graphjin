@@ -64,6 +64,11 @@ services:
   graphjin-secret-init:
     environment:
       GRAPHJIN_SOURCES_CONFIG: ""
+      # openneko-serve reads its config folder from graphjin-config here, so
+      # the subscriptions role password goes there.
+      OPENNEKO_SUBSCRIPTIONS_PASSWORD_FILE: /subscriptions/subscriptions.password
+    volumes:
+      - graphjin-config:/subscriptions
 
   openneko-serve:
     restart: unless-stopped
