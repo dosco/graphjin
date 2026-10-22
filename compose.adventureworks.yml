@@ -82,8 +82,8 @@ services:
       GJ_DATABASE_USER: ${CUSTOMER_PGUSER:-postgres}
       GJ_DATABASE_PASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
       GJ_DATABASE_DBNAME: ${ADVENTUREWORKS_DB:-adventureworks}
-      NO_PROXY: localhost,127.0.0.1,::1,adventureworks-db,openneko-serve,neko-db,worker,web,host.docker.internal,host.internal
-      no_proxy: localhost,127.0.0.1,::1,adventureworks-db,openneko-serve,neko-db,worker,web,host.docker.internal,host.internal
+      NO_PROXY: localhost,127.0.0.1,::1,adventureworks-db,openneko-serve,graphjin,neko-db,worker,web,host.docker.internal,host.internal
+      no_proxy: localhost,127.0.0.1,::1,adventureworks-db,openneko-serve,graphjin,neko-db,worker,web,host.docker.internal,host.internal
     volumes:
       - graphjin-config:/config
     command: ["serve", "--path", "/config"]
@@ -190,8 +190,8 @@ services:
       # Source checkout intentionally uses the legacy anonymous GraphJin
       # config above; keep the persisted mode aligned with that server.
       ADVENTUREWORKS_AUTH_MODE: none
-      NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,openneko-serve,adventureworks-db,host.docker.internal,host.internal
-      no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,openneko-serve,adventureworks-db,host.docker.internal,host.internal
+      NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,openneko-serve,graphjin,adventureworks-db,host.docker.internal,host.internal
+      no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,openneko-serve,graphjin,adventureworks-db,host.docker.internal,host.internal
     volumes:
       - openneko-config:/config/openneko
     command: ["node", "/app/seed-adventureworks.js"]

@@ -19,10 +19,29 @@ type composeServiceForTest struct {
 	Environment map[string]string            `yaml:"environment"`
 	DependsOn   map[string]composeDepForTest `yaml:"depends_on"`
 	Volumes     []string                     `yaml:"volumes"`
-	Networks    []string                     `yaml:"networks"`
+	Networks    composeNetworksForTest       `yaml:"networks"`
 	CapDrop     []string                     `yaml:"cap_drop"`
 	CapAdd      []string                     `yaml:"cap_add"`
 	SecurityOpt []string                     `yaml:"security_opt"`
+}
+
+// composeNetworksForTest reads a service's networks in either Compose form:
+// a list of names, or a map of names to settings such as aliases.
+type composeNetworksForTest []string
+
+func (n *composeNetworksForTest) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.MappingNode {
+		for i := 0; i < len(value.Content); i += 2 {
+			*n = append(*n, value.Content[i].Value)
+		}
+		return nil
+	}
+	var names []string
+	if err := value.Decode(&names); err != nil {
+		return err
+	}
+	*n = names
+	return nil
 }
 
 func TestPackagedComposeHasNoBackupService(t *testing.T) {

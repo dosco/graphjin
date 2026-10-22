@@ -16,8 +16,8 @@ x-neko-app-env: &neko-app-env
   NEKO_PG_PASSWORD: secret
   NEKO_PG_DATABASE: neko
   NEKO_EMBEDDING_URL: http://embedding:5003
-  NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,embedding,neko-graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
-  no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,embedding,neko-graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
+  NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,embedding,neko-graphjin,openneko-serve,graphjin,adventureworks-db,host.docker.internal,host.internal
+  no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,embedding,neko-graphjin,openneko-serve,graphjin,adventureworks-db,host.docker.internal,host.internal
 
 services:
   neko-db:
@@ -167,6 +167,11 @@ services:
         condition: service_completed_successfully
       agent-sandbox:
         condition: service_started
+    # `graphjin` was this service's name before it was renamed; the alias
+    # keeps URLs saved with the old hostname working.
+    networks:
+      default:
+        aliases: [graphjin]
     expose:
       - "8080"
     environment:

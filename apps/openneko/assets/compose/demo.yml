@@ -103,8 +103,8 @@ services:
       # No GJ_DATABASE_* here: in sources mode those are a FATAL boot error
       # ("database is legacy database-only config") — the connection lives in
       # the seeded /config/dev.yml. This crash-looped every fresh demo boot.
-      NO_PROXY: localhost,127.0.0.1,::1,adventureworks-db,openneko-serve,neko-db,worker,web,host.docker.internal,host.internal
-      no_proxy: localhost,127.0.0.1,::1,adventureworks-db,openneko-serve,neko-db,worker,web,host.docker.internal,host.internal
+      NO_PROXY: localhost,127.0.0.1,::1,adventureworks-db,openneko-serve,graphjin,neko-db,worker,web,host.docker.internal,host.internal
+      no_proxy: localhost,127.0.0.1,::1,adventureworks-db,openneko-serve,graphjin,neko-db,worker,web,host.docker.internal,host.internal
     volumes:
       - graphjin-config:/config
     command: ["serve", "--path", "/config"]
