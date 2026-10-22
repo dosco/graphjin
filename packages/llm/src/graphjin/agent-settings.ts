@@ -1,6 +1,7 @@
-// Org-wide GraphJin agent opt-in: OpenNeko owns GraphJin's agent provider,
-// model and key while the opt-in is on. When it is off, GraphJin's agent
-// block stays as the operator configured it.
+// Org-wide GraphJin agent setting: OpenNeko owns GraphJin's agent provider,
+// model and key while the agent path is on, which is the default. When an
+// admin opts into direct tools, GraphJin's agent block stays as the operator
+// configured it.
 
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -12,6 +13,7 @@ import {
   desc,
   eq,
   getGraphjinAgentRow,
+  graphjinAgentEnabled,
   llm_provider_config,
 } from "@neko/db";
 import { isMap, parseDocument } from "yaml";
@@ -86,17 +88,17 @@ export async function primaryGraphjinAgentModel(orgId: string): Promise<Graphjin
   return graphjinAgentModelFromRow(primary);
 }
 
-/** The model GraphJin's agent should use, or null when the opt-in is off. */
+/** The model GraphJin's agent should use, or null when the org opted into direct tools. */
 export async function resolveGraphjinAgentModel(orgId: string): Promise<GraphjinAgentModel | null> {
   const row = await getGraphjinAgentRow(orgId);
-  if (!row?.enabled) return null;
-  if (row.provider === GRAPHJIN_AGENT_REUSE_PRIMARY) return primaryGraphjinAgentModel(orgId);
+  if (!graphjinAgentEnabled(row)) return null;
+  if (!row || row.provider === GRAPHJIN_AGENT_REUSE_PRIMARY) return primaryGraphjinAgentModel(orgId);
   return graphjinAgentModelFromRow(row);
 }
 
 /**
- * The agent settings OpenNeko owns while the opt-in is on. gj_config applies
- * all of them live (graphjin#655).
+ * The agent settings OpenNeko owns while the agent path is on. gj_config
+ * applies all of them live (graphjin#655).
  */
 export function graphjinAgentSettings(model: Omit<GraphjinAgentModel, "apiKey">): Record<string, unknown> {
   return {
@@ -157,7 +159,7 @@ async function graphjinEndpoint(orgId: string): Promise<string | null> {
 }
 
 /**
- * Apply the opt-in: write the key file, which GraphJin reads for each agent
+ * Apply the agent path: write the key file, which GraphJin reads for each agent
  * run, write the agent block to the config file for GraphJin's next start, and
  * apply the same block to the running GraphJin through gj_config. Nothing
  * restarts.

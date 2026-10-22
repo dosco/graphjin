@@ -44,11 +44,14 @@ through the per-run broker.
    that turn's model calls and keeps it nowhere else. The agent's MCP tools
    (records, GraphJin, memory, actions) travel back over the same socket to
    the runner, which calls the broker on loopback.
-   When the org uses GraphJin's agent for data, the turn asks it in serve's
+   By default the turn gets its data by asking GraphJin's agent, in serve's
    own process: the host mints the run's GraphJin JWT into the job, and
    GraphJin verifies it exactly as its `/api/v1/agent` route would. Its steps
    show as status lines, the thread's earlier data questions go along as
-   history, and its tokens count against the turn's budget.
+   history, and its tokens count against the turn's budget. An admin can
+   switch the organization to GraphJin's direct tools instead (Admin →
+   Settings → Agent), for an external GraphJin whose agent isn't set up;
+   the agent then writes its own queries.
 4. Serve sends terminal commands to `openneko sandbox` over
    `OPENNEKO_SANDBOX_SOCKET`. The sandbox runs each command in the run's
    workspace, as a user of the turn's own. When the turn ends, serve tells the

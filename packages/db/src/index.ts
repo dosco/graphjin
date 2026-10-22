@@ -130,6 +130,7 @@ export {
   GRAPHJIN_AGENT_REUSE_PRIMARY,
   GRAPHJIN_AGENT_SCOPE,
   getGraphjinAgentRow,
+  graphjinAgentEnabled,
   graphjinAgentEnabledForOrg,
   type GraphjinAgentRow,
 } from "./graphjin-agent";

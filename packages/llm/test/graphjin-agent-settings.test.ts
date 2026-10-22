@@ -58,6 +58,39 @@ describe("GraphJin agent settings", () => {
   });
 });
 
+describe("data path default", () => {
+  it("asks GraphJin's agent unless an admin saved direct tools", async () => {
+    const { graphjinAgentEnabled } = await import("@neko/db");
+    expect(graphjinAgentEnabled(null)).toBe(true);
+    expect(graphjinAgentEnabled({ enabled: true })).toBe(true);
+    expect(graphjinAgentEnabled({ enabled: false })).toBe(false);
+  });
+
+  it("gives GraphJin's agent the primary model when nothing is saved", async () => {
+    vi.resetModules();
+    const primary = { provider: "anthropic", model: "claude-sonnet-5-5", config: {}, secrets: { apiKey: "sk-primary" }, enabled: true };
+    vi.doMock("@neko/db", async (original) => ({
+      ...(await original<typeof import("@neko/db")>()),
+      getGraphjinAgentRow: async () => null,
+      db: () => ({ select: () => ({ from: () => ({ where: () => ({ limit: async () => [primary] }) }) }) }),
+    }));
+    const { resolveGraphjinAgentModel } = await import("../src/graphjin/agent-settings");
+    expect(await resolveGraphjinAgentModel("org-1")).toEqual({ provider: "anthropic", model: "claude-sonnet-5-5", apiKey: "sk-primary" });
+    vi.doUnmock("@neko/db");
+  });
+
+  it("leaves GraphJin's agent alone once an admin opts into direct tools", async () => {
+    vi.resetModules();
+    vi.doMock("@neko/db", async (original) => ({
+      ...(await original<typeof import("@neko/db")>()),
+      getGraphjinAgentRow: async () => ({ enabled: false, provider: "primary", model: null, config: {}, secrets: {} }),
+    }));
+    const { resolveGraphjinAgentModel } = await import("../src/graphjin/agent-settings");
+    expect(await resolveGraphjinAgentModel("org-1")).toBeNull();
+    vi.doUnmock("@neko/db");
+  });
+});
+
 describe("provisionGraphjinAgent", () => {
   it("writes the key file and config, then applies the block live without a restart", async () => {
     vi.resetModules();

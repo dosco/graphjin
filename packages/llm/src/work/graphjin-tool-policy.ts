@@ -15,14 +15,14 @@ export const GRAPHJIN_DIRECT_GOVERNED_POLICY: GraphjinMcpToolPolicy =
   Object.freeze({ mode: "direct-governed" });
 
 /**
- * How a run reaches customer data: GraphJin's direct tools, or only GraphJin's
- * server-side agent when the org opted in.
+ * How a run reaches customer data: only GraphJin's server-side agent, the
+ * default, or GraphJin's direct tools when an admin opted into them.
  */
 export type GraphjinDataPath = "direct" | "agent";
 
 /**
  * GraphJin's own agent tool. Runs reach that agent only through the
- * neko_graphjin_agent server, which the org opt-in controls.
+ * neko_graphjin_agent server, which the org's data-path setting controls.
  */
 export const GRAPHJIN_SERVER_AGENT_TOOL = "ask_graphjin_agent";
 

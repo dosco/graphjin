@@ -7,6 +7,7 @@ import {
   db,
   eq,
   getGraphjinAgentRow,
+  graphjinAgentEnabled,
   llm_provider_config,
 } from "@neko/db";
 import {
@@ -59,7 +60,7 @@ export async function getGraphjinAgentSettings(orgId: string): Promise<GraphjinA
   const reusePrimary = !row || row.provider === GRAPHJIN_AGENT_REUSE_PRIMARY;
   const provider = reusePrimary ? PRIMARY_PROVIDER_OPTIONS[0].value : row.provider;
   return {
-    enabled: row?.enabled === true,
+    enabled: graphjinAgentEnabled(row),
     reusePrimary,
     provider,
     model: reusePrimary ? getDefaultPrimaryModel(provider as never) : row?.model ?? "",
@@ -90,7 +91,7 @@ function stringRecord(value: unknown, label: string): Record<string, string | nu
   return out;
 }
 
-/** Saves the opt-in, then applies it to GraphJin. A provisioning error fails the save. */
+/** Saves the data path, then applies it to GraphJin. A provisioning error fails the save. */
 export async function saveGraphjinAgentSettings(orgId: string, draft: GraphjinAgentDraft): Promise<GraphjinAgentSettings> {
   if (typeof draft.enabled !== "boolean" || typeof draft.reusePrimary !== "boolean") {
     throw new Error("enabled and reusePrimary must be booleans");

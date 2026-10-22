@@ -93,13 +93,17 @@ export default function GraphjinAgentSection({ initial }: { initial: GraphjinAge
         GraphJin data agent
       </h2>
       <p className="mt-1 text-ui-body-sm text-text3">
-        When this is on, every agent run gets its data by asking GraphJin&apos;s agent. It applies to the whole organization.
+        Every agent run gets its data by asking GraphJin&apos;s agent. It applies to the whole organization.
+      </p>
+      <p className="mt-1 text-ui-body-sm text-text3">
+        Query GraphJin directly only when OpenNeko connects to an external GraphJin whose agent isn&apos;t set up. Agents then
+        write their own queries with GraphJin&apos;s tools.
       </p>
       <div className="mt-4">
         <Checkbox
-          label="Use the GraphJin agent for data"
-          checked={enabled}
-          onCheckedChange={(checked) => setEnabled(checked === true)}
+          label="Query GraphJin directly instead"
+          checked={!enabled}
+          onCheckedChange={(checked) => setEnabled(checked !== true)}
         />
       </div>
 
