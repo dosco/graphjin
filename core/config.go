@@ -1241,6 +1241,7 @@ func (s SourceConfig) filesystemConfig() FilesystemConfig {
 		PublicBaseURL:   s.PublicBaseURL,
 		ReadOnly:        s.ReadOnly,
 		MaxListPageSize: s.MaxListPageSize,
+		UserPrefix:      s.UserPrefix,
 	}
 }
 
@@ -1768,6 +1769,7 @@ type SourceConfig struct {
 	PresignTTL             time.Duration                 `mapstructure:"presign_ttl" json:"presign_ttl" yaml:"presign_ttl" jsonschema:"title=Presigned URL TTL"`
 	PublicBaseURL          string                        `mapstructure:"public_base_url" json:"public_base_url" yaml:"public_base_url" jsonschema:"title=Public Base URL"`
 	MaxListPageSize        int                           `mapstructure:"max_list_page_size" json:"max_list_page_size" yaml:"max_list_page_size" jsonschema:"title=Max List Page Size"`
+	UserPrefix             string                        `mapstructure:"user_prefix" json:"user_prefix,omitempty" yaml:"user_prefix,omitempty" jsonschema:"title=Per-User Folder Prefix"`
 	SpecsDir               string                        `mapstructure:"specs_dir" json:"specs_dir" yaml:"specs_dir" jsonschema:"title=OpenAPI Specs Directory"`
 	Specs                  map[string]openapi.SpecConfig `mapstructure:"specs" json:"specs" yaml:"specs" jsonschema:"title=OpenAPI Specifications"`
 	Capabilities           map[string]bool               `mapstructure:"capabilities" json:"capabilities,omitempty" yaml:"capabilities,omitempty" jsonschema:"title=Capabilities"`
@@ -1932,6 +1934,12 @@ type FilesystemConfig struct {
 	// MaxListPageSize caps the number of entries returned per list call.
 	// Defaults to 1000 when zero.
 	MaxListPageSize int `mapstructure:"max_list_page_size" json:"max_list_page_size" yaml:"max_list_page_size" jsonschema:"title=Max List Page Size,default=1000"`
+
+	// UserPrefix makes per-user folders private: a key under
+	// UserPrefix + "<user id>/" is visible only to the caller with that user
+	// id, through every read, search and write. Keys outside it are
+	// unaffected. For example "users/".
+	UserPrefix string `mapstructure:"user_prefix" json:"user_prefix,omitempty" yaml:"user_prefix,omitempty" jsonschema:"title=Per-User Folder Prefix"`
 }
 
 // DatabaseConfig defines configuration for a single database in multi-database mode
