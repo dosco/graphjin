@@ -253,21 +253,26 @@ func (f *fileContent) querySQL(ctx context.Context, source, query string, canRea
 			names = append(names, w)
 		}
 	}
-	tables, err := ix.TableFiles(ctx, names)
+	found, err := ix.TableFiles(ctx, names)
 	if err != nil {
 		return nil, err
 	}
+	// A table whose file the caller cannot read is treated as absent, so an
+	// error never reveals another user's file.
+	readable := map[string]bool{}
+	var tables []filecontent.TableFile
+	for _, t := range found {
+		ok, seen := readable[t.Key]
+		if !seen {
+			ok = canRead(ctx, t.Key) == nil
+			readable[t.Key] = ok
+		}
+		if ok {
+			tables = append(tables, t)
+		}
+	}
 	if len(tables) == 0 {
 		return nil, fmt.Errorf("no file table of %s is named in the query; find table names with %s(search: ...) { key tables }", source, source)
-	}
-	checked := map[string]error{}
-	for _, t := range tables {
-		if _, ok := checked[t.Key]; !ok {
-			checked[t.Key] = canRead(ctx, t.Key)
-		}
-		if err := checked[t.Key]; err != nil {
-			return nil, fmt.Errorf("table %s: %w", t.Name, err)
-		}
 	}
 	return filecontent.RunSQL(ctx, tables, query, filecontent.SQLOptions{
 		DuckDB:  f.conf.DuckDB,

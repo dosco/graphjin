@@ -16,20 +16,21 @@ func fileContentTestService(t *testing.T, enabled bool) *graphjinService {
 	t.Helper()
 	configRoot := t.TempDir()
 	files := filepath.Join(configRoot, "files")
-	for _, dir := range []string{"policies", "pricing"} {
+	for _, dir := range []string{"policies", "pricing", "users/alice"} {
 		if err := os.MkdirAll(filepath.Join(files, dir), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	writeTestFile(t, filepath.Join(files, "policies", "travel.md"), "# Travel\nBook economy.\n# Per diem\nTier 1 cities pay 70 per day.\n")
 	writeTestFile(t, filepath.Join(files, "pricing", "laminates.csv"), "SKU,Material,Price\nHI-1,Rogers 4350B,12.5\nHI-2,FR-4,7\nHI-3,Rogers 3003,19\n")
+	writeTestFile(t, filepath.Join(files, "users", "alice", "salaries.csv"), "Name,Salary\nAlice,100\n")
 
 	duck := os.Getenv("GRAPHJIN_TEST_DUCKDB")
 	conf := &Config{
 		Core: Core{
 			Mode: "dev",
 			Sources: []core.SourceConfig{
-				{Name: "docs", Kind: "file", Backend: "local", Root: "files", ReadOnly: true},
+				{Name: "docs", Kind: "file", Backend: "local", Root: "files", ReadOnly: true, UserPrefix: "users/"},
 			},
 		},
 		Serv: Serv{
@@ -105,5 +106,30 @@ func TestFileContentOffKeepsFileTablesPlain(t *testing.T) {
 	}
 	if (&serviceAgentRuntime{service: s}).FileTablesEnabled() {
 		t.Fatal("agent runtime should not offer file tables")
+	}
+}
+
+func TestFileContentSQLHidesOtherUsersTables(t *testing.T) {
+	duck := os.Getenv("GRAPHJIN_TEST_DUCKDB")
+	if duck == "" {
+		duck = "duckdb"
+	}
+	if _, err := exec.LookPath(duck); err != nil {
+		t.Skip("DuckDB CLI not installed; set GRAPHJIN_TEST_DUCKDB")
+	}
+	s := fileContentTestService(t, true)
+	alice := context.WithValue(context.Background(), core.UserIDKey, "alice")
+	bob := context.WithValue(context.Background(), core.UserIDKey, "bob")
+
+	rows, err := s.queryFileTables(alice, "docs", "select salary from salaries")
+	if err != nil || len(rows.Rows) != 1 {
+		t.Fatalf("alice: %+v, %v", rows, err)
+	}
+	_, err = s.queryFileTables(bob, "docs", "select salary from salaries")
+	if err == nil {
+		t.Fatal("bob read alice's table")
+	}
+	if strings.Contains(err.Error(), "alice") || strings.Contains(err.Error(), "salaries.csv") {
+		t.Fatalf("error reveals alice's file: %v", err)
 	}
 }
