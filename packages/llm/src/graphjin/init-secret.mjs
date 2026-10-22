@@ -1,5 +1,5 @@
 import pg from "pg";
-import { chown, mkdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -148,12 +148,6 @@ const watches = patchGraphjinWatches(keystore.content, watcherWebhookUrl());
 const library = patchGraphjinLibrary(watches.content);
 const libraryRoot = join(dirname(CONFIG_PATH), LIBRARY_SOURCE_ROOT);
 await mkdir(libraryRoot, { recursive: true, mode: 0o700 });
-// GraphJin runs as the owner of its config directory; a host run as root
-// (dev) hands the folders over so GraphJin can read them.
-if (process.getuid?.() === 0) {
-  const owner = await stat(dirname(CONFIG_PATH));
-  for (const dir of [dirname(libraryRoot), libraryRoot]) await chown(dir, owner.uid, owner.gid);
-}
 if (migrated.changed || patched.changed || policy.changed || keystore.changed || watches.changed || library.changed) {
   await atomicWriteFile(CONFIG_PATH, library.content);
 }

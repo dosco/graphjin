@@ -48,14 +48,32 @@ services:
     volumes: !override
       - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/records-graphjin:/config:ro
 
+  # Host web and worker write into this folder as the host user (the agent
+  # key file, Library uploads), so in dev the folder and the customer
+  # GraphJin belong to the host user too, not the image's uid 1001.
   graphjin-config-init:
+    entrypoint: !override
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ ! -f /config/agentic.yml ]; then
+          cp /seed/agentic.yml /config/agentic.yml
+          KEY=$$(head -c 32 /dev/urandom | base64 | tr -d '\n')
+          sed -i "s|REPLACE_WITH_BASE64_32_BYTE_KEY|$$KEY|" /config/agentic.yml
+        fi
+        chown -R ${OPENNEKO_DEV_UID:-1001}:${OPENNEKO_DEV_GID:-999} /config
+        chmod 0700 /config
     volumes: !override
       - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/graphjin:/config
       - ./db/graphjin/dev.sources.example.yml:/seed/agentic.yml:ro
 
   # scripts/dev-up.sh writes the JWT secret from source before GraphJin
   # starts, so GraphJin does not wait on the worker-image secret init.
+  # Runs the openneko binary scripts/dev-up.sh builds from source, so GraphJin
+  # changes show up without rebuilding the agent image.
   graphjin:
+    user: "${OPENNEKO_DEV_UID:-1001}:${OPENNEKO_DEV_GID:-999}"
     depends_on: !override
       graphjin-config-init:
         condition: service_completed_successfully
@@ -66,3 +84,4 @@ services:
       GRAPHJIN_AGENT_API_KEY: ${GRAPHJIN_AGENT_API_KEY:-}
     volumes: !override
       - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/graphjin:/config
+      - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/bin/openneko:/usr/local/bin/openneko:ro

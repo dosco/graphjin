@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chown, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import {
   LIBRARY_SOURCE_NAME,
@@ -69,23 +69,8 @@ export async function saveLibrarySourceFile(input: {
   // Write then rename, so GraphJin never indexes a half-written file.
   const partial = `${absolute}.partial`;
   await writeFile(partial, input.data, { mode: 0o600 });
-  await handToLibraryOwner(root, absolute, partial);
   await rename(partial, absolute);
   return { relativePath, contentHash, size: input.data.byteLength };
-}
-
-/**
- * GraphJin reads the Library as the owner of its config directory, two
- * levels above the Library root. A writer running as root (a dev host)
- * hands what it created to that owner; elsewhere the writer already is the
- * owner and this does nothing.
- */
-async function handToLibraryOwner(root: string, absolute: string, file: string): Promise<void> {
-  if (process.getuid?.() !== 0) return;
-  const owner = await stat(dirname(dirname(root)));
-  const paths = [file];
-  for (let dir = dirname(absolute); dir.startsWith(root + sep); dir = dirname(dir)) paths.push(dir);
-  for (const path of paths) await chown(path, owner.uid, owner.gid);
 }
 
 export async function readLibrarySourceFile(relativePath: string): Promise<Buffer> {

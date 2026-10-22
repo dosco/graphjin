@@ -19,7 +19,8 @@ fi
 # openneko binary, built from graphjin/ in this checkout; scripts/dev-agent.sh
 # runs its serve and sandbox roles.
 mkdir -p "$OPENNEKO_DEV_STATE/bin"
-(cd apps/openneko && go build -o "$OPENNEKO_DEV_STATE/bin/openneko" ./cmd/openneko)
+# Static, as release builds are: the dev customer GraphJin container runs it.
+(cd apps/openneko && CGO_ENABLED=0 go build -o "$OPENNEKO_DEV_STATE/bin/openneko" ./cmd/openneko)
 ln -sf openneko "$OPENNEKO_DEV_STATE/bin/graphjin"
 
 compose up -d --wait neko-db records-db
