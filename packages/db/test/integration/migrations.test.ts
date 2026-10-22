@@ -54,6 +54,8 @@ const M_0065 = join(REPO_ROOT, "db", "migrations", "0065_skill_usage.sql");
 const M_0066 = join(REPO_ROOT, "db", "migrations", "0066_skill_learn.sql");
 const M_0067 = join(REPO_ROOT, "db", "migrations", "0067_workflow_api.sql");
 const M_0122 = join(REPO_ROOT, "db", "migrations", "0122_ax_only_agent.sql");
+const M_0040 = join(REPO_ROOT, "db", "migrations", "0040_data_source_registry.sql");
+const M_0123 = join(REPO_ROOT, "db", "migrations", "0123_graphjin_agent_default.sql");
 
 function uniqueDbName(): string {
   return `vitest_migrations_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -402,6 +404,40 @@ describeIfDb("schema migrations", () => {
       expect(runs.rows).toEqual([
         { status: "completed", backend: "legacy-runtime" },
         { status: "queued", backend: "ax" },
+      ]);
+    });
+  });
+
+  it("0123 keeps direct tools for orgs on an external GraphJin and is idempotent", async () => {
+    await withTempDb(async (client) => {
+      await applyFile(client, M_0001);
+      await applyFile(client, M_0040);
+      await client.query(`
+        insert into organization (id, name) values
+          ('in-stack', 'Docker'), ('dev', 'Dev'), ('external', 'External'),
+          ('external-chose-agent', 'Chose agent'), ('no-source', 'No source'),
+          ('mixed', 'Mixed');
+        insert into data_source (org_id, kind, name, graphql_url, is_default) values
+          ('in-stack', 'graphjin', 'default', 'http://graphjin:8080/api/v1/graphql', true),
+          ('dev', 'graphjin', 'default', 'http://localhost:8080/api/v1/graphql', true),
+          ('external', 'graphjin', 'default', 'https://graphjin.acme.example/api/v1/graphql', true),
+          ('external-chose-agent', 'graphjin', 'default', 'https://gj.acme.example/api/v1/graphql', true),
+          ('mixed', 'graphjin', 'old', 'https://old.acme.example/api/v1/graphql', false),
+          ('mixed', 'graphjin', 'default', 'http://graphjin:8080/api/v1/graphql', true);
+        insert into llm_provider_config (org_id, scope, provider, enabled)
+        values ('external-chose-agent', 'graphjin-agent', 'primary', true);
+      `);
+
+      await applyFile(client, M_0123);
+      await applyFile(client, M_0123);
+
+      const rows = await client.query<{ org_id: string; provider: string; enabled: boolean }>(`
+        select org_id, provider, enabled from llm_provider_config
+        where scope = 'graphjin-agent' order by org_id
+      `);
+      expect(rows.rows).toEqual([
+        { org_id: "external", provider: "primary", enabled: false },
+        { org_id: "external-chose-agent", provider: "primary", enabled: true },
       ]);
     });
   });
