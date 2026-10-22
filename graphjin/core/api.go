@@ -135,6 +135,7 @@ type graphjinEngine struct {
 	// instantiates one Backend per FilesystemConfig entry during init.
 	fsFactories map[string]FilesystemBackendFactory
 	fsBackends  map[string]fstable.Backend
+	fileContent FileContent
 
 	// Managed mutation handlers intercept selected mutation tables before
 	// normal SQL execution. The runtime database can remain read-only while

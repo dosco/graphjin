@@ -265,6 +265,7 @@ func (ms *mcpServer) registerTools() {
 	if !ms.service.conf.agentOnlyMCP() {
 		ms.registerCatalogTools()
 		ms.registerExecutionTools()
+		ms.registerFileTableTools()
 		ms.registerSchemaTools()
 	}
 	// Config tools are dev-only but register independently of agentOnlyMCP:

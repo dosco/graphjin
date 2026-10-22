@@ -151,6 +151,10 @@ type Serv struct {
 	// Server-side GraphJin discovery/answer agent configuration
 	Agent AgentConfig `mapstructure:"agent" jsonschema:"title=GraphJin Agent Configuration"`
 
+	// Reading inside the files of file sources: extracted text, content
+	// search, and SQL over sheets and CSV files
+	FileContent FileContentConfig `mapstructure:"file_content" jsonschema:"title=File Content"`
+
 	// Local encrypted secrets configuration
 	Secrets SecretsConfig `mapstructure:"secrets" jsonschema:"title=Secrets"`
 

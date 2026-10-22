@@ -158,8 +158,12 @@ func (gj *graphjinEngine) loadFilesystemIntegration() error {
 		}
 		gj.fsBackends[fc.Name] = backend
 
-		t := sdata.NewDBTable(schema, fc.Name, "remote", fixedFilesystemColumns(schema, fc.Name))
-		t.Args = fixedFilesystemArgs(schema, fc.Name)
+		cols, args := fixedFilesystemColumns(schema, fc.Name), fixedFilesystemArgs(schema, fc.Name)
+		if gj.fileContent != nil {
+			cols, args = withFileContentColumns(cols, args)
+		}
+		t := sdata.NewDBTable(schema, fc.Name, "remote", cols)
+		t.Args = args
 		// The column surface is closed — every backend serves exactly the
 		// fixed set — so unknown selections should fail at compile time the
 		// way they do on database tables. Without this, a hallucinated
@@ -211,7 +215,7 @@ func (gj *graphjinEngine) newFilesystemResolverFn() ResolverFn {
 				break
 			}
 		}
-		return &filesystemBridge{name: name, backend: backend, conf: conf}, nil
+		return &filesystemBridge{name: name, backend: backend, conf: conf, content: gj.fileContent}, nil
 	}
 }
 
@@ -223,6 +227,7 @@ type filesystemBridge struct {
 	name    string
 	backend fstable.Backend
 	conf    FilesystemConfig
+	content FileContent
 }
 
 func (b *filesystemBridge) Resolve(ctx context.Context, req ResolverReq) ([]byte, error) {
@@ -256,7 +261,7 @@ func (b *filesystemBridge) Resolve(ctx context.Context, req ResolverReq) ([]byte
 			}
 			return wrapItems(nil)
 		}
-		row, err := b.entryToRow(ctx, entry, plan.inlineData)
+		row, err := b.entryToRow(ctx, entry, plan)
 		if err != nil {
 			return nil, err
 		}
@@ -264,6 +269,10 @@ func (b *filesystemBridge) Resolve(ctx context.Context, req ResolverReq) ([]byte
 			return wrapFilesystemItem(row)
 		}
 		return wrapItems([]map[string]any{row})
+	}
+
+	if plan.search != "" {
+		return b.resolveSearch(ctx, req, plan)
 	}
 
 	// List path.
@@ -284,7 +293,7 @@ func (b *filesystemBridge) Resolve(ctx context.Context, req ResolverReq) ([]byte
 
 	rows := make([]map[string]any, 0, len(entries))
 	for _, e := range entries {
-		row, err := b.entryToRow(ctx, e, plan.inlineData)
+		row, err := b.entryToRow(ctx, e, plan)
 		if err != nil {
 			return nil, err
 		}
@@ -294,6 +303,8 @@ func (b *filesystemBridge) Resolve(ctx context.Context, req ResolverReq) ([]byte
 }
 
 type filesystemQueryPlan struct {
+	search       string
+	tables       bool
 	key          string
 	prefix       string
 	after        string
@@ -312,6 +323,8 @@ type filesystemCursorState struct {
 func (b *filesystemBridge) planQuery(req ResolverReq) (filesystemQueryPlan, error) {
 	args := req.Sel.ExtraArgs
 	plan := filesystemQueryPlan{
+		search:     strings.TrimSpace(args["search"]),
+		tables:     filesystemSelects(req.Sel, "tables"),
 		key:        args["key"],
 		prefix:     args["prefix"],
 		after:      args["after"],
@@ -1101,7 +1114,7 @@ func filesystemLike(value, pattern string, insensitive bool) (bool, error) {
 // entryToRow converts a backend Entry to the JSON row shape the engine
 // will pluck columns out of. URL is filled by Presign (or the public
 // base URL); data is base64-encoded only when inline_data=true.
-func (b *filesystemBridge) entryToRow(ctx context.Context, e fstable.Entry, inlineData bool) (map[string]any, error) {
+func (b *filesystemBridge) entryToRow(ctx context.Context, e fstable.Entry, plan filesystemQueryPlan) (map[string]any, error) {
 	ttl := b.conf.PresignTTL
 	if ttl == 0 {
 		ttl = defaultFilesystemPresignTTL
@@ -1128,9 +1141,22 @@ func (b *filesystemBridge) entryToRow(ctx context.Context, e fstable.Entry, inli
 		"url":          url,
 		"data":         nil,
 		"text":         nil,
+		"passages":     nil,
+		"tables":       nil,
 	}
 
-	if inlineData {
+	if plan.tables && b.content != nil {
+		tables, err := b.content.Tables(ctx, b.name, e)
+		if err != nil {
+			return nil, fmt.Errorf("filesystem(%s): tables: %w", b.name, err)
+		}
+		if tables == nil {
+			tables = []FileTable{}
+		}
+		row["tables"] = tables
+	}
+
+	if plan.inlineData {
 		body, _, gerr := b.backend.Get(ctx, e.Key)
 		if gerr != nil {
 			return nil, fmt.Errorf("filesystem(%s): get: %w", b.name, gerr)
@@ -1146,10 +1172,106 @@ func (b *filesystemBridge) entryToRow(ctx context.Context, e fstable.Entry, inli
 		// were decoding file bodies token by token in their heads.
 		if utf8.Valid(buf) {
 			row["text"] = string(buf)
+		} else if b.content != nil {
+			text, ok, err := b.content.Text(ctx, b.name, e, buf)
+			if err != nil {
+				return nil, fmt.Errorf("filesystem(%s): extract text: %w", b.name, err)
+			}
+			if ok {
+				row["text"] = text
+			}
 		}
 	}
 
 	return row, nil
+}
+
+// resolveSearch ranks files by their content. Results keep relevance order
+// unless the query sorts them; where filters still apply.
+func (b *filesystemBridge) resolveSearch(ctx context.Context, req ResolverReq, plan filesystemQueryPlan) ([]byte, error) {
+	if b.content == nil {
+		return nil, fmt.Errorf("filesystem(%s): search needs file content indexing, which this server has not enabled", b.name)
+	}
+	limit := plan.limit
+	if limit <= 0 {
+		limit = 20
+	}
+	matches, err := b.content.Search(ctx, b.name, plan.search, plan.offset+limit)
+	if err != nil {
+		return nil, fmt.Errorf("filesystem(%s): search: %w", b.name, err)
+	}
+	type hit struct {
+		entry    fstable.Entry
+		passages []FilePassage
+	}
+	hits := make([]hit, 0, len(matches))
+	for _, m := range matches {
+		if plan.prefix != "" && !strings.HasPrefix(m.Key, plan.prefix) {
+			continue
+		}
+		e, err := b.backend.Stat(ctx, m.Key)
+		if errors.Is(err, fstable.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("filesystem(%s): stat: %w", b.name, err)
+		}
+		ok, err := filesystemEntryMatches(e, req.Sel.Where.Exp, req.Vars, filesystemCursorState{})
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			hits = append(hits, hit{entry: e, passages: m.Passages})
+		}
+	}
+	if len(req.Sel.OrderBy) != 0 {
+		entries := make([]fstable.Entry, len(hits))
+		passages := make(map[string][]FilePassage, len(hits))
+		for i, h := range hits {
+			entries[i] = h.entry
+			passages[h.entry.Key] = h.passages
+		}
+		if err := sortFilesystemEntries(entries, req.Sel.OrderBy); err != nil {
+			return nil, err
+		}
+		for i, e := range entries {
+			hits[i] = hit{entry: e, passages: passages[e.Key]}
+		}
+	}
+	if plan.offset >= len(hits) {
+		hits = nil
+	} else {
+		hits = hits[plan.offset:]
+	}
+	if len(hits) > limit {
+		hits = hits[:limit]
+	}
+	rows := make([]map[string]any, 0, len(hits))
+	for _, h := range hits {
+		row, err := b.entryToRow(ctx, h.entry, plan)
+		if err != nil {
+			return nil, err
+		}
+		if h.passages == nil {
+			h.passages = []FilePassage{}
+		}
+		row["passages"] = h.passages
+		rows = append(rows, row)
+	}
+	return wrapItems(rows)
+}
+
+// filesystemSelects reports whether the selection includes the named column.
+func filesystemSelects(sel *qcode.Select, name string) bool {
+	if sel == nil {
+		return false
+	}
+	for _, f := range sel.Fields {
+		if f.Col.Name == name || f.FieldName == name {
+			return true
+		}
+	}
+	return false
 }
 
 // wrapItems serialises a list of rows under {"items": [...]}; the

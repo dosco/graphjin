@@ -308,6 +308,23 @@ type GraphRuntime interface {
 	ExecuteGraphQL(context.Context, map[string]any) (any, error)
 }
 
+// FileTablesRuntime is implemented by runtimes that can run SQL over the
+// tables derived from the sheets and CSV files of file sources. The agent
+// gets the query_file_tables tool when FileTablesEnabled reports true.
+type FileTablesRuntime interface {
+	FileTablesEnabled() bool
+	QueryFileTables(context.Context, map[string]any) (any, error)
+}
+
+// QueryFileTablesDescription describes the query_file_tables tool wherever
+// it is offered.
+const QueryFileTablesDescription = "Run one read-only SQL query (DuckDB dialect) over the tables derived from the sheets and CSV files of a file source. " +
+	"Documents are found by content first: { <source>(search: \"words from the question\", limit: 5) { key passages tables } } ranks files and shows matching passages with their page, slide or sheet; read a whole document with { <source>(key: \"<key>\") { text } }. " +
+	"For numbers in a sheet, take table names and columns from tables and query them here instead of reading the sheet text. " +
+	"Each sheet has a typed table (named columns from its header rows, plus source_row) and a raw table ending in __raw " +
+	"(every cell as text, columns named by letter A, B, C, plus row_number) for layouts the typed table misses. " +
+	"Quote column names that are keywords or start with digits. The caller must be able to read each table's file."
+
 type Agent struct {
 	config        Config
 	runtime       GraphRuntime
@@ -1040,6 +1057,16 @@ func (a *Agent) tools(ctx context.Context, req Request, rt GraphRuntime) []ax.To
 		func(args map[string]ax.Value) (ax.Value, error) {
 			return a.call(ctx, req.Namespace, args, rt.ExecuteGraphQL)
 		}))
+	if files, ok := rt.(FileTablesRuntime); ok && files.FileTablesEnabled() {
+		tools = append(tools, a.tool(toolQueryFileTables, QueryFileTablesDescription,
+			[]ax.Field{
+				field("source", "string", "File source name, the same as its table name.", false),
+				field("sql", "string", "One SELECT or WITH query naming the file tables it reads.", false),
+			},
+			func(args map[string]ax.Value) (ax.Value, error) {
+				return a.call(ctx, req.Namespace, args, files.QueryFileTables)
+			}))
+	}
 	return tools
 }
 

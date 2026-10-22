@@ -18,6 +18,12 @@ func (co *Compiler) compileSelectArgs(qc *QCode, sel *Select, args []graph.Arg, 
 			err = co.compileArgID(sel, a)
 
 		case "search":
+			// Remote tables search by their own means (file tables rank
+			// files by content); the resolver reads the argument.
+			if sel.Ti.Type == "remote" {
+				err = co.compileArgRemoteExtra(sel, a)
+				break
+			}
 			err = co.compileArgSearch(sel, a)
 
 		case "where":

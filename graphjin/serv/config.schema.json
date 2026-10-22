@@ -915,6 +915,48 @@
 			"additionalProperties": false,
 			"type": "object"
 		},
+		"FileContentConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"title": "Enabled",
+					"description": "Enable file content indexing"
+				},
+				"dir": {
+					"type": "string",
+					"title": "Directory",
+					"description": "Directory for the derived index and tables; default .file-content\nunder the config directory. Safe to delete: it is rebuilt."
+				},
+				"duckdb": {
+					"type": "string",
+					"title": "DuckDB CLI",
+					"description": "DuckDB CLI for SQL over sheets; default duckdb on PATH"
+				},
+				"max_file_mb": {
+					"type": "integer",
+					"title": "Max File Size (MB)",
+					"description": "Largest file indexed, in MB; default 100"
+				},
+				"refresh_seconds": {
+					"type": "integer",
+					"title": "Refresh Interval (seconds)",
+					"description": "How long an index stays fresh before a read checks the source for\nchanges, in seconds; default 10"
+				},
+				"max_rows": {
+					"type": "integer",
+					"title": "Max SQL Rows",
+					"description": "Most rows a SQL query returns; default 200"
+				},
+				"timeout_seconds": {
+					"type": "integer",
+					"title": "SQL Timeout (seconds)",
+					"description": "SQL query timeout in seconds; default 20"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "FileContentConfig turns on reading inside the files of file sources."
+		},
 		"FilesystemConfig": {
 			"properties": {
 				"name": {
@@ -2820,6 +2862,11 @@
 			"$ref": "#/$defs/AgentConfig",
 			"title": "GraphJin Agent Configuration",
 			"description": "Server-side GraphJin discovery/answer agent configuration"
+		},
+		"file_content": {
+			"$ref": "#/$defs/FileContentConfig",
+			"title": "File Content",
+			"description": "Reading inside the files of file sources: extracted text, content\nsearch, and SQL over sheets and CSV files"
 		},
 		"secrets": {
 			"$ref": "#/$defs/SecretsConfig",

@@ -38,6 +38,7 @@ Run `graphjin config docs` (or `graphjin serve new`) for the annotated example t
 - [Caching Configuration](#caching-configuration)
 - [Uploads Configuration](#uploads-configuration)
 - [Filesystems Configuration](#filesystems-configuration)
+- [File Content Configuration](#file-content-configuration)
 - [Federation Configuration](#federation-configuration)
 - [Schema Configuration](#schema-configuration)
 - [OpenAPI Integration](#openapi-integration)
@@ -1631,6 +1632,49 @@ tables:
 ```
 
 ---
+
+## File Content Configuration
+
+Reads inside the files of `kind: file` sources, so questions can be answered from documents and spreadsheets without anyone splitting or summarising them first. Off by default.
+
+```yaml
+file_content:
+  enabled: true
+```
+
+When it is on, each file source gets an index of its files, kept in `dir` and refreshed as files change (a read checks the source for changes at most every `refresh_seconds`; the server also indexes every source in the background at startup). Supported files are text and Markdown, CSV and TSV, PDF (text layer), Word (`.docx`), PowerPoint (`.pptx`) and Excel (`.xlsx`).
+
+File tables then gain:
+
+- `search:` — ranks the source's files by their content, best first, using full-text search over each file's pages, slides, sheets and sections. Every word of the query counts toward the rank, and file names are searched too. `where` filters still apply.
+- `passages` — with `search`, up to three matching passages per file, each `{location, snippet}`, where location names the page, slide, sheet or section.
+- `tables` — the SQL tables derived from a sheet or CSV file: a typed table with columns named from the detected header rows (two header rows are combined, e.g. `units_sold_2024`) plus `source_row`, and a raw table ending in `__raw` with every cell as text, columns named by letter and `row_number`.
+- `text` — for PDF, Word, PowerPoint and Excel files, the extracted text with `[page n]`, `[slide n]` and `[sheet name]` markers. UTF-8 files are returned as they are.
+
+```graphql
+{ docs(search: "Rogers laminate price", limit: 5) { key passages tables } }
+{ docs(key: "contracts/msa-2025.pdf") { text } }
+```
+
+The `query_file_tables` tool (MCP, and the server agent) runs one read-only SQL query over those tables with the [DuckDB CLI](https://duckdb.org/docs/installation/), which must be installed on the server:
+
+```sql
+select region, units_sold_2025 from regional_sales__sales_2025 order by units_sold_2025 desc
+```
+
+Each query runs in a fresh DuckDB process that may read only the Parquet files of the tables it names, with external access off and its configuration locked before the query runs. A table is usable only when the caller can read its file through GraphQL under their role, so file access rules apply to SQL too.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | boolean | `false` | Turn on file content indexing |
+| `dir` | string | `.file-content` | Where the index and Parquet tables live; relative to the config directory. Safe to delete: it is rebuilt |
+| `duckdb` | string | `duckdb` | DuckDB CLI used by `query_file_tables` |
+| `max_file_mb` | integer | `100` | Larger files are not indexed |
+| `refresh_seconds` | integer | `10` | How long the index stays fresh before a read checks the source for changes |
+| `max_rows` | integer | `200` | Rows a SQL query returns |
+| `timeout_seconds` | integer | `20` | SQL query timeout |
+
+Scanned PDFs without a text layer are indexed by name only.
 
 ## Federation Configuration
 
