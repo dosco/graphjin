@@ -1560,6 +1560,7 @@ tables:
 | `presign_ttl` | duration | `15m` | TTL for generated presigned URLs |
 | `public_base_url` | string | - | When set, replaces presigned URLs with `<base>/<key>` — useful for CDN fronting |
 | `max_list_page_size` | integer | `1000` | Caps `limit:` for list queries |
+| `user_prefix` | string | - | Makes per-user folders private: a key under `<user_prefix><user id>/` is listed, read, searched and written only by the caller with that user id (the JWT subject). Keys outside it are unaffected. For example `users/` |
 
 ### Authentication
 

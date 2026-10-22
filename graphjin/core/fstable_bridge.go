@@ -143,6 +143,17 @@ func (gj *graphjinEngine) loadFilesystemIntegration() error {
 		if err != nil {
 			return fmt.Errorf("filesystems[%q]: backend init: %w", fc.Name, err)
 		}
+		if gj.fsSourceBackends == nil {
+			gj.fsSourceBackends = make(map[string]fstable.Backend)
+		}
+		gj.fsSourceBackends[fc.Name] = backend
+		if prefix := strings.Trim(fc.UserPrefix, "/"); prefix != "" {
+			backend = userFolderFilesystemBackend{
+				name:    fc.Name,
+				prefix:  prefix + "/",
+				backend: backend,
+			}
+		}
 		if fc.ReadOnly {
 			backend = readOnlyFilesystemBackend{
 				name:    fc.Name,

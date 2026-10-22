@@ -1008,6 +1008,10 @@
 					"type": "integer",
 					"title": "Max List Page Size",
 					"default": 1000
+				},
+				"user_prefix": {
+					"type": "string",
+					"title": "Per-User Folder Prefix"
 				}
 			},
 			"additionalProperties": false,
@@ -2062,6 +2066,10 @@
 				"max_list_page_size": {
 					"type": "integer",
 					"title": "Max List Page Size"
+				},
+				"user_prefix": {
+					"type": "string",
+					"title": "Per-User Folder Prefix"
 				},
 				"specs_dir": {
 					"type": "string",

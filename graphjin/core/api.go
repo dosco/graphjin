@@ -135,7 +135,10 @@ type graphjinEngine struct {
 	// instantiates one Backend per FilesystemConfig entry during init.
 	fsFactories map[string]FilesystemBackendFactory
 	fsBackends  map[string]fstable.Backend
-	fileContent FileContent
+	// fsSourceBackends are the same backends without per-caller scoping,
+	// for server-side work over a whole source, such as content indexing.
+	fsSourceBackends map[string]fstable.Backend
+	fileContent      FileContent
 
 	// Managed mutation handlers intercept selected mutation tables before
 	// normal SQL execution. The runtime database can remain read-only while
@@ -326,6 +329,19 @@ func (g *GraphJin) FilesystemBackend(name string) (fstable.Backend, bool) {
 		return nil, false
 	}
 	b, ok := gj.fsBackends[name]
+	return b, ok
+}
+
+// FilesystemSourceBackend returns a filesystem table's backend without
+// per-caller scoping such as user_prefix: every key in the source, for
+// server-side work like content indexing. Never serve its results to a
+// caller without checking access through FilesystemBackend or GraphQL.
+func (g *GraphJin) FilesystemSourceBackend(name string) (fstable.Backend, bool) {
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, false
+	}
+	b, ok := gj.fsSourceBackends[name]
 	return b, ok
 }
 
@@ -1398,6 +1414,7 @@ func (g *GraphJin) newGraphJinReloadingConfigDatabases(base *graphjinEngine, nex
 		gj.rmap = base.rmap
 		gj.openapiRuntime = base.openapiRuntime
 		gj.fsBackends = base.fsBackends
+		gj.fsSourceBackends = base.fsSourceBackends
 	}
 
 	for _, name := range reloadNames {
@@ -1537,6 +1554,7 @@ func (g *GraphJin) newGraphJinReloadingDatabase(base *graphjinEngine, database s
 		gj.rmap = base.rmap
 		gj.openapiRuntime = base.openapiRuntime
 		gj.fsBackends = base.fsBackends
+		gj.fsSourceBackends = base.fsSourceBackends
 	}
 	if handler := gj.managedQueryHandlers[database]; handler != nil {
 		if err := gj.initManagedQueryTablesForDatabase(database, handler); err != nil {

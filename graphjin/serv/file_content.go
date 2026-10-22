@@ -97,7 +97,7 @@ func (s *graphjinService) fileContentReader() *fileContent {
 				if live.gj == nil {
 					return nil, false
 				}
-				return live.gj.FilesystemBackend(name)
+				return live.gj.FilesystemSourceBackend(name)
 			},
 			indexes: map[string]*filecontent.Index{},
 		}
