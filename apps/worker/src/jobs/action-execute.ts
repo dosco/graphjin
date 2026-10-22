@@ -5,13 +5,6 @@ import { appendWorkRunEvent, getWorkThreadForRun } from "@neko/llm/work";
 
 export async function runActionExecute(
   payload: ActionExecutePayload,
-  deps: {
-    onAppCreated?: (input: {
-      orgId: string;
-      appId: string;
-      actionPayload: Record<string, unknown>;
-    }) => Promise<void>;
-  } = {},
 ): Promise<void> {
   const result = await executeApprovedActionRequest(
     payload.orgId,
@@ -28,17 +21,6 @@ export async function runActionExecute(
   // renders the outcome inline. Workflow-runner-emitted requests
   // (work_run_id is null) skip this — their results land in /actions.
   const request = await getActionRequest(payload.orgId, payload.actionRequestId);
-  if (result.ok && request?.kind === "app_create" && deps.onAppCreated) {
-    const appId = request.payload.app;
-    if (typeof appId !== "string" || !appId) {
-      throw new Error("completed app_create action is missing its app id");
-    }
-    await deps.onAppCreated({
-      orgId: payload.orgId,
-      appId,
-      actionPayload: request.payload,
-    });
-  }
   if (!request?.workRunId) return;
   const thread = await getWorkThreadForRun(payload.orgId, request.workRunId);
   if (!thread) return;

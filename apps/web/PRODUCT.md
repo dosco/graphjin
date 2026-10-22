@@ -53,8 +53,8 @@ knowing and acting.
 
 Chat (`/chat`) is the default surface: the bot list, each bot's chat, New bot,
 and Connectors. The console is one product across many surfaces: Briefing, Ask, Workflows,
-Actions, Runs, Library, Memory, Skills, Integrations, Admin, Settings, Apps,
-Records, Sign-in, and Onboarding. `apps/web/AGENTS.md` is the authority on this
+Actions, Runs, Library, Memory, Skills, Integrations, Admin, Settings,
+Sign-in, and Onboarding. `apps/web/AGENTS.md` is the authority on this
 scope.
 
 OpenNeko reads a customer database through GraphJin. It routes governed writes to
@@ -132,7 +132,7 @@ Terminology:
 3. Evidence over atmosphere. Every claim rides a date, a figure, a table name, or
    a mechanism.
 4. One product language across every surface. Operator and CXO surfaces share
-   tokens, primitives, states, and copy. Admin, Apps, Records, and Settings stay
+   tokens, primitives, states, and copy. Admin and Settings stay
    precise and quiet, and no surface gets a distinctive restyle.
 5. Chat as the default interface. Prefer the agent and its cards. Reserve forms
    for credential entry.

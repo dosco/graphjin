@@ -28,24 +28,15 @@ export PATH="$OPENNEKO_DEV_STATE/bin:$PATH"
 export OPENNEKO_PG_ENV_OVERRIDE=1
 export NEKO_PG_HOST=127.0.0.1
 export NEKO_PG_PORT="${OPENNEKO_DB_PORT:-5432}"
-export RECORDS_PG_HOST=127.0.0.1
-export RECORDS_PG_PORT="${OPENNEKO_RECORDS_DB_PORT:-5434}"
 
 export NEKO_EMBEDDING_URL="http://127.0.0.1:${OPENNEKO_EMBEDDING_PORT:-5003}"
 export OPENNEKO_GRAPHJIN_URL="http://127.0.0.1:${OPENNEKO_GRAPHJIN_PORT:-8089}"
 export OPENNEKO_GRAPHJIN_CONFIG="$OPENNEKO_DEV_STATE/graphjin/agentic.yml"
 export OPENNEKO_LIBRARY_GRAPHJIN_URL="http://127.0.0.1:${GRAPHJIN_PORT:-8080}/api/v1/graphql"
-export OPENNEKO_RECORDS_GRAPHJIN_URL="http://127.0.0.1:${OPENNEKO_RECORDS_GRAPHJIN_PORT:-8090}"
-export OPENNEKO_RECORDS_WATCH_GRAPHJIN_URL="http://127.0.0.1:${OPENNEKO_RECORDS_WATCH_GRAPHJIN_PORT:-8091}"
-export OPENNEKO_RECORDS_GRAPHJIN_CONFIG_DIR="$OPENNEKO_DEV_STATE/records-graphjin"
-# The host worker writes records configs owner-only, so the records GraphJin
-# containers run as the host user to read them (compose.dev.yml).
+# The host web and worker write beside the customer GraphJin config, so that
+# GraphJin container runs as the host user to read it (compose.dev.yml).
 export OPENNEKO_DEV_UID="${OPENNEKO_DEV_UID:-$(id -u)}"
 export OPENNEKO_DEV_GID="${OPENNEKO_DEV_GID:-$(id -g)}"
-# Records GraphJin runs in Docker and reaches the records database by name.
-export OPENNEKO_RECORDS_GRAPHJIN_DB_HOST="${OPENNEKO_RECORDS_GRAPHJIN_DB_HOST:-records-db}"
-export OPENNEKO_RECORDS_GRAPHJIN_DB_PORT="${OPENNEKO_RECORDS_GRAPHJIN_DB_PORT:-5432}"
-export OPENNEKO_RECORDS_GRAPHJIN_BINARY="${OPENNEKO_RECORDS_GRAPHJIN_BINARY:-$PWD/scripts/dev-records-graphjin.sh}"
 
 # Agent runtime. `pnpm dev` runs `openneko serve` and `openneko sandbox` on
 # the host (scripts/dev-agent.sh); web and worker start each run's runner from

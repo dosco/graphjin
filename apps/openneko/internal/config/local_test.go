@@ -78,33 +78,3 @@ func TestWriteLocalPgPasswordPreservesFields(t *testing.T) {
 		t.Fatalf("password not written: %q", lc.Pg.Password)
 	}
 }
-
-func TestWriteLocalDatabasePasswordsRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	if err := WriteLocalDatabasePasswords(dir, "metadata-pass", "records-pass"); err != nil {
-		t.Fatalf("write both: %v", err)
-	}
-
-	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
-	if err != nil {
-		t.Fatalf("read file: %v", err)
-	}
-	var onDisk Local
-	if err := json.Unmarshal(raw, &onDisk); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if onDisk.Pg == nil || !IsEncrypted(onDisk.Pg.Password) {
-		t.Fatal("metadata password is not encrypted")
-	}
-	if onDisk.RecordsPg == nil || !IsEncrypted(onDisk.RecordsPg.Password) {
-		t.Fatal("records password is not encrypted")
-	}
-
-	lc, _ := ReadLocal(dir)
-	if lc.Pg == nil || lc.Pg.Password != "metadata-pass" {
-		t.Fatalf("metadata round-trip mismatch: %+v", lc.Pg)
-	}
-	if lc.RecordsPg == nil || lc.RecordsPg.Password != "records-pass" {
-		t.Fatalf("records round-trip mismatch: %+v", lc.RecordsPg)
-	}
-}

@@ -6,7 +6,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Mandatory UI design-system workflow
 
-Every change under `apps/web` must preserve OpenNeko's existing product language. This is a delivery requirement, not an optional polish pass. Scope is every surface: Briefing, Ask, workflows, actions, runs, library, memory, skills, integrations, Admin, Settings, Apps, Records, Sign-in, and Onboarding.
+Every change under `apps/web` must preserve OpenNeko's existing product language. This is a delivery requirement, not an optional polish pass. Scope is every surface: Briefing, Ask, workflows, actions, runs, library, memory, skills, integrations, Admin, Settings, Sign-in, and Onboarding.
 
 Load `.agents/skills/openneko-web-ui/SKILL.md` before building UI. Load `.agents/skills/openneko-web-review/SKILL.md` before calling a UI change done.
 

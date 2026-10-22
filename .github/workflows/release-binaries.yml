@@ -66,14 +66,6 @@ jobs:
             target: neko-graphjin
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-          - image: records-graphjin
-            target: records-graphjin
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: records-graphjin
-            target: records-graphjin
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
           - image: neko-cli
             target: neko-cli
             platform: linux/amd64
@@ -88,22 +80,6 @@ jobs:
             runner: ubuntu-22.04
           - image: neko-db
             target: neko-db
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-          - image: records-db
-            target: records-db
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: records-db
-            target: records-db
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-          - image: neko-backup
-            target: neko-backup
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: neko-backup
-            target: neko-backup
             platform: linux/arm64
             runner: ubuntu-24.04-arm
           # Agent sandbox image: Ax Harness, entry/bridge bundles and skills
@@ -208,7 +184,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [neko-web, neko-worker, neko-embedding, neko-graphjin, records-graphjin, neko-cli, neko-db, records-db, neko-backup, agent, openshell-supervisor]
+        image: [neko-web, neko-worker, neko-embedding, neko-graphjin, neko-cli, neko-db, agent, openshell-supervisor]
     steps:
       - name: Resolve release tag
         id: tag
@@ -284,16 +260,16 @@ jobs:
           set -euo pipefail
           # v2.30.4 measured 1459.5 MiB on linux/amd64 after deduplicating
           # shared layers (1235.7 MiB on arm64). The enforced Bookworm/glibc
-          # database ABI adds about 148 MiB once (neko-db and records-db share
-          # it; the demo still retains Alpine), leaving a narrow ceiling that
+          # database ABI adds about 148 MiB once (in neko-db; the demo still
+          # retains Alpine), leaving a narrow ceiling that
           # still catches accidental growth.
           MAX_MIB=$(jq -er '.uniqueStack' scripts/image-size-budgets.json)
           bash scripts/check-image-stack-size.sh \
             "${{ steps.tag.outputs.value }}" \
             "${{ matrix.arch }}" \
             "$MAX_MIB" \
-            neko-web neko-worker neko-embedding neko-graphjin records-graphjin neko-cli \
-            neko-db records-db neko-backup agent openshell-supervisor \
+            neko-web neko-worker neko-embedding neko-graphjin neko-cli \
+            neko-db agent openshell-supervisor \
             postgres:16-alpine busybox:latest \
             "ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.1.2}"
 

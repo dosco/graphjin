@@ -83,8 +83,8 @@ describeIfDb("run-less approvals", () => {
       .values({
         org_id: orgId,
         scope: "admin.apps",
-        kind: "app_create",
-        payload: { name: "Support queue" },
+        kind: "user_admin",
+        payload: { email: "new@example.com" },
         risk_level: "medium",
         status: "pending_approval",
         summary: null,
@@ -117,7 +117,7 @@ describeIfDb("run-less approvals", () => {
             kind: "approval",
             workflowRunId: null,
             workflow: null,
-            title: "app_create",
+            title: "user_admin",
           },
         ],
       },
@@ -136,7 +136,7 @@ describeIfDb("run-less approvals", () => {
       {
         org_id: orgId,
         scope: "admin.apps",
-        kind: "app_create",
+        kind: "user_admin",
         status: "pending_approval",
       },
     ]);
@@ -150,13 +150,13 @@ describeIfDb("run-less approvals", () => {
       (approvals.body as { actions: Array<{ kind: string }> }).actions.map(
         (action) => action.kind,
       ),
-    ).toEqual(["app_create"]);
+    ).toEqual(["user_admin"]);
     expect(
       (
         findings.body as {
           awaitingYou: { approvals: Array<{ title: string }> };
         }
       ).awaitingYou.approvals.map((approval) => approval.title),
-    ).toEqual(["app_create"]);
+    ).toEqual(["user_admin"]);
   });
 });

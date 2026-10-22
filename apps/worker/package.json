@@ -22,7 +22,6 @@
     "@neko/interaction": "workspace:*",
     "@neko/llm": "workspace:*",
     "@neko/packs": "workspace:*",
-    "@neko/records": "workspace:*",
     "@neko/secrets": "workspace:*",
     "@neko/telemetry": "workspace:*",
     "dotenv": "^17.4.1",

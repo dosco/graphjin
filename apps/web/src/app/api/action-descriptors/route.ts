@@ -1,6 +1,6 @@
 /**
  * GET /api/action-descriptors — the operator-facing snapshot of the
- * worker's built-in governed action kinds (records actions) and their
+ * worker's built-in governed action kinds and their
  * seeded default mode. Used by /admin/rules to show which kinds the
  * agent can call.
  *

@@ -470,11 +470,6 @@ function makeSandboxCore(
     const stageOrgRoot = path.join(stageDir, "workspace", path.basename(hostOrgRoot));
     const toStage = (s: string): string => s.split(hostOrgRoot).join(stageOrgRoot);
 
-    const recordsScoped =
-      !isJob &&
-      kind === "work" &&
-      (input as RunAgentBackendInput).dataSurface === "records";
-
     const threadId = isJob
       ? `agent-job:${input.runId}`
       : (input as RunAgentBackendInput | RunWorkflowAgentBackendInput).threadId;
@@ -504,9 +499,6 @@ function makeSandboxCore(
         message: "Preparing secure agent workspace…",
       });
       staged = await timed("stage", () => stageSandboxWorkspace(input.workspace, stageDir, {
-        // A records-scoped turn must remain functional during a rolling
-        // upgrade even if the runner predates the records skill.
-        requiredSkillNames: recordsScoped ? ["records"] : [],
         ...(input.allowedSkills ? { allowedSkills: input.allowedSkills } : {}),
       }));
       const stagedWorkspace = staged.workspace;
@@ -558,8 +550,6 @@ function makeSandboxCore(
               packActions: (input as RunAgentBackendInput).packActions,
               sourceConfigEnabled:
                 (input as RunAgentBackendInput).sourceConfigEnabled ?? false,
-              dataSurface:
-                (input as RunAgentBackendInput).dataSurface ?? "customer",
               ...((input as RunAgentBackendInput).graphjinToolPolicy
                 ? {
                     graphjinToolPolicy: (input as RunAgentBackendInput)

@@ -383,7 +383,7 @@ function Row({
 }
 
 function groupNameFromKind(kind: string): string {
-  // Kinds are namespaced like `records.create` or `records_backfill`;
+  // Kinds are namespaced like `magento.refund` or `user_admin`;
   // group them for display by the leading token.
   return kind.split(/[._]/)[0] ?? kind;
 }

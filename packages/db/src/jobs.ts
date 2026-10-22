@@ -23,16 +23,6 @@ export const QUEUE = {
   WORKFLOW_OUTPUT_TTL_SWEEP: "workflow_output_ttl_sweep",
   BOT_NAME_SWEEP: "bot_name_sweep",
   ACTION_EXECUTE: "action_execute",
-  RECORDS_IMPORT: "records_import",
-  RECORDS_IDENTITY_LINK: "records_identity_link",
-  RECORDS_SALESFORCE_EXPORT: "records_salesforce_export",
-  RECORDS_SALESFORCE_SYNC: "records_salesforce_sync",
-  RECORDS_SALESFORCE_SYNC_SWEEP: "records_salesforce_sync_sweep",
-  RECORDS_SALESFORCE_CUTOVER: "records_salesforce_cutover",
-  RECORDS_BACKUP_VERIFY: "records_backup_verify",
-  RECORDS_OPS_WATCH: "records_ops_watch",
-  RECORDS_WATCH_EVALUATE: "records_watch_evaluate",
-  RECORDS_WATCH_SWEEP: "records_watch_sweep",
   CHANNEL_DELIVER: "channel_deliver",
   EMBEDDING_INDEX: "embedding_index",
   EMBEDDING_SWEEP: "embedding_sweep",
@@ -41,6 +31,23 @@ export const QUEUE = {
 } as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
+
+/**
+ * Queues of removed features. The worker deletes them at boot, which also
+ * drops their pending jobs and recurring schedules on upgraded installs.
+ */
+export const RETIRED_QUEUES = [
+  "records_import",
+  "records_identity_link",
+  "records_salesforce_export",
+  "records_salesforce_sync",
+  "records_salesforce_sync_sweep",
+  "records_salesforce_cutover",
+  "records_backup_verify",
+  "records_ops_watch",
+  "records_watch_evaluate",
+  "records_watch_sweep",
+] as const;
 
 export type ProcessingJobPayload = {
   queuedAt?: number;
@@ -115,50 +122,10 @@ export type ActionExecutePayload = {
   actionRequestId: string;
 };
 
-export type RecordsImportPayload = {
-  orgId: string;
-  importRunId: string;
-  actorUserId: string;
-};
-
 export type SkillLearnPayload = {
   orgId: string;
   skillName: string;
 };
-
-export type RecordsIdentityLinkPayload = {
-  orgId: string;
-  appUserId: string;
-  email: string;
-};
-
-export type RecordsSalesforceExportPayload = ProcessingJobPayload & {
-  actionRequestId: string;
-  /** Equal to processingJobId; retained as an explicit connector-domain id. */
-  exportJobId: string;
-};
-
-export type RecordsSalesforceSyncPayload = ProcessingJobPayload & {
-  appId: string;
-  sourceInstanceId: string;
-};
-
-export type RecordsSalesforceCutoverPayload = RecordsSalesforceSyncPayload;
-
-export type RecordsBackupVerifyPayload = {
-  orgId: string;
-};
-
-export type RecordsOpsWatchPayload = RecordsBackupVerifyPayload;
-
-export type RecordsWatchEvaluatePayload = {
-  orgId: string;
-  bindingId: string;
-  triggerKind: "gj_watch" | "schedule";
-  eventId?: string;
-};
-
-export type RecordsWatchSweepPayload = RecordsBackupVerifyPayload;
 
 let _boss: PgBoss | null = null;
 let _starting: Promise<PgBoss> | null = null;

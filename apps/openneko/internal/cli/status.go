@@ -42,12 +42,11 @@ const (
 // missing long-running services drive the verdict. Keep in sync with the
 // `restart: "no"` services in assets/compose/{core,demo}.yml.
 var oneShotJobs = map[string]bool{
-	"neko-migrate":                 true,
-	"storage-reconcile":            true,
-	"adventureworks-init":          true,
-	"graphjin-config-init":         true,
-	"records-graphjin-config-init": true,
-	"neko-adventureworks-seed":     true,
+	"neko-migrate":             true,
+	"storage-reconcile":        true,
+	"adventureworks-init":      true,
+	"graphjin-config-init":     true,
+	"neko-adventureworks-seed": true,
 }
 
 func newStatusCmd() *cobra.Command {
@@ -57,9 +56,6 @@ func newStatusCmd() *cobra.Command {
 		Short: "Is the stack serving, degraded, or down?",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := configureBackupEnvironment(); err != nil {
-				return err
-			}
 			sup := compose.New(assets.ComposeFS)
 			files, err := sup.Materialize(compose.ModeDemo)
 			if err != nil {

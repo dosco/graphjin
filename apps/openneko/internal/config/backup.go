@@ -11,15 +11,6 @@ import (
 	"strings"
 )
 
-const backupKeyFilename = "backup-key"
-
-// LegacyBackupKeyPath is where releases before repository-bound backup keys
-// stored their per-install key. It is read only for a one-time migration; new
-// keys live in the state directory selected by the CLI.
-func LegacyBackupKeyPath(overrideDir string) string {
-	return filepath.Join(Dir(overrideDir), backupKeyFilename)
-}
-
 // ReadBackupKey reads a key without ever printing it and tightens its mode
 // when the caller owns the file. Key files are deliberately plain files so
 // the same recovery flow works on headless Linux and macOS hosts.

@@ -98,7 +98,7 @@ process its user started.
 In Compose the sandbox container:
 
 - sits **only** on the `agent-sandbox` network. Terminal commands can reach the
-  internet, but not `neko-db`, `records-db`, GraphJin, the broker, or any other
+  internet, but not `neko-db`, GraphJin, the broker, or any other
   service of the stack;
 - drops every capability except `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`,
   `SETGID` and `SETUID`, which it needs to create run homes, switch to run

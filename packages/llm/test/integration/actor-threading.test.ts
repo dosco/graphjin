@@ -133,38 +133,4 @@ describeIfDb("K1 actor threading", () => {
     expect((await listWorkThreads(orgId, "web", null)).map((row) => row.id))
       .toContain(soloThread.id);
   });
-
-  it("separates main history from app-owned history and carries legacy app threads forward", async () => {
-    const main = await createWorkThread(orgId, "main", "web", userId);
-    const crm = await createWorkThread(orgId, "crm", "web", userId, {
-      appContext: { appId: "crm", appLabel: "CRM" },
-    });
-    const legacyCrm = await createWorkThread(orgId, "legacy crm", "web", userId, {
-      recordContext: {
-        surface: "list",
-        appId: "crm",
-        appLabel: "CRM",
-        objectApiName: "activity",
-        objectLabel: "Activities",
-      },
-    });
-    const support = await createWorkThread(orgId, "support", "web", userId, {
-      appContext: { appId: "support", appLabel: "Support" },
-    });
-
-    const mainIds = (await listWorkThreads(orgId, "web", userId, {
-      surface: "main",
-    })).map((thread) => thread.id);
-    const crmIds = (await listWorkThreads(orgId, "web", userId, {
-      surface: "app",
-      appId: "crm",
-    })).map((thread) => thread.id);
-
-    expect(mainIds).toContain(main.id);
-    expect(mainIds).not.toContain(crm.id);
-    expect(mainIds).not.toContain(legacyCrm.id);
-    expect(crmIds).toEqual(expect.arrayContaining([crm.id, legacyCrm.id]));
-    expect(crmIds).not.toContain(main.id);
-    expect(crmIds).not.toContain(support.id);
-  });
 });

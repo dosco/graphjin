@@ -318,21 +318,15 @@ func TestStorageReconciliationGatesEveryDatabaseConsumer(t *testing.T) {
 		if want := []string{"storage", "reconcile"}; !reflect.DeepEqual(reconcile.Command, want) {
 			t.Fatalf("%s storage-reconcile command = %v, want %v", label, reconcile.Command, want)
 		}
-		for _, database := range []string{"neko-db", "records-db"} {
-			if reconcile.DependsOn[database].Condition != "service_healthy" {
-				t.Fatalf("%s storage-reconcile must wait for healthy %s", label, database)
-			}
+		if reconcile.DependsOn["neko-db"].Condition != "service_healthy" {
+			t.Fatalf("%s storage-reconcile must wait for healthy neko-db", label)
 		}
-		for _, key := range []string{
-			"NEKO_PG_HOST", "NEKO_PG_DATABASE", "RECORDS_PG_HOST", "RECORDS_PG_DATABASE",
-		} {
+		for _, key := range []string{"NEKO_PG_HOST", "NEKO_PG_DATABASE"} {
 			if _, ok := reconcile.Environment[key]; !ok {
 				t.Fatalf("%s storage-reconcile is missing %s", label, key)
 			}
 		}
-		for _, consumer := range []string{
-			"neko-migrate", "neko-backup", "records-graphjin", "records-watch-graphjin",
-		} {
+		for _, consumer := range []string{"neko-migrate"} {
 			if document.Services[consumer].DependsOn["storage-reconcile"].Condition != "service_completed_successfully" {
 				t.Fatalf("%s %s can start before storage reconciliation", label, consumer)
 			}
@@ -348,18 +342,23 @@ func TestDatabaseImagesEnforcePinnedGlibcStorageABI(t *testing.T) {
 	}
 	raw := string(dockerfile)
 	for _, required := range []string{
-		"FROM pgvector/pgvector:0.8.6-pg16-bookworm@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b AS postgres-runtime",
+		"FROM pgvector/pgvector:0.8.6-pg16-bookworm@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b AS neko-db",
 		`LABEL org.openneko.storage-contract="1"`,
 		`test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.36"`,
-		"FROM postgres-runtime AS neko-db",
-		"FROM postgres-runtime AS records-db",
 	} {
 		if !strings.Contains(raw, required) {
 			t.Fatalf("Dockerfile does not enforce storage ABI line %q", required)
 		}
 	}
-	if strings.Contains(raw, "FROM postgres:16-alpine AS postgres-runtime") {
+	if strings.Contains(raw, "postgres:16-alpine") {
 		t.Fatal("stateful database runtime regressed to Alpine/musl")
+	}
+	// neko-db is a plain pgvector Postgres: logical `openneko backup` dumps
+	// replaced the pgBackRest archiver and its custom entrypoint.
+	for _, retired := range []string{"pgbackrest", "pgBackRest", "AS records-db", "AS neko-backup", "AS records-graphjin", "packages/records"} {
+		if strings.Contains(raw, retired) {
+			t.Fatalf("Dockerfile still references retired %q", retired)
+		}
 	}
 }
 
@@ -503,78 +502,6 @@ func TestSourceAndPackagedComposeStateInventoryMatch(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("service %s state/recovery inventory drifted:\nsource:   %#v\npackaged: %#v", name, got, want)
-		}
-	}
-}
-
-func TestDevelopmentDatabasesRecycleWALWithoutArchiving(t *testing.T) {
-	root := repoRootForTest(t)
-	sourceCore, err := os.ReadFile(filepath.Join(root, "compose.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	sourceDev, err := os.ReadFile(filepath.Join(root, "compose.dev.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	packagedCore, err := ComposeFS.ReadFile("compose/core.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	packagedDev, err := ComposeFS.ReadFile("compose/dev.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for label, pair := range map[string]struct{ core, dev []byte }{
-		"source":   {sourceCore, sourceDev},
-		"packaged": {packagedCore, packagedDev},
-	} {
-		core := loadComposeParityDocument(t, pair.core)
-		dev := loadComposeParityDocument(t, pair.dev)
-		for _, name := range []string{"neko-db", "records-db"} {
-			production := strings.Join(core.Services[name].Command, " ")
-			development := strings.Join(dev.Services[name].Command, " ")
-			if !strings.Contains(production, "archive_mode=on") || !strings.Contains(production, "archive_timeout=60s") {
-				t.Errorf("%s %s lost its production archive policy: %s", label, name, production)
-			}
-			if !strings.Contains(development, "archive_mode=off") || strings.Contains(development, "archive_timeout") || strings.Contains(development, "archive_command") {
-				t.Errorf("%s %s development archive policy is unsafe: %s", label, name, development)
-			}
-		}
-	}
-}
-
-func TestRecordsGraphJinEndpointsRemainPrivate(t *testing.T) {
-	rootRaw, err := os.ReadFile("../../../compose.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	packagedRaw, err := ComposeFS.ReadFile("compose/core.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for label, document := range map[string]composeParityDocument{
-		"source":   loadComposeParityDocument(t, rootRaw),
-		"packaged": loadComposeParityDocument(t, packagedRaw),
-	} {
-		wantHealthcheck := []string{
-			"CMD", "curl", "-sS", "-o", "/dev/null",
-			"http://127.0.0.1:8090/api/v1/graphql",
-		}
-		for _, serviceName := range []string{"records-graphjin", "records-watch-graphjin"} {
-			service, ok := document.Services[serviceName]
-			if !ok {
-				t.Fatalf("%s compose is missing %s", label, serviceName)
-			}
-			if len(service.Ports) != 0 {
-				t.Errorf("%s %s must not publish host ports: %v", label, serviceName, service.Ports)
-			}
-			if service.User != "1001:999" {
-				t.Errorf("%s %s user = %q, want 1001:999", label, serviceName, service.User)
-			}
-			if got := composeHealthcheckTest(t, label, serviceName, service); !reflect.DeepEqual(got, wantHealthcheck) {
-				t.Errorf("%s %s healthcheck must accept an authenticated-error HTTP response as ready:\ngot:  %v\nwant: %v", label, serviceName, got, wantHealthcheck)
-			}
 		}
 	}
 }

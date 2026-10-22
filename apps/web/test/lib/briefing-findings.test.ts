@@ -9,7 +9,7 @@ describe("briefing approval serialization", () => {
       workflowRunId: null,
       workflowId: null,
       workflowName: null,
-      kind: "app_create",
+      kind: "user_admin",
       target: null,
       summary: null,
       riskLevel: "medium",
@@ -21,7 +21,7 @@ describe("briefing approval serialization", () => {
       kind: "approval",
       workflowRunId: null,
       workflow: null,
-      title: "app_create",
+      title: "user_admin",
     });
     expect(workflowDisplayName(approval.workflow)).toBe("OpenNeko AI");
   });

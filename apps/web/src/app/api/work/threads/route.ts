@@ -19,18 +19,12 @@ import { getCurrentActor } from "@/lib/actor";
 import {
   createWorkMessage,
   createWorkThread,
-  parseRecordWorkContext,
   listWorkThreads,
 } from "@/lib/work-store";
 
 export async function GET() {
   const [orgId, actor] = await Promise.all([getOrgId(), getCurrentActor()]);
-  const threads = await listWorkThreads(
-    orgId,
-    "web",
-    actor.userId,
-    { surface: "main" },
-  );
+  const threads = await listWorkThreads(orgId, "web", actor.userId);
   return NextResponse.json({ threads });
 }
 
@@ -51,14 +45,6 @@ export async function POST(request: NextRequest) {
     body.seedActionRequestId.length > 0
       ? body.seedActionRequestId
       : null;
-  const requestedRecordContext =
-    body.recordContext === undefined
-      ? null
-      : parseRecordWorkContext(body.recordContext);
-  if (body.recordContext !== undefined && !requestedRecordContext) {
-    return NextResponse.json({ error: "Invalid records context" }, { status: 400 });
-  }
-
   const [orgId, actor] = await Promise.all([getOrgId(), getCurrentActor()]);
 
   // Resolve title from seed when possible — feels less arbitrary than
@@ -91,15 +77,7 @@ export async function POST(request: NextRequest) {
     if (seedCard && !resolvedTitle) resolvedTitle = seedCard.title;
   }
 
-  const thread = await createWorkThread(
-    orgId,
-    resolvedTitle,
-    "web",
-    actor.userId,
-    requestedRecordContext
-      ? { recordContext: requestedRecordContext }
-      : {},
-  );
+  const thread = await createWorkThread(orgId, resolvedTitle, "web", actor.userId);
 
   // When the dashboard's "Deep dive" action opens a new thread, the briefing
   // card travels into the thread as the opening user message — that way the

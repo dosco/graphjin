@@ -185,7 +185,7 @@ export function buildUserManagerServer(opts: {
     [
       "List the org's users and synchronized SSO groups with stable IDs,",
       "membership, role, disabled state, and last login. Use before",
-      "proposing any user or generated-app access change.",
+      "proposing any user, group, or access change.",
     ].join(" "),
     {},
     async () => ({
@@ -1118,285 +1118,6 @@ export function buildGraphjinAgentServer(opts: {
   });
 }
 
-/**
- * Native records read surface. Unlike neko_graphjin (customer sources), every
- * document here is generated from the records registry and executes with the
- * requesting run's current human identity. The sandbox never receives a raw
- * endpoint, signing secret, or ability to submit arbitrary GraphQL.
- */
-export function buildRecordsReadServer(opts: {
-  orgId: string;
-  runId: string;
-  controlPlane?: AgentControlPlane;
-  /** Restrict a records-UI turn to the trusted app/object surface it opened. */
-  scope?: { appId: string; objectApiName: string };
-}) {
-  const controlPlane = requireControlPlane(opts.controlPlane);
-  const assertInScope = (appId: string, objectApiName?: string): void => {
-    if (!opts.scope) return;
-    if (
-      appId !== opts.scope.appId ||
-      (objectApiName !== undefined && objectApiName !== opts.scope.objectApiName)
-    ) {
-      throw new Error(
-        `records turn is scoped to ${opts.scope.appId}.${opts.scope.objectApiName}`,
-      );
-    }
-  };
-  const browseCatalog = defineMcpTool(
-    "browse_catalog",
-    [
-      "Browse active generated records apps, readable objects, fields,",
-      "layouts, and the current actor's CRUD grants. Use this before querying",
-      "or proposing a record action; app and field names must come from here.",
-    ].join(" "),
-    {
-      app: z.string().trim().min(1).max(63).optional(),
-    },
-    async (args) => {
-      const appId = args.app ?? opts.scope?.appId;
-      if (appId) assertInScope(appId);
-      const result = await controlPlane.listRecordCatalog({
-        orgId: opts.orgId,
-        runId: opts.runId,
-        ...(appId ? { appId } : {}),
-      });
-      const scopedResult = opts.scope
-        ? {
-            ...result,
-            apps: result.apps
-              .filter((app) => app.appId === opts.scope!.appId)
-              .map((app) => ({
-                ...app,
-                objects: app.objects.filter(
-                  (object) => object.apiName === opts.scope!.objectApiName,
-                ),
-              })),
-          }
-        : result;
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(scopedResult) },
-        ],
-      };
-    },
-  );
-
-  const browseBlueprints = defineMcpTool(
-    "browse_blueprints",
-    [
-      "Call without `blueprint` to list shipped records-app blueprint ids.",
-      "Call again with one exact id to load its complete approval-ready",
-      "`app_create` payload. Never reconstruct a payload from the id, name,",
-      "description, or a prose summary. If the operator asks for the shipped",
-      "payload unchanged, pass the returned `payload` object unchanged to the",
-      "`app_create` action. Otherwise blueprints are starting priors and may",
-      "be adapted to the operator's workflow.",
-    ].join(" "),
-    {
-      blueprint: z
-        .string()
-        .trim()
-        .min(1)
-        .max(63)
-        .optional()
-        .describe(
-          "Exact id returned by the listing call. Omit only when listing available blueprints.",
-        ),
-    },
-    async (args) => ({
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(
-            await controlPlane.listRecordBlueprints({
-              orgId: opts.orgId,
-              ...(args.blueprint ? { blueprintId: args.blueprint } : {}),
-            }),
-          ),
-        },
-      ],
-    }),
-  );
-
-  const filterSchema = z.object({
-    field: z.string().trim().min(1).max(63),
-    operator: z.enum(["eq", "neq", "in", "contains", "starts_with", "is_null"]),
-    value: z.unknown().optional(),
-  });
-  const findRecords = defineMcpTool(
-    "find_records",
-    [
-      "Search or list records through a bounded, registry-generated GraphJin",
-      "query under the current actor's permissions. Use the returned exact id",
-      "before proposing record_update, record_delete, or record_restore. If",
-      "multiple rows could match, disambiguate with the user; never guess.",
-    ].join(" "),
-    {
-      app: z.string().trim().min(1).max(63),
-      object: z.string().trim().min(1).max(63),
-      first: z.number().int().min(1).max(50).optional(),
-      after: z.string().trim().min(1).max(4_096).optional(),
-      search: z.string().trim().min(1).max(200).optional(),
-      filters: z.array(filterSchema).max(20).optional(),
-      sort: z
-        .object({
-          field: z.string().trim().min(1).max(63),
-          direction: z.enum(["asc", "desc"]),
-        })
-        .optional(),
-      myRecords: z.boolean().optional(),
-    },
-    async (args) => {
-      assertInScope(args.app, args.object);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              await controlPlane.findRecords({
-              orgId: opts.orgId,
-              runId: opts.runId,
-              appId: args.app,
-              objectApiName: args.object,
-              ...(args.first !== undefined ? { first: args.first } : {}),
-              ...(args.after ? { after: args.after } : {}),
-              ...(args.search ? { search: args.search } : {}),
-              ...(args.filters ? { filters: args.filters } : {}),
-              ...(args.sort ? { sort: args.sort } : {}),
-              ...(args.myRecords !== undefined
-                ? { myRecords: args.myRecords }
-                : {}),
-              }),
-            ),
-          },
-        ],
-      };
-    },
-  );
-
-  const getRecord = defineMcpTool(
-    "get_record",
-    [
-      "Read one record by an exact id already obtained from find_records.",
-      "Returns null when that id is absent or invisible to the current actor.",
-      "Use allFields only when fields outside the detail layout are needed.",
-    ].join(" "),
-    {
-      app: z.string().trim().min(1).max(63),
-      object: z.string().trim().min(1).max(63),
-      id: z.string().trim().min(1).max(512),
-      allFields: z.boolean().optional(),
-    },
-    async (args) => {
-      assertInScope(args.app, args.object);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              await controlPlane.getRecord({
-              orgId: opts.orgId,
-              runId: opts.runId,
-              appId: args.app,
-              objectApiName: args.object,
-              recordId: args.id,
-              ...(args.allFields !== undefined
-                ? { allFields: args.allFields }
-                : {}),
-              }),
-            ),
-          },
-        ],
-      };
-    },
-  );
-
-  const findRecycledRecords = defineMcpTool(
-    "find_recycled_records",
-    [
-      "Search or list soft-deleted record summaries through the current",
-      "actor's permissions. Use this—not find_records—to resolve the exact",
-      "id before proposing record_restore. The recycle bin exposes identity",
-      "and deletion metadata only, never the deleted business payload.",
-    ].join(" "),
-    {
-      app: z.string().trim().min(1).max(63),
-      object: z.string().trim().min(1).max(63),
-      first: z.number().int().min(1).max(50).optional(),
-      after: z.string().trim().min(1).max(4_096).optional(),
-      search: z.string().trim().min(1).max(200).optional(),
-    },
-    async (args) => {
-      assertInScope(args.app, args.object);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              await controlPlane.findRecycledRecords({
-              orgId: opts.orgId,
-              runId: opts.runId,
-              appId: args.app,
-              objectApiName: args.object,
-              ...(args.first !== undefined ? { first: args.first } : {}),
-              ...(args.after ? { after: args.after } : {}),
-              ...(args.search ? { search: args.search } : {}),
-              }),
-            ),
-          },
-        ],
-      };
-    },
-  );
-
-  const getRecycledRecord = defineMcpTool(
-    "get_recycled_record",
-    [
-      "Read one soft-deleted record summary by an exact id already obtained",
-      "from find_recycled_records. Returns null when it is absent or invisible",
-      "to the current actor; use the returned id for record_restore.",
-    ].join(" "),
-    {
-      app: z.string().trim().min(1).max(63),
-      object: z.string().trim().min(1).max(63),
-      id: z.string().trim().min(1).max(512),
-    },
-    async (args) => {
-      assertInScope(args.app, args.object);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              await controlPlane.getRecycledRecord({
-              orgId: opts.orgId,
-              runId: opts.runId,
-              appId: args.app,
-              objectApiName: args.object,
-              recordId: args.id,
-              }),
-            ),
-          },
-        ],
-      };
-    },
-  );
-
-  return createMcpServer({
-    name: "neko_records",
-    version: "1.0.0",
-    tools: [
-      browseCatalog,
-      ...(opts.scope ? [] : [browseBlueprints]),
-      findRecords,
-      getRecord,
-      findRecycledRecords,
-      getRecycledRecord,
-    ],
-  });
-}
-
 // Memory surface: `search`, `save` and `update`. Reads use pgvector
 // context-search (matches the auto-context retrieval path), writes go
 // through the same rememberWorkMemory used by the `save:` chat command,
@@ -1591,7 +1312,7 @@ export function buildLibraryServer(
 }
 
 /**
- * Worker-registered governed action kinds (the built-in records actions),
+ * Worker-registered governed action kinds,
  * surfaced to the agent as MCP tools. The worker passes the descriptors in
  * at turn start; this module only needs the {kind, description,
  * default_mode} triples to build tools.
@@ -1741,19 +1462,6 @@ function buildGovernedActionServer(
         .describe(
           "Action-specific payload. See the tool description for the expected shape. When a trusted discovery tool returns a payload for this action, preserve that complete object exactly unless the operator requested specific changes.",
         ),
-      ...(d.kind === "app_create"
-        ? {
-            blueprint: z
-              .string()
-              .trim()
-              .min(1)
-              .max(63)
-              .optional()
-              .describe(
-                "Exact shipped blueprint id already loaded with records browse_blueprints. For an unchanged blueprint proposal, set this and omit payload; the trusted host will reuse the authoritative complete payload without model-side copying.",
-              ),
-          }
-        : {}),
     };
     // `intent` lives in both schemas so handler-side narrowing is
     // trivial (one optional property). Ask-mode kinds require it
@@ -1799,14 +1507,9 @@ function buildGovernedActionServer(
               ? " — set `intent` whenever the call might land in ask-mode."
               : "");
 
-    const trustedBlueprintHint =
-      d.kind === "app_create"
-        ? "\n\nFor an unchanged shipped Records blueprint, first list and load it with records browse_blueprints, then set `blueprint` to that exact id and omit `payload`. The trusted host resolves the complete payload again before creating the approval request. Use `payload` only when the operator asked you to adapt the blueprint."
-        : "";
-
     return defineMcpTool(
       d.kind,
-      `${d.description}\n\n${modeHint}${trustedBlueprintHint}`,
+      `${d.description}\n\n${modeHint}`,
       schema,
       async (args) => {
         const decision = await controlPlane.evaluateActionPolicy({
@@ -1856,27 +1559,8 @@ function buildGovernedActionServer(
           typeof args.intent === "string" && args.intent.length > 0
             ? args.intent
             : `Auto-fired ${d.kind} (no explicit intent supplied).`;
-        let payload =
+        const payload =
           (args.payload as Record<string, unknown> | undefined) ?? {};
-        const blueprintId =
-          d.kind === "app_create" &&
-          "blueprint" in args &&
-          typeof args.blueprint === "string"
-            ? args.blueprint.trim()
-            : "";
-        if (blueprintId) {
-          const catalog = await controlPlane.listRecordBlueprints({
-            orgId: opts.orgId,
-            blueprintId,
-          });
-          const blueprint = catalog.blueprints.find(
-            (candidate) => candidate.id === blueprintId,
-          );
-          if (!blueprint?.payload) {
-            throw new Error(`records blueprint ${blueprintId} has no payload`);
-          }
-          payload = blueprint.payload;
-        }
         const target =
           typeof args.target === "string" && args.target.length > 0
             ? args.target

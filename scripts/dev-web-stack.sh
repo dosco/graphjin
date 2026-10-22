@@ -88,17 +88,13 @@ resolve_endpoint() {
 
 worker_container="${container_prefix}-worker-1"
 embedding_container="${container_prefix}-embedding-1"
-records_graphjin_container="${container_prefix}-records-graphjin-1"
 metadata_db_container="${container_prefix}-neko-db-1"
-records_db_container="${container_prefix}-records-db-1"
 metadata_graphjin_container="${container_prefix}-neko-graphjin-1"
 
 for required_container in \
   "$worker_container" \
   "$embedding_container" \
-  "$records_graphjin_container" \
   "$metadata_db_container" \
-  "$records_db_container" \
   "$metadata_graphjin_container"
 do
   if ! docker inspect "$required_container" >/dev/null 2>&1 || \
@@ -143,14 +139,10 @@ resolve_endpoint "$metadata_db_container" 5432
 export NEKO_PG_HOST="$endpoint_host"
 export NEKO_PG_PORT="$endpoint_port"
 
-resolve_endpoint "$records_db_container" 5432
-export RECORDS_PG_HOST="$endpoint_host"
-export RECORDS_PG_PORT="$endpoint_port"
 export OPENNEKO_PG_ENV_OVERRIDE=1
 
 export NEKO_EMBEDDING_URL="http://$(container_ip "$embedding_container"):5003"
 export WORKER_ADMIN_URL="http://$(container_ip "$worker_container"):4100"
-export OPENNEKO_RECORDS_GRAPHJIN_URL="http://$(container_ip "$records_graphjin_container"):8090"
 resolve_endpoint "$metadata_graphjin_container" 8089
 export OPENNEKO_GRAPHJIN_URL="http://${endpoint_host}:${endpoint_port}"
 export OPENNEKO_GRAPHJIN_CONFIG="$state_root/config/graphjin/agentic.yml"

@@ -147,7 +147,7 @@ jobs:
             storage contract)
           echo "OpenNeko storage contract: $contract"
           test "$contract" = "1"
-          for image in neko-db records-db neko-backup; do
+          for image in neko-db; do
             ref="ghcr.io/open-neko/${image}:$OPENNEKO_VERSION"
             image_contract=$(docker image inspect \
               --format '{{ index .Config.Labels "org.openneko.storage-contract" }}' \
@@ -268,10 +268,8 @@ jobs:
               --filter "label=com.docker.compose.service=$1" | head -1
           }
           neko_db=$(container_for neko-db)
-          records_db=$(container_for records-db)
           worker=$(container_for worker)
           test -n "$neko_db"
-          test -n "$records_db"
           test -n "$worker"
 
           verify_contract() {
@@ -286,7 +284,6 @@ jobs:
             test "$collation" = "t"
           }
           verify_contract "$neko_db" neko neko
-          verify_contract "$records_db" records records
 
           # Match the production failure exactly: the parent row must be found
           # through indexed equality, or pg-boss's send-it FK insert fails.

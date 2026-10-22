@@ -48,62 +48,20 @@ RUN ln -s ../lib/node_modules/corepack/dist/corepack.js /usr/local/bin/corepack 
     && corepack enable \
     && corepack prepare pnpm@9.14.1 --activate
 
-# Stateful Postgres data planes have an enforced storage ABI: PostgreSQL 16 on
-# Debian Bookworm/glibc. Text indexes persist in named volumes, so switching
-# their libc/collation provider (for example, to Alpine/musl) can make an
-# existing btree silently disagree with equality lookups. Keep the base
-# immutable. If its collation provider/version changes, bump the compiled
-# StorageContractVersion so existing volumes are rebuilt exactly once. Records
-# does not need pgvector, but sharing this exact base keeps the combined pull
-# deduplicated.
-FROM pgvector/pgvector:0.8.6-pg16-bookworm@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b AS postgres-runtime
+# The metadata database has an enforced storage ABI: PostgreSQL 16 on Debian
+# Bookworm/glibc. Text indexes persist in a named volume, so switching the
+# libc/collation provider (for example, to Alpine/musl) can make an existing
+# btree silently disagree with equality lookups. Keep the base immutable. If
+# its collation provider/version changes, bump the compiled
+# StorageContractVersion so existing volumes are rebuilt exactly once.
+# neko-db is otherwise the stock pgvector image and entrypoint; backups are
+# logical dumps taken by `openneko backup`.
+FROM pgvector/pgvector:0.8.6-pg16-bookworm@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b AS neko-db
 LABEL org.openneko.storage-contract="1" \
       org.openneko.storage-owner="999:999"
-USER root
-# apt.postgresql.org keeps only current versions. The archive keeps the
-# pinned pgBackRest build installable after newer releases replace it.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && echo "deb [ signed-by=/usr/local/share/keyrings/postgres.gpg.asc ] https://apt-archive.postgresql.org/pub/repos/apt bookworm-pgdg-archive main" \
-      > /etc/apt/sources.list.d/pgdg-archive.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-      libssh2-1=1.10.0-3+b1 \
-      pgbackrest=2.58.0-1.pgdg12+1 \
-    && rm -rf /var/lib/apt/lists/* \
-    && test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.36" \
+RUN test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.36" \
     && test "$(pg_config --version)" = "PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2)" \
-    && test "$(id -u postgres):$(id -g postgres)" = "999:999" \
-    && pgbackrest version | grep -Fx 'pgBackRest 2.58.0'
-COPY apps/worker/scripts/postgres-pgbackrest-entrypoint.sh /usr/local/bin/openneko-postgres-entrypoint
-RUN chmod 0755 /usr/local/bin/openneko-postgres-entrypoint
-ENTRYPOINT ["/usr/local/bin/openneko-postgres-entrypoint"]
-CMD ["postgres"]
-
-FROM postgres-runtime AS neko-db
-FROM postgres-runtime AS records-db
-
-# The backup coordinator mounts PostgreSQL's 0700 data directories and reads
-# 0600 control files as the postgres OS user. Inheriting the exact database
-# runtime makes that numeric identity, PostgreSQL toolchain, libc, and
-# pgBackRest version one enforced storage ABI instead of duplicating them in a
-# distribution whose postgres account has a different UID.
-FROM postgres-runtime AS neko-backup
-USER root
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-      curl \
-      python3 \
-    && rm -rf /var/lib/apt/lists/* \
-    && test "$(id -u postgres):$(id -g postgres)" = "999:999" \
-    && test "$(python3 --version)" = "Python 3.11.2" \
-    && pgbackrest version | grep -Fx 'pgBackRest 2.58.0'
-COPY apps/worker/scripts/openneko-backup.py /usr/local/bin/openneko-backup.py
-COPY apps/worker/scripts/openneko-backup-entrypoint.sh /usr/local/bin/openneko-backup-entrypoint
-RUN chmod 0755 /usr/local/bin/openneko-backup.py /usr/local/bin/openneko-backup-entrypoint
-EXPOSE 9470
-ENTRYPOINT ["/usr/local/bin/openneko-backup-entrypoint"]
-CMD ["serve"]
+    && test "$(id -u postgres):$(id -g postgres)" = "999:999"
 
 # ─── 2. control-plane runtime ──────────────────────────────────────────
 # Web is a trusted control plane. It runs each agent run's runner as a child
@@ -189,7 +147,6 @@ COPY packages/interaction/package.json packages/interaction/package.json
 COPY packages/llm/package.json packages/llm/package.json
 COPY packages/packs/package.json packages/packs/package.json
 COPY packages/secrets/package.json packages/secrets/package.json
-COPY packages/records/package.json packages/records/package.json
 COPY packages/secret-crypt/package.json packages/secret-crypt/package.json
 COPY packages/telemetry/package.json packages/telemetry/package.json
 # onnxruntime-node defaults Linux x64 installs to its 300+ MiB CUDA provider.
@@ -353,9 +310,6 @@ COPY --from=web-deploy --chown=neko:neko /app/apps/web/.next/static ./apps/web/.
 COPY --from=web-deploy --chown=neko:neko /app/apps/web/public ./apps/web/public
 # Next.js standalone tracing misses static asset dirs — copy explicitly.
 COPY --from=web-deploy --chown=neko:neko /app/packages/llm/assets ./packages/llm/assets
-# Blueprint JSON is read through the trusted records control plane at runtime;
-# Next's file tracer cannot discover fs-relative assets automatically.
-COPY --from=web-deploy --chown=neko:neko /app/packages/records/blueprints ./packages/records/blueprints
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 # Vendor the openneko Go binary so the entrypoint can run `openneko migrate`
@@ -506,16 +460,4 @@ RUN chmod +x /usr/local/bin/neko-graphjin-entrypoint.sh
 COPY db/graphjin/neko.yml /seed/neko.yml
 EXPOSE 8089
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/neko-graphjin-entrypoint.sh"]
-CMD ["serve", "--path", "/config"]
-
-# ─── 7. records-graphjin runtime ───────────────────────────────────────
-# The generated-app data plane has a separate process and a separate complete
-# config writer. Reuse the pinned GraphJin binary layer, but never inherit the
-# metadata GraphJin templating path. The entrypoint refuses to serve until the
-# worker has projected an exhaustive live-catalog RBAC config.
-FROM neko-graphjin AS records-graphjin
-COPY scripts/records-graphjin-entrypoint.sh /usr/local/bin/records-graphjin-entrypoint.sh
-RUN chmod +x /usr/local/bin/records-graphjin-entrypoint.sh
-EXPOSE 8090
-ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/records-graphjin-entrypoint.sh"]
 CMD ["serve", "--path", "/config"]

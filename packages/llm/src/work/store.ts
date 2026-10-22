@@ -33,10 +33,6 @@ export type WorkThreadSummary = {
   lastMessageAt: string;
 };
 
-export type WorkThreadListScope =
-  | { surface: "main" }
-  | { surface: "app"; appId: string };
-
 export type WorkMessageRecord = {
   id: string;
   runId: string | null;
@@ -93,7 +89,6 @@ export async function listWorkThreads(
   orgId: string,
   channel = "web",
   createdByUserId?: string | null,
-  scope?: WorkThreadListScope,
 ): Promise<WorkThreadSummary[]> {
   // Workflow runs reuse the work_thread / work_run plumbing for their
   // transcripts (so they get the same surface, events, memory hooks).
@@ -118,22 +113,6 @@ export async function listWorkThreads(
             ]
           : []),
         sql`NOT EXISTS (SELECT 1 FROM ${workflow_run} wr WHERE wr.thread_id = ${work_thread.id})`,
-        ...(scope?.surface === "main"
-          ? [
-              sql`NOT (${work_thread.backend_state} ? 'appContext')`,
-              sql`NOT (${work_thread.backend_state} ? 'recordContext')`,
-            ]
-          : scope?.surface === "app"
-            ? [
-                sql`(
-                  ${work_thread.backend_state}->'appContext'->>'appId' = ${scope.appId}
-                  OR (
-                    NOT (${work_thread.backend_state} ? 'appContext')
-                    AND ${work_thread.backend_state}->'recordContext'->>'appId' = ${scope.appId}
-                  )
-                )`,
-              ]
-            : []),
       ),
     )
     .orderBy(desc(work_thread.last_message_at), desc(work_thread.created_at));

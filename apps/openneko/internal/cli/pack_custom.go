@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/open-neko/neko/apps/openneko/internal/prompt"
@@ -265,4 +266,15 @@ func newPackUploadCmd() *cobra.Command {
 		}}
 	addPackOutputFlag(cmd, &output)
 	return cmd
+}
+
+// terminalSafe replaces control characters in server-supplied text before it
+// is printed, so a response cannot inject terminal escape sequences.
+func terminalSafe(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return '�'
+		}
+		return r
+	}, value)
 }

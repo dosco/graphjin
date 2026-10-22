@@ -51,9 +51,7 @@ export const ACCESS_POLICIES: AccessPolicy[] = [
   { prefix: "/settings", rule: "admin", why: "older paths that redirect into /admin" },
 
   { prefix: "/", rule: "signed-in", why: "the home briefing; this entry matches only the home path" },
-  { prefix: "/a", rule: "signed-in", why: "records apps; the records engine applies app grants" },
   { prefix: "/actions", rule: "signed-in" },
-  { prefix: "/apps", rule: "signed-in" },
   { prefix: "/approvals", rule: "signed-in" },
   { prefix: "/integrations", rule: "signed-in" },
   { prefix: "/library", rule: "signed-in" },
@@ -63,7 +61,6 @@ export const ACCESS_POLICIES: AccessPolicy[] = [
   { prefix: "/chat", rule: "signed-in" },
   { prefix: "/work", rule: "signed-in" },
   { prefix: "/workflows", rule: "signed-in" },
-  { prefix: "/api/a", rule: "signed-in", why: "records apps; the records engine applies app grants" },
   { prefix: "/api/action-requests", rule: "signed-in" },
   { prefix: "/api/approvals", rule: "signed-in" },
   { prefix: "/api/briefing", rule: "signed-in" },

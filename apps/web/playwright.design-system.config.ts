@@ -32,7 +32,7 @@ export default defineConfig({
   webServer: {
     command:
       `OPENNEKO_MAGENTO_VISUAL_TEST=true ` +
-      `NEXT_PUBLIC_RECORDS_VISUAL_TEST=true OPENNEKO_RECORDS_VISUAL_TEST=true ` +
+      `NEXT_PUBLIC_VISUAL_TEST=true OPENNEKO_VISUAL_TEST=true ` +
       `pnpm dev --hostname 127.0.0.1 --port ${port}`,
     url: `http://127.0.0.1:${port}/admin/settings/packs`,
     reuseExistingServer: false,

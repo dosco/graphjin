@@ -23,8 +23,7 @@ type LocalPg struct {
 }
 
 type Local struct {
-	Pg        *LocalPg `json:"pg,omitempty"`
-	RecordsPg *LocalPg `json:"recordsPg,omitempty"`
+	Pg *LocalPg `json:"pg,omitempty"`
 }
 
 // ReadLocal returns the local config, plus the path it was read from (empty
@@ -60,11 +59,6 @@ func ReadLocal(override string) (Local, string) {
 				lc.Pg.Password = plain
 			}
 		}
-		if lc.RecordsPg != nil && lc.RecordsPg.Password != "" {
-			if plain, err := MaybeDecryptValue(override, lc.RecordsPg.Password); err == nil {
-				lc.RecordsPg.Password = plain
-			}
-		}
 		return lc, path
 	}
 	return Local{}, ""
@@ -79,14 +73,7 @@ func ReadLocal(override string) (Local, string) {
 // is the one component that both holds the plaintext password and can write the
 // host path, so it bridges the gap here. Existing fields are preserved.
 func WriteLocalPgPassword(override, password string) error {
-	return WriteLocalDatabasePasswords(override, password, "")
-}
-
-// WriteLocalDatabasePasswords persists the metadata and records role
-// passwords rotated together by /setup. An empty records password preserves
-// the existing recordsPg block for backwards-compatible callers.
-func WriteLocalDatabasePasswords(override, metadataPassword, recordsPassword string) error {
-	enc, err := EncryptValue(override, metadataPassword)
+	enc, err := EncryptValue(override, password)
 	if err != nil {
 		return err
 	}
@@ -103,16 +90,6 @@ func WriteLocalDatabasePasswords(override, metadataPassword, recordsPassword str
 		lc.Pg = &LocalPg{}
 	}
 	lc.Pg.Password = enc
-	if recordsPassword != "" {
-		recordsEnc, err := EncryptValue(override, recordsPassword)
-		if err != nil {
-			return err
-		}
-		if lc.RecordsPg == nil {
-			lc.RecordsPg = &LocalPg{}
-		}
-		lc.RecordsPg.Password = recordsEnc
-	}
 
 	out, err := json.MarshalIndent(lc, "", "  ")
 	if err != nil {

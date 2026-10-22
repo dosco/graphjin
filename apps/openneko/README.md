@@ -34,15 +34,16 @@ openneko [--instance name] setup [--mode prod|dev|demo] [--port N] \
   [--bind-address IPv4]
 openneko instances                       # list configured installations
 openneko start [--mode prod|dev|demo] [--detach]
-openneko upgrade [--version vX.Y.Z] [--mode auto|prod|dev|demo] [--stack-only|--cli-only]
+openneko upgrade [--version vX.Y.Z] [--mode auto|prod|dev|demo] [--stack-only|--cli-only] [--skip-backup]
 openneko stop [--volumes]
 openneko status
 openneko logs [service…] [-f]
 openneko migrate
 openneko seed adventureworks
 openneko [--instance name] graphjin import <customer-config.yml|->
-openneko backup {status,now,verify}
+openneko backup [--to <file>]
 openneko backup key {export,adopt}
+openneko restore <file> --confirm RESTORE [--key-file <key>]
 openneko reset [--all]
 ```
 
@@ -76,7 +77,8 @@ before it pulls service and agent images at the same tag. Keeping
 the CLI and stack together matters because the CLI embeds the Compose topology
 used to recreate the stack. Homebrew-owned CLIs are updated through Homebrew;
 standalone CLIs use the release archive and `checksums.txt` before atomic
-replacement. The command then recreates the recorded stack mode, runs
+replacement. Before touching the stack it writes an `openneko backup` and stops
+if that fails (`--skip-backup` opts out). The command then recreates the recorded stack mode, runs
 migrations, prunes old OpenNeko image tags, and persists the selected tag for
 later starts.
 
@@ -89,43 +91,40 @@ before this behavior need one final manual CLI update; subsequent
 a recorded mode are inferred from existing Docker Compose projects; pass
 `--mode` only when multiple OpenNeko stacks exist.
 
-### Backup encryption keys
+### Backups
 
-Each backup repository has its own identity and encryption key. The repository
-mapping and key fingerprint are kept in host state outside the bind-mounted
-repository; the key itself is stored separately there and mounted read-only
-into the database and backup containers. This also avoids rootful Docker
-changing ownership of metadata the rootless host CLI must read.
+`openneko backup` writes one encrypted file containing a `pg_dump` of neko-db
+and archives of the config volumes (`openneko-config`, and
+`openneko-graphjin-cli` with the customer GraphJin config and Library files;
+the demo's `graphjin-config` when present). The stack must be running. Files
+go to `${XDG_DATA_HOME:-$HOME/.local/share}/openneko/backups/<installation>/<project>/`
+unless `--to` or `OPENNEKO_BACKUP_DIR` names another place, such as a NAS.
+There is no backup service and no point-in-time restore: a backup is a file.
 
-Default repositories are isolated by Compose project and a persistent
-installation ID under `~/.local/share/openneko/repositories/`. Named instances
-therefore cannot attach their PostgreSQL clusters to another customer's
-pgBackRest stanzas. `stop --volumes` and `reset` also rotate the installation
-ID after deleting database volumes, so a new PostgreSQL cluster is never
-pointed at the previous cluster's stanzas.
+`openneko restore <file> --confirm RESTORE` decrypts and verifies the whole
+file before changing anything, then stops the stack, replaces the config
+volumes, recreates the database from the dump and starts the stack again,
+whose migrations bring an older backup forward. `openneko doctor` reports the
+latest backup and warns when there is none or it is more than a week old.
 
-- Rootless Linux and macOS default to
-  `${XDG_STATE_HOME:-$HOME/.local/state}/openneko/backup-keys/`.
-- A system service can set `OPENNEKO_BACKUP_STATE_DIR=/var/lib/openneko`.
-- Set `OPENNEKO_BACKUP_REPOSITORY` to put encrypted backups on a NAS or another
-  failure domain. Do not put the key directory inside that repository.
-
-Export a recovery copy before moving or rebuilding the host:
+Each installation has its own backup key, created on first use under
+`${XDG_STATE_HOME:-$HOME/.local/state}/openneko/backup-keys/` (or set
+`OPENNEKO_BACKUP_KEY_FILE`). Keep a copy away from the backups:
 
 ```bash
 openneko backup key export --to /secure/off-host/openneko-backup.key
 ```
 
-Adopt that key after attaching an existing repository to a reinstall:
+On a new host, adopt it, or pass it to a single restore:
 
 ```bash
-OPENNEKO_BACKUP_REPOSITORY=/mnt/openneko-backups \
-  openneko backup key adopt --from /secure/off-host/openneko-backup.key
+openneko backup key adopt --from /secure/off-host/openneko-backup.key
+openneko restore backup.openneko-backup --confirm RESTORE --key-file /secure/off-host/openneko-backup.key
 ```
 
-Adoption asks pgBackRest to validate legacy repositories before writing their
-new identity marker. A missing or mismatched key fails closed and never causes
-the CLI to generate a replacement key against existing encrypted backups.
+Files are AES-256-GCM in authenticated 64 KiB chunks with a per-file key
+derived from the backup key, so a wrong key, truncation or any edit is
+rejected.
 
 ### Skills and secrets
 

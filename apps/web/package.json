@@ -9,7 +9,6 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:visual": "playwright test --config=playwright.records.config.ts",
     "test:visual:design": "playwright test --config=playwright.design-system.config.ts",
     "design-system:check": "node ../../scripts/check-web-design-system.mjs",
     "test:watch": "vitest"
@@ -23,7 +22,6 @@
     "@neko/interaction": "workspace:*",
     "@neko/llm": "workspace:*",
     "@neko/packs": "workspace:*",
-    "@neko/records": "workspace:*",
     "@neko/secret-crypt": "workspace:*",
     "@neko/telemetry": "workspace:*",
     "class-variance-authority": "^0.7.1",

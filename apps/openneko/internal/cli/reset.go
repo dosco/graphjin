@@ -23,9 +23,6 @@ func newResetCmd() *cobra.Command {
 		Short: "Tear down the stack and clear local state",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := configureBackupEnvironment(); err != nil {
-				return err
-			}
 			sup := compose.New(assets.ComposeFS)
 			files, err := sup.Materialize(compose.ModeDemo)
 			if err != nil {
@@ -37,10 +34,9 @@ func newResetCmd() *cobra.Command {
 			for _, m := range []compose.Mode{compose.ModeProd, compose.ModeDev, compose.ModeDemo} {
 				_, _ = sup.Run(context.Background(), compose.ProjectNameForMode(m), files, []string{"down", "-v"}, os.Stdout, os.Stderr)
 			}
-			oldRepository := os.Getenv("OPENNEKO_BACKUP_REPOSITORY")
-			_, newID, err := sup.RotateInstallationID()
+			project, err := sup.ProjectName("")
 			if err != nil {
-				return fmt.Errorf("data volumes were removed but backup namespace rotation failed: %w", err)
+				return err
 			}
 
 			cfgFile := filepath.Join(config.Dir(""), "config.json")
@@ -58,7 +54,7 @@ func newResetCmd() *cobra.Command {
 			} else if !keepSecrets {
 				// Default: keep secrets; only config.json is wiped.
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "reset complete; backups preserved at %s; next start will use installation %s\n", oldRepository, newID)
+			fmt.Fprintf(cmd.OutOrStdout(), "reset complete; %s\n", backupsKeptNote(sup, project))
 			return nil
 		},
 	}

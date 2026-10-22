@@ -2,11 +2,10 @@
  * POST /api/admin/change-password
  *
  * Bootstraps the admin's chosen DB password on first run. Steps:
- *   1. Transactionally rotate the `neko` metadata role and dedicated records
- *      role while both old connections are live.
- *   2. Persist both passwords to `~/.config/openneko/config.json` so every
- *      process and generated GraphJin config picks them up.
- *   3. Drain both web pools so subsequent queries use the new password.
+ *   1. Rotate the `neko` role's password.
+ *   2. Persist it to `~/.config/openneko/config.json` so every process and
+ *      generated GraphJin config picks it up.
+ *   3. Drain the web pool so subsequent queries use the new password.
  *   4. Fire-and-forget POST /admin/reconnect to the worker so its
  *      pg-boss singleton (which holds the OLD credentials in its own
  *      pool, separate from the web's @neko/db pool) restarts with fresh
@@ -22,17 +21,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import {
-  buildRecordsPoolConfig,
   hasCustomPassword,
   pool,
   reconnectPool,
   writeLocalConfig,
 } from "@neko/db";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
-import {
-  getWebRecordsPool,
-  reconnectWebRecordsRuntime,
-} from "@/lib/records";
 
 const MIN_LENGTH = 8;
 const FORBIDDEN = new Set(["secret", "password", "postgres"]);
@@ -45,18 +39,8 @@ function isPlainPasswordSafe(password: string): boolean {
   return !/['\\\n\r\0]/.test(password);
 }
 
-function roleIdentifier(value: unknown, label: string): string {
-  const role = typeof value === "string" ? value.trim() : "";
-  if (!/^[a-z_][a-z0-9_]{0,62}$/.test(role)) {
-    throw new Error(`${label} database role is not a safe Postgres identifier`);
-  }
-  return role;
-}
-
-async function rotateDatabaseRoles(password: string): Promise<void> {
+async function rotateDatabaseRole(password: string): Promise<void> {
   const metadata = await pool().connect();
-  const records = await getWebRecordsPool().connect();
-  const recordsRole = roleIdentifier(buildRecordsPoolConfig().user, "records");
   try {
     // Session-level advisory lock held across BOTH the role rotation and
     // the config-file write below (released in the finally). Two
@@ -66,33 +50,14 @@ async function rotateDatabaseRoles(password: string): Promise<void> {
     await metadata.query(
       "select pg_advisory_lock(hashtext('openneko.password-rotation'))",
     );
-    await metadata.query("begin");
-    await records.query("begin");
     await metadata.query(`alter role neko with password '${password}'`);
-    await records.query(`alter role ${recordsRole} with password '${password}'`);
-    // Both ALTER ROLE statements are transactional. Keep both transactions
-    // open until both statements have succeeded, then commit the records role
-    // first so a metadata failure can still be reported through the live web
-    // connection.
-    await records.query("commit");
-    await metadata.query("commit");
     // Persist while still inside the critical section, so the file always
     // records the password of the LAST committed rotation.
-    writeLocalConfig({
-      pg: { password },
-      recordsPg: { password },
-    });
-  } catch (error) {
-    await Promise.allSettled([
-      records.query("rollback"),
-      metadata.query("rollback"),
-    ]);
-    throw error;
+    writeLocalConfig({ pg: { password } });
   } finally {
     await metadata
       .query("select pg_advisory_unlock(hashtext('openneko.password-rotation'))")
       .catch(() => {});
-    records.release();
     metadata.release();
   }
 }
@@ -126,10 +91,9 @@ export async function POST(request: NextRequest) {
     // ALTER ROLE takes a literal; we vetted the string above because Postgres
     // does not accept a bind parameter in this DDL position. The rotation
     // also persists the config file inside its critical section.
-    await rotateDatabaseRoles(password);
+    await rotateDatabaseRole(password);
 
-    // Drain both pools so subsequent queries use the new password.
-    await reconnectWebRecordsRuntime();
+    // Drain the pool so subsequent queries use the new password.
     await reconnectPool();
 
     // Tell the worker process to restart so its pg-boss singleton

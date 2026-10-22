@@ -15,7 +15,7 @@
 //
 // Rules:
 //   - A package runs when it, or a workspace package it depends on, changes.
-//   - db/ (migrations, GraphJin configs, records schemas, seeds) runs the
+//   - db/ (migrations, GraphJin configs, seeds) runs the
 //     database package and everything that uses it. packs/ runs the web app,
 //     the worker, and the packs package.
 //   - Each Docker or browser job runs when the code it builds or drives
@@ -78,11 +78,7 @@ const JOBS = {
   },
   graphjin_integration: {
     // GraphJin builds from graphjin/ into the openneko binary.
-    paths: ["db/graphjin/", "db/records/", "Dockerfile", "graphjin/", "scripts/build-openneko.sh"],
-    packages: ["packages/records"],
-  },
-  records_recovery: {
-    paths: ["db/", "compose.yml", "Dockerfile", "scripts/test-records-recovery.sh"],
+    paths: ["db/graphjin/", "Dockerfile", "graphjin/", "scripts/build-openneko.sh"],
     packages: [],
   },
   embedding_image: {
@@ -152,7 +148,7 @@ function classify(path) {
   for (const dir of packages.values()) {
     if (path.startsWith(`${dir}/`)) for (const d of withDependents(dir)) picked.add(d);
   }
-  // Tests read migrations, GraphJin configs, records schemas, and seeds.
+  // Tests read migrations, GraphJin configs, and seeds.
   if (matches(path, ["db/", "apps/openneko/assets/migrations/"])) {
     for (const d of withDependents("packages/db")) picked.add(d);
   }

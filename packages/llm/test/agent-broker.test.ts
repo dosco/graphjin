@@ -28,13 +28,6 @@ function stubControlPlane(): AgentControlPlane {
     callGraphjinTool: unused as AgentControlPlane["callGraphjinTool"],
     askGraphjinDataAgent:
       unused as AgentControlPlane["askGraphjinDataAgent"],
-    listRecordCatalog: unused as AgentControlPlane["listRecordCatalog"],
-    findRecords: unused as AgentControlPlane["findRecords"],
-    getRecord: unused as AgentControlPlane["getRecord"],
-    findRecycledRecords:
-      unused as AgentControlPlane["findRecycledRecords"],
-    getRecycledRecord: unused as AgentControlPlane["getRecycledRecord"],
-    listRecordBlueprints: unused as AgentControlPlane["listRecordBlueprints"],
     saveWorkflowWithTrigger:
       unused as AgentControlPlane["saveWorkflowWithTrigger"],
     emitWorkflowOutput: unused as AgentControlPlane["emitWorkflowOutput"],
@@ -110,42 +103,6 @@ describe("startAgentBroker token registry", () => {
     });
     try {
       expect(handle.url).toBe(`http://10.200.0.1:${handle.port}`);
-    } finally {
-      await handle.close();
-    }
-  });
-
-  it("binds native records reads to the token's org and run", async () => {
-    const cp = stubControlPlane();
-    cp.listRecordCatalog = vi.fn(async () => ({ apps: [] }));
-    const handle = await startAgentBroker({ controlPlane: cp, port: 0 });
-    try {
-      const token = handle.tokenFor({
-        runId: "trusted-run",
-        orgId: "trusted-org",
-        kind: "work",
-      });
-      const response = await fetch(
-        new URL("/v1/records/catalog", `http://127.0.0.1:${handle.port}`),
-        {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${token}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            orgId: "other-org",
-            runId: "other-run",
-            appId: "equipment",
-          }),
-        },
-      );
-      expect(response.status).toBe(200);
-      expect(cp.listRecordCatalog).toHaveBeenCalledWith({
-        orgId: "trusted-org",
-        runId: "trusted-run",
-        appId: "equipment",
-      });
     } finally {
       await handle.close();
     }

@@ -138,8 +138,8 @@ describe("stageSandboxWorkspace", () => {
         mkdir(join(workspace.skillsRoot, "quarterly-review"), { recursive: true }),
       ]);
       await cp(
-        join(process.cwd(), "assets", "builtin-skills", "records"),
-        join(workspace.skillsRoot, "records"),
+        join(process.cwd(), "assets", "builtin-skills", "pdf"),
+        join(workspace.skillsRoot, "pdf"),
         { recursive: true },
       );
       await Promise.all([
@@ -155,21 +155,21 @@ describe("stageSandboxWorkspace", () => {
         ),
         // Simulate a durable workspace left behind by an older release.
         writeFile(
-          join(workspace.skillsRoot, "records", "SKILL.md"),
-          "---\nname: records\ndescription: stale system skill\n---\n",
+          join(workspace.skillsRoot, "pdf", "SKILL.md"),
+          "---\nname: pdf\ndescription: stale system skill\n---\n",
         ),
       ]);
 
       const staged = await stageSandboxWorkspace(workspace, stage, {
-        requiredSkillNames: ["records"],
+        requiredSkillNames: ["pdf"],
       });
-      expect(staged.skillOverrides).toEqual(["quarterly-review", "records"]);
+      expect(staged.skillOverrides).toEqual(["pdf", "quarterly-review"]);
       await expect(
-        access(join(staged.workspace.skillsRoot, "records", "SKILL.md")),
+        access(join(staged.workspace.skillsRoot, "pdf", "SKILL.md")),
       ).resolves.toBeUndefined();
       expect(
-        await readFile(join(staged.workspace.skillsRoot, "records", "SKILL.md"), "utf8"),
-      ).toContain("objective urgency cannot be determined");
+        await readFile(join(staged.workspace.skillsRoot, "pdf", "SKILL.md"), "utf8"),
+      ).toBe(await readFile(join(process.cwd(), "assets", "builtin-skills", "pdf", "SKILL.md"), "utf8"));
       expect(await readFile(join(staged.workspace.knowledgeRoot, "schema.json"), "utf8"))
         .toBe("{}");
       expect(await readFile(join(staged.workspace.threadUploadsRoot, "current.csv"), "utf8"))

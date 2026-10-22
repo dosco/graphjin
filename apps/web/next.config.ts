@@ -17,7 +17,7 @@ if (hostWebDev && (process.env.NODE_ENV !== "development" || demoMode)) {
 
 const nextConfig: NextConfig = {
   // Visual fixtures must not contend with the running workspace's dev server.
-  distDir: process.env.NODE_ENV !== "production" && process.env.OPENNEKO_RECORDS_VISUAL_TEST === "true"
+  distDir: process.env.NODE_ENV !== "production" && process.env.OPENNEKO_VISUAL_TEST === "true"
     ? ".next-visual"
     : ".next",
   env: {

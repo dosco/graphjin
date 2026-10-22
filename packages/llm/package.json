@@ -47,7 +47,6 @@
     "@neko/graphjin-contract": "workspace:*",
     "@neko/interaction": "workspace:*",
     "@neko/packs": "workspace:*",
-    "@neko/records": "workspace:*",
     "@neko/secret-crypt": "workspace:*",
     "@neko/secrets": "workspace:*",
     "@neko/telemetry": "workspace:*",

@@ -21,7 +21,7 @@ it("boots both standalone bundles with assets and no host or embedding dependenc
       banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
     });
     expect(Object.keys(result.metafile!.inputs).filter((name) =>
-      /packages\/(db|records|telemetry)\/|embedding\.ts|onnxruntime|huggingface/.test(name),
+      /packages\/(db|telemetry)\/|embedding\.ts|onnxruntime|huggingface/.test(name),
     )).toEqual([]);
     await writeFile(join(out, "package.json"), '{"type":"module"}');
     await mkdir(join(out, "assets"));

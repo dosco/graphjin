@@ -11,17 +11,14 @@
  *       "user": "neko",            // optional override; default 'neko'
  *       "password": "<set by /setup>", // when present, signals admin has changed from default 'secret'
  *       "database": "neko"         // optional override; default 'neko'
- *     },
- *     "recordsPg": {
- *       "password": "<rotated with pg by /setup>"
  *     }
  *   }
  *
  * On first boot the file doesn't exist; the app uses the hardcoded defaults
  * (which match what the docker compose ships with). The /setup wizard's
  * "Set DB password" step writes a new password to this file and runs
- * ALTER ROLE for both databases. Presence of both managed passwords here is
- * the signal that the admin has finished the password-change step.
+ * ALTER ROLE. Presence of pg.password here is the signal that the admin has
+ * changed the password from the default.
  *
  * Sister file in the same dir: `~/.config/openneko/secret-key` (at-rest key).
  */
@@ -59,8 +56,6 @@ export type LocalSecretsConfig = {
 
 export type LocalConfig = {
   pg?: LocalPgConfig;
-  /** Dedicated business-data Postgres. Rotated with `pg` during setup. */
-  recordsPg?: LocalPgConfig;
   secrets?: LocalSecretsConfig;
 };
 
@@ -95,14 +90,11 @@ export function readLocalConfig(): LocalConfig {
         const cfg = parsed as LocalConfig;
         // Database passwords are encrypted at rest (enc:v1); legacy plaintext
         // passes through unchanged.
-        for (const key of ["pg", "recordsPg"] as const) {
-          const database = cfg[key];
-          if (typeof database?.password === "string" && database.password) {
-            cfg[key] = {
-              ...database,
-              password: maybeDecryptSecret(database.password),
-            };
-          }
+        if (typeof cfg.pg?.password === "string" && cfg.pg.password) {
+          cfg.pg = {
+            ...cfg.pg,
+            password: maybeDecryptSecret(cfg.pg.password),
+          };
         }
         return cfg;
       }
@@ -117,26 +109,19 @@ export function readLocalConfig(): LocalConfig {
  * Deep-merges `partial` into the existing config and writes it atomically.
  * The merge is intentionally shallow at the top level + one level deeper —
  * passing { pg: { password } } only touches pg.password, not the whole pg
- * subtree (and likewise for recordsPg).
+ * subtree.
  */
 export function writeLocalConfig(partial: LocalConfig): void {
   const current = readLocalConfig();
   const next: LocalConfig = {
     ...current,
     pg: { ...(current.pg ?? {}), ...(partial.pg ?? {}) },
-    recordsPg: {
-      ...(current.recordsPg ?? {}),
-      ...(partial.recordsPg ?? {}),
-    },
   };
-  for (const key of ["pg", "recordsPg"] as const) {
-    const database = next[key];
-    if (typeof database?.password === "string" && database.password) {
-      next[key] = {
-        ...database,
-        password: maybeEncryptSecret(database.password),
-      };
-    }
+  if (typeof next.pg?.password === "string" && next.pg.password) {
+    next.pg = {
+      ...next.pg,
+      password: maybeEncryptSecret(next.pg.password),
+    };
   }
   mkdirSync(configDir(), { recursive: true });
   const path = localConfigPath();
@@ -153,14 +138,10 @@ export function writeLocalConfig(partial: LocalConfig): void {
 /** Convenience: true when the admin has changed the DB password from default. */
 export function hasCustomPassword(): boolean {
   const cfg = readLocalConfig();
-  const metadataPassword = cfg.pg?.password;
-  const recordsPassword = cfg.recordsPg?.password;
+  const password = cfg.pg?.password;
   return (
-    typeof metadataPassword === "string" &&
-    metadataPassword.length > 0 &&
-    metadataPassword !== "secret" &&
-    typeof recordsPassword === "string" &&
-    recordsPassword.length > 0 &&
-    recordsPassword !== "records-secret"
+    typeof password === "string" &&
+    password.length > 0 &&
+    password !== "secret"
   );
 }

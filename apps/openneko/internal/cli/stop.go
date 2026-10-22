@@ -18,9 +18,6 @@ func newStopCmd() *cobra.Command {
 		Short: "Bring down the OpenNeko stack",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := configureBackupEnvironment(); err != nil {
-				return err
-			}
 			sup := compose.New(assets.ComposeFS)
 			// Materialize against the broadest mode (demo) so we tear down any
 			// overlay services the operator may have started.
@@ -45,12 +42,7 @@ func newStopCmd() *cobra.Command {
 				return WithExit(code, nil)
 			}
 			if volumes {
-				oldRepository := os.Getenv("OPENNEKO_BACKUP_REPOSITORY")
-				_, newID, err := sup.RotateInstallationID()
-				if err != nil {
-					return fmt.Errorf("data volumes were removed but backup namespace rotation failed: %w", err)
-				}
-				fmt.Fprintf(cmd.OutOrStdout(), "data volumes removed; backups preserved at %s; next start will use installation %s\n", oldRepository, newID)
+				fmt.Fprintf(cmd.OutOrStdout(), "data volumes removed; %s\n", backupsKeptNote(sup, project))
 			}
 			return nil
 		},

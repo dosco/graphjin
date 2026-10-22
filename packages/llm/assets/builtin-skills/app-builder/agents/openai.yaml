@@ -1,4 +1,0 @@
-interface:
-  display_name: "App Builder"
-  short_description: "Design governed apps from plain-language needs"
-  default_prompt: "Use $app-builder to design an approval-ready OpenNeko app for my workflow."

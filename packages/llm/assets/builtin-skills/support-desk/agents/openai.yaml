@@ -1,4 +1,0 @@
-interface:
-  display_name: "Support Desk"
-  short_description: "Model support and Zendesk-shaped records apps"
-  default_prompt: "Use $support-desk to adapt the support blueprint to my service workflow."

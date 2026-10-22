@@ -277,7 +277,7 @@ export async function beginAuth(params: {
 }
 
 /**
- * Built-in governed action descriptors (records actions). /work hands
+ * Built-in governed action descriptors. /work hands
  * these to the agent's tool builder so it can register one MCP tool per
  * kind. Best-effort: an unreachable worker yields an empty list (the
  * agent simply won't have those tools that turn).

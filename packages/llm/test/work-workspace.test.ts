@@ -91,10 +91,7 @@ describe("work workspace", () => {
 
     const workspace = await ensureOrgWorkspace("org-test");
     const skills = await readdir(workspace.skillsRoot);
-    expect(skills).toContain("app-builder");
-    expect(skills).toContain("crm");
-    expect(skills).toContain("records");
-    expect(skills).toContain("support-desk");
+    expect(skills).not.toContain("records");
     expect(skills).toContain("skill-creator");
     expect(skills).toContain("pdf");
   }, 30_000);
@@ -173,7 +170,7 @@ describe("work workspace", () => {
     expect((await readdir(stagedSkills)).sort()).toEqual(["pdf", "quarterly-review"]);
 
     const forced = join(stage, "forced");
-    expect(await copySkillOverrides(workspace.skillsRoot, forced, ["records"], [])).toEqual(["records"]);
+    expect(await copySkillOverrides(workspace.skillsRoot, forced, ["pdf"], [])).toEqual(["pdf"]);
   }, 30_000);
 
   it("records a builtin seed origin and skips a stale unmodified seed", async () => {

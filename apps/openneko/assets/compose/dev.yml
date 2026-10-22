@@ -1,10 +1,4 @@
 # Dev overlay for the embedded release stack. The source hot-reload workflow is
 # repo-root `pnpm dev:setup` + `pnpm dev`: Docker runs the dependency/demo data
-# services, while web/worker run as host source processes. Dev has no managed
-# backup lifecycle, so disable archiving to let PostgreSQL recycle WAL.
-services:
-  neko-db:
-    command: [postgres, -c, archive_mode=off, -c, wal_compression=on, -c, temp_file_limit=5GB]
-
-  records-db:
-    command: [postgres, -c, archive_mode=off, -c, wal_compression=on, -c, temp_file_limit=5GB]
+# services, while web/worker run as host source processes.
+services: {}

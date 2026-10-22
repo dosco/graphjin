@@ -29,7 +29,6 @@ jobs:
       packages: ${{ steps.affected.outputs.packages }}
       design_system: ${{ steps.affected.outputs.design_system }}
       graphjin_integration: ${{ steps.affected.outputs.graphjin_integration }}
-      records_recovery: ${{ steps.affected.outputs.records_recovery }}
       embedding_image: ${{ steps.affected.outputs.embedding_image }}
       lazy_service: ${{ steps.affected.outputs.lazy_service }}
     steps:
@@ -249,19 +248,6 @@ jobs:
           path: apps/web/test-results/
           if-no-files-found: error
 
-  records-recovery:
-    name: Records recovery
-    needs: plan
-    if: needs.plan.outputs.records_recovery == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Verify backup and database crash recovery
-        run: ./scripts/test-records-recovery.sh
-
   graphjin-integration:
     name: GraphJin integration
     needs: plan
@@ -269,30 +255,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
-    services:
-      records-postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: records
-          POSTGRES_PASSWORD: records-secret
-          POSTGRES_DB: records
-        ports:
-          - 5434:5432
-        options: >-
-          --health-cmd "pg_isready -U records"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     env:
-      RECORDS_GRAPHJIN_IMAGE: openneko/graphjin-integration:pr
-      REQUIRE_GRAPHJIN_INTEGRATION: "1"
-      OPENNEKO_PG_ENV_OVERRIDE: "1"
-      RECORDS_PG_HOST: localhost
-      RECORDS_PG_PORT: "5434"
-      RECORDS_PG_USER: records
-      RECORDS_PG_PASSWORD: records-secret
-      RECORDS_PG_DATABASE: records
+      GRAPHJIN_IMAGE: openneko/graphjin-integration:pr
 
     steps:
       - uses: actions/checkout@v6
@@ -315,33 +279,18 @@ jobs:
             --load \
             --platform linux/amd64 \
             --target graphjin-runtime \
-            --tag "$RECORDS_GRAPHJIN_IMAGE" \
+            --tag "$GRAPHJIN_IMAGE" \
             .
-          docker run --rm --entrypoint graphjin "$RECORDS_GRAPHJIN_IMAGE" version
+          docker run --rm --entrypoint graphjin "$GRAPHJIN_IMAGE" version
 
       - name: Validate shipped source-mode configs
         run: |
           for config in customer.sources.example.yml dev.sources.example.yml; do
             docker run --rm --entrypoint graphjin \
               --volume "$PWD/db/graphjin:/config:ro" \
-              "$RECORDS_GRAPHJIN_IMAGE" \
+              "$GRAPHJIN_IMAGE" \
               config --file "/config/$config" validate
           done
-
-      - name: Configure GraphJin-to-Postgres routing
-        run: |
-          gateway="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')"
-          test -n "$gateway"
-          echo "RECORDS_GRAPHJIN_DB_HOST=$gateway" >> "$GITHUB_ENV"
-
-      - name: Run live GraphJin compatibility tests
-        run: |
-          pnpm --filter @neko/records exec vitest run \
-            test/policy-graphjin.integration.test.ts \
-            test/schema-graphjin.integration.test.ts \
-            test/write-executor.integration.test.ts \
-            test/import-executor.integration.test.ts \
-            --no-file-parallelism
 
   # One check to require in branch protection. It passes when every job the
   # plan picked passed, and when the plan picked none.
@@ -354,7 +303,6 @@ jobs:
       - lazy-service
       - embedding-image
       - design-system
-      - records-recovery
       - graphjin-integration
     if: always()
     runs-on: ubuntu-latest

@@ -42,8 +42,7 @@ type storageCollationState struct {
 // ReconcileStorage repairs all persisted indexes when a database volume moves
 // to the enforced storage ABI. It records completion in a numeric singleton
 // row rather than schema_migrations: schema migration ledgers use text indexes
-// (the thing being repaired), can be bootstrapped as already applied, and do
-// not cover records-db.
+// (the thing being repaired) and can be bootstrapped as already applied.
 //
 // The function is idempotent. If a process dies after REINDEX but before the
 // marker update, the next run safely repeats the repair.

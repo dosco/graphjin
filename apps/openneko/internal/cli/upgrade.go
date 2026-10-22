@@ -24,6 +24,7 @@ func newUpgradeCmd() *cobra.Command {
 	var noPrune bool
 	var stackOnly bool
 	var cliOnly bool
+	var skipBackup bool
 
 	cmd := &cobra.Command{
 		Use:   "upgrade",
@@ -31,6 +32,9 @@ func newUpgradeCmd() *cobra.Command {
 		Long: `Resolve an exact OpenNeko release, update the local CLI, re-execute that
 new CLI, then pull and recreate the current stack from the same release. This
 keeps the CLI's embedded Compose definitions aligned with the service images.
+
+Before touching the stack it takes an ` + "`openneko backup`" + ` of the running
+stack and stops if that fails; --skip-backup upgrades without one.
 
 The CLI honors its installation owner: Homebrew installations are upgraded
 through Homebrew; standalone installations use checksum-verified release
@@ -46,6 +50,7 @@ and specialized deployment workflows.`,
 				noPrune:      noPrune,
 				stackOnly:    stackOnly,
 				cliOnly:      cliOnly,
+				skipBackup:   skipBackup,
 			})
 		},
 	}
@@ -54,6 +59,7 @@ and specialized deployment workflows.`,
 	cmd.Flags().BoolVar(&noPrune, "no-prune", false, "Skip immediate post-upgrade image pruning (unused old agent images are still reaped after 24 hours)")
 	cmd.Flags().BoolVar(&stackOnly, "stack-only", false, "Upgrade only stack images; keep the current local CLI")
 	cmd.Flags().BoolVar(&cliOnly, "cli-only", false, "Upgrade only the local CLI; do not change the stack")
+	cmd.Flags().BoolVar(&skipBackup, "skip-backup", false, "Upgrade the stack without taking a backup first")
 	return cmd
 }
 
@@ -63,6 +69,7 @@ type upgradeOptions struct {
 	noPrune      bool
 	stackOnly    bool
 	cliOnly      bool
+	skipBackup   bool
 }
 
 func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) error {
@@ -105,8 +112,17 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 	if err != nil {
 		return err
 	}
-	if err := configureBackupEnvironment(project); err != nil {
-		return fmt.Errorf("configure backup repository: %w", err)
+	files, err := sup.Materialize(m)
+	if err != nil {
+		return err
+	}
+	if opts.skipBackup {
+		fmt.Fprintln(errOut, "warning: --skip-backup given; upgrading the stack without a backup.")
+	} else {
+		fmt.Fprintln(out, "Taking a pre-upgrade backup...")
+		if _, err := createBackup(ctx, sup, project, files, "", out); err != nil {
+			return fmt.Errorf("pre-upgrade backup failed, so the stack was not changed (pass --skip-backup to upgrade without one): %w", err)
+		}
 	}
 
 	previous, hadPrevious := os.LookupEnv("OPENNEKO_VERSION")
@@ -121,10 +137,6 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 		}
 	}()
 
-	files, err := sup.Materialize(m)
-	if err != nil {
-		return err
-	}
 	fmt.Fprintf(out, "Upgrading OpenNeko %s stack to image tag %s\n", m, target)
 	fmt.Fprintln(out, "Pulling stack images...")
 	if code, err := sup.Run(ctx, project, files, []string{"pull"}, os.Stdout, os.Stderr); err != nil {
@@ -166,7 +178,7 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 }
 
 func restartUpgradedStack(ctx context.Context, sup *compose.Supervisor, project string, files []string) error {
-	// Enter a real maintenance boundary before replacing either database image.
+	// Enter a real maintenance boundary before replacing the database image.
 	// Without this, old worker/GraphJin containers can reconnect in the window
 	// between Postgres becoming healthy and the new storage-reconcile one-shot
 	// acquiring its locks. Stopping the whole project is intentionally simple:
@@ -381,18 +393,20 @@ func oldOpenNekoImageRefs(imageListOutput, targetTag string) []string {
 
 func openNekoImageRepos() map[string]bool {
 	return map[string]bool{
-		"ghcr.io/open-neko/neko-cli":    true,
-		"ghcr.io/open-neko/neko-db":     true,
-		"ghcr.io/open-neko/records-db":  true,
-		"ghcr.io/open-neko/neko-backup": true,
-		// Legacy image retained so the first upgrade after its removal prunes it.
-		"ghcr.io/open-neko/records-storage-ops": true,
-		"ghcr.io/open-neko/neko-graphjin":       true,
+		"ghcr.io/open-neko/neko-cli":       true,
+		"ghcr.io/open-neko/neko-db":        true,
+		"ghcr.io/open-neko/neko-graphjin":  true,
+		"ghcr.io/open-neko/neko-web":       true,
+		"ghcr.io/open-neko/neko-worker":    true,
+		"ghcr.io/open-neko/neko-embedding": true,
+		"ghcr.io/open-neko/agent":          true,
+		// Legacy Records and pgBackRest images (the records data plane and the
+		// neko-backup service were removed); kept so upgrades prune old copies
+		// left on the host.
+		"ghcr.io/open-neko/records-db":          true,
 		"ghcr.io/open-neko/records-graphjin":    true,
-		"ghcr.io/open-neko/neko-web":            true,
-		"ghcr.io/open-neko/neko-worker":         true,
-		"ghcr.io/open-neko/neko-embedding":      true,
-		"ghcr.io/open-neko/agent":               true,
+		"ghcr.io/open-neko/records-storage-ops": true,
+		"ghcr.io/open-neko/neko-backup":         true,
 		// Legacy images (plugins, the OpenShell sandbox supervisor and the
 		// Docling librarian were removed); kept so upgrades prune old copies
 		// left on the host.

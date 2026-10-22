@@ -146,7 +146,7 @@ it, so a decision is a single confident move, not a research project.
 It stays calm while it does this. Warm paper and near-black ink, one iris accent
 for the action that matters, and a fixed status vocabulary of mint, amber, and
 brick. Dark hero heads frame what is live; bright accents mark what needs you
-now. Depth is soft and ambient. Admin, Settings, Apps, and Records inherit the
+now. Depth is soft and ambient. Admin and Settings inherit the
 same tokens and stay quiet. Control before autonomy: the agent is always working,
 and you are always in command.
 
@@ -365,7 +365,7 @@ accents and Coral danger carry status against the dark.
 - **Don't** add dark mode. The theme is light only.
 - **Don't** create page-local button, field, or status-pill styling, and don't
   add a raw native control without a `data-ui-bespoke-reason`.
-- **Don't** restyle Admin, Apps, Records, or Settings to look "designed". They
+- **Don't** restyle Admin or Settings to look "designed". They
   stay precise and quiet.
 - **Don't** put a bright accent (Mint, Amber) on small text over a light surface.
   It fails contrast; use Pine or Amber Ink.

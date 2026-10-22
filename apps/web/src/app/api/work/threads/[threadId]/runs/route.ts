@@ -26,17 +26,10 @@ import {
 } from "@/lib/neko-run-registry";
 import {
   createWorkMessage,
-  setWorkThreadState,
   suggestWorkThreadTitle,
   touchWorkThread,
 } from "@/lib/work-store";
-import { parseAppWorkContext, parseRecordWorkContext } from "@neko/llm/work";
-import {
-  AppChatContextError,
-  resolveAppChatContext,
-} from "@/lib/app-chat-context";
 import { getAuthorizedWorkThread } from "@/lib/work-thread-auth";
-import { recordsApiError } from "@/lib/records-api";
 import { createWebHarnessObserver } from "@/lib/telemetry";
 import { errorCodeOf, observeSafely, type HarnessRunSummary } from "@neko/telemetry";
 
@@ -86,40 +79,6 @@ async function postRun(request: NextRequest, context: RouteContext) {
   const thread = await startupPhase("http.authorize", () => getAuthorizedWorkThread(orgId, threadId, actor));
   if (!thread) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
-  }
-
-  const threadState = thread.backend_state && typeof thread.backend_state === "object"
-    && !Array.isArray(thread.backend_state)
-    ? thread.backend_state as Record<string, unknown>
-    : {};
-  const appContext = parseAppWorkContext(threadState.appContext);
-  const legacyRecordContext = parseRecordWorkContext(threadState.recordContext);
-  if (body.recordContext !== undefined) {
-    const owningAppId = appContext?.appId ?? legacyRecordContext?.appId;
-    if (!owningAppId) {
-      return NextResponse.json(
-        { error: "Page context is only accepted by app chat" },
-        { status: 400 },
-      );
-    }
-    try {
-      const resolved = await resolveAppChatContext({
-        orgId,
-        appId: owningAppId,
-        actorRole: actor.role,
-        recordContext: body.recordContext,
-      });
-      const nextState = { ...threadState };
-      nextState.appContext = resolved.appContext;
-      if (resolved.recordContext) nextState.recordContext = resolved.recordContext;
-      else delete nextState.recordContext;
-      await setWorkThreadState(threadId, nextState);
-    } catch (error) {
-      if (error instanceof AppChatContextError) {
-        return NextResponse.json({ error: error.message }, { status: 400 });
-      }
-      return recordsApiError(error);
-    }
   }
 
   // Memory writes are agent-driven through the brokered memory MCP tool.

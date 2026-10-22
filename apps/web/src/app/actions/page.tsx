@@ -23,10 +23,6 @@ import {
 import { cn } from "@/lib/cn";
 import { formatSavedShort } from "@/lib/hours-saved";
 import { workflowDisplayName } from "@/lib/workflow-label";
-import {
-  parseRecordUpdatePayload,
-  RecordActionDiff,
-} from "@/components/records/RecordActionDiff";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty";
 import { SearchInput } from "@/components/ui/search-input";
@@ -407,7 +403,6 @@ function ActionReadingPane({
       </aside>
     );
   }
-  const recordUpdate = parseRecordUpdatePayload(action.kind, action.payload);
   const risk = action.riskLevel ?? "low";
   return (
     <aside className="triage-pane">
@@ -432,17 +427,7 @@ function ActionReadingPane({
           </div>
         )}
 
-        <RecordActionDiff
-          kind={action.kind}
-          payload={action.payload}
-          policyContext={
-            action.status === "pending_approval"
-              ? approverPhrase(action.approverKind, action.approverLabel)
-              : null
-          }
-        />
-
-        {recordUpdate ? null : <ActionChanges payload={action.payload} className="mt-4" />}
+        <ActionChanges payload={action.payload} className="mt-4" />
 
         <Disclosure title="Technical details" className="mt-4">
           <div className="grid gap-2 text-ui-caption text-text2">

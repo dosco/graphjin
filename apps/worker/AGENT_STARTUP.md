@@ -62,7 +62,7 @@ docker build --target worker -t openneko-worker:startup .
 ```
 
 The bundle test builds both executables into an isolated temporary directory,
-rejects host DB/records/telemetry and embedding imports, and checks boot with
+rejects host DB/telemetry and embedding imports, and checks boot with
 only the bundled assets and no inherited runtime overrides. Missing assets
 must fail. Launcher tests cover cancellation, partial output, empty output,
 and cleanup.
@@ -122,7 +122,7 @@ Upgrade UI checked at 1280px and 390px: optional email form, persisted account
 visible before email entry, 44px phone targets, visible focus, no page overflow,
 and no solo sign-out action. Saving email kept the same user ID and one user row.
 SSO readiness and identity linking are covered by server tests; full external IdP
-login and the unrelated Records service were not exercised in this test stack.
+login was not exercised in this test stack.
 
 ### Startup timing coverage
 

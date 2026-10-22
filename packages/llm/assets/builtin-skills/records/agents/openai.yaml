@@ -1,4 +1,0 @@
-interface:
-  display_name: "Records"
-  short_description: "Find and safely change generated app records"
-  default_prompt: "Use $records to find the right record and propose a safe change."

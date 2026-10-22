@@ -20,7 +20,6 @@ export function describeActionFailure(error: string | null | undefined, system =
 export function systemForActionKind(kind: string): string {
   const prefix = kind.split(".")[0];
   if (prefix === "magento") return "Magento";
-  if (prefix === "record_update" || prefix === "record") return "the app";
   return "the target system";
 }
 

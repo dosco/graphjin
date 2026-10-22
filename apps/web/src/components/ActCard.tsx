@@ -8,7 +8,6 @@ import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { formatSavedShort } from "@/lib/hours-saved";
 import { ActionChanges } from "@/components/ActionChanges";
-import { RecordActionDiff } from "@/components/records/RecordActionDiff";
 import { actionApprovalAttribution } from "@/lib/action-copy";
 
 export type ActRowTone = "good" | "watch" | "action";
@@ -173,13 +172,7 @@ export default function ActCard({
                     {row.detail}
                   </p>
                 )}
-                <RecordActionDiff
-                  kind={row.kind}
-                  payload={row.payload}
-                  compact
-                  policyContext={isPending ? row.approverPhrase : null}
-                />
-                {isPending && row.kind !== "record_update" ? (
+                {isPending ? (
                   <ActionChanges payload={row.payload} limit={3} className="mt-1.5" />
                 ) : null}
                 {row.rejectionReason && (

@@ -44,9 +44,6 @@ importers:
       '@neko/packs':
         specifier: workspace:*
         version: link:../../packages/packs
-      '@neko/records':
-        specifier: workspace:*
-        version: link:../../packages/records
       '@neko/secret-crypt':
         specifier: workspace:*
         version: link:../../packages/secret-crypt
@@ -165,9 +162,6 @@ importers:
       '@neko/packs':
         specifier: workspace:*
         version: link:../../packages/packs
-      '@neko/records':
-        specifier: workspace:*
-        version: link:../../packages/records
       '@neko/secrets':
         specifier: workspace:*
         version: link:../../packages/secrets
@@ -309,9 +303,6 @@ importers:
       '@neko/packs':
         specifier: workspace:*
         version: link:../packs
-      '@neko/records':
-        specifier: workspace:*
-        version: link:../records
       '@neko/secret-crypt':
         specifier: workspace:*
         version: link:../secret-crypt
@@ -368,37 +359,6 @@ importers:
       '@types/yauzl':
         specifier: ^3.4.0
         version: 3.4.0
-      typescript:
-        specifier: ^5
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
-
-  packages/records:
-    dependencies:
-      '@neko/secret-crypt':
-        specifier: workspace:*
-        version: link:../secret-crypt
-      pg:
-        specifier: ^8.20.0
-        version: 8.20.0
-      yaml:
-        specifier: ^2.8.1
-        version: 2.9.0
-    devDependencies:
-      '@neko/db':
-        specifier: workspace:*
-        version: link:../db
-      '@types/node':
-        specifier: ^20
-        version: 20.19.39
-      '@types/pg':
-        specifier: ^8.20.0
-        version: 8.20.0
-      tsx:
-        specifier: ^4.19.2
-        version: 4.21.0
       typescript:
         specifier: ^5
         version: 5.9.3

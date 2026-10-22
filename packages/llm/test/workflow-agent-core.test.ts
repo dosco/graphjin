@@ -66,7 +66,6 @@ describe("runWorkflowAgentBackend", () => {
         neko_action: expect.anything(),
         neko_graphjin: expect.anything(),
         neko_memory: expect.anything(),
-        neko_records: expect.anything(),
         neko_workflow_output: expect.anything(),
       }),
     );

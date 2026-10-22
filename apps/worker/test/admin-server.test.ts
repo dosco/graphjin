@@ -7,7 +7,6 @@
  */
 
 import { createServer } from "node:http";
-import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -194,10 +193,10 @@ describe("worker admin HTTP handler", () => {
     try {
       const input = {
         orgId: "org-test",
-        kind: "app_create",
+        kind: "user_admin",
         scope: "internal",
         status: "pending_approval",
-        payload: { app: "crm" },
+        payload: { email: "new@example.com" },
       };
       const res = await fetch(
         `http://127.0.0.1:${srv.port}/admin/action-requests/create`,
@@ -464,90 +463,12 @@ describe("worker solution-pack admin routes", () => {
   });
 });
 
-describe("worker native records-watch ingress", () => {
-  const secret = "records-watch-test-secret-that-is-at-least-thirty-two-bytes";
-  const body = JSON.stringify({
-    watch: { id: "watch-1", name: "stale-opportunities" },
-    event: { id: "event-1", watch_id: "watch-1", data_hash: "hash-1" },
-  });
-
-  function signature(value: string): string {
-    return `sha256=${createHmac("sha256", secret).update(value).digest("hex")}`;
-  }
-
-  it("accepts an exact signed GraphJin event and dispatches it once", async () => {
-    const dispatch = vi.fn().mockResolvedValue({ accepted: true });
-    const srv = await startServer(
-      createAdminHandler({ recordsWatches: { secret, dispatch } }),
-    );
-    try {
-      const response = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/events/records-watch`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-graphjin-signature": signature(body),
-            "idempotency-key": "event-1",
-          },
-          body,
-        },
-      );
-      expect(response.status).toBe(202);
-      expect(dispatch).toHaveBeenCalledWith({
-        watchId: "watch-1",
-        eventId: "event-1",
-        payload: JSON.parse(body),
-      });
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("rejects tampering and mismatched idempotency identities", async () => {
-    const dispatch = vi.fn();
-    const srv = await startServer(
-      createAdminHandler({ recordsWatches: { secret, dispatch } }),
-    );
-    try {
-      const tampered = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/events/records-watch`,
-        {
-          method: "POST",
-          headers: {
-            "x-graphjin-signature": signature(body),
-            "idempotency-key": "event-1",
-          },
-          body: `${body} `,
-        },
-      );
-      expect(tampered.status).toBe(401);
-
-      const mismatched = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/events/records-watch`,
-        {
-          method: "POST",
-          headers: {
-            "x-graphjin-signature": signature(body),
-            "idempotency-key": "event-other",
-          },
-          body,
-        },
-      );
-      expect(mismatched.status).toBe(400);
-      expect(dispatch).not.toHaveBeenCalled();
-    } finally {
-      await srv.close();
-    }
-  });
-});
-
 describe("worker admin /admin/action-descriptors", () => {
   it("returns the built-in action descriptors", async () => {
     const srv = await startServer(
       createAdminHandler({
         actions: {
-          getActionDescriptors: () => [{ kind: "records.create", description: "Create a record", default_mode: "ask" }],
+          getActionDescriptors: () => [{ kind: "slack.send_message", description: "Send a Slack message", default_mode: "ask" }],
         },
       }),
     );
@@ -555,7 +476,7 @@ describe("worker admin /admin/action-descriptors", () => {
       const res = await fetch(`http://127.0.0.1:${srv.port}/admin/action-descriptors`);
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({
-        descriptors: [{ kind: "records.create", description: "Create a record", default_mode: "ask" }],
+        descriptors: [{ kind: "slack.send_message", description: "Send a Slack message", default_mode: "ask" }],
       });
     } finally {
       await srv.close();
@@ -1250,144 +1171,6 @@ describe("worker admin /admin/auth/*", () => {
       });
       expect(res.status).toBe(500);
       expect(((await res.json()) as { error: string }).error).toMatch(/auth_url_build_failed/);
-    } finally {
-      await srv.close();
-    }
-  });
-});
-
-describe("worker records import CLI routes", () => {
-  it("exposes staging and prepares imports through the configured bridge", async () => {
-    const staging = vi.fn().mockResolvedValue({
-      orgId: "org-a",
-      containerRoot: "/tmp/openneko-home/org-a/imports/cli",
-    });
-    const prepare = vi.fn().mockResolvedValue({
-      request: {
-        id: "request-1",
-        kind: "records_import_start",
-        status: "pending_approval",
-        payload: { import_plan: { planHash: "planned" } },
-      },
-    });
-    const srv = await startServer(
-      createAdminHandler({
-        recordsImports: {
-          staging,
-          prepare,
-          start: vi.fn(),
-        },
-      }),
-    );
-    try {
-      const stagingResponse = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/records/import/staging`,
-      );
-      expect(stagingResponse.status).toBe(200);
-      await expect(stagingResponse.json()).resolves.toEqual({
-        orgId: "org-a",
-        containerRoot: "/tmp/openneko-home/org-a/imports/cli",
-      });
-
-      const input = {
-        mode: "file",
-        sourcePath: "imports/cli/stage-1/loans.csv",
-        object: "loan",
-      };
-      const prepareResponse = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/records/import/prepare`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(input),
-        },
-      );
-      expect(prepareResponse.status).toBe(200);
-      expect(prepare).toHaveBeenCalledWith(input);
-      await expect(prepareResponse.json()).resolves.toMatchObject({
-        request: { id: "request-1", status: "pending_approval" },
-      });
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("starts a prepared request and returns the queued job", async () => {
-    const start = vi.fn().mockResolvedValue({
-      requestId: "request-1",
-      status: "queued",
-      jobId: "job-1",
-    });
-    const srv = await startServer(
-      createAdminHandler({
-        recordsImports: {
-          staging: vi.fn(),
-          prepare: vi.fn(),
-          start,
-        },
-      }),
-    );
-    try {
-      const response = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/records/import/start`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ requestId: "request-1" }),
-        },
-      );
-      expect(response.status).toBe(202);
-      expect(start).toHaveBeenCalledWith("request-1");
-      await expect(response.json()).resolves.toEqual({
-        requestId: "request-1",
-        status: "queued",
-        jobId: "job-1",
-      });
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("rejects an invalid start body", async () => {
-    const start = vi.fn();
-    const srv = await startServer(
-      createAdminHandler({
-        recordsImports: {
-          staging: vi.fn(),
-          prepare: vi.fn(),
-          start,
-        },
-      }),
-    );
-    try {
-      const response = await fetch(
-        `http://127.0.0.1:${srv.port}/admin/records/import/start`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: "{}",
-        },
-      );
-      expect(response.status).toBe(400);
-      expect(start).not.toHaveBeenCalled();
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it("returns 503 when the CLI bridge is unavailable", async () => {
-    const srv = await startServer(createAdminHandler());
-    try {
-      for (const [method, path] of [
-        ["GET", "/admin/records/import/staging"],
-        ["POST", "/admin/records/import/prepare"],
-        ["POST", "/admin/records/import/start"],
-      ] as const) {
-        const response = await fetch(`http://127.0.0.1:${srv.port}${path}`, {
-          method,
-        });
-        expect(response.status).toBe(503);
-      }
     } finally {
       await srv.close();
     }

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Dialog } from "radix-ui";
-import { ArrowRight, CornerDownLeft, MessageCircle, MonitorPlay, Plus, Search, Settings, User } from "lucide-react";
+import { CornerDownLeft, MessageCircle, MonitorPlay, Plus, Search, Settings, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ALL_NAV, hideAppChrome } from "@/lib/nav";
@@ -119,7 +119,6 @@ export default function CommandBar() {
         icon: item.icon,
         run: () => go(item.href),
       })),
-      { id: "nav:/apps", label: "Apps", group: "Go to", icon: ArrowRight, run: () => go("/apps") },
       { id: "nav:/profile", label: "Your account", hint: "Profile and display", group: "Go to", icon: User, run: () => go("/profile") },
     ];
     const flows: Command[] = [

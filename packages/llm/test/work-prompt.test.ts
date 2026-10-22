@@ -45,7 +45,6 @@ function build(
       scope?: "external" | "internal";
       default_mode?: "auto" | "ask" | "deny";
     }>;
-    dataSurface?: "customer" | "records";
     graphjinDataPath?: "direct" | "agent";
   } = {},
 ): string {
@@ -67,23 +66,7 @@ function build(
     supportsNativeDelegation: overrides.supportsNativeDelegation ?? true,
     installedSkills: overrides.installedSkills,
     pluginActions: overrides.pluginActions,
-    dataSurface: overrides.dataSurface,
     ...(overrides.graphjinDataPath ? { graphjinDataPath: overrides.graphjinDataPath } : {}),
-    ...(overrides.dataSurface === "records"
-      ? {
-          appContext: {
-            appId: "crm",
-            appLabel: "CRM",
-          },
-          recordContext: {
-            surface: "list" as const,
-            appId: "crm",
-            appLabel: "CRM",
-            objectApiName: "activity",
-            objectLabel: "Activities",
-          },
-        }
-      : {}),
     inlineTranscript: false,
   });
 }
@@ -118,25 +101,6 @@ describe("buildWorkPrompt GraphJin agent path", () => {
     expect(direct).toContain("`mcp_neko_graphjin_execute_graphql`");
     expect(direct).toContain("`mcp_neko_graphjin_query_catalog`");
     expect(direct).not.toContain("mcp_neko_graphjin_agent_ask");
-  });
-});
-
-describe("buildWorkPrompt records data surface", () => {
-  it("routes generated-app questions only to native records tools", () => {
-    const prompt = build("ax", {
-      dataSurface: "records",
-      supportsSourceConfigTool: true,
-    });
-    expect(prompt).toContain("<records_access>");
-    expect(prompt).toContain("mcp_neko_records_*");
-    expect(prompt).toContain('"appId":"crm"');
-    expect(prompt).toContain('"objectApiName":"activity"');
-    expect(prompt).toContain("default subject and conversational home");
-    expect(prompt).toContain("CRM account context plus Support tickets");
-    expect(prompt).toContain("existing app, object, and field");
-    expect(prompt).not.toContain("<data_access>");
-    expect(prompt).not.toContain("graphjin cli execute_graphql");
-    expect(prompt).not.toContain("neko_source_config_manager");
   });
 });
 
@@ -219,12 +183,12 @@ describe("buildWorkPrompt skill catalog", () => {
 });
 
 describe("buildWorkPrompt action scopes", () => {
-  it("teaches fence-based agents the fixed scope for records and plugin actions", () => {
+  it("teaches fence-based agents the fixed scope for internal and plugin actions", () => {
     const prompt = build("ax", {
       pluginActions: [
         {
-          kind: "record_create",
-          description: "Create a generated-app record.",
+          kind: "user_admin",
+          description: "Invite or change a user.",
           scope: "internal",
           default_mode: "ask",
         },
@@ -236,12 +200,12 @@ describe("buildWorkPrompt action scopes", () => {
       ],
     });
 
-    expect(prompt).toContain("`record_create` (scope:internal; mode:ask)");
+    expect(prompt).toContain("`user_admin` (scope:internal; mode:ask)");
     expect(prompt).toContain("`send_slack_dm` (scope:external; mode:ask)");
     expect(prompt).toContain(
       '"scope": "<the exact scope shown for the selected kind>"',
     );
-    expect(prompt).toMatch(/Never relabel an internal records\s+action as external/);
+    expect(prompt).toMatch(/Never relabel an internal action as\s+external/);
   });
 });
 

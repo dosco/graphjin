@@ -36,7 +36,13 @@ const M_0011 = join(REPO_ROOT, "db", "migrations", "0011_action_stack.sql");
 const M_0019 = join(REPO_ROOT, "db", "migrations", "0019_install_policy_scope.sql");
 const M_0048 = join(REPO_ROOT, "db", "migrations", "0048_graphjin_config_scope.sql");
 const M_0110 = join(REPO_ROOT, "db", "migrations", "0110_graphjin_agent_scope.sql");
+const M_0034 = join(REPO_ROOT, "db", "migrations", "0034_workflow_ownership.sql");
 const M_0051 = join(REPO_ROOT, "db", "migrations", "0051_app_state.sql");
+const M_0052 = join(REPO_ROOT, "db", "migrations", "0052_records_ops_health.sql");
+const M_0053 = join(REPO_ROOT, "db", "migrations", "0053_records_starter_watches.sql");
+const M_0074 = join(REPO_ROOT, "db", "migrations", "0074_user_groups.sql");
+const M_0076 = join(REPO_ROOT, "db", "migrations", "0076_item_grants.sql");
+const M_0126 = join(REPO_ROOT, "db", "migrations", "0126_drop_records.sql");
 const M_0062 = join(REPO_ROOT, "db", "migrations", "0062_hermes_only_agent.sql");
 const M_0063 = join(
   REPO_ROOT,
@@ -260,41 +266,63 @@ describeIfDb("schema migrations", () => {
     });
   });
 
-  it("0051 creates the records app lifecycle mirror with safe defaults", async () => {
+  it("0126 drops the Records tables and what Records seeded, and is idempotent", async () => {
     await withTempDb(async (client) => {
-      await applyFile(client, M_0001);
-      await applyFile(client, M_0051);
-
+      for (const path of [
+        M_0001, M_0006, M_0009, M_0010, M_0011, M_0034,
+        M_0051, M_0052, M_0053, M_0074, M_0076,
+      ]) {
+        await applyFile(client, path);
+      }
       await client.query(`
-        insert into organization (id, name) values ('records-org', 'Records Org');
-        insert into app_user (id, org_id, email, role)
-        values ('records-admin', 'records-org', 'admin@example.com', 'admin');
-        insert into app_state (org_id, app_id, created_by)
-        values ('records-org', 'equipment', 'records-admin');
+        insert into organization (id, name) values ('org', 'Org');
+        insert into workflow_definition (id, org_id, owner_user_id, name) values
+          ('00000000-0000-0000-0000-000000000001', 'org', '', 'CRM · Deals closing this month'),
+          ('00000000-0000-0000-0000-000000000002', 'org', '', 'OpenNeko operations'),
+          ('00000000-0000-0000-0000-000000000003', 'org', '', 'Weekly revenue');
+        insert into app_state (org_id, app_id) values ('org', 'crm');
+        insert into action_policy (org_id, name, applies_to_kinds, applies_to_scopes, mode)
+        values
+          ('org', 'record_mutation_default', '{record_update}', '{internal}', 'approval_required'),
+          ('org', 'code_action_default', '{code_create_issue}', '{internal}', 'approval_required');
+        insert into item_grant (org_id, group_id, item_type, item_id)
+        select 'org', id, 'action', item
+        from user_group, unnest(array['record_update', 'magento.refund']) as item
+        where org_id = 'org' and slug = 'everyone';
+        insert into work_thread (org_id, title, backend_state) values
+          ('org', 'app chat', '{"appContext": {"appId": "crm"}, "sessionId": "s1"}'),
+          ('org', 'main chat', '{"sessionId": "s2"}');
       `);
 
-      const state = await client.query<{
-        status: string;
-        config: Record<string, unknown>;
-      }>(
-        `select status, config from app_state
-         where org_id = 'records-org' and app_id = 'equipment'`,
-      );
-      expect(state.rows).toEqual([{ status: "draft", config: {} }]);
+      await applyFile(client, M_0126);
+      await applyFile(client, M_0126);
 
-      await expect(
-        client.query(`
-          insert into app_state (org_id, app_id, status)
-          values ('records-org', 'invalid', 'unknown')
-        `),
-      ).rejects.toThrow(/check constraint|status/i);
-
-      await client.query(`delete from app_user where id = 'records-admin'`);
-      const owner = await client.query<{ created_by: string | null }>(
-        `select created_by from app_state
-         where org_id = 'records-org' and app_id = 'equipment'`,
+      const tables = await client.query<{ table_name: string }>(`
+        select table_name from information_schema.tables
+        where table_schema = 'public'
+          and table_name in ('app_state', 'records_ops_health',
+            'records_watch_binding', 'records_watch_event_receipt')
+      `);
+      expect(tables.rows).toEqual([]);
+      const workflows = await client.query<{ name: string }>(
+        `select name from workflow_definition order by name`,
       );
-      expect(owner.rows[0]?.created_by).toBeNull();
+      expect(workflows.rows).toEqual([{ name: "Weekly revenue" }]);
+      const policies = await client.query<{ name: string }>(
+        `select name from action_policy order by name`,
+      );
+      expect(policies.rows).toEqual([{ name: "code_action_default" }]);
+      const grants = await client.query<{ item_id: string }>(
+        `select item_id from item_grant where item_type = 'action' order by item_id`,
+      );
+      expect(grants.rows).toEqual([{ item_id: "*" }, { item_id: "magento.refund" }]);
+      const threads = await client.query<{ title: string; backend_state: unknown }>(
+        `select title, backend_state from work_thread order by title`,
+      );
+      expect(threads.rows).toEqual([
+        { title: "app chat", backend_state: { sessionId: "s1" } },
+        { title: "main chat", backend_state: { sessionId: "s2" } },
+      ]);
     });
   });
 

@@ -16,7 +16,6 @@ import {
   traceGraphjinToolsList,
   traceLibrarySearch,
   traceMemorySearch,
-  traceRecordBlueprints,
   traceWorkflowList,
   unwrapWorkSemanticTraceControlPlane,
 } from "./semantic-trace";
@@ -375,107 +374,6 @@ async function handleRunRequest(
             : {}),
         }),
       );
-    case "/v1/records/catalog":
-      return send(
-        res,
-        200,
-        await cp.listRecordCatalog({
-          orgId: binding.orgId,
-          runId: binding.runId,
-          ...(typeof body.appId === "string" ? { appId: body.appId } : {}),
-        }),
-      );
-    case "/v1/records/find":
-      return send(
-        res,
-        200,
-        await cp.findRecords({
-          orgId: binding.orgId,
-          runId: binding.runId,
-          appId: String(body.appId ?? ""),
-          objectApiName: String(body.objectApiName ?? ""),
-          ...(typeof body.first === "number" ? { first: body.first } : {}),
-          ...(typeof body.after === "string" ? { after: body.after } : {}),
-          ...(typeof body.search === "string" ? { search: body.search } : {}),
-          ...(Array.isArray(body.filters)
-            ? {
-                filters: body.filters as Parameters<
-                  AgentControlPlane["findRecords"]
-                >[0]["filters"],
-              }
-            : {}),
-          ...(body.sort && typeof body.sort === "object"
-            ? {
-                sort: body.sort as NonNullable<
-                  Parameters<AgentControlPlane["findRecords"]>[0]["sort"]
-                >,
-              }
-            : {}),
-          ...(typeof body.myRecords === "boolean"
-            ? { myRecords: body.myRecords }
-            : {}),
-        }),
-      );
-    case "/v1/records/get":
-      return send(
-        res,
-        200,
-        await cp.getRecord({
-          orgId: binding.orgId,
-          runId: binding.runId,
-          appId: String(body.appId ?? ""),
-          objectApiName: String(body.objectApiName ?? ""),
-          recordId: String(body.recordId ?? ""),
-          ...(typeof body.allFields === "boolean"
-            ? { allFields: body.allFields }
-            : {}),
-        }),
-      );
-    case "/v1/records/recycle/find":
-      return send(
-        res,
-        200,
-        await cp.findRecycledRecords({
-          orgId: binding.orgId,
-          runId: binding.runId,
-          appId: String(body.appId ?? ""),
-          objectApiName: String(body.objectApiName ?? ""),
-          ...(typeof body.first === "number" ? { first: body.first } : {}),
-          ...(typeof body.after === "string" ? { after: body.after } : {}),
-          ...(typeof body.search === "string" ? { search: body.search } : {}),
-        }),
-      );
-    case "/v1/records/recycle/get":
-      return send(
-        res,
-        200,
-        await cp.getRecycledRecord({
-          orgId: binding.orgId,
-          runId: binding.runId,
-          appId: String(body.appId ?? ""),
-          objectApiName: String(body.objectApiName ?? ""),
-          recordId: String(body.recordId ?? ""),
-        }),
-      );
-    case "/v1/records/blueprints": {
-      const blueprintId =
-        typeof body.blueprintId === "string" ? body.blueprintId : undefined;
-      return send(
-        res,
-        200,
-        await traceRecordBlueprints({
-          binding,
-          request: {
-            ...(blueprintId !== undefined ? { blueprintId } : {}),
-          },
-          execute: () =>
-            cp.listRecordBlueprints({
-              orgId: binding.orgId,
-              ...(blueprintId !== undefined ? { blueprintId } : {}),
-            }),
-        }),
-      );
-    }
     case "/v1/workflow/save":
       return send(
         res,

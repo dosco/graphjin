@@ -231,7 +231,7 @@ async function provisionGraphjinSourcesMode(orgId: string): Promise<void> {
   // in-stack GraphJin may simply still be starting alongside us, so give
   // it a few short attempts; an unmanaged external or legacy endpoint
   // gets a single quick probe — an unreachable one must not stall boot.
-  const inStackGraphjin = /^https?:\/\/(graphjin|neko-graphjin|records-graphjin)[:/]/.test(
+  const inStackGraphjin = /^https?:\/\/(graphjin|neko-graphjin)[:/]/.test(
     src.graphqlUrl,
   );
   const maxAttempts = wroteConfig ? 6 : inStackGraphjin ? 4 : 1;

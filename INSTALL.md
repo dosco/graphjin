@@ -81,7 +81,7 @@ globex.example.com {
 
 Only the reverse proxy needs public `80`/`443` firewall access. The customer web
 ports above stay on host loopback; databases, GraphJin, brokers, the agent
-runtime, and backup services stay inside their private Docker networks.
+runtime, and embedding services stay inside their private Docker networks.
 
 For named instances, omitting `--port` makes setup choose an available port and
 persist it; Docker assigns each instance its own networks. (`--openshell-port`
@@ -98,7 +98,7 @@ Target every later operation explicitly:
 openneko --instance acme status
 openneko --instance acme logs -f
 openneko --instance acme upgrade
-openneko --instance acme backup now
+openneko --instance acme backup
 openneko --instance acme stop
 ```
 
@@ -160,9 +160,9 @@ openneko version
 
 Modes:
 
-- **`prod`** (default) — the production control, records, customer-data,
-  backup/storage, and agent runtime services. Thirteen containers remain
-  running after the six startup jobs complete.
+- **`prod`** (default) — the production control, customer-data, and agent
+  runtime services. Seven containers remain running after the five startup
+  jobs complete.
 - **`dev`** — source-checkout workflow: use `pnpm dev:setup` for Docker-only dependencies plus AdventureWorks demo data, then `pnpm dev` for hot-reloaded web/worker from source.
 - **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
 
@@ -300,7 +300,7 @@ The packaged stack publishes one host port:
 
 - Web app: `3000` by default
 
-Postgres, GraphJin, worker broker, backup API, the agent runtime, and demo data
+Postgres, GraphJin, worker broker, the agent runtime, and demo data
 services remain on private Docker networks.
 
 Configure and persist the port during guided installation:
@@ -370,7 +370,7 @@ pnpm dev
 
 Web and worker run on the host with hot reload. Everything else runs in Docker.
 
-- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, `records-db`, both GraphJin data planes, `neko-graphjin`, `embedding`, and AdventureWorks with its simulator. It builds the `openneko` binary (whose `graphjin`, `serve` and `sandbox` roles host processes use) into `.openneko/dev/bin`, runs migrations from source, and writes the GraphJin JWT secret. The customer GraphJin container runs that binary as your user, so it reads what the host web and worker write beside its config: Library uploads and the key for GraphJin's agent, which chat runs ask over HTTP in dev.
+- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, `neko-graphjin`, the customer GraphJin, `embedding`, and AdventureWorks with its simulator. It builds the `openneko` binary (whose `graphjin`, `serve` and `sandbox` roles host processes use) into `.openneko/dev/bin`, runs migrations from source, and writes the GraphJin JWT secret. The customer GraphJin container runs that binary as your user, so it reads what the host web and worker write beside its config: Library uploads and the key for GraphJin's agent, which chat runs ask over HTTP in dev.
 - `pnpm dev:seed` seeds demo workflows. `pnpm dev:setup` runs both steps.
 - `pnpm dev` runs `openneko serve` and `openneko sandbox` on the host (`scripts/dev-agent.sh`; the sandbox runs commands as you, not as per-turn users), `next dev` on port 3000, and `tsx watch` for the worker. Edits to `apps/web`, `apps/worker`, and workspace packages reload without an image build.
 - `scripts/dev-env.sh` holds the host settings. Each service a host process calls has a loopback port; `pnpm dev:web` and `pnpm dev:worker` source the file.

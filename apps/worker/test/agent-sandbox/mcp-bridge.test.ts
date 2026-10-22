@@ -19,7 +19,6 @@ const SERVERS = [
   "neko_graphjin_agent",
   "neko_skills",
   "neko_memory",
-  "neko_records",
   "neko_workflow_builder",
   "neko_workflow_output",
   "neko_action",
@@ -44,7 +43,7 @@ function ctx() {
     triggeredByObservationId: null,
     pluginActions: [
       {
-        kind: "records.create",
+        kind: "slack.send_message",
         description: "create",
         scope: "external" as const,
       },

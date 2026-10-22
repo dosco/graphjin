@@ -362,7 +362,7 @@ export async function unmodifiedBuiltinSkills(skillsRoot: string): Promise<strin
  * organization skills and locally modified built-ins. Full skill bodies stay
  * off the per-turn transfer for the common, unmodified built-in case. A
  * security-required system skill is copied from the current bundled source,
- * so an old durable workspace cannot pin records behavior across upgrades.
+ * so an old durable workspace cannot pin its behavior across upgrades.
  */
 export async function copySkillOverrides(
   skillsRoot: string,

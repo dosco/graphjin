@@ -23,11 +23,11 @@ func TestScopeRequiresUnambiguousHostIdentity(t *testing.T) {
 }
 
 func TestBridgeCommandGetsOnlyBridgeEnvironment(t *testing.T) {
-	cmd := bridgeCommand("/app/mcp-bridge.ts", "neko_memory,neko_records", []string{
+	cmd := bridgeCommand("/app/mcp-bridge.ts", "neko_memory,neko_library", []string{
 		"PATH=/usr/bin", "OPENNEKO_MCP_ORG_ID=org", "OPENNEKO_BROKER_URL=http://broker", "OPENNEKO_BROKER_TOKEN=secret",
 		"HTTPS_PROXY=http://proxy", "MODEL_API_KEY=placeholder", "HARNESS_MODEL_ROUTES={}", "HOME=/root",
 	})
-	if strings.Join(cmd.Args, " ") != "node --import tsx /app/mcp-bridge.ts neko_memory,neko_records" || cmd.Dir != "/app" {
+	if strings.Join(cmd.Args, " ") != "node --import tsx /app/mcp-bridge.ts neko_memory,neko_library" || cmd.Dir != "/app" {
 		t.Fatalf("args=%v dir=%s", cmd.Args, cmd.Dir)
 	}
 	want := []string{"PATH=/usr/bin", "OPENNEKO_MCP_ORG_ID=org", "OPENNEKO_BROKER_URL=http://broker", "OPENNEKO_BROKER_TOKEN=secret", "HTTPS_PROXY=http://proxy"}

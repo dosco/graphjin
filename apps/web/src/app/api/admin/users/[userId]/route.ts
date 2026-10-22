@@ -10,9 +10,6 @@
  *  - Disabling takes effect immediately for new requests: the session
  *    reader joins on `disabled_at is null` (ADM1), so existing cookies
  *    die with the flip.
- *
- * Role changes propagate to GraphJin lazily — the records read gateway
- * re-syncs engine.actor from Administrators membership on the viewer's next query.
  */
 
 import { NextRequest, NextResponse } from "next/server";

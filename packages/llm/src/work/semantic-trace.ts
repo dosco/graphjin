@@ -96,18 +96,6 @@ export type WorkSemanticTraceEvent =
       };
     })
   | (WorkSemanticTraceBase & {
-      operation: "records.blueprint";
-      evidence: {
-        requestedId?: string;
-        returnedCount: number;
-        blueprints: Array<{
-          id: string;
-          version?: string;
-          payloadDigest?: string;
-        }>;
-      };
-    })
-  | (WorkSemanticTraceBase & {
       operation: "action.policy";
       evidence: {
         kind: string;
@@ -442,48 +430,6 @@ export function traceWorkflowList<T>(input: {
   });
 }
 
-export function traceRecordBlueprints<T>(input: {
-  binding: WorkSemanticTraceBinding;
-  source?: WorkSemanticTraceSource;
-  request: { blueprintId?: string };
-  execute: () => Promise<T>;
-}): Promise<T> {
-  return traced({
-    ...input,
-    operation: "records.blueprint",
-    event: (base, result) => {
-      const blueprints = asArray(record(result)?.blueprints).flatMap(
-        (blueprint) => {
-          const value = record(blueprint);
-          const id = string(value?.id);
-          if (!value || !id) return [];
-          const version = string(value.version);
-          return [
-            {
-              id,
-              ...(version ? { version } : {}),
-              ...(value.payload !== undefined
-                ? { payloadDigest: workSemanticDigest(value.payload) }
-                : {}),
-            },
-          ];
-        },
-      );
-      return {
-        ...base,
-        operation: "records.blueprint",
-        evidence: {
-          ...(input.request.blueprintId
-            ? { requestedId: input.request.blueprintId }
-            : {}),
-          returnedCount: blueprints.length,
-          blueprints,
-        },
-      };
-    },
-  });
-}
-
 export function traceActionPolicy<
   T extends {
     decision: "allow" | "needs_approval" | "deny" | "no_policy";
@@ -773,17 +719,6 @@ export function traceAgentControlPlane(
           ...(args.limit !== undefined ? { limit: args.limit } : {}),
         },
         execute: () => target.listWorkflowsWithTriggers(args),
-      }),
-    listRecordBlueprints: (args) =>
-      traceRecordBlueprints({
-        binding,
-        source: "trusted-host",
-        request: {
-          ...(args.blueprintId !== undefined
-            ? { blueprintId: args.blueprintId }
-            : {}),
-        },
-        execute: () => target.listRecordBlueprints(args),
       }),
     listGraphjinTools: (args) =>
       traceGraphjinToolsList({

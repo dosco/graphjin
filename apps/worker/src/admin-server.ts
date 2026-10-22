@@ -24,7 +24,7 @@
  *   POST /admin/auth/complete → 200 + { identity }
  *                               Body: { code, redirectUri, state }
  *                               Finishes sign-in with the chosen provider.
- *   GET  /admin/action-descriptors → built-in governed action kinds (records).
+ *   GET  /admin/action-descriptors → built-in governed action kinds.
  *   GET  /admin/channels/settings → each built-in channel's declared settings
  *                               (secrets report only whether they are set).
  *   POST /admin/channels/settings → { channel, values: { KEY: string | null } }.
@@ -40,7 +40,6 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { createHmac, timingSafeEqual } from "node:crypto";
 import type { ConnectorCredential } from "@neko/secrets";
 import type {
   AuthIdentity,
@@ -279,7 +278,7 @@ export interface SchedulerHealthSurface {
 }
 
 /**
- * Built-in governed action kinds (records actions) with their seeded
+ * Built-in governed action kinds with their seeded
  * approval mode. The web process's /work route and rules page read them
  * here; the adapters live in the worker.
  */
@@ -349,11 +348,7 @@ export type AdminHandlerOptions = {
    * /admin/events/external to fire external_event subscriptions.
    */
   events?: ExternalEventHandlerSurface | null;
-  /** HMAC-authenticated native GraphJin watch delivery ingress. */
-  recordsWatches?: RecordsWatchHandlerSurface | null;
   watcherEvents?: WatcherEventsHandlerSurface | null;
-  /** Governed CSV/artifact import preparation for the host CLI. */
-  recordsImports?: RecordsImportHandlerSurface | null;
   /** Trusted web→worker action creation so worker-owned preflight hooks run. */
   actionRequests?: ActionRequestHandlerSurface | null;
   /** Shared first-party and uploaded solution-pack lifecycle. */
@@ -402,35 +397,6 @@ export interface WatcherEventsHandlerSurface {
   }): Promise<{ accepted: boolean; fired?: boolean }>;
 }
 
-export interface RecordsWatchHandlerSurface {
-  secret: string;
-  dispatch(input: {
-    watchId: string;
-    eventId: string;
-    payload: Record<string, unknown>;
-  }): Promise<{ accepted: boolean }>;
-}
-
-/** Host CLI bridge. The port is internal-only; the CLI reaches it with
- * `docker compose exec worker curl` after staging source files into the
- * worker's existing per-org workspace volume. */
-export interface RecordsImportHandlerSurface {
-  staging(): Promise<{ orgId: string; containerRoot: string }>;
-  prepare(input: Record<string, unknown>): Promise<{
-    request: {
-      id: string;
-      kind: string;
-      status: string;
-      payload: Record<string, unknown>;
-    };
-  }>;
-  start(requestId: string): Promise<{
-    requestId: string;
-    status: string;
-    jobId: string | null;
-  }>;
-}
-
 export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const exit = opts.exit ?? ((code = 0) => process.exit(code));
   const exitDelayMs = opts.exitDelayMs ?? 100;
@@ -442,9 +408,7 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const channels = opts.channels ?? null;
   const installPolicy = opts.installPolicy ?? null;
   const events = opts.events ?? null;
-  const recordsWatches = opts.recordsWatches ?? null;
   const watcherEvents = opts.watcherEvents ?? null;
-  const recordsImports = opts.recordsImports ?? null;
   const actionRequests = opts.actionRequests ?? null;
   const packs = opts.packs ?? null;
   const directory = opts.directory ?? null;
@@ -621,34 +585,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
     }
     if (req.method === "POST" && req.url === "/admin/events/watcher") {
       void handleWatcherEvent(req, res, watcherEvents);
-      return;
-    }
-    if (
-      req.method === "POST" &&
-      req.url === "/admin/events/records-watch"
-    ) {
-      void handleRecordsWatch(req, res, recordsWatches);
-      return;
-    }
-    if (
-      req.method === "GET" &&
-      req.url === "/admin/records/import/staging"
-    ) {
-      void handleRecordsImportStaging(res, recordsImports);
-      return;
-    }
-    if (
-      req.method === "POST" &&
-      req.url === "/admin/records/import/prepare"
-    ) {
-      void handleRecordsImportPrepare(req, res, recordsImports);
-      return;
-    }
-    if (
-      req.method === "POST" &&
-      req.url === "/admin/records/import/start"
-    ) {
-      void handleRecordsImportStart(req, res, recordsImports);
       return;
     }
     if (
@@ -946,80 +882,6 @@ async function handleActionRequestCreate(
   }
 }
 
-async function handleRecordsImportStaging(
-  res: ServerResponse,
-  recordsImports: RecordsImportHandlerSurface | null,
-) {
-  if (!recordsImports) {
-    json(res, 503, { error: "records import CLI bridge unavailable" });
-    return;
-  }
-  try {
-    json(res, 200, await recordsImports.staging());
-  } catch (error) {
-    json(res, 500, {
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-async function handleRecordsImportPrepare(
-  req: IncomingMessage,
-  res: ServerResponse,
-  recordsImports: RecordsImportHandlerSurface | null,
-) {
-  if (!recordsImports) {
-    json(res, 503, { error: "records import CLI bridge unavailable" });
-    return;
-  }
-  const body = (await readJson(req).catch(() => null)) as Record<
-    string,
-    unknown
-  > | null;
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    json(res, 400, { error: "request body must be JSON" });
-    return;
-  }
-  try {
-    json(res, 200, await recordsImports.prepare(body));
-  } catch (error) {
-    const code =
-      typeof error === "object" && error !== null && "code" in error
-        ? String((error as { code?: unknown }).code)
-        : "";
-    json(res, code.includes("invalid") || code.includes("plan") ? 400 : 500, {
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-async function handleRecordsImportStart(
-  req: IncomingMessage,
-  res: ServerResponse,
-  recordsImports: RecordsImportHandlerSurface | null,
-) {
-  if (!recordsImports) {
-    json(res, 503, { error: "records import CLI bridge unavailable" });
-    return;
-  }
-  const body = (await readJson(req).catch(() => null)) as Record<
-    string,
-    unknown
-  > | null;
-  const requestId = body?.requestId;
-  if (typeof requestId !== "string" || !requestId.trim()) {
-    json(res, 400, { error: "requestId (string) is required" });
-    return;
-  }
-  try {
-    json(res, 202, await recordsImports.start(requestId.trim()));
-  } catch (error) {
-    json(res, 400, {
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
 async function handleInstallPolicy(
   res: ServerResponse,
   installPolicy: InstallPolicyHandlerSurface | null,
@@ -1244,18 +1106,6 @@ async function handleExternalEvent(
   }
 }
 
-function recordsWatchSignatureValid(
-  rawBody: string,
-  signature: string | undefined,
-  secret: string,
-): boolean {
-  const match = /^sha256=([0-9a-f]{64})$/i.exec(signature ?? "");
-  if (!match || secret.length < 32) return false;
-  const expected = createHmac("sha256", secret).update(rawBody).digest();
-  const actual = Buffer.from(match[1]!, "hex");
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
-}
-
 async function handleWatcherEvent(
   req: IncomingMessage,
   res: ServerResponse,
@@ -1308,78 +1158,6 @@ async function handleWatcherEvent(
   }
   try {
     json(res, 202, await watcherEvents.receive({ watchId, eventId, event }));
-  } catch (error) {
-    json(res, 500, {
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-async function handleRecordsWatch(
-  req: IncomingMessage,
-  res: ServerResponse,
-  recordsWatches: RecordsWatchHandlerSurface | null,
-) {
-  if (!recordsWatches) {
-    json(res, 503, { error: "records watch ingress unavailable" });
-    return;
-  }
-  const rawBody = await readText(req).catch(() => null);
-  if (
-    rawBody === null ||
-    !recordsWatchSignatureValid(
-      rawBody,
-      typeof req.headers["x-graphjin-signature"] === "string"
-        ? req.headers["x-graphjin-signature"]
-        : undefined,
-      recordsWatches.secret,
-    )
-  ) {
-    json(res, 401, { error: "invalid records watch signature" });
-    return;
-  }
-  let payload: Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(rawBody) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new Error("object required");
-    }
-    payload = parsed as Record<string, unknown>;
-  } catch {
-    json(res, 400, { error: "records watch body must be JSON" });
-    return;
-  }
-  const watch = payload.watch;
-  const event = payload.event;
-  if (
-    !watch ||
-    typeof watch !== "object" ||
-    Array.isArray(watch) ||
-    !event ||
-    typeof event !== "object" ||
-    Array.isArray(event)
-  ) {
-    json(res, 400, { error: "records watch envelope is invalid" });
-    return;
-  }
-  const watchId = (watch as Record<string, unknown>).id;
-  const eventId = (event as Record<string, unknown>).id;
-  const eventWatchId = (event as Record<string, unknown>).watch_id;
-  const idempotencyKey = req.headers["idempotency-key"];
-  if (
-    typeof watchId !== "string" ||
-    !watchId ||
-    typeof eventId !== "string" ||
-    !eventId ||
-    eventWatchId !== watchId ||
-    idempotencyKey !== eventId
-  ) {
-    json(res, 400, { error: "records watch identity is invalid" });
-    return;
-  }
-  try {
-    const result = await recordsWatches.dispatch({ watchId, eventId, payload });
-    json(res, 202, result);
   } catch (error) {
     json(res, 500, {
       error: error instanceof Error ? error.message : String(error),

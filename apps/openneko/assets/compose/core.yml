@@ -15,53 +15,26 @@ x-neko-app-env: &neko-app-env
   NEKO_PG_USER: neko
   NEKO_PG_PASSWORD: secret
   NEKO_PG_DATABASE: neko
-  RECORDS_PG_HOST: records-db
-  RECORDS_PG_PORT: "5432"
-  RECORDS_PG_USER: ${OPENNEKO_RECORDS_PG_USER:-records}
-  RECORDS_PG_PASSWORD: ${OPENNEKO_RECORDS_PG_PASSWORD:-records-secret}
-  RECORDS_PG_DATABASE: ${OPENNEKO_RECORDS_PG_DATABASE:-records}
-  OPENNEKO_RECORDS_GRAPHJIN_URL: http://records-graphjin:8090
   NEKO_EMBEDDING_URL: http://embedding:5003
-  NO_PROXY: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,embedding,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
-  no_proxy: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,embedding,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
+  NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,embedding,neko-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
+  no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,embedding,neko-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
 
 services:
   neko-db:
     image: ghcr.io/open-neko/neko-db:${OPENNEKO_VERSION:-latest}
     restart: unless-stopped
-    # The wrapper keeps the key out of Docker's persisted environment while
-    # remaining compatible with database images released before *_FILE support.
-    entrypoint:
-      - /bin/sh
-      - -ceu
-      - |
-        PGBACKREST_REPO1_CIPHER_PASS=$$(cat "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}")
-        export PGBACKREST_REPO1_CIPHER_PASS
-        unset PGBACKREST_REPO1_CIPHER_PASS_FILE
-        exec /usr/local/bin/openneko-postgres-entrypoint "$$@"
-      - --
     environment:
       POSTGRES_USER: neko
       POSTGRES_PASSWORD: secret
       POSTGRES_DB: neko
       PGDATA: /var/lib/postgresql/neko
-      OPENNEKO_PGBACKREST_STANZA: openneko-metadata
-      PGBACKREST_REPO1_CIPHER_PASS_FILE: /run/secrets/openneko-backup-key
     expose:
       - "5432"
     volumes:
       - neko-db-data:/var/lib/postgresql/neko
       - neko-db-socket:/var/run/postgresql
-      - ${OPENNEKO_BACKUP_KEY_FILE:?OPENNEKO_BACKUP_KEY_FILE is required}:/run/secrets/openneko-backup-key:ro
-      - ${OPENNEKO_BACKUP_REPOSITORY:?OPENNEKO_BACKUP_REPOSITORY is required}:/var/lib/pgbackrest
     command:
       - postgres
-      - -c
-      - archive_mode=on
-      - -c
-      - archive_command=pgbackrest --stanza=openneko-metadata archive-push %p
-      - -c
-      - archive_timeout=60s
       - -c
       - wal_compression=on
       - -c
@@ -74,54 +47,8 @@ services:
       timeout: 5s
       retries: 20
 
-  # Business data has an independent Postgres lifecycle but starts with the
-  # worker so approved app creation never requires a host-side Docker action.
-  records-db:
-    image: ghcr.io/open-neko/records-db:${OPENNEKO_VERSION:-latest}
-    restart: unless-stopped
-    entrypoint:
-      - /bin/sh
-      - -ceu
-      - |
-        PGBACKREST_REPO1_CIPHER_PASS=$$(cat "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}")
-        export PGBACKREST_REPO1_CIPHER_PASS
-        unset PGBACKREST_REPO1_CIPHER_PASS_FILE
-        exec /usr/local/bin/openneko-postgres-entrypoint "$$@"
-      - --
-    environment:
-      POSTGRES_USER: ${OPENNEKO_RECORDS_PG_USER:-records}
-      POSTGRES_PASSWORD: ${OPENNEKO_RECORDS_PG_PASSWORD:-records-secret}
-      POSTGRES_DB: ${OPENNEKO_RECORDS_PG_DATABASE:-records}
-      PGDATA: /var/lib/postgresql/records
-      OPENNEKO_PGBACKREST_STANZA: openneko-records
-      PGBACKREST_REPO1_CIPHER_PASS_FILE: /run/secrets/openneko-backup-key
-    expose:
-      - "5432"
-    volumes:
-      - records-db-data:/var/lib/postgresql/records
-      - records-db-socket:/var/run/postgresql
-      - ${OPENNEKO_BACKUP_KEY_FILE:?OPENNEKO_BACKUP_KEY_FILE is required}:/run/secrets/openneko-backup-key:ro
-      - ${OPENNEKO_BACKUP_REPOSITORY:?OPENNEKO_BACKUP_REPOSITORY is required}:/var/lib/pgbackrest
-    command:
-      - postgres
-      - -c
-      - archive_mode=on
-      - -c
-      - archive_command=pgbackrest --stanza=openneko-records archive-push %p
-      - -c
-      - archive_timeout=60s
-      - -c
-      - wal_compression=on
-      - -c
-      - temp_file_limit=5GB
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
-  # One-shot storage ABI gate. It repairs persisted indexes in BOTH managed
-  # databases after a libc/collation-runtime transition and records the
+  # One-shot storage ABI gate. It repairs persisted indexes in the managed
+  # database after a libc/collation-runtime transition and records the
   # enforced contract independently of schema migrations. Every database
   # consumer waits for successful completion, so an incompatible image fails
   # closed before application reads or writes begin.
@@ -132,173 +59,20 @@ services:
     depends_on:
       neko-db:
         condition: service_healthy
-      records-db:
-        condition: service_healthy
     environment:
       NEKO_PG_HOST: neko-db
       NEKO_PG_PORT: "5432"
       NEKO_PG_USER: neko
       NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
       NEKO_PG_DATABASE: neko
-      RECORDS_PG_HOST: records-db
-      RECORDS_PG_PORT: "5432"
-      RECORDS_PG_USER: ${OPENNEKO_RECORDS_PG_USER:-records}
-      RECORDS_PG_PASSWORD: ${OPENNEKO_RECORDS_PG_PASSWORD:-records-secret}
-      RECORDS_PG_DATABASE: ${OPENNEKO_RECORDS_PG_DATABASE:-records}
       XDG_CONFIG_HOME: /config
     volumes:
       - openneko-config:/config/openneko
 
-  # Whole-deployment backup coordinator and read-only filesystem-capacity
-  # observer used by records write backpressure.
-  neko-backup:
-    image: ghcr.io/open-neko/neko-backup:${OPENNEKO_VERSION:-latest}
-    restart: unless-stopped
-    command: ["serve"]
-    entrypoint:
-      - /bin/sh
-      - -ceu
-      - |
-        PGBACKREST_REPO1_CIPHER_PASS=$$(cat "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}")
-        export PGBACKREST_REPO1_CIPHER_PASS
-        unset PGBACKREST_REPO1_CIPHER_PASS_FILE
-        exec /usr/local/bin/openneko-backup-entrypoint "$$@"
-      - --
-    depends_on:
-      neko-db:
-        condition: service_healthy
-      records-db:
-        condition: service_healthy
-      storage-reconcile:
-        condition: service_completed_successfully
-    environment:
-      PGBACKREST_REPO1_CIPHER_PASS_FILE: /run/secrets/openneko-backup-key
-      NEKO_PG_USER: neko
-      NEKO_PG_DATABASE: neko
-      RECORDS_PG_USER: ${OPENNEKO_RECORDS_PG_USER:-records}
-      RECORDS_PG_DATABASE: ${OPENNEKO_RECORDS_PG_DATABASE:-records}
-      OPENNEKO_BACKUP_INTERVAL_SEC: ${OPENNEKO_BACKUP_INTERVAL_SEC:-86400}
-      OPENNEKO_BACKUP_RETENTION_FULL: ${OPENNEKO_BACKUP_RETENTION_FULL:-7}
-      OPENNEKO_BACKUP_RETENTION_DIFF: ${OPENNEKO_BACKUP_RETENTION_DIFF:-4}
-    volumes:
-      - neko-db-data:/var/lib/postgresql/neko:ro
-      - records-db-data:/var/lib/postgresql/records:ro
-      - neko-db-socket:/sockets/neko:ro
-      - records-db-socket:/sockets/records:ro
-      - openneko-config:/snapshots/config:ro
-      - openneko-graphjin-cli:/snapshots/graphjin:ro
-      - openneko-records-graphjin:/snapshots/records-graphjin:ro
-      - openneko-agent-home:/volumes/staging:ro
-      - ${OPENNEKO_HOST_CONFIG_DIR:?OPENNEKO_HOST_CONFIG_DIR is required}:/snapshots/host-config:ro
-      - ${OPENNEKO_BACKUP_KEY_FILE:?OPENNEKO_BACKUP_KEY_FILE is required}:/run/secrets/openneko-backup-key:ro
-      - ${OPENNEKO_BACKUP_REPOSITORY:?OPENNEKO_BACKUP_REPOSITORY is required}:/var/lib/pgbackrest
-    expose:
-      - "9470"
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9470/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
 
-  # Destructive restore is available only through the explicit ops profile.
-  # The CLI stops every database consumer before running this one-shot.
-  neko-restore:
-    profiles: ["ops"]
-    image: ghcr.io/open-neko/neko-backup:${OPENNEKO_VERSION:-latest}
-    entrypoint:
-      - /bin/sh
-      - -ceu
-      - |
-        PGBACKREST_REPO1_CIPHER_PASS=$$(cat "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}")
-        export PGBACKREST_REPO1_CIPHER_PASS
-        unset PGBACKREST_REPO1_CIPHER_PASS_FILE
-        exec /usr/local/bin/openneko-backup-entrypoint "$$@"
-      - --
-    environment:
-      PGBACKREST_REPO1_CIPHER_PASS_FILE: /run/secrets/openneko-backup-key
-      OPENNEKO_BACKUP_RESTORE_MODE: "1"
-    volumes:
-      - neko-db-data:/restore/neko
-      - records-db-data:/restore/records
-      - openneko-config:/restore/config
-      - openneko-graphjin-cli:/restore/graphjin
-      - openneko-records-graphjin:/restore/records-graphjin
-      - ${OPENNEKO_HOST_CONFIG_DIR:?OPENNEKO_HOST_CONFIG_DIR is required}:/restore/host-config
-      - ${OPENNEKO_BACKUP_KEY_FILE:?OPENNEKO_BACKUP_KEY_FILE is required}:/run/secrets/openneko-backup-key:ro
-      - ${OPENNEKO_BACKUP_REPOSITORY:?OPENNEKO_BACKUP_REPOSITORY is required}:/var/lib/pgbackrest
 
-  # One-shot ownership repair for the generated records config volume. Docker
-  # creates a fresh named volume as root before the non-root worker mounts it;
-  # this also repairs volumes created by an older release during upgrades.
-  records-graphjin-config-init:
-    image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
-    user: "0:0"
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        set -eu
-        mkdir -p /config/watch
-        chown -R 1001:1001 /config
-        chmod 0700 /config /config/watch
-    volumes:
-      - openneko-records-graphjin:/config
-    restart: "no"
 
-  # Starts only when a complete generated config exists in its private volume;
-  # the image entrypoint exits before binding a port if the config is absent.
-  records-graphjin:
-    image: ghcr.io/open-neko/records-graphjin:${OPENNEKO_VERSION:-latest}
-    user: "1001:999"
-    restart: unless-stopped
-    depends_on:
-      records-graphjin-config-init:
-        condition: service_completed_successfully
-      records-db:
-        condition: service_healthy
-      storage-reconcile:
-        condition: service_completed_successfully
-    volumes:
-      - openneko-records-graphjin:/config:ro
-    expose:
-      - "8090"
-    healthcheck:
-      # Readiness is the endpoint accepting HTTP, not anonymous GraphQL access.
-      # Generated RBAC may intentionally answer this unauthenticated GET with a
-      # non-2xx status, so do not make curl fail on the response status itself.
-      test: ["CMD", "curl", "-sS", "-o", "/dev/null", "http://127.0.0.1:8090/api/v1/graphql"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
 
-  # Native durable gj_watch runner. Source mode is isolated from the generated
-  # exhaustive legacy RBAC config used by the human/chat records data plane.
-  # Its separate JWT signing domain prevents records API tokens from being
-  # replayed against the private watch-control roots.
-  records-watch-graphjin:
-    image: ghcr.io/open-neko/records-graphjin:${OPENNEKO_VERSION:-latest}
-    user: "1001:999"
-    restart: unless-stopped
-    depends_on:
-      records-graphjin-config-init:
-        condition: service_completed_successfully
-      records-db:
-        condition: service_healthy
-      storage-reconcile:
-        condition: service_completed_successfully
-    environment:
-      OPENNEKO_RECORDS_GRAPHJIN_CONFIG_DIR: /config/watch
-    volumes:
-      - openneko-records-graphjin:/config:ro
-    expose:
-      - "8090"
-    healthcheck:
-      # The private watch endpoint likewise rejects unauthenticated GraphQL;
-      # receiving an HTTP response is its readiness signal.
-      test: ["CMD", "curl", "-sS", "-o", "/dev/null", "http://127.0.0.1:8090/api/v1/graphql"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
 
   # Customer-data GraphJin. Its endpoint is stored per organization and its
   # sources are configured to point at customer-owned databases/APIs. The
@@ -316,8 +90,6 @@ services:
           KEY=$$(node -e 'console.log(require("crypto").randomBytes(32).toString("base64"))')
           sed -i "s|REPLACE_WITH_BASE64_32_BYTE_KEY|$$KEY|" /config/agentic.yml
         fi
-        # Compatibility fallback for a main supervisor paired with a released
-        # records-graphjin image that predates the image-owned supervisor.
         # Refresh it unconditionally so existing persistent volumes self-heal.
         chown -R 1001:999 /config 2>/dev/null || true
         find /config -type d -exec chmod 0700 {} +
@@ -524,7 +296,7 @@ services:
   # Runs terminal commands as a per-turn user (uid 20000 and up, group 1001)
   # in the run's staged workspace. It needs root to switch users, so every
   # other capability is dropped. It sits only on the agent-sandbox network:
-  # commands can reach the internet but not neko-db, records-db, GraphJin,
+  # commands can reach the internet but not neko-db, GraphJin,
   # the broker or any other service of this stack.
   agent-sandbox:
     image: ${OPENNEKO_AGENT_IMAGE:-ghcr.io/open-neko/agent:${OPENNEKO_VERSION:-latest}}
@@ -619,14 +391,6 @@ services:
         condition: service_completed_successfully
       embedding:
         condition: service_healthy
-      records-db:
-        condition: service_healthy
-      neko-backup:
-        condition: service_healthy
-      records-graphjin:
-        condition: service_started
-      records-watch-graphjin:
-        condition: service_started
       # The worker must patch the per-org JWT secret before customer GraphJin
       # starts; depending on the one-shot seed avoids a startup cycle.
       graphjin-config-init:
@@ -637,15 +401,6 @@ services:
       <<: *neko-app-env
       OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
-      RECORDS_PG_HOST: records-db
-      RECORDS_PG_PORT: "5432"
-      RECORDS_PG_USER: ${OPENNEKO_RECORDS_PG_USER:-records}
-      RECORDS_PG_PASSWORD: ${OPENNEKO_RECORDS_PG_PASSWORD:-records-secret}
-      RECORDS_PG_DATABASE: ${OPENNEKO_RECORDS_PG_DATABASE:-records}
-      OPENNEKO_RECORDS_GRAPHJIN_CONFIG_DIR: /config/records-graphjin
-      OPENNEKO_RECORDS_WATCH_GRAPHJIN_URL: http://records-watch-graphjin:8090
-      OPENNEKO_RECORDS_OPS_URL: http://neko-backup:9470
-      OPENNEKO_BACKUP_URL: http://neko-backup:9470
       # The agent runtime: runs stage under OPENNEKO_AGENT_RUNS_DIR and the
       # runner (OPENNEKO_AGENT_ENTRY) talks to serve's socket in graphjin. The
       # runner is a child process, so it reaches the broker on loopback.
@@ -659,7 +414,6 @@ services:
     volumes:
       - openneko-config:/config/openneko
       - openneko-graphjin-cli:/config/graphjin
-      - openneko-records-graphjin:/config/records-graphjin
       - openneko-agent-home:/tmp/openneko-home
       - openneko-agent-tmp:/tmp/openneko-tmp
       - openneko-run:/run/openneko
@@ -675,11 +429,8 @@ services:
 volumes:
   neko-db-data:
   neko-db-socket:
-  records-db-data:
-  records-db-socket:
   openneko-config:
   openneko-graphjin-cli:
-  openneko-records-graphjin:
   openneko-agent-home:
   openneko-agent-tmp:
   # Agent runtime: sockets, staged run workspaces, per-run sandbox homes.

@@ -128,21 +128,21 @@ describe("buildWorkflowRunnerPrompt", () => {
       expect(prompt).not.toContain("lookup_slack_entity");
   });
 
-  it("surfaces an internal record action's scope to the native action tool", () => {
+  it("surfaces an internal action's scope to the native action tool", () => {
     const prompt = buildWorkflowRunnerPrompt({
       ...base,
       mcpTools: true,
       pluginActions: [
         {
-          kind: "record_create",
+          kind: "user_admin",
           scope: "internal",
-          description: "Create a generated-app record.",
+          description: "Invite or change a user.",
           default_mode: "ask",
         },
       ],
     });
 
-    expect(prompt).toContain("`record_create` (scope: internal)");
+    expect(prompt).toContain("`user_admin` (scope: internal)");
     expect(prompt).toContain("Always use the exact scope listed");
   });
 

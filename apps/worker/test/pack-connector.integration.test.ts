@@ -91,7 +91,7 @@ describe.skipIf(!enabled)("pack-owned connector on packaged GraphJin", () => {
     delete config.agent;
     config.sources = [{ name: "fixture", kind: "database", default: true, read_only: true, type: "postgres", host: "host.docker.internal", port: Number(port), dbname: "connector", user: "neko", access: { read: "authenticated", write: "blocked", delete: "blocked" } }];
     await writeFile(join(configRoot, "agentic.yml"), stringify(config));
-    const image = (await docker("image", "inspect", process.env.OPENNEKO_CONNECTOR_TEST_IMAGE ?? "ghcr.io/open-neko/records-graphjin:latest", "--format", "{{.Id}}")).stdout.trim();
+    const image = (await docker("image", "inspect", process.env.OPENNEKO_CONNECTOR_TEST_IMAGE ?? "ghcr.io/open-neko/neko-graphjin:latest", "--format", "{{.Id}}")).stdout.trim();
     expect((await docker("run", "--rm", "--entrypoint", "graphjin", image, "version")).stdout).toMatch(/^\s*GraphJin \S+/);
     const reservation = createServer();
     await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
@@ -233,21 +233,12 @@ describe.skipIf(!enabled)("pack-owned connector on packaged GraphJin", () => {
     await expect(restarted.install("service-health", { ...request, version: undefined, reviewHash: review.reviewHash })).rejects.toThrow(/review/);
     await expect(new PackService(`${org}-other`, embedded).inspect("service-health")).rejects.toThrow();
 
-    // Run the production encrypted config snapshot and restore code, with the
-    // same config volume layout used by Docker. No alternate archive routine.
+    // `openneko backup` archives the config volume as a tar and `openneko
+    // restore` extracts it back; round-trip the same layout through tar.
     const proof = join(root, "backup-proof");
-    await mkdir(join(proof, "snapshots"), { recursive: true });
-    await cp(dirname(localConfigPath()), join(proof, "snapshots/config"), { recursive: true });
-    for (const name of ["graphjin", "records-graphjin", "host-config"]) await mkdir(join(proof, "snapshots", name));
-    for (const name of ["backup", "restored"]) await mkdir(join(proof, name));
-    await docker("run", "--rm", "-v", `${proof}:/proof`, "-e", `PGBACKREST_REPO1_CIPHER_PASS=${randomBytes(32).toString("hex")}`, "--entrypoint", "python3", "openneko-pack-backup-test", "-c", [
-      "import importlib.util,pathlib",
-      "spec=importlib.util.spec_from_file_location('backup','/usr/local/bin/openneko-backup.py')",
-      "b=importlib.util.module_from_spec(spec); spec.loader.exec_module(b)",
-      "b.SNAPSHOT_SOURCES=pathlib.Path('/proof/snapshots')",
-      "metadata=b.snapshot_configs(pathlib.Path('/proof/backup'))",
-      "b.decrypt_snapshot(pathlib.Path('/proof/backup'), {'config_snapshot':metadata}, pathlib.Path('/proof/restored'))",
-    ].join("\n"));
+    await mkdir(join(proof, "restored/config"), { recursive: true });
+    await exec("tar", ["-C", dirname(localConfigPath()), "-cf", join(proof, "config.tar"), "."]);
+    await exec("tar", ["-C", join(proof, "restored/config"), "-xf", join(proof, "config.tar")]);
     const restored = new PackService(org, embedded, join(proof, "restored/config/agents/orgs", org, "packs"));
     expect((await restored.inspect("service-health", "0.1.0")).upload).toEqual(provenance);
     expect((await restored.review("service-health", request, "configure")).reviewHash).toBe(configure.reviewHash);

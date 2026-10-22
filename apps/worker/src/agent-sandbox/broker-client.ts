@@ -131,42 +131,6 @@ export class BrokerControlPlane implements AgentControlPlane {
     return this.post("/v1/graphjin/agent", input);
   }
 
-  listRecordCatalog(
-    input: Parameters<AgentControlPlane["listRecordCatalog"]>[0],
-  ): ReturnType<AgentControlPlane["listRecordCatalog"]> {
-    return this.post("/v1/records/catalog", input);
-  }
-
-  findRecords(
-    input: Parameters<AgentControlPlane["findRecords"]>[0],
-  ): ReturnType<AgentControlPlane["findRecords"]> {
-    return this.post("/v1/records/find", input);
-  }
-
-  getRecord(
-    input: Parameters<AgentControlPlane["getRecord"]>[0],
-  ): ReturnType<AgentControlPlane["getRecord"]> {
-    return this.post("/v1/records/get", input);
-  }
-
-  findRecycledRecords(
-    input: Parameters<AgentControlPlane["findRecycledRecords"]>[0],
-  ): ReturnType<AgentControlPlane["findRecycledRecords"]> {
-    return this.post("/v1/records/recycle/find", input);
-  }
-
-  getRecycledRecord(
-    input: Parameters<AgentControlPlane["getRecycledRecord"]>[0],
-  ): ReturnType<AgentControlPlane["getRecycledRecord"]> {
-    return this.post("/v1/records/recycle/get", input);
-  }
-
-  listRecordBlueprints(
-    input: Parameters<AgentControlPlane["listRecordBlueprints"]>[0],
-  ): ReturnType<AgentControlPlane["listRecordBlueprints"]> {
-    return this.post("/v1/records/blueprints", input);
-  }
-
   saveWorkflowWithTrigger(
     input: Parameters<AgentControlPlane["saveWorkflowWithTrigger"]>[0],
   ): ReturnType<AgentControlPlane["saveWorkflowWithTrigger"]> {

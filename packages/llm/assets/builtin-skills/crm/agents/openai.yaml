@@ -1,4 +1,0 @@
-interface:
-  display_name: "CRM"
-  short_description: "Model CRM and Salesforce-shaped records apps"
-  default_prompt: "Use $crm to adapt the CRM blueprint to my sales workflow."

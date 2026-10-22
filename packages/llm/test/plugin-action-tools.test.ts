@@ -151,9 +151,9 @@ describe("auto-mode plugin action tools", () => {
       decision: "allow" as const,
       mode: "auto" as const,
       reason: "test",
-      policy: { id: "policy-records", name: "Records status" },
+      policy: { id: "policy-status", name: "Report status" },
     }));
-    const createActionRequest = vi.fn(async () => ({ id: "action-records" }));
+    const createActionRequest = vi.fn(async () => ({ id: "action-status" }));
     const enqueueActionExecute = vi.fn(async () => {});
     const waitForActionExecution = vi.fn(async () => ({
       status: "succeeded" as const,
@@ -167,9 +167,9 @@ describe("auto-mode plugin action tools", () => {
       runId: "run-1",
       descriptors: [
         {
-          kind: "records_import_status",
+          kind: "report_status",
           scope: "internal",
-          description: "Read import status.",
+          description: "Read report status.",
           default_mode: { internal: "auto" },
         },
       ],
@@ -182,13 +182,13 @@ describe("auto-mode plugin action tools", () => {
       } as unknown as AgentControlPlane,
     });
 
-    const registered = sdk.tools.get("records_import_status");
-    if (!registered) throw new Error("records import tool was not registered");
-    await registered.handler({ payload: { import_run_id: "run-1" } });
+    const registered = sdk.tools.get("report_status");
+    if (!registered) throw new Error("report status tool was not registered");
+    await registered.handler({ payload: { report_id: "report-1" } });
 
     const expectedScope = {
       scope: "internal",
-      kind: "records_import_status",
+      kind: "report_status",
     };
     expect(evaluateActionPolicy).toHaveBeenCalledWith(
       expect.objectContaining(expectedScope),

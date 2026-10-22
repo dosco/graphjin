@@ -7,46 +7,9 @@
 # Every service a host process calls publishes a loopback port, and GraphJin
 # config directories live on the host so the worker manages them.
 services:
-  # Development databases have no managed backup lifecycle. With archiving
-  # enabled, a missing stanza pins WAL forever even while the stack is idle.
-  neko-db:
-    command: [postgres, -c, archive_mode=off, -c, wal_compression=on, -c, temp_file_limit=5GB]
-
-  records-db:
-    command: [postgres, -c, archive_mode=off, -c, wal_compression=on, -c, temp_file_limit=5GB]
-
   embedding:
     ports:
       - "127.0.0.1:${OPENNEKO_EMBEDDING_PORT:-5003}:5003"
-
-  # The host worker writes the records configs owner-only, so the directory
-  # and both records GraphJin instances belong to the host user
-  # (scripts/dev-env.sh), not the image's worker user.
-  records-graphjin-config-init:
-    entrypoint: !override
-      - /bin/sh
-      - -c
-      - |
-        set -eu
-        mkdir -p /config/watch
-        chown -R ${OPENNEKO_DEV_UID:-1001}:${OPENNEKO_DEV_GID:-1001} /config
-        chmod 0700 /config /config/watch
-    volumes: !override
-      - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/records-graphjin:/config
-
-  records-graphjin:
-    user: "${OPENNEKO_DEV_UID:-1001}:${OPENNEKO_DEV_GID:-999}"
-    ports:
-      - "127.0.0.1:${OPENNEKO_RECORDS_GRAPHJIN_PORT:-8090}:8090"
-    volumes: !override
-      - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/records-graphjin:/config:ro
-
-  records-watch-graphjin:
-    user: "${OPENNEKO_DEV_UID:-1001}:${OPENNEKO_DEV_GID:-999}"
-    ports:
-      - "127.0.0.1:${OPENNEKO_RECORDS_WATCH_GRAPHJIN_PORT:-8091}:8090"
-    volumes: !override
-      - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/records-graphjin:/config:ro
 
   # Host web and worker write into this folder as the host user (the agent
   # key file, Library uploads), so in dev the folder and the customer

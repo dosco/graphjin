@@ -119,47 +119,6 @@ describeIfDb("/api/work/threads", () => {
     expect(messages).toHaveLength(0);
   });
 
-  it("stores validated records context as trusted thread state", async () => {
-    const recordContext = {
-      surface: "list",
-      appId: "crm",
-      appLabel: "CRM",
-      objectApiName: "activity",
-      objectLabel: "Activities",
-      search: "overdue",
-    };
-    const res = await callRoute(POST, {
-      method: "POST",
-      body: { title: "Ask about Activities", recordContext },
-    });
-    expect(res.status).toBe(200);
-    const body = res.body as { thread: { id: string } };
-    const [thread] = await db()
-      .select({ threadState: work_thread.backend_state })
-      .from(work_thread)
-      .where(eq(work_thread.id, body.thread.id));
-    expect(thread?.threadState).toEqual({ recordContext });
-  });
-
-  it("rejects malformed records context instead of changing data surfaces", async () => {
-    const res = await callRoute(POST, {
-      method: "POST",
-      body: {
-        recordContext: {
-          surface: "list",
-          appId: "crm",
-          objectApiName: "activity",
-        },
-      },
-    });
-    expect(res.status).toBe(400);
-    const rows = await db()
-      .select({ id: work_thread.id })
-      .from(work_thread)
-      .where(eq(work_thread.org_id, orgId));
-    expect(rows).toHaveLength(0);
-  });
-
   it("seeds a briefing-card work_message when seedMetricId resolves", async () => {
     const metricId = await insertTestMetric(orgId, {
       slug: "rev-yoy",

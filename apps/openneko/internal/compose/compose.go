@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -175,7 +176,7 @@ func (s *Supervisor) ProjectName(modeIfStarting Mode) (string, error) {
 // InstallationID returns a random identity tied to this runtime directory.
 // It separates two OpenNeko stacks that use the same mode/project name from
 // different working directories. Reinstalling in the same directory reuses
-// it; a genuinely new installation gets a new backup repository by default.
+// it; `openneko backup` keys and default backup directories are scoped by it.
 func (s *Supervisor) InstallationID() (string, error) {
 	rt, err := s.runtimeDir()
 	if err != nil {
@@ -216,48 +217,6 @@ func (s *Supervisor) InstallationID() (string, error) {
 		return "", err
 	}
 	return value, nil
-}
-
-// RotateInstallationID gives the next set of newly created database volumes a
-// fresh backup namespace. The previous repository is deliberately retained so
-// it can still be restored with its exported key.
-func (s *Supervisor) RotateInstallationID() (string, string, error) {
-	rt, err := s.runtimeDir()
-	if err != nil {
-		return "", "", err
-	}
-	oldID, err := s.InstallationID()
-	if err != nil {
-		return "", "", err
-	}
-	newID, err := generateInstallationID()
-	if err != nil {
-		return "", "", err
-	}
-	staging, err := os.CreateTemp(rt, ".installation-id-*")
-	if err != nil {
-		return "", "", err
-	}
-	stagingPath := staging.Name()
-	if err := staging.Chmod(0o600); err != nil {
-		_ = staging.Close()
-		_ = os.Remove(stagingPath)
-		return "", "", err
-	}
-	if _, err := staging.WriteString(newID + "\n"); err != nil {
-		_ = staging.Close()
-		_ = os.Remove(stagingPath)
-		return "", "", err
-	}
-	if err := staging.Close(); err != nil {
-		_ = os.Remove(stagingPath)
-		return "", "", err
-	}
-	if err := os.Rename(stagingPath, filepath.Join(rt, installationIDMarker)); err != nil {
-		_ = os.Remove(stagingPath)
-		return "", "", err
-	}
-	return oldID, newID, nil
 }
 
 func generateInstallationID() (string, error) {
@@ -349,6 +308,12 @@ func (s *Supervisor) WriteImageVersion(version string) error {
 // projectName as the empty string to let docker compose default to the
 // runtime dir name (not recommended).
 func (s *Supervisor) Run(ctx context.Context, projectName string, files, args []string, stdout, stderr *os.File) (int, error) {
+	return s.RunIO(ctx, projectName, files, args, os.Stdin, stdout, stderr)
+}
+
+// RunIO is Run with caller-supplied streams, so a command such as
+// `exec -T neko-db pg_dump` can be streamed into or out of the CLI.
+func (s *Supervisor) RunIO(ctx context.Context, projectName string, files, args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	dockerArgs := []string{"compose"}
 	if projectName != "" {
 		dockerArgs = append(dockerArgs, "-p", projectName)
@@ -360,7 +325,7 @@ func (s *Supervisor) Run(ctx context.Context, projectName string, files, args []
 	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	cmd.Stdin = os.Stdin
+	cmd.Stdin = stdin
 	if err := cmd.Start(); err != nil {
 		return 1, err
 	}

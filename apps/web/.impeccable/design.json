@@ -69,7 +69,7 @@
       "kind": "input",
       "refersTo": "input",
       "description": "Labelled form control. Iris focus glow, no bare outline removal.",
-      "html": "<input class=\"ds-input\" placeholder=\"Search records\" />",
+      "html": "<input class=\"ds-input\" placeholder=\"Search workflows\" />",
       "css": ".ds-input{width:100%;min-height:40px;padding:10px 14px;border:1.5px solid #EEEBE4;border-radius:10px;background:#fff;color:#2D2A24;font-family:'Manrope Variable',Manrope,sans-serif;font-size:14px;outline:none;transition:border-color .15s,box-shadow .15s,background-color .15s}.ds-input::placeholder{color:#756F65}.ds-input:hover{border-color:#756F65}.ds-input:focus-visible{border-color:#6B5CE7;box-shadow:0 0 0 3px rgba(107,92,231,0.18)}"
     },
     {
@@ -127,7 +127,7 @@
     "donts": [
       "Don't add dark mode. The theme is light only.",
       "Don't create page-local button, field, or status-pill styling, and don't add a raw native control without a data-ui-bespoke-reason.",
-      "Don't restyle Admin, Apps, Records, or Settings to look designed. They stay precise and quiet.",
+      "Don't restyle Admin or Settings to look designed. They stay precise and quiet.",
       "Don't put a bright accent (Mint, Amber) on small text over a light surface. It fails contrast; use Pine or Amber Ink.",
       "Don't animate width, height, padding, or margin for hot-path motion. Use transform and opacity on controls, 100 to 200ms.",
       "Don't use em-dashes, Title Case, hype words, or internal implementation terms in default copy."

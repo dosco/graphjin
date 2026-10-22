@@ -87,8 +87,7 @@ services:
   graphjin:
     # Data-source GraphJin over the AdventureWorks DB. This is what the
     # setup wizard's "GraphJin URL" defaults to (http://graphjin:8080).
-    # Distinct from neko-graphjin (over neko-db, for subscriptions). Core
-    # reuses records-graphjin's pinned binary to avoid another image pull.
+    # Distinct from neko-graphjin (over neko-db, for subscriptions).
     restart: unless-stopped
     depends_on:
       adventureworks-init:

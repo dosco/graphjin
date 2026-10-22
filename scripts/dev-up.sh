@@ -9,11 +9,8 @@ compose() {
   docker compose -f compose.yml -f compose.adventureworks.yml -f compose.graphjin-agent.yml -f compose.dev.yml "$@"
 }
 
-mkdir -p "$OPENNEKO_DEV_STATE/graphjin" "$OPENNEKO_DEV_STATE/records-graphjin" "$OPENNEKO_CONFIG_VOLUME"
+mkdir -p "$OPENNEKO_DEV_STATE/graphjin" "$OPENNEKO_CONFIG_VOLUME"
 printf '%s\n' "$COMPOSE_PROJECT_NAME" > "$OPENNEKO_DEV_STATE/compose-project"
-if [ ! -s .openneko/development-backup-key ]; then
-  (umask 077 && openssl rand -hex 32 > .openneko/development-backup-key)
-fi
 
 # Host processes validate GraphJin configs with the graphjin role of the
 # openneko binary, built from graphjin/ in this checkout; scripts/dev-agent.sh
@@ -23,7 +20,7 @@ mkdir -p "$OPENNEKO_DEV_STATE/bin"
 (cd apps/openneko && CGO_ENABLED=0 go build -o "$OPENNEKO_DEV_STATE/bin/openneko" ./cmd/openneko)
 ln -sf openneko "$OPENNEKO_DEV_STATE/bin/graphjin"
 
-compose up -d --wait neko-db records-db
+compose up -d --wait neko-db
 (cd apps/openneko && go run ./cmd/openneko migrate)
 
 # GraphJin reads its auth key only at start, so the per-org secret goes into
@@ -33,7 +30,7 @@ GRAPHJIN_SOURCES_CONFIG="$OPENNEKO_GRAPHJIN_CONFIG" \
   pnpm --filter @neko/worker exec tsx ../../packages/llm/src/graphjin/init-secret.mjs
 
 compose up -d \
-  neko-graphjin graphjin records-graphjin records-watch-graphjin \
+  neko-graphjin graphjin \
   embedding \
   adventureworks-simulator adventureworks-scenario-injector
 

@@ -5,8 +5,8 @@ describe("worker-owned action request preflight", () => {
   const input = {
     orgId: "org-test",
     scope: "internal" as const,
-    kind: "app_create",
-    payload: { app: "crm" },
+    kind: "user_admin",
+    payload: { email: "new@example.com" },
     status: "pending_approval" as const,
   };
 

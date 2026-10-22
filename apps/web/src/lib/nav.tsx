@@ -119,7 +119,7 @@ export function hideAppChrome(pathname: string) {
 export function useApprovalsCount(enabled = true) {
   const visualTest =
     process.env.NODE_ENV !== "production" &&
-    process.env.NEXT_PUBLIC_RECORDS_VISUAL_TEST === "true";
+    process.env.NEXT_PUBLIC_VISUAL_TEST === "true";
   const [pending, setPending] = useState(visualTest ? 3 : 0);
 
   useEffect(() => {

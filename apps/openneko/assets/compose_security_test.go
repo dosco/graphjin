@@ -25,26 +25,16 @@ type composeServiceForTest struct {
 	SecurityOpt []string                     `yaml:"security_opt"`
 }
 
-func TestPackagedComposeUsesReadOnlyBackupKeyFiles(t *testing.T) {
+func TestPackagedComposeHasNoBackupService(t *testing.T) {
 	core, raw := readComposeForTest(t, "core.yml")
-	if strings.Contains(raw, "OPENNEKO_BACKUP_CIPHER_PASS") {
-		t.Fatal("packaged Compose must not interpolate the backup key into container environment metadata")
+	for _, retired := range []string{"OPENNEKO_BACKUP", "PGBACKREST", "pgbackrest", "archive_command"} {
+		if strings.Contains(raw, retired) {
+			t.Fatalf("packaged Compose still references retired backup setting %q", retired)
+		}
 	}
-	for _, name := range []string{"neko-db", "records-db", "neko-backup", "neko-restore"} {
-		service := core.Services[name]
-		if got := service.Environment["PGBACKREST_REPO1_CIPHER_PASS_FILE"]; got != "/run/secrets/openneko-backup-key" {
-			t.Fatalf("%s backup key file = %q", name, got)
-		}
-		wantMount := "${OPENNEKO_BACKUP_KEY_FILE:?OPENNEKO_BACKUP_KEY_FILE is required}:/run/secrets/openneko-backup-key:ro"
-		found := false
-		for _, mount := range service.Volumes {
-			if mount == wantMount {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Fatalf("%s is missing read-only backup key mount", name)
+	for _, name := range []string{"records-db", "neko-backup", "neko-restore", "records-graphjin", "records-watch-graphjin"} {
+		if _, exists := core.Services[name]; exists {
+			t.Fatalf("packaged Compose still defines retired service %s", name)
 		}
 	}
 }
@@ -165,7 +155,6 @@ func TestPackagedComposeKeepsRuntimeTrafficOnDockerNetwork(t *testing.T) {
 	core, _ := readComposeForTest(t, "core.yml")
 	for service, port := range map[string]string{
 		"neko-db":       "5432",
-		"records-db":    "5432",
 		"graphjin":      "8080",
 		"neko-graphjin": "8089",
 	} {

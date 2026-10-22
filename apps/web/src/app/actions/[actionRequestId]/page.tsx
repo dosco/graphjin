@@ -15,10 +15,6 @@ import {
   systemForActionKind,
 } from "@/lib/action-outcome";
 import { cn } from "@/lib/cn";
-import {
-  parseRecordUpdatePayload,
-  RecordActionDiff,
-} from "@/components/records/RecordActionDiff";
 import { Button } from "@/components/ui/button";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -264,7 +260,6 @@ export default function ActionPage() {
     latestExecution?.error ?? ar.failureReason ?? ar.rejectionReason,
     systemForActionKind(ar.kind),
   );
-  const recordUpdate = parseRecordUpdatePayload(ar.kind, ar.payload);
 
   return (
     <>
@@ -302,18 +297,6 @@ export default function ActionPage() {
         />
 
         {decisionError && <p role="alert" className="mb-4 text-ui-body-sm text-danger">{decisionError}</p>}
-
-        {recordUpdate && (
-          <Section title="Proposed change">
-            <RecordActionDiff
-              kind={ar.kind}
-              payload={ar.payload}
-              policyContext={
-                isPending && policy ? `rule "${policy.name}"` : null
-              }
-            />
-          </Section>
-        )}
 
         <Section title="Receipt">
           <dl className="grid gap-3.5 m-0">
@@ -413,7 +396,7 @@ export default function ActionPage() {
               )}
             </Field>
 
-            {ar.kind !== "record_update" && hasActionChanges(ar.payload) ? (
+            {hasActionChanges(ar.payload) ? (
               <Field label="Changes">
                 <ActionChanges payload={ar.payload} className="mt-1" />
               </Field>

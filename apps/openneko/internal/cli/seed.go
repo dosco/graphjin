@@ -43,9 +43,6 @@ func newSeedCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := configureBackupEnvironment(project); err != nil {
-				return err
-			}
 			files, err := sup.Materialize(compose.ModeDemo)
 			if err != nil {
 				return err
