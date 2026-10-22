@@ -268,6 +268,9 @@ func TestDataAggregationSkillTeachesEngineSideComputation(t *testing.T) {
 		"order_by aggregate desc",
 		"inputs.current_date (UTC)",
 		"state the window",
+		"lt anchor+1d",
+		"Year/12 months = 365 days",
+		"never same calendar date",
 		"result.truncation",
 	} {
 		if !strings.Contains(dataAggregationInstruction, phrase) {
