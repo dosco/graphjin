@@ -187,6 +187,11 @@ describe("constants stay shaped right (consumed verbatim by other prompts)", () 
     expect(GRAPHJIN_DATE_RULE).toContain("and: [");
   });
 
+  it("GRAPHJIN_DATE_RULE carries the house rule for relative periods", () => {
+    expect(GRAPHJIN_DATE_RULE).toContain("A year or 12 months is 365 days");
+    expect(GRAPHJIN_DATE_RULE).toContain("Never count back to the same calendar date");
+  });
+
   it("GRAPHJIN_FANOUT_RULE starts as a bullet and names the three remediations", () => {
     expect(GRAPHJIN_FANOUT_RULE.startsWith("- ")).toBe(true);
     expect(GRAPHJIN_FANOUT_RULE).toContain("(a)");

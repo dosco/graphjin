@@ -203,8 +203,11 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		// +128: the column-arg aggregate aliasing clause in data_aggregation —
 		// the engine accepts count(column: id) and the alias keeps every
 		// aggregate detector and frozen method pattern matching.
-		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3*1024 + 128},
-		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 18*512 + 128},
+		// +192: the relative-period house rule in data_aggregation. Without
+		// it models counted back to the same calendar date, one day longer
+		// than the eval's anchored window.
+		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3*1024 + 128 + 192},
+		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 18*512 + 128 + 192},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			definitions := allowedSkills(false, tc.profile)

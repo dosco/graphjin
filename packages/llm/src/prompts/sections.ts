@@ -11,7 +11,13 @@ export const GRAPHJIN_DATE_RULE = `- For GraphJin date/range filters, do not put
   the same column object. Use
   \`where: { and: [{ orderdate: { gte: "2024-06-30" } },
                    { orderdate: { lte: "2025-06-29" } }] }\`
-  rather than \`where: { orderdate: { gte: "...", lte: "..." } }\`.`;
+  rather than \`where: { orderdate: { gte: "...", lte: "..." } }\`.
+- House rule for relative periods. The anchor is the newest date in the
+  measure's own date column (its max_<date_col>). "Latest N days" ends on
+  and includes the anchor: gte anchor minus N-1 days, lt anchor plus 1 day.
+  "Preceding" is the N days just before: gte anchor minus 2N-1 days, lt
+  anchor minus N-1 days. A year or 12 months is 365 days, a month 30, a
+  week 7. Never count back to the same calendar date. State the dates used.`;
 
 // Anti-fanout rule we keep separately so it can be cited in the
 // metric-agent's HARD CONSTRAINTS *and* in the chat agent's data-access
