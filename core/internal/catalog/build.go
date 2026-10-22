@@ -26,7 +26,7 @@ func BuildWithOptions(snapshot *MetadataSnapshot, conf any, opts BuildOptions) *
 	addEntryPoints(out, opts)
 	addHelp(out, opts)
 	addConfigRecipes(out, opts)
-	addSources(out, opts)
+	addSources(out, snapshot, opts)
 	sampleMode := catalogSampleMode(conf)
 	addCapabilities(out, sampleMode, opts)
 	addSchema(out, snapshot, sampleMode, opts)
@@ -42,6 +42,20 @@ func BuildWithOptions(snapshot *MetadataSnapshot, conf any, opts BuildOptions) *
 	out.Revision = RevisionFromSourceRevisions(out.SourceRevisions)
 	out.search = newSearchIndex(out)
 	return out
+}
+
+// fileContentIndexed reports whether the file table has the content columns
+// the engine adds when file content indexing is on.
+func fileContentIndexed(snapshot *MetadataSnapshot, table string) bool {
+	if snapshot == nil {
+		return false
+	}
+	for _, c := range snapshot.Columns {
+		if c.TableName == table && c.ColumnName == "passages" {
+			return true
+		}
+	}
+	return false
 }
 
 func addAPIOperations(out *Snapshot, snapshot *MetadataSnapshot, opts BuildOptions) {
@@ -105,7 +119,7 @@ func addAPIOperations(out *Snapshot, snapshot *MetadataSnapshot, opts BuildOptio
 	}
 }
 
-func addSources(out *Snapshot, opts BuildOptions) {
+func addSources(out *Snapshot, snapshot *MetadataSnapshot, opts BuildOptions) {
 	for _, source := range opts.Sources {
 		name := strings.TrimSpace(source.Name)
 		kind := strings.TrimSpace(source.Kind)
@@ -150,17 +164,28 @@ func addSources(out *Snapshot, opts BuildOptions) {
 		// reads for a while; this one now agrees with it.
 		if kind == sourcecap.KindFile {
 			summary += " — queryable as the " + name + " table: list by prefix, then read one object by key with text (decoded) or data (base64)"
-			examples = mustJSON([]string{
+			list := []string{
 				fmt.Sprintf("{ %s(prefix: \"\", limit: 10) { key size content_type modified_at } }", name),
 				fmt.Sprintf("{ %s(key: \"<key>\", inline_data: true) { key content_type text data } }", name),
-			})
+			}
+			fields := []string{"key", "size", "content_type", "etag", "modified_at", "url", "data", "text"}
+			arguments := []string{"key", "prefix", "limit", "after", "inline_data"}
+			// With content indexing on, search is how to find the right file
+			// among thousands, and text covers PDF, Office and sheet files.
+			if fileContentIndexed(snapshot, name) {
+				summary += "; find files by content with search (best first, with passages); text covers PDF, Word, PowerPoint and sheet files; tables lists the SQL tables of a sheet or CSV file"
+				list = append([]string{fmt.Sprintf("{ %s(search: \"<words from the question>\", limit: 5) { key passages tables } }", name)}, list...)
+				fields = append(fields, "passages", "tables")
+				arguments = append(arguments, "search")
+			}
+			examples = mustJSON(list)
 			// The column surface is fixed by the filesystem bridge
 			// (core/fstable_bridge.go fixedFilesystemColumns). This package
 			// cannot import core, so the list is restated here, as the
 			// filesystem-shaped table card already does.
 			details["table"] = name
-			details["fields"] = []string{"key", "size", "content_type", "etag", "modified_at", "url", "data", "text"}
-			details["arguments"] = []string{"key", "prefix", "limit", "after", "inline_data"}
+			details["fields"] = fields
+			details["arguments"] = arguments
 			next = suggestedNextJSON(opts, "query_catalog", "execute_graphql")
 		}
 		out.Cards = append(out.Cards, Card{
@@ -2141,10 +2166,19 @@ func tableExamples(t MetadataTable, keyCols []MetadataColumn, remoteJoins map[st
 	// leading with an id column these tables do not have — episodes show models
 	// copying it verbatim and never discovering the content read.
 	if isFilesystemShapedTable(t, keyCols) {
-		return mustJSON([]string{
+		examples := []string{}
+		// Content search: the way to find the right file among thousands.
+		for _, c := range columnsByTable[t.ID] {
+			if c.ColumnName == "passages" {
+				examples = append(examples, fmt.Sprintf("{ %s(search: \"<words from the question>\", limit: 5) { key passages tables } }", t.TableName))
+				break
+			}
+		}
+		examples = append(examples,
 			fmt.Sprintf("{ %s(prefix: \"\", limit: 10) { key size content_type modified_at } }", t.TableName),
 			fmt.Sprintf("{ %s(key: \"<key>\") { key content_type text data } }", t.TableName),
-		})
+		)
+		return mustJSON(examples)
 	}
 	// Only lead with id when the table actually has one; remote tables often do
 	// not, and an invented field in the one example a model reads is a trap.

@@ -46,7 +46,7 @@ var databaseLimitPattern = regexp.MustCompile(`(?i)\blimit\s*:\s*(?:[1-9][0-9]*|
 // system-root terms an answer may always use without data evidence. Domain
 // field names never belong here — they must come from run evidence.
 var groundingVocabulary = strings.ToLower(strings.Join([]string{
-	toolGraphQLHelp, toolQueryCatalog, toolValidateWhere, toolExecuteSavedQuery, toolExecuteGraphQL,
+	toolGraphQLHelp, toolQueryCatalog, toolValidateWhere, toolExecuteSavedQuery, toolExecuteGraphQL, toolQueryFileTables,
 	systemRootCatalog, systemRootSecurity, systemRootRuntime, systemRootConfig,
 	systemRootWorkflow, systemRootWorkflowExec, systemRootArtifacts,
 	systemRootWatch, systemRootWatchEvent, systemRootTask, systemRootTaskEntry,

@@ -32,6 +32,7 @@ const (
 	toolValidateWhere     = "validate_where_clause"
 	toolExecuteSavedQuery = "execute_saved_query"
 	toolExecuteGraphQL    = "execute_graphql"
+	toolQueryFileTables   = "query_file_tables"
 )
 
 // Fixed gj_* system roots. Application/database roots are never named here; see

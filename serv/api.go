@@ -149,6 +149,9 @@ type graphjinService struct {
 	onboardingMu         sync.RWMutex
 	onboardingCandidates map[string]cachedDiscoveredCandidate
 	authLogin            *authLoginService // built-in OIDC login (optional)
+
+	fileContentOnce sync.Once
+	fileContent     *fileContent // reads inside file source files; nil unless file_content is enabled
 }
 
 // anyDB returns any single connection from the dbs map (for callers
@@ -278,6 +281,7 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 	// init() blocks (s3, gcs) — gated by build tags. Local lives in
 	// core itself and is always available.
 	opts = append(opts, filesystemBackendOptions()...)
+	opts = append(opts, s.fileContentOptions()...)
 	return opts
 }
 
@@ -835,6 +839,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 		if werr := s.startLocalFilesystemCacheWatchers(); werr != nil {
 			s.log.Warnf("filesystem cache watcher init error: %s", werr)
 		}
+		s.warmFileContent()
 		s.startProjectionPoller(context.Background())
 		s.startWatchCoordinator(context.Background())
 		// Seed before the runner starts so its first reconcile already sees the

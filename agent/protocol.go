@@ -1048,6 +1048,25 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 	return out, err
 }
 
+// FileTablesEnabled reports whether the wrapped runtime serves file tables.
+func (r *protocolRuntime) FileTablesEnabled() bool {
+	files, ok := r.base.(FileTablesRuntime)
+	return ok && files.FileTablesEnabled()
+}
+
+// QueryFileTables runs SQL over file tables and records the call, so its
+// rows ground the answer like any execution result.
+func (r *protocolRuntime) QueryFileTables(ctx context.Context, args map[string]any) (any, error) {
+	files, ok := r.base.(FileTablesRuntime)
+	if !ok || !files.FileTablesEnabled() {
+		return nil, fmt.Errorf("file tables are not available on this server")
+	}
+	action := r.state.startAction("model", toolQueryFileTables, args)
+	out, err := files.QueryFileTables(ctx, args)
+	r.state.finishAction(action, toolQueryFileTables, args, out, err)
+	return out, err
+}
+
 func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (any, error) {
 	r.addNamespace(args)
 	query := stringArg(args, "query")
