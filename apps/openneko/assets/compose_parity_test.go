@@ -39,7 +39,7 @@ type composeParityService struct {
 	Healthcheck map[string]any                     `yaml:"healthcheck"`
 }
 
-func TestLibrarianIsVendoredBoundedAndRequired(t *testing.T) {
+func TestEmbeddingIsBoundedAndLibrarianIsGone(t *testing.T) {
 	root := repoRootForTest(t)
 	sourceRaw, err := os.ReadFile(filepath.Join(root, "compose.yml"))
 	if err != nil {
@@ -54,38 +54,12 @@ func TestLibrarianIsVendoredBoundedAndRequired(t *testing.T) {
 		"source":   loadComposeParityDocument(t, sourceRaw),
 		"packaged": loadComposeParityDocument(t, packagedRaw),
 	} {
-		librarian, ok := document.Services["librarian"]
-		if !ok {
-			t.Fatalf("%s compose is missing librarian", label)
+		// GraphJin reads Library files itself; the Docling librarian is retired.
+		if _, ok := document.Services["librarian"]; ok {
+			t.Fatalf("%s compose still runs the retired librarian", label)
 		}
-		if !librarian.ReadOnly || librarian.CPUs != "${OPENNEKO_LIBRARIAN_CPUS:-1.0}" || librarian.MemLimit != "4g" || librarian.PidsLimit != 256 {
-			t.Fatalf("%s librarian limits are incomplete: %+v", label, librarian)
-		}
-		if !reflect.DeepEqual(librarian.CapDrop, []string{"ALL"}) {
-			t.Fatalf("%s librarian capability drop = %v", label, librarian.CapDrop)
-		}
-		if len(librarian.Tmpfs) != 1 || !strings.Contains(librarian.Tmpfs[0], "/tmp:size=512m") {
-			t.Fatalf("%s librarian tmpfs = %v", label, librarian.Tmpfs)
-		}
-		for _, variable := range []string{"HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "DOCLING_ARTIFACTS_PATH"} {
-			if _, ok := librarian.Environment[variable]; !ok {
-				t.Fatalf("%s librarian is missing %s", label, variable)
-			}
-		}
-		if dependency := document.Services["worker"].DependsOn["librarian"]; dependency.Condition != "service_healthy" {
-			t.Fatalf("%s worker librarian dependency = %+v", label, dependency)
-		}
-		if !strings.Contains(fmt.Sprint(librarian.Healthcheck["test"]), "/health/ready") {
-			t.Fatalf("%s librarian healthcheck does not use readiness", label)
-		}
-		if librarian.Environment["OPENNEKO_SERVICE_IDLE_TIMEOUT"] != "${OPENNEKO_LIBRARIAN_IDLE_TIMEOUT:-5m}" {
-			t.Fatalf("%s librarian idle timeout is missing", label)
-		}
-		if !reflect.DeepEqual(librarian.Volumes, []string{"librarian-results:/var/lib/neko-librarian/results"}) {
-			t.Fatalf("%s librarian results must use a disk volume: %v", label, librarian.Volumes)
-		}
-		if librarian.Environment["NEKO_LIBRARIAN_RESULT_TTL_SECONDS"] != "${OPENNEKO_LIBRARIAN_RESULT_TTL_SECONDS:-900}" || librarian.Environment["NEKO_LIBRARIAN_RESULT_MAX_BYTES"] != "${OPENNEKO_LIBRARIAN_RESULT_MAX_BYTES:-536870912}" {
-			t.Fatalf("%s librarian result retention bounds are missing", label)
+		if _, ok := document.Services["worker"].DependsOn["librarian"]; ok {
+			t.Fatalf("%s worker still waits for the retired librarian", label)
 		}
 		embedding := document.Services["embedding"]
 		if !embedding.ReadOnly || embedding.CPUs != "${OPENNEKO_EMBEDDING_CPUS:-1.0}" || embedding.MemLimit != "${OPENNEKO_EMBEDDING_MEMORY:-1g}" || len(embedding.Ports) != 0 {
@@ -104,10 +78,6 @@ func TestLibrarianIsVendoredBoundedAndRequired(t *testing.T) {
 		}
 	}
 
-	packaged := loadComposeParityDocument(t, packagedRaw).Services["librarian"]
-	if !strings.Contains(packaged.Image, "ghcr.io/open-neko/neko-librarian:") {
-		t.Fatalf("packaged librarian image = %q", packaged.Image)
-	}
 }
 
 func TestPackagedGraphJinReusesReleasedRuntime(t *testing.T) {
@@ -272,7 +242,6 @@ func TestPostReleaseSmokeGatesRetainedDemoUpgrades(t *testing.T) {
 	workflow := string(raw)
 	for _, required := range []string{
 		"openneko start --mode demo --detach --pull never",
-		"librarian_pdf_async=ok",
 		"openneko upgrade --stack-only --mode demo",
 		"{{.State.Health.Status}}",
 		"authenticated_datasource_query=ok",

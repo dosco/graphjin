@@ -162,12 +162,12 @@ Branch `feat/groups-entitlements` in the worktree `openneko-groups` implements s
 
 ### B2. Item types
 
+Library documents are not grantable items: GraphJin's file source keeps each user's library private to them.
+
 | Item type | Example items | Items come from | Holding it lets the user | Enforced at |
 |---|---|---|---|---|
 | **Skill** | `docx`, `magento-check-inventory`, `google-workspace-sheets` | builtin, org and pack skills (`listInstalledSkills`, `packages/llm/src/work/workspace.ts:237`) | See the skill, and have the agent load it in their runs | skill materialization per run (`workspace.ts`); `GET/PUT/DELETE work/skills/**`; pages `/skills`, `/skills/[name]` |
 | **Workflow** | Daily revenue check, Aged fulfillment follow-up | `workflow_definition` | See it, run it, see its runs, outputs and artifacts, and receive its observations and briefing cards | `workflows/**`, `workflow-runs/**`, `observations`, `briefing/cards`, `subscriptions/**`; tool `list_workflows`; pages `/workflows/**`, `/runs/**` |
-| **Library collection** | `revenue/`, `policies/refunds/` | concept path prefixes (`library_concept.path`) | Read every concept under the path | `library`, `library/concepts/[id]`, `library/export`; tool `search` (`neko_library`); page `/library` |
-| **Library concept** | `revenue/net-invoiced-revenue` | `library_concept` | Read one concept outside a held collection | same as collection |
 | **Metric** | Net invoiced revenue, Refund rate | `metric` (persona and `pack:*`) | See the metric tile, its value and trend, and have the agent cite it | `briefing`, `briefing/by-metric`, `briefing/value`, `briefing/stats`, `briefing/pins` |
 | **Dashboard** | CFO dashboard, COO dashboard | persona role templates (`operator_profile.role_template`, `metric.role`, `dashboard_pin.role`) | Open that persona's briefing and dashboard. Tiles show only held metrics. | `GET /api/briefing?role=`, `briefing/status`, `briefing/findings`, `briefing/recent-actions`; page `/` persona tabs |
 | **Watcher** | Stock threshold, Indexer health | `watcher` | See the alert and receive its findings | watcher lists, `briefing/findings`, `observations` |

@@ -17,14 +17,12 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
 )
 
 type service struct {
-	results       *resultStore
 	mu            sync.Mutex
 	command       []string
 	upstream      string
@@ -154,8 +152,8 @@ func (s *service) expire() {
 		return
 	default:
 	}
-	// An HTTP 202 can leave a queued conversion or an uncollected result.
-	// A failed idle probe never authorizes terminating that work.
+	// An HTTP 202 can leave queued work behind. A failed idle probe never
+	// authorizes terminating it.
 	if s.probe("/health/idle", true) {
 		s.stop()
 	}
@@ -203,36 +201,6 @@ func (s *service) handler() http.Handler {
 			http.Error(w, "service request queue is full", http.StatusTooManyRequests)
 			return
 		}
-		if s.results != nil && r.Method == http.MethodGet {
-			id, file, lookup := resultPath(r.URL.Path)
-			if lookup {
-				if s.results.serve(w, r, id, file) {
-					return
-				}
-				// A missing result may belong to the running child. Never
-				// start Docling just to discover an unknown/expired task ID.
-				s.mu.Lock()
-				running := s.cmd != nil
-				if running {
-					select {
-					case <-s.done:
-						running = false
-					default:
-					}
-				}
-				if running {
-					s.active++
-				}
-				s.mu.Unlock()
-				if !running {
-					http.NotFound(w, r)
-					return
-				}
-				defer s.release()
-				proxy.ServeHTTP(w, r)
-				return
-			}
-		}
 		if err := s.acquire(r.Context()); err != nil {
 			log.Printf("processing startup failed: %v", err)
 			http.Error(w, "processing service unavailable", http.StatusServiceUnavailable)
@@ -271,21 +239,6 @@ func Main(args []string) {
 		log.Fatal(err)
 	}
 	s := &service{command: flags.Args(), upstream: *upstream, idle: *idle, startup: *startup, client: &http.Client{Timeout: time.Second}}
-	if root := os.Getenv("NEKO_LIBRARIAN_RESULT_ROOT"); root != "" {
-		seconds := 900
-		if raw := os.Getenv("NEKO_LIBRARIAN_RESULT_TTL_SECONDS"); raw != "" {
-			value, err := strconv.Atoi(raw)
-			if err != nil || value <= 0 {
-				log.Fatal("result TTL must be positive seconds")
-			}
-			seconds = value
-		}
-		if err := os.MkdirAll(root, 0700); err != nil {
-			log.Fatal(err)
-		}
-		s.results = &resultStore{root: root, ttl: time.Duration(seconds) * time.Second}
-		s.results.expire()
-	}
 	server := &http.Server{Addr: *listen, Handler: s.handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -299,9 +252,6 @@ func Main(args []string) {
 				return
 			case <-tick.C:
 				s.expire()
-				if s.results != nil {
-					s.results.expire()
-				}
 			}
 		}
 	}()

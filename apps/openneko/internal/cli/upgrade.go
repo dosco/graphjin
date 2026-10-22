@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"runtime"
 	"sort"
 	"strings"
 
@@ -121,12 +120,6 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 			_ = os.Unsetenv("OPENNEKO_VERSION")
 		}
 	}()
-	if err := configurePinnedLibrarianImage(target); err != nil {
-		return err
-	}
-	if err := configureLibrarianCPULimit(runtime.NumCPU()); err != nil {
-		return err
-	}
 
 	files, err := sup.Materialize(m)
 	if err != nil {
@@ -399,10 +392,11 @@ func openNekoImageRepos() map[string]bool {
 		"ghcr.io/open-neko/neko-web":            true,
 		"ghcr.io/open-neko/neko-worker":         true,
 		"ghcr.io/open-neko/neko-embedding":      true,
-		"ghcr.io/open-neko/neko-librarian":      true,
 		"ghcr.io/open-neko/agent":               true,
-		// Legacy images (plugins and the OpenShell sandbox supervisor were
-		// removed); kept so upgrades prune old copies left on the host.
+		// Legacy images (plugins, the OpenShell sandbox supervisor and the
+		// Docling librarian were removed); kept so upgrades prune old copies
+		// left on the host.
+		"ghcr.io/open-neko/neko-librarian":       true,
 		"ghcr.io/open-neko/plugin-base":          true,
 		"ghcr.io/open-neko/openshell-supervisor": true,
 	}

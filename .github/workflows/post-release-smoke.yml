@@ -93,15 +93,7 @@ jobs:
       - name: Build openneko binary
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         working-directory: apps/openneko
-        run: |
-          set -euo pipefail
-          ref="ghcr.io/open-neko/neko-librarian:${{ steps.ctx.outputs.tag }}"
-          digest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -er '.digest')
-          pinned="$ref@$digest"
-          go build \
-            -ldflags "-X github.com/open-neko/neko/apps/openneko/internal/version.LibrarianImage=$pinned" \
-            -o /usr/local/bin/openneko ./cmd/openneko
-          echo "LIBRARIAN_IMAGE=$pinned" >> "$GITHUB_ENV"
+        run: go build -o /usr/local/bin/openneko ./cmd/openneko
 
       - name: Pre-pull images with retry
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
@@ -196,26 +188,6 @@ jobs:
           openneko status -v || true
           openneko logs || true
           exit 1
-
-      - name: Vendored librarian PDF extraction smoke
-        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
-        run: |
-          set -euo pipefail
-          worker=$(docker ps -q \
-            --filter label=com.docker.compose.project=openneko-demo \
-            --filter label=com.docker.compose.service=worker | head -1)
-          librarian=$(docker ps -q \
-            --filter label=com.docker.compose.project=openneko-demo \
-            --filter label=com.docker.compose.service=librarian | head -1)
-          test -n "$worker"
-          test -n "$librarian"
-          test "$(docker inspect --format '{{.State.Health.Status}}' "$librarian")" = healthy
-          test "$(docker inspect --format '{{.Config.Image}}' "$librarian")" = "$LIBRARIAN_IMAGE"
-          docker cp scripts/smoke-librarian.mjs "$worker:/tmp/smoke-librarian.mjs"
-          docker exec "$worker" node /tmp/smoke-librarian.mjs | tee /tmp/librarian-smoke.log
-          grep -F "librarian_pdf_async=ok" /tmp/librarian-smoke.log
-          docker exec "$librarian" python -c \
-            "from pathlib import Path; assert any(Path('/opt/docling/models').rglob('*'))"
 
       - name: Retained-volume upgrade repairs and serves GraphJin
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}

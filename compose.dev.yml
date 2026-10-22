@@ -19,10 +19,6 @@ services:
     ports:
       - "127.0.0.1:${OPENNEKO_EMBEDDING_PORT:-5003}:5003"
 
-  librarian:
-    ports:
-      - "127.0.0.1:${OPENNEKO_LIBRARIAN_PORT:-5001}:5001"
-
   # The host worker writes the records configs owner-only, so the directory
   # and both records GraphJin instances belong to the host user
   # (scripts/dev-env.sh), not the image's worker user.

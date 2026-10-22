@@ -58,16 +58,6 @@ jobs:
             target: embedding
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-          - image: neko-librarian
-            file: apps/librarian/Dockerfile
-            target: librarian
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: neko-librarian
-            file: apps/librarian/Dockerfile
-            target: librarian
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
           - image: neko-graphjin
             target: neko-graphjin
             platform: linux/amd64
@@ -218,7 +208,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [neko-web, neko-worker, neko-embedding, neko-librarian, neko-graphjin, records-graphjin, neko-cli, neko-db, records-db, neko-backup, agent, openshell-supervisor]
+        image: [neko-web, neko-worker, neko-embedding, neko-graphjin, records-graphjin, neko-cli, neko-db, records-db, neko-backup, agent, openshell-supervisor]
     steps:
       - name: Resolve release tag
         id: tag
@@ -302,7 +292,7 @@ jobs:
             "${{ steps.tag.outputs.value }}" \
             "${{ matrix.arch }}" \
             "$MAX_MIB" \
-            neko-web neko-worker neko-embedding neko-librarian neko-graphjin records-graphjin neko-cli \
+            neko-web neko-worker neko-embedding neko-graphjin records-graphjin neko-cli \
             neko-db records-db neko-backup agent openshell-supervisor \
             postgres:16-alpine busybox:latest \
             "ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.1.2}"
@@ -332,15 +322,6 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Resolve immutable librarian release image
-        id: librarian
-        run: |
-          set -euo pipefail
-          ref="ghcr.io/open-neko/neko-librarian:${{ github.event.inputs.tag || github.event.release.tag_name }}"
-          digest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -er '.digest')
-          case "$digest" in sha256:????????????????????????????????????????????????????????????????) ;; *) exit 1 ;; esac
-          echo "image=$ref@$digest" >> "$GITHUB_OUTPUT"
-
       - id: app-token
         uses: actions/create-github-app-token@v3
         with:
@@ -359,4 +340,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          NEKO_LIBRARIAN_IMAGE: ${{ steps.librarian.outputs.image }}

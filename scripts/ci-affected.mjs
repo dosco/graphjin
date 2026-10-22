@@ -89,10 +89,6 @@ const JOBS = {
     paths: ["apps/embedding/", "Dockerfile"],
     packages: [],
   },
-  librarian_image: {
-    paths: ["apps/librarian/"],
-    packages: [],
-  },
   lazy_service: {
     paths: ["apps/lazy-service/", "go.work"],
     packages: [],

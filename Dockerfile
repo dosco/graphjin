@@ -158,7 +158,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Bundled skills (xlsx / pptx / docx / pdf / document-extraction) shell out to
 # Python + LibreOffice + Poppler / qpdf / Tesseract via the agent's terminal,
 # which `openneko sandbox` runs — web never runs these, so the ~1GB toolchain stays out
-# of its image (the worker gets a minimal subset below for the librarian).
+# of its image.
 # Keep this list in sync with KNOWN_SKILL_DEPS (packages/llm/src/work/skill-deps.ts);
 # `pnpm skills:check` prints the current aggregate.
 FROM agent-base AS cli
@@ -393,14 +393,8 @@ ARG OPENNEKO_COMMIT=unknown
 ENV OPENNEKO_VERSION=$OPENNEKO_VERSION OPENNEKO_COMMIT=$OPENNEKO_COMMIT
 LABEL org.opencontainers.image.revision=$OPENNEKO_COMMIT org.opencontainers.image.version=$OPENNEKO_VERSION
 WORKDIR /app
-# Minimal extraction toolchain for the library distiller ("the librarian"),
-# which shells out to the bundled document-extraction script on this host:
-# python3 covers docx/pptx/xlsx via stdlib zipfile fallbacks, pdftotext
-# (poppler-utils) covers PDFs. Deliberately no pip deps and no tesseract —
-# scanned-PDF OCR runs in the agent image; a worker-side extraction miss
-# fails the document row with a clear reason and is retryable from /library.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git openssh-client python3 poppler-utils unzip postgresql-client \
+      git openssh-client postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
     PORT=4100 \

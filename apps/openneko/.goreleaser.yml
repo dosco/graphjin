@@ -24,7 +24,6 @@ builds:
       - -X github.com/open-neko/neko/apps/openneko/internal/version.Version={{.Version}}
       - -X github.com/open-neko/neko/apps/openneko/internal/version.Commit={{.Commit}}
       - -X github.com/open-neko/neko/apps/openneko/internal/version.CommitTimestamp={{.Date}}
-      - -X github.com/open-neko/neko/apps/openneko/internal/version.LibrarianImage={{.Env.NEKO_LIBRARIAN_IMAGE}}
 
 archives:
   - id: openneko

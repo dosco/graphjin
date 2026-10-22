@@ -33,7 +33,7 @@ GRAPHJIN_SOURCES_CONFIG="$OPENNEKO_GRAPHJIN_CONFIG" \
 
 compose up -d \
   neko-graphjin graphjin records-graphjin records-watch-graphjin \
-  embedding librarian \
+  embedding \
   adventureworks-simulator adventureworks-scenario-injector
 
 echo "Backing services are up. Start the agent runtime, web and worker with: pnpm dev"

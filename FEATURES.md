@@ -126,11 +126,8 @@ restorable.
 | Skill edits that stick | When the assistant changes a skill during a conversation, the change is saved as a new version when the turn ends. It applies to everyone if an admin asked, or only to you otherwise. | #413 |
 | Optional git repository | Connect the company's skills and workflows to GitHub, GitLab or any git host over HTTPS or SSH. Publish by push or pull request, and bring in skills and packs that changed there. See [CONTEXT_REPOSITORY.md](CONTEXT_REPOSITORY.md). | #413 |
 | Promote and adopt | When a personal workflow or memory proves valuable, an admin can promote it to the whole team with full lineage of where it came from. | #96 |
-| Document library | Files you attach in a conversation are added to your personal library automatically — a librarian distills them into concepts the assistant can search and cite, each traced back to the original document. | #220 |
-| Share and approve knowledge | A distilled concept stays private to you until you share it; an admin approves it into the team library, stamping who vouched for it and when. | #220 |
-| Open Knowledge Format | The team library — and your memories, workflows, and skills — are written to disk as plain Markdown in the vendor-neutral [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) v0.2 format: readable in any editor, versioned invisibly, and portable beyond OpenNeko. | #220 |
-| Take it with you | Export the team library as an OKF bundle and import it into another install — approval stamps, staleness dates, and source citations travel with it, and search vectors are rebuilt on arrival. | #220 |
-| Starter knowledge packs | Install a curated pack of metric definitions and playbooks on day one instead of teaching the assistant from scratch — every concept lands pre-approved by the installing admin and stays editable. | #220 |
+| Document library | Documents and spreadsheets you upload, or attach in a conversation, go into your private library. The assistant searches them by content, reads them whole (PDF, Word, PowerPoint and Excel included), and answers questions over spreadsheet data with SQL, citing the file and page or sheet. | #220 |
+| Open Knowledge Format | Your memories, workflows, and skills are written to disk as plain Markdown in the vendor-neutral [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) v0.2 format: readable in any editor, versioned invisibly, and portable beyond OpenNeko. | #220 |
 
 ## Security you can verify
 
