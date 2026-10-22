@@ -16,8 +16,8 @@ x-neko-app-env: &neko-app-env
   NEKO_PG_PASSWORD: secret
   NEKO_PG_DATABASE: neko
   NEKO_EMBEDDING_URL: http://embedding:5003
-  NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,embedding,neko-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
-  no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,embedding,neko-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
+  NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,embedding,neko-graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
+  no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,embedding,neko-graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
 
 services:
   neko-db:
@@ -101,8 +101,8 @@ services:
   # One-shot: resolves (or creates, under an advisory lock) the single org
   # row and reconciles the per-org JWT secret into the customer GraphJin
   # sources config BEFORE the server's first start. GraphJin 3.18 does not
-  # hot-reload auth keys; expressing that as `graphjin -> worker` cycled
-  # against the demo/dev overlays' `worker -> graphjin` edge, so this
+  # hot-reload auth keys; expressing that as `openneko-serve -> worker` cycled
+  # against the demo/dev overlays' `worker -> openneko-serve` edge, so this
   # one-shot carries the ordering instead. It reconciles unconditionally on
   # every run, so secret-key rotation, restores, and partial volume wipes
   # self-heal on the next stack start. Unlike the seeding inits it holds DB
@@ -148,7 +148,7 @@ services:
   # as the run's user, with no HTTP hop. Terminal commands go to
   # agent-sandbox. Model keys arrive only with each turn. Config changes
   # apply live through gj_config, so nothing restarts it.
-  graphjin:
+  openneko-serve:
     image: ${OPENNEKO_AGENT_IMAGE:-ghcr.io/open-neko/agent:${OPENNEKO_VERSION:-latest}}
     user: "1001:999"
     # Group 1001 shares the run folders and the serve socket with web,
@@ -246,8 +246,8 @@ services:
     image: ghcr.io/open-neko/neko-graphjin:${OPENNEKO_VERSION:-latest}
     restart: unless-stopped
     depends_on:
-      # neko-db must be reachable for graphjin to connect; neko-migrate must
-      # have finished so the schema graphjin caches at boot reflects all
+      # neko-db must be reachable for openneko-serve to connect; neko-migrate must
+      # have finished so the schema openneko-serve caches at boot reflects all
       # pending migrations. The neko.yml config also sets
       # db_schema_poll_duration: 10s so post-boot migrations are picked up
       # automatically, but the explicit dep keeps first-boot deterministic.
@@ -262,7 +262,7 @@ services:
     expose:
       - "8089"
     healthcheck:
-      # graphjin serves no /health route (it 500s); the GraphQL endpoint
+      # GraphJin serves no /health route (it 500s); the GraphQL endpoint
       # answering is the honest readiness signal.
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8089/api/v1/graphql"]
       interval: 10s
@@ -341,7 +341,7 @@ services:
       # recovery screen while the control plane is still starting.
       worker:
         condition: service_healthy
-      graphjin:
+      openneko-serve:
         condition: service_healthy
     environment:
       <<: *neko-app-env
@@ -395,7 +395,7 @@ services:
       # starts; depending on the one-shot seed avoids a startup cycle.
       graphjin-config-init:
         condition: service_completed_successfully
-      graphjin:
+      openneko-serve:
         condition: service_healthy
     environment:
       <<: *neko-app-env

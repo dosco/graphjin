@@ -132,7 +132,7 @@ jobs:
                 role: "service",
               });
               const response = await callGraphjinMcpTool({
-                baseUrl: "http://graphjin:8080/api/v1/mcp",
+                baseUrl: "http://openneko-serve:8080/api/v1/mcp",
                 headers: { authorization: "Bearer " + token },
                 signal: AbortSignal.timeout(10_000),
               }, {

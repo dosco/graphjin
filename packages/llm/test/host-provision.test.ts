@@ -209,7 +209,7 @@ describeIfDb("provisionHostConfig", () => {
   it("writes graphjin client.json under XDG_CONFIG_HOME when it is set", async () => {
     process.env.XDG_CONFIG_HOME = join(tempHome, "xdg-config");
     await seedDataSource(orgId, {
-      graphqlUrl: "http://graphjin:8080/api/v1/graphql",
+      graphqlUrl: "http://openneko-serve:8080/api/v1/graphql",
     });
 
     await provisionHostConfig(orgId);
@@ -217,7 +217,7 @@ describeIfDb("provisionHostConfig", () => {
     const path = graphjinPath(tempHome);
     const content = JSON.parse(await readFile(path, "utf8"));
     expect(path).toBe(join(tempHome, "xdg-config", "graphjin", "client.json"));
-    expect(content.server).toBe("http://graphjin:8080");
+    expect(content.server).toBe("http://openneko-serve:8080");
   });
 
   it("falls back to URL origin when graphql path doesn't match the conventional suffix", async () => {
@@ -332,7 +332,7 @@ describeIfDb("provisionHostConfig", () => {
     // the stable identity the reconcile must key on.
     await seedDataSource(orgId, {
       label: "primary",
-      graphqlUrl: "http://graphjin:8080/api/v1/graphql",
+      graphqlUrl: "http://openneko-serve:8080/api/v1/graphql",
     });
 
     const previousPath = process.env.OPENNEKO_GRAPHJIN_CONFIG;

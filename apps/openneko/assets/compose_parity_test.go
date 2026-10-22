@@ -86,7 +86,7 @@ func TestPackagedGraphJinReusesReleasedRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	core := loadComposeParityDocument(t, coreRaw)
-	graphjin, ok := core.Services["graphjin"]
+	graphjin, ok := core.Services["openneko-serve"]
 	if !ok {
 		t.Fatal("packaged core is missing graphjin")
 	}
@@ -101,7 +101,7 @@ func TestPackagedGraphJinReusesReleasedRuntime(t *testing.T) {
 	if want := []string{"serve", "--path", "/config"}; !reflect.DeepEqual(graphjin.Command, want) {
 		t.Fatalf("packaged graphjin command = %v, want %v", graphjin.Command, want)
 	}
-	if got := strings.Join(composeHealthcheckTest(t, "packaged", "graphjin", graphjin), " "); !strings.Contains(got, "http://127.0.0.1:8080/api/v1/graphql") || !strings.Contains(got, "/run/openneko/serve.sock") {
+	if got := strings.Join(composeHealthcheckTest(t, "packaged", "openneko-serve", graphjin), " "); !strings.Contains(got, "http://127.0.0.1:8080/api/v1/graphql") || !strings.Contains(got, "/run/openneko/serve.sock") {
 		t.Fatalf("packaged graphjin readiness check = %v, want GraphJin's HTTP API and the serve socket", got)
 	}
 	configInit, ok := core.Services["graphjin-config-init"]
@@ -118,7 +118,7 @@ func TestPackagedGraphJinReusesReleasedRuntime(t *testing.T) {
 	demo := loadComposeParityDocument(t, demoRaw)
 	demoConfigInit := demo.Services["graphjin-config-init"]
 	assertGraphJinConfigInit(t, "packaged demo overlay", demoConfigInit)
-	assertGraphJinConfigVolumeMatches(t, "packaged demo overlay", demoConfigInit, demo.Services["graphjin"])
+	assertGraphJinConfigVolumeMatches(t, "packaged demo overlay", demoConfigInit, demo.Services["openneko-serve"])
 	if strings.Contains(string(demoRaw), "dosco/graphjin") {
 		t.Fatal("packaged demo restores the duplicate upstream GraphJin image")
 	}
@@ -141,11 +141,11 @@ func TestGraphJinRunsWithoutTheRestartSupervisor(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := loadComposeParityDocument(t, baseRaw)
-	if strings.Contains(base.Services["graphjin"].Image, "dosco/graphjin") {
+	if strings.Contains(base.Services["openneko-serve"].Image, "dosco/graphjin") {
 		t.Fatal("source graphjin uses the upstream image instead of the openneko build")
 	}
 	assertGraphJinConfigInit(t, "source core", base.Services["graphjin-config-init"])
-	assertGraphJinConfigVolumeMatches(t, "source core", base.Services["graphjin-config-init"], base.Services["graphjin"])
+	assertGraphJinConfigVolumeMatches(t, "source core", base.Services["graphjin-config-init"], base.Services["openneko-serve"])
 
 	for _, overlayName := range []string{"compose.adventureworks.yml", "compose.graphjin-agent.yml"} {
 		raw, err := os.ReadFile(root + "/" + overlayName)
@@ -519,7 +519,7 @@ func TestCustomerGraphJinDoesNotOwnWorkerConfigAsRoot(t *testing.T) {
 		"source":   loadComposeParityDocument(t, rootRaw),
 		"packaged": loadComposeParityDocument(t, packagedRaw),
 	} {
-		if got := document.Services["graphjin"].User; got != "1001:999" {
+		if got := document.Services["openneko-serve"].User; got != "1001:999" {
 			t.Errorf("%s graphjin user = %q, want 1001:999", label, got)
 		}
 	}

@@ -94,7 +94,7 @@ func TestHeadlessConfigure(t *testing.T) {
 	}
 	// Data source saved with demo's internal GraphJin root, canonical suffix.
 	if _, ok := findWhere(recs, "PUT", "/api/settings/data-source", func(b map[string]any) bool {
-		return b["graphqlUrl"] == "http://graphjin:8080/api/v1/graphql"
+		return b["graphqlUrl"] == "http://openneko-serve:8080/api/v1/graphql"
 	}); !ok {
 		t.Error("data source not saved with derived demo endpoint")
 	}
@@ -189,7 +189,7 @@ func TestPureHelpers(t *testing.T) {
 	}
 
 	demo := defaultDataURL(Config{Mode: "demo"}, &DataSource{Source: "unset"})
-	if demo != "http://graphjin:8080" {
+	if demo != "http://openneko-serve:8080" {
 		t.Errorf("demo default = %q", demo)
 	}
 	dev := defaultDataURL(Config{Mode: "dev"}, &DataSource{Source: "unset"})
@@ -197,7 +197,7 @@ func TestPureHelpers(t *testing.T) {
 		t.Errorf("dev default = %q", dev)
 	}
 	prod := defaultDataURL(Config{Mode: "prod"}, &DataSource{Source: "unset"})
-	if prod != "http://graphjin:8080" {
+	if prod != "http://openneko-serve:8080" {
 		t.Errorf("prod default = %q", prod)
 	}
 	saved := defaultDataURL(Config{Mode: "demo"}, &DataSource{Source: "org", GraphqlURL: "http://h:9/api/v1/graphql"})

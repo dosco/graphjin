@@ -439,12 +439,12 @@ func defaultDataURL(cfg Config, ds *DataSource) string {
 		return cfg.DataURL
 	}
 	if cfg.Mode == "demo" {
-		return "http://graphjin:8080"
+		return "http://openneko-serve:8080"
 	}
 	if cfg.Mode == "dev" {
 		return "http://localhost:8080"
 	}
-	return "http://graphjin:8080"
+	return "http://openneko-serve:8080"
 }
 
 func modelDefault(defaults map[string]string, provider string, current ProviderConfig) string {

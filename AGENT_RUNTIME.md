@@ -21,7 +21,7 @@ through the per-run broker.
             │ start the runner: node /opt/openneko-agent/entry.js
             ▼
         runner  ── one turn per connection ──▶  openneko serve
-        (child process,                          (graphjin container; it also
+        (child process,                          (openneko-serve container; it also
          broker token, model key                  hosts the customer GraphJin,
          for this run)                            model key only for the turn)
             ▲                                          │ terminal commands
@@ -78,7 +78,7 @@ host; only the agent loop runs in the runner.
 | Piece | Runs as | Holds | Network |
 |---|---|---|---|
 | Runner | web/worker user (`neko`, 1001) | the run's broker token and the org's model key, for this run only | web/worker's |
-| `openneko serve --path /config` (`graphjin`) | `1001:999`, plus group 1001 | a turn's model key, only while the turn runs; GraphJin's own config and data source credentials, as the graphjin service always held | the stack's default network, for model APIs and data sources |
+| `openneko serve --path /config` (`openneko-serve`) | `1001:999`, plus group 1001 | a turn's model key, only while the turn runs; GraphJin's own config and data source credentials, as the GraphJin service always held | the stack's default network, for model APIs and data sources |
 | `openneko sandbox` (`agent-sandbox`) | root, to give each turn's commands their own user | **no secrets**; commands get only `PATH`, `HOME`, `TMPDIR`, `LANG` and `SKILL_DIR` | only the `agent-sandbox` network |
 
 Model keys exist only in the runner and in serve, and in serve only for the

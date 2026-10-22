@@ -8,8 +8,8 @@ describe("GraphJin server agent client", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("derives agent endpoints from GraphQL, MCP, namespace, and root URLs", () => {
-    expect(graphjinAgentEndpoint("http://graphjin:8080/api/v1/graphql")).toBe(
-      "http://graphjin:8080/api/v1/agent",
+    expect(graphjinAgentEndpoint("http://openneko-serve:8080/api/v1/graphql")).toBe(
+      "http://openneko-serve:8080/api/v1/agent",
     );
     expect(
       graphjinAgentEndpoint("https://gj.example/api/v1/mcp", true),
@@ -30,7 +30,7 @@ describe("GraphJin server agent client", () => {
     );
 
     const response = await askGraphjinAgent({
-      baseUrl: "http://graphjin:8080/api/v1/graphql",
+      baseUrl: "http://openneko-serve:8080/api/v1/graphql",
       token: "admin-jwt",
       request: { instruction: "Explain the current configuration." },
     });

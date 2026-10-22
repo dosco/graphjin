@@ -143,7 +143,7 @@ func TestSourceComposeOverlaysAreAcyclic(t *testing.T) {
 // race the org-row bootstrap it performs.
 func TestGraphjinSecretInitGatesItsConsumers(t *testing.T) {
 	graph := mergedDependencyGraph(t, readEmbeddedCompose(t, "core.yml"))
-	for _, consumer := range []string{"graphjin", "worker", "web"} {
+	for _, consumer := range []string{"openneko-serve", "worker", "web"} {
 		deps := graph[consumer]
 		found := false
 		for _, dep := range deps {

@@ -89,7 +89,7 @@ export async function searchLibraryFilesForRun(args: LibrarySearchArgs): Promise
   // GraphJin takes search on a file table only as a literal; JSON string
   // escaping is valid GraphQL string escaping.
   const res = await graphjinQuery<Record<string, Array<Omit<LibraryFileMatch, "file">> | null>>({
-    baseUrl: process.env.OPENNEKO_LIBRARY_GRAPHJIN_URL?.trim() || "http://graphjin:8080/api/v1/graphql",
+    baseUrl: process.env.OPENNEKO_LIBRARY_GRAPHJIN_URL?.trim() || "http://openneko-serve:8080/api/v1/graphql",
     query: `query { ${LIBRARY_SOURCE_NAME}(search: ${JSON.stringify(args.query)}, limit: ${limit}) { key passages tables } }`,
     headers: { authorization: `Bearer ${token}` },
   });

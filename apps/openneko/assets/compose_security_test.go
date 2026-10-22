@@ -154,9 +154,9 @@ func TestPackagedComposeExposesOnlyWebToLAN(t *testing.T) {
 func TestPackagedComposeKeepsRuntimeTrafficOnDockerNetwork(t *testing.T) {
 	core, _ := readComposeForTest(t, "core.yml")
 	for service, port := range map[string]string{
-		"neko-db":       "5432",
-		"graphjin":      "8080",
-		"neko-graphjin": "8089",
+		"neko-db":        "5432",
+		"openneko-serve": "8080",
+		"neko-graphjin":  "8089",
 	} {
 		got := core.Services[service].Expose
 		if len(got) != 1 || got[0] != port {
@@ -238,7 +238,7 @@ func TestAgentSandboxIsIsolated(t *testing.T) {
 		}
 
 		// openneko serve runs in the graphjin service.
-		serve := doc.Services["graphjin"]
+		serve := doc.Services["openneko-serve"]
 		if serve.User == "" || strings.HasPrefix(serve.User, "0") || strings.HasPrefix(serve.User, "root") {
 			t.Fatalf("%s graphjin (openneko serve) user = %q, want a non-root user", file, serve.User)
 		}
@@ -252,7 +252,7 @@ func TestAgentSandboxIsIsolated(t *testing.T) {
 				service.Environment["OPENNEKO_AGENT_ENTRY"] != "/opt/openneko-agent/entry.js" {
 				t.Fatalf("%s %s agent runtime settings = %v", file, name, service.Environment)
 			}
-			if _, ok := service.DependsOn["graphjin"]; !ok {
+			if _, ok := service.DependsOn["openneko-serve"]; !ok {
 				t.Fatalf("%s %s does not wait for openneko serve (graphjin)", file, name)
 			}
 			if service.Environment["OPENNEKO_SERVE_GRAPHJIN"] != "1" {

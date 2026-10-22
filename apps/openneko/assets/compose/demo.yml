@@ -84,9 +84,9 @@ services:
     volumes:
       - graphjin-config:/config/graphjin
 
-  graphjin:
+  openneko-serve:
     # Data-source GraphJin over the AdventureWorks DB. This is what the
-    # setup wizard's "GraphJin URL" defaults to (http://graphjin:8080).
+    # setup wizard's "GraphJin URL" defaults to (http://openneko-serve:8080).
     # Distinct from neko-graphjin (over neko-db, for subscriptions).
     restart: unless-stopped
     depends_on:
@@ -103,8 +103,8 @@ services:
       # No GJ_DATABASE_* here: in sources mode those are a FATAL boot error
       # ("database is legacy database-only config") — the connection lives in
       # the seeded /config/dev.yml. This crash-looped every fresh demo boot.
-      NO_PROXY: localhost,127.0.0.1,::1,adventureworks-db,graphjin,neko-db,worker,web,host.docker.internal,host.internal
-      no_proxy: localhost,127.0.0.1,::1,adventureworks-db,graphjin,neko-db,worker,web,host.docker.internal,host.internal
+      NO_PROXY: localhost,127.0.0.1,::1,adventureworks-db,openneko-serve,neko-db,worker,web,host.docker.internal,host.internal
+      no_proxy: localhost,127.0.0.1,::1,adventureworks-db,openneko-serve,neko-db,worker,web,host.docker.internal,host.internal
     volumes:
       - graphjin-config:/config
     command: ["serve", "--path", "/config"]
@@ -130,7 +130,7 @@ services:
       NEKO_PG_USER: neko
       NEKO_PG_PASSWORD: secret
       NEKO_PG_DATABASE: neko
-      ADVENTUREWORKS_GRAPHJIN_ROOT: ${ADVENTUREWORKS_GRAPHJIN_ROOT:-http://graphjin:8080}
+      ADVENTUREWORKS_GRAPHJIN_ROOT: ${ADVENTUREWORKS_GRAPHJIN_ROOT:-http://openneko-serve:8080}
       # This overlay always starts the JWT-protected sources config below, so
       # seed the matching mode deterministically instead of relying on a
       # post-start capability probe to discover it.
@@ -218,7 +218,7 @@ services:
 
   web:
     depends_on:
-      graphjin:
+      openneko-serve:
         condition: service_started
       # The worker patches GraphJin's per-org JWT secret during startup. Wait
       # for its first provisioning pass before serving the demo UI.
@@ -238,7 +238,7 @@ services:
 
   worker:
     depends_on:
-      graphjin:
+      openneko-serve:
         condition: service_started
       # Ensure the known JWT mode is present before the worker provisions its
       # actor-token config. This also repairs anonymous rows from older demos.

@@ -95,12 +95,12 @@ describe("validateDraft — data source URL validation", () => {
 
     await expect(
       testDataSourceDraft({
-        graphqlUrl: "http://graphjin:8080/api/v1/graphql",
+        graphqlUrl: "http://openneko-serve:8080/api/v1/graphql",
       }),
     ).resolves.toEqual({ graphqlOk: true, mcpOk: null });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://graphjin:8080/api/v1/graphql",
+      "http://openneko-serve:8080/api/v1/graphql",
       expect.objectContaining({
         method: "POST",
         cache: "no-store",

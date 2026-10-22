@@ -204,7 +204,7 @@ events.
 ### Agent sandboxing
 
 Each agent run runs in a runner process started by web or the worker. Its
-turns run in `openneko serve` (the `graphjin` service, which also hosts the
+turns run in `openneko serve` (the `openneko-serve` service, which also hosts the
 customer GraphJin), which holds the model key only
 for the turn, and its terminal commands run in `agent-sandbox`
 (`openneko sandbox`) as a user of the turn's own, with no secrets in their
@@ -417,7 +417,7 @@ CI runs this with `--check` and fails on drift.
 
 **Worker crashes on boot.** Check `openneko logs worker`. `ERR_MODULE_NOT_FOUND` for a workspace dep means an old binary — `brew upgrade openneko` (≥ 1.7.3).
 
-**GraphJin connection fails.** `--mode demo` uses internal `http://graphjin:8080` (pre-filled). Dev mode (`pnpm dev`) on the host uses `http://localhost:8080`.
+**GraphJin connection fails.** `--mode demo` uses internal `http://openneko-serve:8080` (pre-filled). Dev mode (`pnpm dev`) on the host uses `http://localhost:8080`.
 
 **Workflow subscriptions don't fire.** `neko-graphjin` must be healthy. The worker logs `subscription manager ready (N active)` on boot — if `N=0` despite subscriptions in the DB, GraphJin is unreachable or its password drifted. Rotate via `/setup`, then `openneko stop && openneko start`.
 

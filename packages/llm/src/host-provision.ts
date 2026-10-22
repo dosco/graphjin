@@ -197,7 +197,7 @@ async function provisionGraphjinSourcesMode(orgId: string): Promise<void> {
             // identity of the packaged demo's source, so match either.
             or(
               eq(data_source.label, "AdventureWorks"),
-              like(data_source.graphql_url, "http://graphjin:8080/%"),
+              like(data_source.graphql_url, "http://openneko-serve:8080/%"),
             ),
           )
         : eq(data_source.org_id, orgId),

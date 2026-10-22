@@ -24,7 +24,7 @@ let raw = "";
 for await (const chunk of process.stdin) raw += chunk;
 const update = JSON.parse(raw);
 await applyPackGraphjinConfig({
-  endpoint: "http://graphjin:8080/api/v1/graphql",
+  endpoint: "http://openneko-serve:8080/api/v1/graphql",
   orgId: await getOrgId(),
   configFile: process.env.OPENNEKO_GRAPHJIN_CONFIG,
   update,

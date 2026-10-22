@@ -35,7 +35,7 @@ services:
         find /config -type d -exec chmod 0700 {} +
         find /config -type f -exec chmod 0600 {} +
 
-  graphjin:
+  openneko-serve:
     environment:
       GO_ENV: agentic
       # Remove the legacy database env inherited from compose.adventureworks;

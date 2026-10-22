@@ -10,12 +10,12 @@ import (
 
 func TestDeriveEndpoints(t *testing.T) {
 	cases := map[string]string{
-		"http://graphjin:8080":                "http://graphjin:8080",
-		"http://graphjin:8080/":               "http://graphjin:8080",
-		"http://graphjin:8080/api/v1/graphql": "http://graphjin:8080",
-		"http://graphjin:8080/api/v1/mcp":     "http://graphjin:8080",
-		"http://host.docker.internal:8080//":  "http://host.docker.internal:8080",
-		"HTTP://Up.Example/API/V1/GRAPHQL":    "HTTP://Up.Example", // case-insensitive suffix strip
+		"http://openneko-serve:8080":                "http://openneko-serve:8080",
+		"http://openneko-serve:8080/":               "http://openneko-serve:8080",
+		"http://openneko-serve:8080/api/v1/graphql": "http://openneko-serve:8080",
+		"http://openneko-serve:8080/api/v1/mcp":     "http://openneko-serve:8080",
+		"http://host.docker.internal:8080//":        "http://host.docker.internal:8080",
+		"HTTP://Up.Example/API/V1/GRAPHQL":          "HTTP://Up.Example", // case-insensitive suffix strip
 	}
 	for in, wantRoot := range cases {
 		gql, mcp := DeriveEndpoints(in)

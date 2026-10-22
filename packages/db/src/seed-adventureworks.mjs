@@ -14,7 +14,7 @@ const DEFAULT_PRIORITIES = [
   "Grow DTC in Europe",
 ];
 const DEFAULT_GRAPHJIN_ROOT =
-  process.env.ADVENTUREWORKS_GRAPHJIN_ROOT?.trim() || "http://graphjin:8080";
+  process.env.ADVENTUREWORKS_GRAPHJIN_ROOT?.trim() || "http://openneko-serve:8080";
 const GRAPHJIN_ROOT = DEFAULT_GRAPHJIN_ROOT.replace(/\/+$/, "");
 const UPDATE_DATA_SOURCE = process.env.ADVENTUREWORKS_UPDATE_DATA_SOURCE === "1";
 const RECONCILE_AUTH_MODE =

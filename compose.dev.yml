@@ -35,7 +35,7 @@ services:
   # starts, so GraphJin does not wait on the worker-image secret init.
   # Runs the openneko binary scripts/dev-up.sh builds from source, so GraphJin
   # changes show up without rebuilding the agent image.
-  graphjin:
+  openneko-serve:
     user: "${OPENNEKO_DEV_UID:-1001}:${OPENNEKO_DEV_GID:-999}"
     depends_on: !override
       graphjin-config-init:

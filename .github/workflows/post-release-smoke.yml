@@ -220,7 +220,7 @@ jobs:
 
           graphjin=$(docker ps -q \
             --filter label=com.docker.compose.project=openneko-demo \
-            --filter label=com.docker.compose.service=graphjin | head -1)
+            --filter label=com.docker.compose.service=openneko-serve | head -1)
           test -n "$graphjin"
           test "$(docker inspect --format '{{.State.Health.Status}}' "$graphjin")" = healthy
 
@@ -236,7 +236,7 @@ jobs:
               role: "service",
             });
             const response = await callGraphjinMcpTool({
-              baseUrl: "http://graphjin:8080/api/v1/mcp",
+              baseUrl: "http://openneko-serve:8080/api/v1/mcp",
               headers: { authorization: "Bearer " + token },
               signal: AbortSignal.timeout(10_000),
             }, {

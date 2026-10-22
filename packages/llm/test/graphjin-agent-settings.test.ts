@@ -97,7 +97,7 @@ describe("provisionGraphjinAgent", () => {
     vi.doMock("@neko/db", async (original) => ({
       ...(await original<typeof import("@neko/db")>()),
       getGraphjinAgentRow: async () => ({ enabled: true, provider: "anthropic", model: "claude-sonnet-5-5", config: {}, secrets: { apiKey: "sk-test" } }),
-      db: () => ({ select: () => ({ from: () => ({ where: () => ({ orderBy: () => ({ limit: async () => [{ graphql_url: "http://graphjin:8080/api/v1/graphql" }] }) }) }) }) }),
+      db: () => ({ select: () => ({ from: () => ({ where: () => ({ orderBy: () => ({ limit: async () => [{ graphql_url: "http://openneko-serve:8080/api/v1/graphql" }] }) }) }) }) }),
     }));
     const { provisionGraphjinAgent } = await import("../src/graphjin/agent-settings");
     const dir = await mkdtemp(join(tmpdir(), "gj-agent-"));
@@ -108,7 +108,7 @@ describe("provisionGraphjinAgent", () => {
     await provisionGraphjinAgent("org-1", file, apply);
     expect(await readFile(join(dir, ".openneko-graphjin-agent-key"), "utf8")).toBe("sk-test");
     expect(parse(await readFile(file, "utf8")).agent.api_key_file).toBe(".openneko-graphjin-agent-key");
-    expect(apply).toHaveBeenCalledWith("http://graphjin:8080/api/v1/graphql", {
+    expect(apply).toHaveBeenCalledWith("http://openneko-serve:8080/api/v1/graphql", {
       serv: { agent: expect.objectContaining({ enabled: true, provider: "anthropic", api_key_file: ".openneko-graphjin-agent-key" }) },
     });
 

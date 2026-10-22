@@ -48,16 +48,16 @@ beforeEach(() => {
 
 describe("graphjinApiUrl", () => {
   it("swaps the GraphQL route for another /api/v1 route", () => {
-    expect(graphjinApiUrl("http://graphjin:8080/api/v1/graphql", "openapi.json")).toBe(
-      "http://graphjin:8080/api/v1/openapi.json",
+    expect(graphjinApiUrl("http://openneko-serve:8080/api/v1/graphql", "openapi.json")).toBe(
+      "http://openneko-serve:8080/api/v1/openapi.json",
     );
   });
 
   it("keeps a namespace and handles a bare server root", () => {
-    expect(graphjinApiUrl("http://graphjin:8080/api/v1/ns/acme/graphql?x=1", "eval/reports")).toBe(
-      "http://graphjin:8080/api/v1/ns/acme/eval/reports",
+    expect(graphjinApiUrl("http://openneko-serve:8080/api/v1/ns/acme/graphql?x=1", "eval/reports")).toBe(
+      "http://openneko-serve:8080/api/v1/ns/acme/eval/reports",
     );
-    expect(graphjinApiUrl("http://graphjin:8080/", "graphql")).toBe("http://graphjin:8080/api/v1/graphql");
+    expect(graphjinApiUrl("http://openneko-serve:8080/", "graphql")).toBe("http://openneko-serve:8080/api/v1/graphql");
   });
 });
 

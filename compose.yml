@@ -11,8 +11,8 @@ x-neko-app-env: &neko-app-env
   NEKO_PG_PASSWORD: secret
   NEKO_PG_DATABASE: neko
   NEKO_EMBEDDING_URL: http://embedding:5003
-  NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,embedding,neko-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
-  no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,embedding,neko-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
+  NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,embedding,neko-graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
+  no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,embedding,neko-graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
 
 services:
   neko-db:
@@ -104,8 +104,8 @@ services:
   # One-shot: resolves (or creates, under an advisory lock) the single org
   # row and reconciles the per-org JWT secret into the customer GraphJin
   # sources config BEFORE the server's first start. GraphJin 3.18 does not
-  # hot-reload auth keys; expressing that as `graphjin -> worker` cycled
-  # against the adventureworks overlay's `worker -> graphjin` edge, so this
+  # hot-reload auth keys; expressing that as `openneko-serve -> worker` cycled
+  # against the adventureworks overlay's `worker -> openneko-serve` edge, so this
   # one-shot carries the ordering instead. Reconciles unconditionally, so
   # key rotation, restores, and partial volume wipes self-heal on the next
   # stack start.
@@ -149,7 +149,7 @@ services:
   # agent turn web and the worker send over /run/openneko/serve.sock. A turn
   # asks GraphJin's agent in this process, as the run's user. Terminal
   # commands go to agent-sandbox; model keys arrive only with each turn.
-  graphjin:
+  openneko-serve:
     image: ${OPENNEKO_AGENT_IMAGE:-openneko-agent:dev}
     build:
       context: .
@@ -248,8 +248,8 @@ services:
       target: neko-graphjin
     restart: unless-stopped
     depends_on:
-      # neko-db must be reachable for graphjin to connect; neko-migrate must
-      # have finished so graphjin's schema cache reflects all pending
+      # neko-db must be reachable for openneko-serve to connect; neko-migrate must
+      # have finished so openneko-serve's schema cache reflects all pending
       # migrations. db_schema_poll_duration: 10s in neko.yml also picks up
       # post-boot migrations, but the explicit dep keeps first-boot
       # deterministic.
@@ -267,7 +267,7 @@ services:
     # the named volume `openneko-config`, shared with web+worker when they too
     # run in compose. In host-hybrid dev (`pnpm dev:up`), it's overridden to the
     # operator's `$HOME/.config/openneko` so host web/worker and in-Docker
-    # graphjin share the same physical config.json without a manual sync.
+    # openneko-serve share the same physical config.json without a manual sync.
     environment:
       NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
     volumes:
@@ -275,7 +275,7 @@ services:
     ports:
       - "127.0.0.1:${OPENNEKO_GRAPHJIN_PORT:-8089}:8089"
     healthcheck:
-      # graphjin serves no /health route (it 500s); the GraphQL endpoint
+      # GraphJin serves no /health route (it 500s); the GraphQL endpoint
       # answering is the honest readiness signal.
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8089/api/v1/graphql"]
       interval: 10s
@@ -361,7 +361,7 @@ services:
       # recovery screen while the control plane is still starting.
       worker:
         condition: service_healthy
-      graphjin:
+      openneko-serve:
         condition: service_healthy
     environment:
       <<: *neko-app-env
@@ -414,7 +414,7 @@ services:
         condition: service_completed_successfully
       embedding:
         condition: service_healthy
-      graphjin:
+      openneko-serve:
         condition: service_healthy
     environment:
       <<: *neko-app-env
