@@ -1,0 +1,7 @@
+# Files people share for testing stay on the machine that runs the eval.
+private/
+# Generated corpus, ingestion state and run results.
+corpus/
+runs/
+.venv/
+__pycache__/
