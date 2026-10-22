@@ -1,43 +1,62 @@
-import { randomUUID } from "node:crypto";
-import { enqueue, QUEUE, type LibraryExtractPayload } from "@neko/db/jobs";
-import { listStaleUploadedLibraryDocuments } from "@neko/llm";
+import { readFile, rm } from "node:fs/promises";
+import {
+  listLibraryDocumentsOutsideSource,
+  markLibraryDocumentInSource,
+  markLibraryDocumentStatus,
+  resolveLibrarySourcePath,
+} from "@neko/llm";
+import { saveLibrarySourceFile } from "@neko/llm/library/source-files";
 
-const UPLOAD_QUEUE_GRACE_MS = 5 * 60 * 1_000;
-
-type RecoveryDependencies = {
-  list: typeof listStaleUploadedLibraryDocuments;
-  enqueue: typeof enqueue;
+type MoveDependencies = {
+  list: typeof listLibraryDocumentsOutsideSource;
+  read: (orgId: string, relativePath: string) => Promise<Buffer>;
+  save: typeof saveLibrarySourceFile;
+  moved: typeof markLibraryDocumentInSource;
+  failed: typeof markLibraryDocumentStatus;
+  removeOriginal: (orgId: string, relativePath: string) => Promise<void>;
 };
 
-const defaultDependencies: RecoveryDependencies = {
-  list: listStaleUploadedLibraryDocuments,
-  enqueue,
+const defaultDependencies: MoveDependencies = {
+  list: listLibraryDocumentsOutsideSource,
+  read: (orgId, relativePath) => readFile(resolveLibrarySourcePath(orgId, relativePath)),
+  save: saveLibrarySourceFile,
+  moved: markLibraryDocumentInSource,
+  failed: markLibraryDocumentStatus,
+  removeOriginal: (orgId, relativePath) => rm(resolveLibrarySourcePath(orgId, relativePath), { force: true }),
 };
 
-/** Recover the narrow committed-upload-before-queue-send failure window. */
-export async function recoverUnqueuedLibraryUploads(
-  now: Date = new Date(),
-  overrides: Partial<RecoveryDependencies> = {},
-): Promise<number> {
+/**
+ * Move documents uploaded before the Library became a GraphJin file source
+ * into their owner's folder of it, so the agent can search and read them.
+ * Library uploads leave the org workspace; thread attachments keep their
+ * thread copy. Idempotent: a moved document is never listed again.
+ */
+export async function moveLibraryDocumentsToSource(
+  overrides: Partial<MoveDependencies> = {},
+): Promise<{ moved: number; missing: number }> {
   const deps = { ...defaultDependencies, ...overrides };
-  const documents = await deps.list(
-    new Date(now.getTime() - UPLOAD_QUEUE_GRACE_MS),
-  );
-  let enqueued = 0;
-  for (const document of documents) {
-    const payload: LibraryExtractPayload = {
-      orgId: document.orgId,
-      documentId: document.documentId,
-      runId: randomUUID(),
-      sequence: 0,
-    };
-    const jobId = await deps.enqueue(QUEUE.LIBRARY_EXTRACT, payload, {
-      retryLimit: 8,
-      retryDelay: 15,
-      retryBackoff: true,
-      singletonKey: `library-extract:${document.documentId}`,
-    });
-    if (jobId) enqueued += 1;
+  let moved = 0;
+  let missing = 0;
+  for (const document of await deps.list()) {
+    let data: Buffer;
+    try {
+      data = await deps.read(document.orgId, document.relativePath);
+    } catch {
+      missing += 1;
+      await deps.failed({
+        orgId: document.orgId,
+        id: document.documentId,
+        status: "failed",
+        error: "The original file is missing. Remove this document and upload it again.",
+      });
+      continue;
+    }
+    const stored = await deps.save({ userId: document.userId, filename: document.filename, data });
+    await deps.moved({ orgId: document.orgId, id: document.documentId, relativePath: stored.relativePath });
+    if (document.relativePath.startsWith("library/uploads/")) {
+      await deps.removeOriginal(document.orgId, document.relativePath).catch(() => {});
+    }
+    moved += 1;
   }
-  return enqueued;
+  return { moved, missing };
 }

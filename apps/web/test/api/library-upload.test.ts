@@ -7,7 +7,6 @@ import {
 const mocks = vi.hoisted(() => ({
   actor: vi.fn(),
   createDocument: vi.fn(),
-  enqueue: vi.fn(),
   formData: vi.fn(),
   orgId: vi.fn(),
   save: vi.fn(),
@@ -15,19 +14,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/actor", () => ({ getCurrentActor: mocks.actor }));
 vi.mock("@/lib/db", () => ({ getOrgId: mocks.orgId }));
-vi.mock("@neko/db/jobs", () => ({
-  QUEUE: { LIBRARY_EXTRACT: "library_extract" },
-  enqueue: mocks.enqueue,
+vi.mock("@neko/llm/library/source-files", () => ({
+  saveLibrarySourceFile: mocks.save,
 }));
 vi.mock("@neko/llm/work", () => ({
   createLibraryDocument: mocks.createDocument,
 }));
-vi.mock("@/lib/work-files", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/work-files")>(
-    "@/lib/work-files",
-  );
-  return { ...actual, saveLibraryUpload: mocks.save };
-});
 
 function sizedFile(name: string, size: number): File {
   const value = new File(["x"], name, { type: "application/pdf" });
@@ -61,11 +53,9 @@ describe("/api/library/upload", () => {
     mocks.actor.mockResolvedValue({ userId: "user-1", role: "member" });
     mocks.orgId.mockResolvedValue("org-1");
     mocks.save.mockImplementation(
-      async (_orgId: string, _userId: string, file: File) => ({
-        name: file.name,
-        size: file.size,
-        relativePath: `library/uploads/user-1/${"a".repeat(64)}/${file.name}`,
-        absolutePath: `/tmp/${file.name}`,
+      async (input: { userId: string; filename: string; data: Buffer }) => ({
+        size: input.data.byteLength,
+        relativePath: `neko_library/users/${input.userId}/${"a".repeat(64)}/${input.filename}`,
         contentHash: "a".repeat(64),
       }),
     );
@@ -73,11 +63,10 @@ describe("/api/library/upload", () => {
     mocks.createDocument.mockImplementation(async () => {
       id += 1;
       return {
-        document: { id: `document-${id}`, status: "uploaded" },
+        document: { id: `document-${id}`, status: "ready" },
         created: true,
       };
     });
-    mocks.enqueue.mockResolvedValue(undefined);
   });
 
   it("imports one file at exactly 100 MB", async () => {
@@ -89,17 +78,16 @@ describe("/api/library/upload", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.save).toHaveBeenCalledOnce();
-    expect(mocks.createDocument).toHaveBeenCalledOnce();
-    expect(mocks.enqueue).toHaveBeenCalledOnce();
-    expect(mocks.enqueue).toHaveBeenCalledWith(
-      "library_extract",
+    expect(mocks.save).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-1", filename: "annual-report.pdf" }),
+    );
+    expect(mocks.createDocument).toHaveBeenCalledWith(
       expect.objectContaining({
         orgId: "org-1",
-        documentId: "document-1",
-        sequence: 0,
-        runId: expect.any(String),
+        userId: "user-1",
+        relativePath: `neko_library/users/user-1/${"a".repeat(64)}/annual-report.pdf`,
+        status: "ready",
       }),
-      expect.objectContaining({ singletonKey: "library-extract:document-1" }),
     );
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
@@ -119,7 +107,6 @@ describe("/api/library/upload", () => {
     expect(mocks.formData).toHaveBeenCalledOnce();
     expect(mocks.save).toHaveBeenCalledTimes(2);
     expect(mocks.createDocument).toHaveBeenCalledTimes(2);
-    expect(mocks.enqueue).toHaveBeenCalledTimes(2);
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
       documents: [
@@ -140,7 +127,6 @@ describe("/api/library/upload", () => {
     expect(response.status).toBe(413);
     expect(mocks.save).not.toHaveBeenCalled();
     expect(mocks.createDocument).not.toHaveBeenCalled();
-    expect(mocks.enqueue).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toMatchObject({
       error: expect.stringContaining("100 MB"),
     });
@@ -157,7 +143,6 @@ describe("/api/library/upload", () => {
     expect(response.status).toBe(415);
     expect(mocks.save).not.toHaveBeenCalled();
     expect(mocks.createDocument).not.toHaveBeenCalled();
-    expect(mocks.enqueue).not.toHaveBeenCalled();
   });
 
   it("rejects filenames that collide after cleanup before writing", async () => {
@@ -171,7 +156,6 @@ describe("/api/library/upload", () => {
     expect(response.status).toBe(400);
     expect(mocks.save).not.toHaveBeenCalled();
     expect(mocks.createDocument).not.toHaveBeenCalled();
-    expect(mocks.enqueue).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toMatchObject({
       error: expect.stringContaining("sales_report.pdf"),
     });
@@ -184,34 +168,6 @@ describe("/api/library/upload", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.save).toHaveBeenCalledOnce();
-  });
-
-  it("repairs an uploaded document whose first enqueue was interrupted", async () => {
-    mocks.createDocument.mockResolvedValue({
-      document: { id: "document-existing", status: "uploaded" },
-      created: false,
-    });
-
-    const response = await POST(request([sizedFile("policy.pdf", 10)]));
-
-    expect(response.status).toBe(200);
-    expect(mocks.enqueue).toHaveBeenCalledWith(
-      "library_extract",
-      expect.objectContaining({ documentId: "document-existing" }),
-      expect.any(Object),
-    );
-  });
-
-  it("does not duplicate work for a document already being processed", async () => {
-    mocks.createDocument.mockResolvedValue({
-      document: { id: "document-existing", status: "extracting" },
-      created: false,
-    });
-
-    const response = await POST(request([sizedFile("policy.pdf", 10)]));
-
-    expect(response.status).toBe(200);
-    expect(mocks.enqueue).not.toHaveBeenCalled();
   });
 
   it("rejects a declared multipart request beyond the bounded allowance", async () => {

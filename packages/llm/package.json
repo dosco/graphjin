@@ -12,6 +12,7 @@
     "./config": "./src/config.ts",
     "./provider-runtime": "./src/provider-runtime.ts",
     "./library/formats": "./src/library/formats.ts",
+    "./library/source-files": "./src/library/source-files.ts",
     "./secrets": "./src/secrets.ts",
     "./work": "./src/work/index.ts",
     "./work/answer-expression": "./src/work/answer-expression.ts",

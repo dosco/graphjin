@@ -38,6 +38,7 @@ export const LIBRARY_DOCUMENT_STATUSES = [
   "cataloged",
   "skipped",
   "failed",
+  "ready",
 ] as const;
 export type LibraryDocumentStatus = (typeof LIBRARY_DOCUMENT_STATUSES)[number];
 
@@ -280,6 +281,8 @@ export async function createLibraryDocument(input: {
   relativePath: string;
   contentHash: string;
   sizeBytes: number;
+  /** "ready" for files stored in the Library file source. */
+  status?: LibraryDocumentStatus;
 }): Promise<{ document: LibraryDocument; created: boolean }> {
   // Idempotent on content: re-uploading the identical file returns the
   // existing row instead of queuing a second distillation.
@@ -307,6 +310,7 @@ export async function createLibraryDocument(input: {
       relative_path: input.relativePath,
       content_hash: input.contentHash,
       size_bytes: input.sizeBytes,
+      ...(input.status ? { status: input.status } : {}),
     })
     .returning();
   await insertLibraryEvent({
@@ -370,6 +374,40 @@ export async function listStaleUploadedLibraryDocuments(
         lt(library_document.updated_at, before),
       ),
     );
+}
+
+/** Documents still stored in the org workspace, from before the Library moved to GraphJin. */
+export async function listLibraryDocumentsOutsideSource(): Promise<
+  Array<{ orgId: string; documentId: string; userId: string | null; filename: string; relativePath: string }>
+> {
+  return db()
+    .select({
+      orgId: library_document.org_id,
+      documentId: library_document.id,
+      userId: library_document.user_id,
+      filename: library_document.filename,
+      relativePath: library_document.relative_path,
+    })
+    .from(library_document)
+    .where(sql`${library_document.relative_path} not like 'neko_library/%'`);
+}
+
+/** Point a document at its copy in the Library file source. */
+export async function markLibraryDocumentInSource(input: {
+  orgId: string;
+  id: string;
+  relativePath: string;
+}): Promise<void> {
+  await db()
+    .update(library_document)
+    .set({
+      relative_path: input.relativePath,
+      status: "ready",
+      skip_reason: null,
+      error: null,
+      updated_at: new Date(),
+    })
+    .where(and(eq(library_document.org_id, input.orgId), eq(library_document.id, input.id)));
 }
 
 export async function markLibraryDocumentStatus(input: {

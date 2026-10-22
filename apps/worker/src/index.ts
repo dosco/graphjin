@@ -16,8 +16,6 @@ import {
   QUEUE,
   type ActionExecutePayload,
   type ChannelDeliverPayload,
-  type LibraryExtractPayload,
-  type LibraryDistillPayload,
   type SkillLearnPayload,
   type ProcessingJobPayload,
   type RecordsIdentityLinkPayload,
@@ -147,9 +145,7 @@ import { runWorkflowOutputTtlSweep } from "./jobs/workflow-output-ttl-sweep.js";
 import { runActionExecute } from "./jobs/action-execute.js";
 import { runRecordsImport } from "./jobs/records-import.js";
 import { sweepExpiredLibraryTransientState } from "./jobs/library-cleanup.js";
-import { runLibraryExtractJob } from "./jobs/library-extract.js";
-import { recoverUnqueuedLibraryUploads } from "./jobs/library-recovery.js";
-import { runLibraryDistillJob } from "./jobs/library-distill.js";
+import { moveLibraryDocumentsToSource } from "./jobs/library-recovery.js";
 import { runSkillLearnJob } from "./jobs/skill-learn.js";
 import { runRecordsIdentityLink } from "./jobs/records-identity-link.js";
 import { runRecordsBackupVerification } from "./jobs/records-backup-verify.js";
@@ -1226,32 +1222,13 @@ await b.work(QUEUE.EMBEDDING_SWEEP, { batchSize: 1, pollingIntervalSeconds: 1 },
 await b.schedule(QUEUE.EMBEDDING_SWEEP, '* * * * *', {}, { retryLimit: 3, retryDelay: 15 });
 await b.send(QUEUE.EMBEDDING_SWEEP, {}, { singletonKey: 'boot', singletonSeconds: 60 });
 
-await b.work(
-  QUEUE.LIBRARY_EXTRACT,
-  { batchSize: 1, pollingIntervalSeconds: 1 },
-  async (jobs: PgBossLib.Job<LibraryExtractPayload>[]) => {
-    for (const job of jobs) {
-      await runLibraryExtractJob(job.data);
-    }
-  },
-);
-
-await b.work(
-  QUEUE.LIBRARY_DISTILL,
-  { batchSize: 1, pollingIntervalSeconds: 1 },
-  async (jobs: PgBossLib.Job<LibraryDistillPayload>[]) => {
-    for (const job of jobs) {
-      try {
-        await runLibraryDistillJob(job.data);
-      } catch (e) {
-        console.warn(
-          `[library-distill] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
-        );
-        throw e;
-      }
-    }
-  },
-);
+// The Library no longer extracts or distills: GraphJin reads the files
+// directly. Jobs queued before the upgrade are acknowledged and dropped.
+for (const queue of [QUEUE.LIBRARY_EXTRACT, QUEUE.LIBRARY_DISTILL]) {
+  await b.work(queue, { batchSize: 10, pollingIntervalSeconds: 30 }, async (jobs) => {
+    if (jobs.length > 0) console.log(`[library] dropped ${jobs.length} retired ${queue} job(s)`);
+  });
+}
 
 await b.work(
   QUEUE.SKILL_LEARN,
@@ -1650,22 +1627,19 @@ libraryCleanup();
 const libraryCleanupTimer = setInterval(libraryCleanup, 6 * 60 * 60 * 1_000);
 libraryCleanupTimer.unref();
 
-const libraryRecovery = () => {
-  recoverUnqueuedLibraryUploads()
-    .then((count) => {
-      if (count > 0) {
-        console.log(`[library-recovery] enqueued ${count} stranded upload(s)`);
-      }
-    })
-    .catch((error) => {
-      console.warn(
-        `[library-recovery] sweep failed: ${error instanceof Error ? error.message : error}`,
-      );
-    });
-};
-libraryRecovery();
-const libraryRecoveryTimer = setInterval(libraryRecovery, 60_000);
-libraryRecoveryTimer.unref();
+// Documents uploaded before the Library became a GraphJin file source move
+// into it once, at boot.
+moveLibraryDocumentsToSource()
+  .then(({ moved, missing }) => {
+    if (moved > 0 || missing > 0) {
+      console.log(`[library-move] moved ${moved} document(s) into the Library file source; ${missing} had no file`);
+    }
+  })
+  .catch((error) => {
+    console.warn(
+      `[library-move] failed: ${error instanceof Error ? error.message : error}`,
+    );
+  });
 
 const packOAuthRefresh = () => {
   packService.refreshOAuthConnections()
@@ -1698,7 +1672,6 @@ const shutdown = async (signal: string) => {
   console.log(`[worker] received ${signal}; shutting down`);
   clearInterval(reconcileTimer);
   clearInterval(libraryCleanupTimer);
-  clearInterval(libraryRecoveryTimer);
   clearInterval(packOAuthRefreshTimer);
   clearInterval(knowledgeRefreshTimer);
   workflowScheduler.stop();

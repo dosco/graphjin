@@ -6,6 +6,7 @@ import {
   removeLibraryDocument,
   resolveLibrarySourcePath,
 } from "@neko/llm";
+import { isLibrarySourcePath, removeLibrarySourceFile } from "@neko/llm/library/source-files";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
 
@@ -27,10 +28,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 }
 
 /**
- * Remove a document from your library: deletes the tracking row and
- * archives your concepts distilled from it — the retroactive
- * "don't catalog this" control. Library-direct uploads also lose the
- * raw file; thread attachments stay with their thread.
+ * Remove a document from your library: deletes the tracking row and the
+ * stored file, which takes it out of the agent's reach, and archives any
+ * concepts distilled from it before the Library moved to files. Thread
+ * attachments stay with their thread.
  */
 export async function DELETE(_request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
@@ -49,7 +50,11 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     ).catch(() => {
       // Missing derived state is fine after row removal.
     });
-    if (document.relativePath.startsWith("library/uploads/")) {
+    if (isLibrarySourcePath(document.relativePath)) {
+      await removeLibrarySourceFile(document.relativePath).catch(() => {
+        // Missing file is fine — the row removal is what matters.
+      });
+    } else if (document.relativePath.startsWith("library/uploads/")) {
       const absolute = resolveLibrarySourcePath(orgId, document.relativePath);
       await rm(absolute, { force: true }).catch(() => {
         // Missing file is fine — the row removal is what matters.

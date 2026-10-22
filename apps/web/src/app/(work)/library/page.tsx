@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, FileText, RefreshCw, Share2, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, FileText, Share2, Trash2, Upload } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -248,25 +248,12 @@ function LibraryBrowser() {
     [refresh],
   );
 
-  const retryDocument = useCallback(
-    (id: string) =>
-      act(
-        id,
-        () =>
-          fetch(`/api/library/documents/${encodeURIComponent(id)}/retry`, {
-            method: "POST",
-          }),
-        "Retry could not be queued.",
-      ),
-    [act],
-  );
-
   const removeDocument = useCallback(
     async (id: string) => {
       const ok = await confirmDialog({
         title: "Remove this document from your library?",
         description:
-          "Concepts distilled from it will be archived. Files attached in a conversation stay with that conversation.",
+          "OpenNeko will no longer find it when you ask. Files attached in a conversation stay with that conversation.",
         confirmLabel: "Remove",
         destructive: true,
       });
@@ -406,7 +393,7 @@ function LibraryBrowser() {
 
   return (
     <div className="library-page document-library">
-      <PageHeading title="Library" description="Source documents and the knowledge OpenNeko learns from them."
+      <PageHeading title="Library" description="Your documents and spreadsheets. OpenNeko searches and reads them when you ask."
         actions={<ActionGroup>
           {data.isAdmin && <OverflowMenu label="Library tools">
             <MenuItem onClick={() => setToolsOpen(value => !value)}>Starter packs</MenuItem>
@@ -453,7 +440,7 @@ function LibraryBrowser() {
           </Field>}
           {isDocuments && <Field label="Status" htmlFor="library-status">
             <NativeSelect id="library-status" value={params.get("status") ?? ""} onChange={event => filter("status", event.target.value)}>
-              <option value="">All statuses</option>{["uploaded", "extracting", "extracted", "distilling", "cataloged", "skipped", "failed"].map(status =>
+              <option value="">All statuses</option>{["ready", "uploaded", "extracting", "extracted", "distilling", "cataloged", "skipped", "failed"].map(status =>
                 <option key={status} value={status}>{humanize(status)}</option>)}
             </NativeSelect>
           </Field>}
@@ -500,7 +487,6 @@ function LibraryBrowser() {
                   </div>
                   <Badge variant={statusVariant(doc.status)}>{humanize(doc.status)}</Badge>
                   <OverflowMenu label={`Actions for ${doc.filename}`}>
-                    {["failed", "skipped"].includes(doc.status) && <MenuItem disabled={busyId === doc.id} onClick={() => void retryDocument(doc.id)}><RefreshCw aria-hidden="true" />Retry extraction</MenuItem>}
                     <MenuItem danger disabled={busyId === doc.id} onClick={() => void removeDocument(doc.id)}><Trash2 aria-hidden="true" />Remove from library</MenuItem>
                   </OverflowMenu>
                 </li>) : data.concepts.map(concept => <li key={concept.id} data-selected={concept.id === selectedId || picked.includes(concept.id)}>
@@ -544,11 +530,10 @@ function LibraryBrowser() {
                 <h2>{selectedDocument.filename}</h2>
                 <Badge variant={statusVariant(selectedDocument.status)}>{humanize(selectedDocument.status)}</Badge>
                 <p>{formatSize(selectedDocument.sizeBytes)} · <LocalDateTime value={selectedDocument.createdAt} /></p>
-                <p className="text-ui-body-sm text-text2">{selectedDocument.status === "failed" ? "Extraction failed. Retry it, or remove this document and upload it again."
-                  : selectedDocument.skipReason || "OpenNeko uses this document to build concepts it can cite."}</p>
-                <ActionGroup align="start"><Button asChild><Link href={`/library?view=concepts&documentId=${selectedDocument.id}`} scroll={false}>View concepts</Link></Button>
-                  {["failed", "skipped"].includes(selectedDocument.status) && <Button disabled={busyId === selectedDocument.id} onClick={() => void retryDocument(selectedDocument.id)}>Retry extraction</Button>}
-                </ActionGroup>
+                <p className="text-ui-body-sm text-text2">{selectedDocument.status === "ready" ? "Private to you. OpenNeko searches and reads this file when you ask about it."
+                  : selectedDocument.status === "failed" ? selectedDocument.error || "This document could not be stored. Remove it and upload it again."
+                  : selectedDocument.skipReason || "OpenNeko built concepts from this document before the Library read files directly."}</p>
+                {selectedDocument.status === "cataloged" && <ActionGroup align="start"><Button asChild><Link href={`/library?view=concepts&documentId=${selectedDocument.id}`} scroll={false}>View concepts</Link></Button></ActionGroup>}
               </> : null}
           </section>}
         </div>

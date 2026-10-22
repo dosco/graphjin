@@ -77,9 +77,44 @@ type WorkMemorySearchResult = Awaited<
   ReturnType<typeof searchWorkMemoryByContext>
 >[number];
 type LibrarySearchArgs = Parameters<typeof searchLibraryForRun>[0];
-type LibrarySearchResult = Awaited<
-  ReturnType<typeof searchLibraryForRun>
->[number];
+type LibrarySearchResult = LibraryFileMatch;
+
+/** A Library file the agent's search found, with its matching passages. */
+export type LibraryFileMatch = {
+  file: string;
+  key: string;
+  passages: Array<{ location: string; snippet: string }>;
+  tables: Array<{ name: string; sheet?: string; raw?: boolean; rows: number; columns: Array<{ name: string; type: string }> }>;
+};
+
+/**
+ * Search the run user's Library files: the neko_library file source of the
+ * bundled customer GraphJin, as that user, so GraphJin shows only their own
+ * folder. Files rank by content; each comes with its best passages and, for
+ * sheets and CSV files, the SQL tables GraphJin derived from it.
+ */
+export async function searchLibraryFilesForRun(args: LibrarySearchArgs): Promise<LibraryFileMatch[]> {
+  const { graphjinQuery } = await import("../graphjin/client");
+  const { LIBRARY_SOURCE_NAME } = await import("../graphjin/sources-config");
+  const token = await runGraphjinToken(args.orgId, args.runId);
+  const limit = Math.min(Math.max(args.limit ?? 5, 1), 20);
+  // GraphJin takes search on a file table only as a literal; JSON string
+  // escaping is valid GraphQL string escaping.
+  const res = await graphjinQuery<Record<string, Array<Omit<LibraryFileMatch, "file">> | null>>({
+    baseUrl: process.env.OPENNEKO_LIBRARY_GRAPHJIN_URL?.trim() || "http://graphjin:8080/api/v1/graphql",
+    query: `query { ${LIBRARY_SOURCE_NAME}(search: ${JSON.stringify(args.query)}, limit: ${limit}) { key passages tables } }`,
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (res.errors?.length) {
+    throw new Error(`Library search failed: ${res.errors.map((e) => e.message).join("; ").slice(0, 300)}`);
+  }
+  return (res.data?.[LIBRARY_SOURCE_NAME] ?? []).map((row) => ({
+    file: row.key.split("/").pop() ?? row.key,
+    key: row.key,
+    passages: row.passages ?? [],
+    tables: row.tables ?? [],
+  }));
+}
 
 /**
  * JSON-safe view of a control-plane result: what a value looks like after a
@@ -1050,7 +1085,7 @@ export class InProcessControlPlane implements AgentControlPlane {
   async searchLibraryForRun(
     args: LibrarySearchArgs,
   ): Promise<LibrarySearchResult[]> {
-    return searchLibraryForRun(args);
+    return searchLibraryFilesForRun(args);
   }
 
   async queryGraphjinRead(input: {

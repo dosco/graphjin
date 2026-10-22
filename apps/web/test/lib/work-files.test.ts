@@ -10,7 +10,6 @@ import {
   readRunArtifact,
   readWorkFile,
   safeFileName,
-  saveLibraryUpload,
   saveWorkUpload,
   writeWorkSkillFile,
 } from "@/lib/work-files";
@@ -167,59 +166,6 @@ describe("saveWorkUpload + readWorkFile round-trip", () => {
     expect(saved.name).not.toContain("..");
 
     await expect(readWorkFile("org-test", "secrets/foo.txt")).rejects.toThrow();
-  }, 30_000);
-});
-
-describe("saveLibraryUpload", () => {
-  it("writes once and returns the hash of the persisted bytes", async () => {
-    const home = await mkdtemp(join(tmpdir(), "neko-library-upload-"));
-    cleanupPaths.push(home);
-    process.env.HOME = home;
-
-    const payload = Buffer.from("durable library knowledge");
-    const saved = await saveLibraryUpload(
-      "org-test",
-      "user-1",
-      new File([payload], "knowledge.pdf", { type: "application/pdf" }),
-    );
-
-    expect(saved.size).toBe(payload.byteLength);
-    expect(saved.contentHash).toBe(
-      "88b05ad9db9ac17bb7271644404856607de0883623c626fab14fcc61d59f5eb7",
-    );
-    expect(saved.relativePath).toBe(
-      `library/uploads/user-1/${saved.contentHash}/knowledge.pdf`,
-    );
-    await expect(readFile(saved.absolutePath)).resolves.toEqual(payload);
-  }, 30_000);
-
-  it("does not overwrite an earlier source with the same filename", async () => {
-    const home = await mkdtemp(join(tmpdir(), "neko-library-upload-"));
-    cleanupPaths.push(home);
-    process.env.HOME = home;
-
-    const first = await saveLibraryUpload(
-      "org-test",
-      "user-1",
-      new File(["first source"], "knowledge.pdf", {
-        type: "application/pdf",
-      }),
-    );
-    const second = await saveLibraryUpload(
-      "org-test",
-      "user-1",
-      new File(["second source"], "knowledge.pdf", {
-        type: "application/pdf",
-      }),
-    );
-
-    expect(first.absolutePath).not.toBe(second.absolutePath);
-    await expect(readFile(first.absolutePath, "utf8")).resolves.toBe(
-      "first source",
-    );
-    await expect(readFile(second.absolutePath, "utf8")).resolves.toBe(
-      "second source",
-    );
   }, 30_000);
 });
 

@@ -277,6 +277,60 @@ export function patchGraphjinWatches(
   return content === before ? { content: raw, changed: false } : { content, changed: true };
 }
 
+/**
+ * The Library as a GraphJin file source. Uploads live beside the config at
+ * files/library; each user's files sit under users/<user id>/, which
+ * GraphJin keeps private to that user (user_prefix). file_content lets
+ * GraphJin search them, read PDF and Office text, and run SQL over sheets.
+ */
+export const LIBRARY_SOURCE_NAME = "neko_library";
+export const LIBRARY_SOURCE_ROOT = "files/library";
+export const LIBRARY_USER_PREFIX = "users/";
+
+export function patchGraphjinLibrary(raw: string): { content: string; changed: boolean } {
+  const document = parseDocument(raw);
+  if (document.errors.length > 0 || !isMap(document.contents)) {
+    throw new Error("GraphJin config is not valid YAML");
+  }
+  const before = document.toString();
+  if (document.getIn(["file_content", "enabled"]) !== true) {
+    document.setIn(["file_content", "enabled"], true);
+  }
+  const wanted = {
+    name: LIBRARY_SOURCE_NAME,
+    kind: "file",
+    backend: "local",
+    root: LIBRARY_SOURCE_ROOT,
+    read_only: true,
+    user_prefix: LIBRARY_USER_PREFIX,
+    access: { read: "authenticated" },
+  };
+  const sources = document.get("sources", true);
+  if (!isSeq(sources)) {
+    document.set("sources", [wanted]);
+  } else {
+    const index = sources.items.findIndex(
+      (item) => isMap(item) && item.get("name") === LIBRARY_SOURCE_NAME,
+    );
+    if (index < 0) {
+      sources.add(document.createNode(wanted));
+    } else {
+      const item = sources.items[index];
+      if (isMap(item)) {
+        for (const [key, value] of Object.entries(wanted)) {
+          if (key === "access") {
+            if (item.getIn(["access", "read"]) !== "authenticated") item.setIn(["access", "read"], "authenticated");
+          } else if (item.get(key) !== value) {
+            item.set(key, value);
+          }
+        }
+      }
+    }
+  }
+  const content = document.toString();
+  return content === before ? { content: raw, changed: false } : { content, changed: true };
+}
+
 export const KEYSTORE_KEY_PLACEHOLDER = "REPLACE_WITH_BASE64_32_BYTE_KEY";
 
 /**

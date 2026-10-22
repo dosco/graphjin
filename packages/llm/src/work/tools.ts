@@ -1552,11 +1552,14 @@ export function buildLibraryServer(
   const search = defineMcpTool(
     "search",
     [
-      "Semantic search over the document library — knowledge distilled",
-      "from uploaded business documents (policies, contracts, SOPs).",
-      "Returns top-N concepts ranked by similarity, each citing its",
-      "source upload. Prefer this over guessing when the operator asks",
-      "about company documents, agreements, or written policy.",
+      "Search the operator's Library: the documents and spreadsheets they",
+      "uploaded (policies, contracts, price lists, reports). Ranks files by",
+      "content and returns each file's best matching passages with their",
+      "page, slide, sheet or section, plus the SQL tables of sheets and CSV",
+      "files. The files are the neko_library source of the GraphJin data",
+      "tools: to read a whole file or compute from a sheet, ask those tools",
+      "about the file key (for example: sum a column of a named table), and",
+      "cite the file and location you used.",
     ].join(" "),
     {
       query: z.string().min(2).max(800),
@@ -1573,20 +1576,7 @@ export function buildLibraryServer(
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify({
-              ok: true,
-              results: results.map((r) => ({
-                path: r.concept.path,
-                type: r.concept.type,
-                title: r.concept.title,
-                description: r.concept.description,
-                status: r.concept.status,
-                layer: r.layer,
-                score: r.score,
-                sources: r.concept.sources.map((s) => s.resource),
-                body: r.concept.body,
-              })),
-            }),
+            text: JSON.stringify({ ok: true, results }),
           },
         ],
       };

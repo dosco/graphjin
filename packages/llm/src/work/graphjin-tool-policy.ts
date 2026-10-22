@@ -41,6 +41,9 @@ const DIRECT_GOVERNED_TOOL_NAMES = new Set([
   "query_catalog",
   "validate_where_clause",
   "execute_graphql",
+  // Read-only SQL over the tables GraphJin derives from sheets and CSV
+  // files; GraphJin checks the caller can read each table's file.
+  "query_file_tables",
 ]);
 
 export function serializeGraphjinMcpToolPolicy(

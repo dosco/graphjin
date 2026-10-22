@@ -1,14 +1,16 @@
 import pg from "pg";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   atomicWriteFile,
   graphjinKeystoreHasValues,
   migrateGraphjinSystemSource,
   patchGraphjinKeystoreKey,
+  LIBRARY_SOURCE_ROOT,
+  patchGraphjinLibrary,
   patchGraphjinWatches,
   watcherWebhookUrl,
   patchGraphjinSourcesJwtSecret,
@@ -142,8 +144,14 @@ const keystore = patchGraphjinKeystoreKey(
 );
 // OpenNeko watchers run as GraphJin watches that call the worker back.
 const watches = patchGraphjinWatches(keystore.content, watcherWebhookUrl());
-if (migrated.changed || patched.changed || policy.changed || keystore.changed || watches.changed) {
-  await atomicWriteFile(CONFIG_PATH, watches.content);
+// The Library is a GraphJin file source; its root must exist before start.
+const library = patchGraphjinLibrary(watches.content);
+await mkdir(join(dirname(CONFIG_PATH), LIBRARY_SOURCE_ROOT), { recursive: true, mode: 0o700 });
+if (migrated.changed || patched.changed || policy.changed || keystore.changed || watches.changed || library.changed) {
+  await atomicWriteFile(CONFIG_PATH, library.content);
+}
+if (library.changed) {
+  console.log(`[graphjin-secret-init] added the Library file source to ${CONFIG_PATH}`);
 }
 if (watches.changed) {
   console.log(`[graphjin-secret-init] turned on GraphJin watches for OpenNeko watchers in ${CONFIG_PATH}`);

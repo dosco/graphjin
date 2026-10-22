@@ -78,12 +78,14 @@ silently ignore a relevant memory.`;
 \`mcp_neko_memory_search\` with a short natural-language query. Do
 this whenever the user's request mentions a domain, metric, or rule
 that isn't already covered by the preloaded list.`);
-    usageBlocks.push(`The document library holds knowledge distilled from uploaded
-business documents (policies, contracts, SOPs). When the operator asks
-about company documents, agreements, or written policy, call
-\`mcp_neko_library_search\` with a short query before answering from
-general knowledge. Each result cites its source upload — mention the
-source when you rely on one.`);
+    usageBlocks.push(`The Library holds the documents and spreadsheets the operator
+uploaded (policies, contracts, price lists, reports). When they ask about
+company documents, agreements, written policy, or figures from a file,
+call \`mcp_neko_library_search\` with a short query before answering from
+general knowledge. It returns matching files with passages. To read a
+whole file or compute from a sheet, ask your GraphJin data tools about
+the file key — they read its text and run SQL over its tables. Name the
+file and page, slide or sheet you relied on.`);
   }
 
   if (saveMode === "tool") {
