@@ -74,7 +74,7 @@ async function toSettings(row: Row): Promise<ContextRemoteSettings> {
     provider: remoteProvider(new URL(row.url)),
     mode: row.mode as ContextRemoteMode,
     branch: row.branch,
-    kinds: (row.kinds ?? DEFAULT_CONTEXT_REMOTE_KINDS) as ContextRemoteKind[],
+    kinds: storedKinds(row.kinds),
     username: row.username,
     hasToken: Boolean(row.token),
     lastPublish: row.last_published_at && row.last_publish_status
@@ -190,7 +190,7 @@ async function previewOptions(row: Row, orgRoot: string) {
     orgRoot,
     access: remoteAccess(row),
     branch: row.branch,
-    kinds: (row.kinds ?? DEFAULT_CONTEXT_REMOTE_KINDS) as ContextRemoteKind[],
+    kinds: storedKinds(row.kinds),
     excludeSkills: await unmodifiedBuiltinSkills(join(orgRoot, "skills")),
     skillBases: row.skill_bases ?? {},
   };
@@ -244,7 +244,7 @@ export async function publishOrgContext(
       skillBases: row.skill_bases ?? {},
       mode: row.mode as ContextRemoteMode,
       branch: row.branch,
-      kinds: (row.kinds ?? DEFAULT_CONTEXT_REMOTE_KINDS) as ContextRemoteKind[],
+      kinds: storedKinds(row.kinds),
     });
     await record("ok", result.detail, result.link);
     if (result.status === "pushed" && result.sha && result.head) {
@@ -335,4 +335,10 @@ export async function applyOrgUpdates(
     payload: { actorUserId, tip, skills: choices.skills, packs: choices.packs, sha },
   });
   return { sha, packArchives };
+}
+
+/** Saved kinds the product still publishes; retired kinds such as library drop out. */
+function storedKinds(kinds: readonly string[] | null | undefined): ContextRemoteKind[] {
+  return (kinds ?? DEFAULT_CONTEXT_REMOTE_KINDS).filter((kind): kind is ContextRemoteKind =>
+    (CONTEXT_REMOTE_KINDS as readonly string[]).includes(kind));
 }

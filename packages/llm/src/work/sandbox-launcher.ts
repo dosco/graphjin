@@ -1,5 +1,4 @@
 import { startupEvent, startupPhase } from "@neko/telemetry/startup";
-import { copyAllowedTeamLibrary, copyTeamConceptSources, type AllowedLibrary } from "../library/staging";
 import { randomUUID } from "node:crypto";
 import { acquireAgentSlot } from "./agent-slots";
 import { retryWhileDatabaseUnavailable } from "@neko/db";
@@ -148,8 +147,6 @@ export type RunJobAgentBackendInput = {
   access: AgentJobAccess;
   /** Skill names the job's actor holds. Undefined means every skill. */
   allowedSkills?: readonly string[];
-  /** Team library files the actor holds. Undefined means the whole team library. */
-  allowedLibrary?: AllowedLibrary;
   emit: (event: AgentEvent) => Promise<void>;
 };
 
@@ -240,7 +237,7 @@ async function copyDirectoryIfPresent(
 export async function stageSandboxWorkspace(
   workspace: AgentWorkspace,
   stageDir: string,
-  options: { requiredSkillNames?: readonly string[]; allowedSkills?: readonly string[]; allowedLibrary?: AllowedLibrary } = {},
+  options: { requiredSkillNames?: readonly string[]; allowedSkills?: readonly string[] } = {},
 ): Promise<StagedSandboxWorkspace> {
   const stageOrgRoot = path.join(
     stageDir,
@@ -267,22 +264,7 @@ export async function stageSandboxWorkspace(
       stagedWorkspace.threadUploadsRoot,
     ),
     copyDirectoryIfPresent(workspace.runRoot, stagedWorkspace.runRoot),
-    // Team library OKF bundle (approved concepts only — the materializer
-    // never writes personal-layer rows there, so staging it leaks nothing;
-    // personal concepts reach the agent via mcp_neko_library_search,
-    // scoped server-side to the run's owner).
-    options.allowedLibrary
-      ? copyAllowedTeamLibrary(
-          path.join(workspace.orgRoot, "library", "okf"),
-          path.join(stageOrgRoot, "library", "okf"),
-          options.allowedLibrary,
-        )
-      : copyDirectoryIfPresent(
-          path.join(workspace.orgRoot, "library", "okf"),
-          path.join(stageOrgRoot, "library", "okf"),
-        ),
   ]);
-  await copyTeamConceptSources(path.join(stageOrgRoot, "library", "okf"), workspace.orgRoot, stageOrgRoot);
 
   // Preserve the expected workspace shape even when a selected source is
   // empty, while deliberately leaving memory and sibling upload/run roots out.
@@ -526,7 +508,6 @@ function makeSandboxCore(
         // upgrade even if the runner predates the records skill.
         requiredSkillNames: recordsScoped ? ["records"] : [],
         ...(input.allowedSkills ? { allowedSkills: input.allowedSkills } : {}),
-        ...(input.allowedLibrary ? { allowedLibrary: input.allowedLibrary } : {}),
       }));
       const stagedWorkspace = staged.workspace;
       if (!isJob) {

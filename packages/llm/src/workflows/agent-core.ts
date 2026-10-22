@@ -6,7 +6,6 @@ import type {
   AgentWorkspace,
  HostedGraphjin,
 } from "../agent-backend";
-import type { AllowedLibrary } from "../library/staging";
 import type { AgentControlPlane } from "../work/control-plane";
 import type { GraphjinDataPath } from "../work/graphjin-tool-policy";
 import {
@@ -41,8 +40,6 @@ export interface RunWorkflowAgentBackendInput {
   workspace: AgentWorkspace;
   /** Skill names the run's actor holds. Undefined means every skill. */
   allowedSkills?: readonly string[];
-  /** Team library files the actor holds. Undefined means the whole team library. */
-  allowedLibrary?: AllowedLibrary;
   /** In-process on the host; broker-backed inside the agent sandbox. */
   controlPlane: AgentControlPlane;
   emit: (event: AgentEvent) => Promise<void>;

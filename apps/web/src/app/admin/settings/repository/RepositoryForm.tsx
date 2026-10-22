@@ -29,7 +29,6 @@ const KINDS: Array<{ kind: ContextRemoteKind; label: string; private?: boolean }
   { kind: "skill-overlays", label: "Skill learnings" },
   { kind: "workflows", label: "Workflows" },
   { kind: "memory", label: "Memories", private: true },
-  { kind: "library", label: "Library concepts", private: true },
 ];
 
 type Draft = { url: string; mode: ContextRemoteMode; branch: string; kinds: ContextRemoteKind[]; username: string; token: string };
@@ -335,7 +334,6 @@ const KIND_LABELS: Record<ContextRemoteKind, string> = {
   "skill-overlays": "Skill learning",
   workflows: "Workflow",
   memory: "Memory",
-  library: "Library concept",
 };
 
 /** A unified diff, one file at a time, with added and removed lines tinted. */

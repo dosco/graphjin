@@ -93,7 +93,6 @@ export async function POST(request: Request) {
       relativePath: saved.relativePath,
       contentHash: saved.contentHash,
       sizeBytes: saved.size,
-      status: "ready",
     });
     documents.push({ document, created });
   }

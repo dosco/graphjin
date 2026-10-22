@@ -83,7 +83,6 @@ export async function POST(request: Request) {
       relativePath: stored.relativePath,
       contentHash: stored.contentHash,
       sizeBytes: stored.size,
-      status: "ready",
     });
   } catch (error) {
     console.warn(

@@ -317,7 +317,7 @@ export function buildUserManagerServer(opts: {
     "request_item_grant",
     [
       "Propose granting or revoking one item for a group. itemType is one of",
-      "skill, workflow, library_collection, library_concept, metric, dashboard,",
+      "skill, workflow, metric, dashboard,",
       "watcher, team_memory, data_source, saved_query, api_operation, action,",
       "integration, channel, pack. itemId '*' means every current and future",
       "item of the type. NEVER applies directly — an ADMIN must approve.",
@@ -326,7 +326,7 @@ export function buildUserManagerServer(opts: {
       action: z.enum(["grant_item", "revoke_item"]),
       groupId: z.string().trim().min(1),
       itemType: z.enum([
-        "skill", "workflow", "library_collection", "library_concept", "metric", "dashboard", "watcher",
+        "skill", "workflow", "metric", "dashboard", "watcher",
         "team_memory", "data_source", "saved_query", "api_operation", "action", "integration", "channel", "pack",
       ]),
       itemId: z.string().trim().min(1).max(500),
@@ -1535,10 +1535,10 @@ export function buildWorkMemoryServer(
   });
 }
 
-// Search-only library surface. Layer visibility (team + the run owner's
-// personal concepts) is resolved server-side from the run binding —
-// never from agent input — so a compromised prompt can't read another
-// member's personal library.
+// Search-only library surface. Whose files it searches is resolved
+// server-side from the run binding — never from agent input — and GraphJin
+// shows each user only their own folder, so a compromised prompt can't read
+// another member's library.
 export type LibraryServerOptions = {
   /** Explicit in-process or broker-backed control plane. */
   controlPlane?: AgentControlPlane;

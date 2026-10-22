@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { graphjinAgentEnabledForOrg, heldItems, pool, resolveUserGroups } from "@neko/db";
 import type { GraphjinDataPath } from "../work/graphjin-tool-policy";
-import { filterHeldActions, runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
+import { filterHeldActions, runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
 import { getWorkRunActor } from "../work/personas";
 import { workflowTurnBudget, type AgentEvent } from "../agent-backend";
 import { errorCodeOf, type HarnessObserver } from "@neko/telemetry";
@@ -307,12 +307,10 @@ async function runWorkflowTurnTraced(
       ...(backend.model ? { model: backend.model } : {}),
       inputBytes: Buffer.byteLength(`${prompt}\n\n${seedMessage}`, "utf8"),
     });
-    const [allowedSkills, allowedLibrary] = await startupPhase("identity.entitlements", () =>
-      Promise.all([runHeldItemIds(runActor, "skill"), runAllowedLibrary(runActor)]));
+    const allowedSkills = await startupPhase("identity.entitlements", () => runHeldItemIds(runActor, "skill"));
     const budget = workflowTurnBudget();
     const coreResult = await runCore({
       ...(allowedSkills ? { allowedSkills } : {}),
-      ...(allowedLibrary ? { allowedLibrary } : {}),
       backend,
       prompt,
       userMessage: seedMessage,

@@ -38,7 +38,6 @@ import {
   searchWorkMemoryByContext,
   updateWorkMemoryForRun,
 } from "./memory";
-import { searchLibraryForRun } from "./library";
 import type {
   GraphjinAgentActionEvent,
   GraphjinAgentResponse,
@@ -76,7 +75,7 @@ type WorkMemorySearchArgs = Parameters<typeof searchWorkMemoryByContext>[0];
 type WorkMemorySearchResult = Awaited<
   ReturnType<typeof searchWorkMemoryByContext>
 >[number];
-type LibrarySearchArgs = Parameters<typeof searchLibraryForRun>[0];
+type LibrarySearchArgs = { orgId: string; runId?: string | null; query: string; limit?: number };
 type LibrarySearchResult = LibraryFileMatch;
 
 /** A Library file the agent's search found, with its matching passages. */

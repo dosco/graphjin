@@ -57,16 +57,6 @@ export async function requireItem(
   return (await holdsItem(type, id, opts.parents)) ? null : itemNotFound(opts.notFound);
 }
 
-/** Library concepts inherit access from every collection prefix above them. */
-export function libraryCollectionParents(path: string): ItemRef[] {
-  const parts = path.split("/").filter(Boolean);
-  const parents: ItemRef[] = [];
-  for (let i = 1; i < parts.length; i++) {
-    parents.push({ type: "library_collection", id: `${parts.slice(0, i).join("/")}/` });
-  }
-  return parents;
-}
-
 /**
  * A workflow is visible when the user holds it and it is an org workflow,
  * or when it is the user's own personal workflow.
@@ -104,22 +94,6 @@ export async function requireWorkflowRun(workflowRunId: string): Promise<NextRes
   if (!row) return null;
   const denied = await requireWorkflow(row.workflowId);
   return denied ? itemNotFound("Run not found") : null;
-}
-
-/** Library reader for the current user, limited to held team concepts. */
-export async function currentLibraryReader() {
-  const orgId = await getOrgId();
-  const actor = await getCurrentActor();
-  const entitlementActor = await currentEntitlementActor();
-  const access = actor.role === "admin"
-    ? { concepts: "*" as const, collections: "*" as const }
-    : entitlementActor
-    ? {
-        concepts: await heldItems(entitlementActor, "library_concept"),
-        collections: await heldItems(entitlementActor, "library_collection"),
-      }
-    : { concepts: new Set<string>(), collections: new Set<string>() };
-  return { orgId, userId: actor.userId, isAdmin: actor.role === "admin", access };
 }
 
 /** Visibility by workflow id; items without a workflow stay visible. */

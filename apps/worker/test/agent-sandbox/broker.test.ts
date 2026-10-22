@@ -263,6 +263,9 @@ describe("agent broker", () => {
     events = [];
     server = createAgentBroker({
       controlPlane: fake.cp,
+      // These tests exercise the direct GraphJin routes; an org on the
+      // default agent path is refused them (covered below).
+      graphjinAgentOnly: async () => false,
       resolveRun: (t) =>
         t === "good"
           ? { runId: "r1", orgId: "o1", kind: "work" }

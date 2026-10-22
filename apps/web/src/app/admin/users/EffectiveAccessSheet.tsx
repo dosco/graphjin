@@ -13,8 +13,6 @@ type Access = { administrator: boolean; items: EffectiveItem[]; groupSlugs: stri
 const TYPE_LABELS: Record<string, string> = {
   skill: "Skills",
   workflow: "Workflows",
-  library_collection: "Library collections",
-  library_concept: "Library concepts",
   metric: "Metrics",
   dashboard: "Dashboards",
   watcher: "Watchers",

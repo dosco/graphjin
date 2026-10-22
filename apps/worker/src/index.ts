@@ -144,7 +144,6 @@ import { runWorkflowRunFire } from "./jobs/workflow-run-fire.js";
 import { runWorkflowOutputTtlSweep } from "./jobs/workflow-output-ttl-sweep.js";
 import { runActionExecute } from "./jobs/action-execute.js";
 import { runRecordsImport } from "./jobs/records-import.js";
-import { sweepExpiredLibraryTransientState } from "./jobs/library-cleanup.js";
 import { moveLibraryDocumentsToSource } from "./jobs/library-recovery.js";
 import { runSkillLearnJob } from "./jobs/skill-learn.js";
 import { runRecordsIdentityLink } from "./jobs/records-identity-link.js";
@@ -1058,23 +1057,6 @@ await b.work(QUEUE.METRIC_REFRESH_SCHEDULED_SWEEP, async () => {
       `[worker] memory TTL sweep failed: ${e instanceof Error ? e.message : e}`,
     );
   }
-  // Library staleness: stable concepts past stale_after become
-  // deprecated, and affected orgs get their team bundle re-materialized.
-  try {
-    const { sweepStaleLibraryConcepts } = await import("@neko/llm/work");
-    const { materializeTeamLibrary } = await import("@neko/llm");
-    const swept = await sweepStaleLibraryConcepts();
-    if (swept.deprecated > 0) {
-      console.log(`[worker] library staleness sweep: deprecated ${swept.deprecated}`);
-      for (const orgId of swept.orgIds) {
-        await materializeTeamLibrary(orgId);
-      }
-    }
-  } catch (e) {
-    console.warn(
-      `[worker] library staleness sweep failed: ${e instanceof Error ? e.message : e}`,
-    );
-  }
   // CV0: nightly memory checkpoint into the org config repo; CV4 also
   // checkpoints each member's personal layer onto their user/<id> ref.
   try {
@@ -1221,14 +1203,6 @@ await b.work(QUEUE.EMBEDDING_SWEEP, { batchSize: 1, pollingIntervalSeconds: 1 },
   async () => { await dispatchEmbeddingJobs(); });
 await b.schedule(QUEUE.EMBEDDING_SWEEP, '* * * * *', {}, { retryLimit: 3, retryDelay: 15 });
 await b.send(QUEUE.EMBEDDING_SWEEP, {}, { singletonKey: 'boot', singletonSeconds: 60 });
-
-// The Library no longer extracts or distills: GraphJin reads the files
-// directly. Jobs queued before the upgrade are acknowledged and dropped.
-for (const queue of [QUEUE.LIBRARY_EXTRACT, QUEUE.LIBRARY_DISTILL]) {
-  await b.work(queue, { batchSize: 10, pollingIntervalSeconds: 30 }, async (jobs) => {
-    if (jobs.length > 0) console.log(`[library] dropped ${jobs.length} retired ${queue} job(s)`);
-  });
-}
 
 await b.work(
   QUEUE.SKILL_LEARN,
@@ -1610,22 +1584,6 @@ const reconcileTimer = setInterval(() => {
 }, RECONCILE_SWEEP_INTERVAL_MS);
 reconcileTimer.unref();
 
-const libraryCleanup = () => {
-  sweepExpiredLibraryTransientState()
-    .then((count) => {
-      if (count > 0) {
-        console.log(`[library-cleanup] removed ${count} expired transient state(s)`);
-      }
-    })
-    .catch((error) => {
-      console.warn(
-        `[library-cleanup] sweep failed: ${error instanceof Error ? error.message : error}`,
-      );
-    });
-};
-libraryCleanup();
-const libraryCleanupTimer = setInterval(libraryCleanup, 6 * 60 * 60 * 1_000);
-libraryCleanupTimer.unref();
 
 // Documents uploaded before the Library became a GraphJin file source move
 // into it once, at boot.
@@ -1671,7 +1629,6 @@ setChannelsChangedHook((orgId) => {
 const shutdown = async (signal: string) => {
   console.log(`[worker] received ${signal}; shutting down`);
   clearInterval(reconcileTimer);
-  clearInterval(libraryCleanupTimer);
   clearInterval(packOAuthRefreshTimer);
   clearInterval(knowledgeRefreshTimer);
   workflowScheduler.stop();

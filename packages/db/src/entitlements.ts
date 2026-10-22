@@ -6,8 +6,6 @@ import { ADMINISTRATORS_GROUP_SLUG } from "./schema";
 export const ITEM_TYPES = [
   "skill",
   "workflow",
-  "library_collection",
-  "library_concept",
   "metric",
   "dashboard",
   "watcher",

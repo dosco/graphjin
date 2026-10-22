@@ -23,8 +23,6 @@ const TRACKED_IGNORE = `# config-vcs (CV0): version config artifacts only.
 !workflows/**
 !memory/
 !memory/**
-!library/
-!library/**
 !skill-overlays/
 !skill-overlays/**
 `;
@@ -41,7 +39,6 @@ title: "OpenNeko org knowledge"
 - [skills/](skills/) — what the assistant knows how to do
 - [workflows/](workflows/) — scheduled and saved workflows
 - [memory/](memory/) — durable team memories
-- [library/](library/okf/index.md) — approved knowledge distilled from documents
 - [skill-overlays/](skill-overlays/) — additive learned guidance for skills
 `;
 

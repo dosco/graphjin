@@ -1,28 +1,37 @@
 import { readFile, rm } from "node:fs/promises";
+import { join, resolve, sep } from "node:path";
 import {
+  getOrgAgentRoot,
   listLibraryDocumentsOutsideSource,
   markLibraryDocumentInSource,
-  markLibraryDocumentStatus,
-  resolveLibrarySourcePath,
+  markLibraryDocumentFailed,
 } from "@neko/llm";
 import { saveLibrarySourceFile } from "@neko/llm/library/source-files";
+
+/** An upload's old place in the org workspace, refusing paths that leave it. */
+function workspaceUploadPath(orgId: string, relativePath: string): string {
+  const orgRoot = resolve(getOrgAgentRoot(orgId));
+  const absolute = resolve(join(orgRoot, relativePath.replace(/\\/g, "/").replace(/^\/+/, "")));
+  if (!absolute.startsWith(orgRoot + sep)) throw new Error("library upload path leaves the org workspace");
+  return absolute;
+}
 
 type MoveDependencies = {
   list: typeof listLibraryDocumentsOutsideSource;
   read: (orgId: string, relativePath: string) => Promise<Buffer>;
   save: typeof saveLibrarySourceFile;
   moved: typeof markLibraryDocumentInSource;
-  failed: typeof markLibraryDocumentStatus;
+  failed: typeof markLibraryDocumentFailed;
   removeOriginal: (orgId: string, relativePath: string) => Promise<void>;
 };
 
 const defaultDependencies: MoveDependencies = {
   list: listLibraryDocumentsOutsideSource,
-  read: (orgId, relativePath) => readFile(resolveLibrarySourcePath(orgId, relativePath)),
+  read: (orgId, relativePath) => readFile(workspaceUploadPath(orgId, relativePath)),
   save: saveLibrarySourceFile,
   moved: markLibraryDocumentInSource,
-  failed: markLibraryDocumentStatus,
-  removeOriginal: (orgId, relativePath) => rm(resolveLibrarySourcePath(orgId, relativePath), { force: true }),
+  failed: markLibraryDocumentFailed,
+  removeOriginal: (orgId, relativePath) => rm(workspaceUploadPath(orgId, relativePath), { force: true }),
 };
 
 /**
@@ -46,7 +55,6 @@ export async function moveLibraryDocumentsToSource(
       await deps.failed({
         orgId: document.orgId,
         id: document.documentId,
-        status: "failed",
         error: "The original file is missing. Remove this document and upload it again.",
       });
       continue;

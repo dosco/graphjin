@@ -9,8 +9,6 @@ import {
   desc,
   eq,
   GroupError,
-  isNull,
-  library_concept,
   metric,
   operator_profile,
   pack_action_definition,
@@ -62,8 +60,6 @@ export type ItemOption = { id: string; label: string; detail?: string };
 export const ITEM_TYPE_LABELS: Record<ItemType, { label: string; plural: string }> = {
   skill: { label: "Skill", plural: "Skills" },
   workflow: { label: "Workflow", plural: "Workflows" },
-  library_collection: { label: "Library collection", plural: "Library collections" },
-  library_concept: { label: "Library concept", plural: "Library concepts" },
   metric: { label: "Metric", plural: "Metrics" },
   dashboard: { label: "Dashboard", plural: "Dashboards" },
   watcher: { label: "Watcher", plural: "Watchers" },
@@ -143,24 +139,6 @@ export async function listItemOptions(orgId: string, type: ItemType): Promise<It
       return (await listWorkflows(orgId))
         .filter((w) => !w.ownerUserId)
         .map((w) => ({ id: w.id, label: w.name, detail: w.description }));
-    case "library_concept":
-      return (await db()
-        .select({ id: library_concept.id, title: library_concept.title, path: library_concept.path })
-        .from(library_concept)
-        .where(and(eq(library_concept.org_id, orgId), isNull(library_concept.user_id), isNull(library_concept.archived_at)))
-        .orderBy(library_concept.path)).map((c) => ({ id: c.id, label: c.title, detail: c.path }));
-    case "library_collection": {
-      const paths = await db()
-        .select({ path: library_concept.path })
-        .from(library_concept)
-        .where(and(eq(library_concept.org_id, orgId), isNull(library_concept.user_id), isNull(library_concept.archived_at)));
-      const prefixes = new Set<string>();
-      for (const { path } of paths) {
-        const parts = path.split("/").filter(Boolean);
-        for (let i = 1; i < parts.length; i++) prefixes.add(`${parts.slice(0, i).join("/")}/`);
-      }
-      return [...prefixes].sort().map((p) => ({ id: p, label: p }));
-    }
     case "metric":
       return (await db()
         .select({ id: metric.id, title: metric.title, role: metric.role })

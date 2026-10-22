@@ -36,8 +36,6 @@ export const QUEUE = {
   CHANNEL_DELIVER: "channel_deliver",
   EMBEDDING_INDEX: "embedding_index",
   EMBEDDING_SWEEP: "embedding_sweep",
-  LIBRARY_EXTRACT: "library_extract",
-  LIBRARY_DISTILL: "library_distill",
   SKILL_LEARN: "skill_learn",
   DIRECTORY_SYNC: "directory_sync",
 } as const;
@@ -122,22 +120,6 @@ export type RecordsImportPayload = {
   importRunId: string;
   actorUserId: string;
 };
-
-export type LibraryExtractPayload = {
-  orgId: string;
-  /** library_document.id to extract into normalized Markdown. */
-  documentId: string;
-  /** One operator/upload run across its durable extraction follow-ups. */
-  runId: string;
-  /** Monotonic follow-up number, used in the pg-boss singleton key. */
-  sequence: number;
-  /** Consecutive transient failures. Pending polls do not increment it. */
-  attempt?: number;
-  /** Operator retry: process a historically skipped/failed document. */
-  force?: boolean;
-};
-
-export type LibraryDistillPayload = LibraryExtractPayload;
 
 export type SkillLearnPayload = {
   orgId: string;

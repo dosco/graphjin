@@ -6,7 +6,6 @@ import type {
   AgentWorkspace,
  HostedGraphjin,
 } from "../agent-backend";
-import type { AllowedLibrary } from "../library/staging";
 import { buildWorkflowBuilderServer } from "../workflows/builder-server";
 import { buildRuleBuilderServer } from "../workflows/rule-builder-server";
 import type { AgentControlPlane } from "./control-plane";
@@ -54,8 +53,6 @@ export interface RunAgentBackendInput {
   threadState?: Record<string, unknown>;
   /** Skill names the run's actor holds. Undefined means every skill. */
   allowedSkills?: readonly string[];
-  /** Team library files the actor holds. Undefined means the whole team library. */
-  allowedLibrary?: AllowedLibrary;
   pluginActions: readonly PluginActionDescriptor[];
   /** Installed pack actions, discovered independently of built-in actions. */
   packActions?: readonly PackActionDescriptor[];

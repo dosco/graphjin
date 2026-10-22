@@ -130,34 +130,28 @@ describeIfDb("entitlements", () => {
     }, "ent-narrow");
   });
 
-  it("lets a collection grant cover its concepts and reports holders and effective access", async () => {
+  it("grants one item to a group and reports holders and effective access", async () => {
     await withTestOrg(async (orgId) => {
       const everyone = await builtinGroupId(orgId, "everyone");
-      await revokeItem(orgId, { groupId: everyone, itemType: "library_collection", itemId: "*" });
-      await revokeItem(orgId, { groupId: everyone, itemType: "library_concept", itemId: "*" });
+      await revokeItem(orgId, { groupId: everyone, itemType: "skill", itemId: "*" });
       const finance = await createUserGroup(orgId, { name: "Finance" });
-      await grantItem(orgId, { groupId: finance.id, itemType: "library_collection", itemId: "revenue/" });
+      await grantItem(orgId, { groupId: finance.id, itemType: "skill", itemId: "revenue-report" });
       const ann = await user(orgId, "ann");
       await addLocalGroupMember(orgId, finance.id, ann.userId);
 
-      const concept = (path: string) => [{ type: "library_collection" as const, id: path.slice(0, path.lastIndexOf("/") + 1) }];
-      expect((await holds(ann, "library_concept", "c1", { parents: concept("revenue/net") })).allowed).toBe(true);
-      expect((await holds(ann, "library_concept", "c2", { parents: concept("policies/refunds") })).allowed).toBe(false);
+      expect((await holds(ann, "skill", "revenue-report")).allowed).toBe(true);
+      expect((await holds(ann, "skill", "docx")).allowed).toBe(false);
 
-      expect((await whoHolds(orgId, "library_collection", "revenue/")).map((h) => `${h.name}:${h.via}`)).toEqual([
+      expect((await whoHolds(orgId, "skill", "revenue-report")).map((h) => `${h.name}:${h.via}`)).toEqual([
         "Administrators:administrators",
         "Finance:item",
       ]);
-      expect((await whoHolds(orgId, "skill", "docx")).map((h) => `${h.name}:${h.via}`)).toEqual([
-        "Administrators:administrators",
-        "Everyone:all",
-      ]);
       const access = await effectiveAccess(orgId, ann.userId);
       expect(access.administrator).toBe(false);
-      expect(access.items.find((i) => i.itemType === "library_collection")).toEqual({
-        itemType: "library_collection", itemId: "revenue/", groups: [{ groupId: finance.id, name: "Finance" }],
+      expect(access.items.find((i) => i.itemType === "skill")).toEqual({
+        itemType: "skill", itemId: "revenue-report", groups: [{ groupId: finance.id, name: "Finance" }],
       });
-    }, "ent-library");
+    }, "ent-items");
   });
 
   it("expands a pack grant to the items the pack installs, including later additions", async () => {

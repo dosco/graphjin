@@ -86,7 +86,6 @@ describe("/api/library/upload", () => {
         orgId: "org-1",
         userId: "user-1",
         relativePath: `neko_library/users/user-1/${"a".repeat(64)}/annual-report.pdf`,
-        status: "ready",
       }),
     );
     await expect(response.json()).resolves.toMatchObject({

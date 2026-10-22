@@ -551,10 +551,6 @@ Your cwd is ${workspace.orgRoot}. Shared directories:
 - Skills: ${workspace.skillsRoot}
 - Memory: ${workspace.memoryRoot}
 - Knowledge: ${workspace.knowledgeRoot}
-- Team library (approved knowledge from uploaded documents, OKF
-  markdown): ${workspace.orgRoot}/library/okf — when present, start at
-  its index.md and follow links; each concept's frontmatter cites the
-  source document
 - Uploads for this thread: ${workspace.threadUploadsRoot}
 - Artifacts for this run: ${workspace.artifactRoot}
 

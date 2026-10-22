@@ -1463,11 +1463,9 @@ export const work_pending_memory = pgTable(
   }),
 );
 
-// Document library: uploaded files promoted from thread context into a
-// per-user library, distilled by the librarian job into OKF concept docs
-// (see packages/llm/src/library). Personal by default (user_id set),
-// team-visible only via explicit share + approval, mirroring the
-// work_memory overlay rules.
+// Document library: the files each user put in their Library, stored in the
+// customer GraphJin's neko_library file source, which keeps them private to
+// their owner and searches, reads and queries them directly.
 export const library_document = pgTable(
   "library_document",
   {
@@ -1484,27 +1482,15 @@ export const library_document = pgTable(
       onDelete: "set null",
     }),
     filename: text("filename").notNull(),
-    // Org-workspace-relative path of the raw upload, e.g.
-    // "uploads/<threadId>/<name>" — the citation target.
+    // "neko_library/users/<user id>/<sha256>/<name>"; see
+    // packages/llm/src/library/source-files.ts.
     relative_path: text("relative_path").notNull(),
     content_hash: text("content_hash").notNull(),
     size_bytes: integer("size_bytes").notNull(),
-    status: text("status").notNull().default("uploaded"),
-    skip_reason: text("skip_reason"),
+    // ready once stored in the Library file source; failed when the file
+    // could not be stored or moved there.
+    status: text("status").notNull().default("ready"),
     error: text("error"),
-    // Extraction is a durable async stage. The task/checkpoint is temporary;
-    // the small hashes and extractor fingerprint remain as provenance after
-    // the normalized Markdown artifact has been removed.
-    extract_checkpoint: jsonb("extract_checkpoint"),
-    extracted_relative_path: text("extracted_relative_path"),
-    extracted_content_hash: text("extracted_content_hash"),
-    extractor_fingerprint: text("extractor_fingerprint"),
-    extracted_at: ts("extracted_at"),
-    // Resumable-distillation checkpoint written by the librarian. It binds the
-    // chunk cursor and accumulated ops to source/extraction/plan hashes. NULL
-    // when idle or complete; kept on failure so a retry resumes mid-document.
-    distill_checkpoint: jsonb("distill_checkpoint"),
-    distilled_at: ts("distilled_at"),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },
@@ -1522,96 +1508,6 @@ export const library_document = pgTable(
       t.org_id,
       t.content_hash,
     ),
-    async_recovery_idx: index("library_document_async_recovery_idx").on(
-      t.status,
-      t.updated_at,
-    ),
-  }),
-);
-
-export const library_concept = pgTable(
-  "library_concept",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    org_id: text("org_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    // NULL user_id = team layer (approved, org-visible). Non-NULL =
-    // the owner's personal layer, invisible to everyone else. Path is
-    // unique per (org, layer) — enforced in code, not by constraint,
-    // because NULLs make a plain unique index inert here.
-    user_id: text("user_id").references(() => app_user.id, {
-      onDelete: "cascade",
-    }),
-    // Bundle-relative OKF path, e.g. "policies/refund-policy.md".
-    path: text("path").notNull(),
-    type: text("type").notNull(),
-    title: text("title").notNull(),
-    description: text("description"),
-    tags: jsonb("tags").notNull().default(sql`'[]'::jsonb`),
-    body: text("body").notNull(),
-    status: text("status").notNull().default("draft"),
-    // OKF v0.2 provenance/trust, projected into frontmatter on
-    // materialization: sources point at raw uploads, generated is the
-    // producing actor, verified accumulates human approvals.
-    sources: jsonb("sources").notNull().default(sql`'[]'::jsonb`),
-    generated_by: text("generated_by"),
-    generated_at: ts("generated_at"),
-    verified: jsonb("verified").notNull().default(sql`'[]'::jsonb`),
-    stale_after: date("stale_after"),
-    source_document_id: uuid("source_document_id").references(
-      () => library_document.id,
-      { onDelete: "set null" },
-    ),
-    promoted_from_id: uuid("promoted_from_id"),
-    promoted_by: text("promoted_by"),
-    promoted_at: ts("promoted_at"),
-    archived_at: ts("archived_at"),
-    embedding: vector("embedding", 384),
-    created_at: ts("created_at").notNull().defaultNow(),
-    updated_at: ts("updated_at").notNull().defaultNow(),
-  },
-  (t) => ({
-    org_layer_path_idx: index("library_concept_org_layer_path_idx").on(
-      t.org_id,
-      t.user_id,
-      t.path,
-    ),
-    org_status_idx: index("library_concept_org_status_idx").on(
-      t.org_id,
-      t.status,
-      t.archived_at,
-      t.updated_at.desc(),
-    ),
-    org_user_idx: index("library_concept_org_user_idx").on(
-      t.org_id,
-      t.user_id,
-      t.archived_at,
-    ),
-  }),
-);
-
-export const library_event = pgTable(
-  "library_event",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    org_id: text("org_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    document_id: uuid("document_id").references(() => library_document.id, {
-      onDelete: "set null",
-    }),
-    concept_id: uuid("concept_id").references(() => library_concept.id, {
-      onDelete: "set null",
-    }),
-    user_id: text("user_id"),
-    action: text("action").notNull(),
-    payload: jsonb("payload").notNull().default(sql`'{}'::jsonb`),
-    created_at: ts("created_at").notNull().defaultNow(),
-  },
-  (t) => ({
-    concept_idx: index("library_event_concept_idx").on(t.concept_id, t.id.desc()),
-    org_recent_idx: index("library_event_org_recent_idx").on(t.org_id, t.id.desc()),
   }),
 );
 

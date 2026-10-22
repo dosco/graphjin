@@ -71,7 +71,7 @@ export const SECONDARY_NAV: NavDestination[] = [
     href: "/library",
     label: "Library",
     shortLabel: "Library",
-    description: "Documents distilled into knowledge",
+    description: "Your documents and spreadsheets",
     icon: LibraryBig,
     group: "knowledge",
   },

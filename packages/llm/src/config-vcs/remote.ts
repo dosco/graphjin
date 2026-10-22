@@ -5,7 +5,7 @@ import { git } from "./git-shell";
 import { withRepoLock } from "./lock";
 import { withSshEnv } from "./ssh";
 
-export const CONTEXT_REMOTE_KINDS = ["skills", "skill-overlays", "workflows", "memory", "library"] as const;
+export const CONTEXT_REMOTE_KINDS = ["skills", "skill-overlays", "workflows", "memory"] as const;
 export type ContextRemoteKind = (typeof CONTEXT_REMOTE_KINDS)[number];
 export const DEFAULT_CONTEXT_REMOTE_KINDS: ContextRemoteKind[] = ["skills", "skill-overlays", "workflows"];
 
