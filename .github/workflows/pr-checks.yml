@@ -63,6 +63,8 @@ jobs:
         run: bash scripts/check-removed-backends.sh
       - name: Verify failed-to-recovered release transitions
         run: bash scripts/check-release-recovery-contract.sh
+      - name: Verify runtimes and CA bundles carry the eMudhra fixes
+        run: bash scripts/check-trust-floors.sh
 
   package:
     name: Package (${{ matrix.package }})
@@ -105,7 +107,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.22.1
           cache: pnpm
 
       - uses: actions/setup-go@v6
@@ -220,7 +222,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.22.1
           cache: pnpm
 
       - name: Install
@@ -268,7 +270,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.22.1
           cache: pnpm
 
       - name: Install

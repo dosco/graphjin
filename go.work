@@ -1,4 +1,4 @@
-go 1.25.5
+go 1.26.10
 
 // One Go workspace for the OpenNeko apps and the GraphJin modules under
 // graphjin/, so every shared dependency resolves to one version.

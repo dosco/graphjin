@@ -6,7 +6,7 @@
 # The agent itself (Ax Harness) is built from apps/ax-harness and is a role of
 # the same binary, so it needs no separate install here.
 #
-# Idempotent. Needs Go 1.25 or later.
+# Idempotent. Needs Go 1.26.10 or later.
 #
 # Usage:
 #   ./scripts/install-clis.sh
@@ -39,7 +39,7 @@ esac
 # GraphJin builds from graphjin/ in this repository as a role of the openneko
 # binary. Install that binary and a graphjin link to it.
 if ! $SKIP_GRAPHJIN; then
-  have go || { echo "graphjin needs Go to build from graphjin/; install Go 1.25 or later" >&2; exit 1; }
+  have go || { echo "graphjin needs Go to build from graphjin/; install Go 1.26.10 or later" >&2; exit 1; }
   log "building openneko with GraphJin from $REPO_ROOT/graphjin"
   bin_dir="${OPENNEKO_BIN_DIR:-/usr/local/bin}"
   tmp=$(mktemp -d)

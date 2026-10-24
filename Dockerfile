@@ -15,7 +15,9 @@
 # documentation. Copy only the executable into the shared runtime lineage;
 # worker and agent add a pruned npm payload below because they genuinely offer
 # runtime package installation. Web and plugin sandboxes do not pay that tax.
-FROM node:24-bookworm-slim AS node-distribution
+# Node 24.22.1 is the first 24.x that distrusts the eight compromised eMudhra
+# intermediate CAs (October 2026); keep the floor explicit.
+FROM node:24.22.1-bookworm-slim AS node-distribution
 
 FROM node-distribution AS npm-payload
 RUN rm -rf /usr/local/lib/node_modules/npm/docs /usr/local/lib/node_modules/npm/man \
@@ -27,8 +29,11 @@ COPY --from=node-distribution /usr/local/share/doc/node /usr/local/share/doc/nod
 RUN ln -s node /usr/local/bin/nodejs
 # Retry transient apt mirror hiccups instead of hard-failing the image build.
 RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80-retries
+# ca-certificates 20250419~deb12u2 (bookworm-security) drops the eMudhra roots
+# whose intermediate keys were compromised; refuse to build with an older one.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl tini \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2 \
     && rm -rf /var/lib/apt/lists/*
 
 # npm is part of the worker/agent feature contract, but its generated manuals,
@@ -79,7 +84,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # the name it runs under, so each image links it as graphjin, ax-harness,
 # lazy-service or graphjin-config. GraphJin builds from graphjin/ in this
 # repository at the same commit; there is no release tarball and no pin.
-FROM golang:1.25-bookworm AS go-build
+# Go 1.26.10 rejects any chain through the compromised eMudhra intermediate
+# keys (CVE-2026-111943); go.work requires it too.
+FROM golang:1.26.10-bookworm AS go-build
 WORKDIR /src
 COPY graphjin graphjin
 COPY apps/ax-harness apps/ax-harness
@@ -206,10 +213,11 @@ RUN mkdir -p /out/init-tools \
       --outfile=/out/init-tools/seed-adventureworks.js
 
 # Alpine one-shots likewise need only the Node executable, not npm/Yarn.
-FROM node:24-alpine AS node-alpine-distribution
+FROM node:24.22.1-alpine AS node-alpine-distribution
 
 FROM alpine:3.22 AS node-alpine-runtime
-RUN apk add --no-cache libstdc++
+# ca-certificates 20261020-r0 drops the compromised eMudhra roots.
+RUN apk add --no-cache --upgrade libstdc++ ca-certificates-bundle
 COPY --from=node-alpine-distribution /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-alpine-distribution /usr/local/share/doc/node /usr/local/share/doc/node
 
@@ -242,12 +250,15 @@ ENTRYPOINT ["node", "/app/server.mjs"]
 # ─── 4y. embedding service (Python, google/embeddinggemma-2) ────────────
 # CPU-only torch from the PyTorch CPU index; the rest pinned from PyPI.
 # torchvision and pillow are required by the model's processor even for text.
-FROM python:3.13-slim-bookworm AS embedding-python
+# Python 3.13.17, pip 26.2.2 and certifi 2026.10.19+ carry the eMudhra fixes.
+FROM python:3.13.17-slim-bookworm AS embedding-python
 RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80-retries \
     && apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2 \
     && rm -rf /var/lib/apt/lists/*
 COPY apps/embedding/requirements.txt /tmp/embedding-requirements.txt
-RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+RUN pip install --no-cache-dir pip==26.2.2 \
+    && pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
       torch==2.14.1 torchvision==0.29.1 \
     && pip install --no-cache-dir -r /tmp/embedding-requirements.txt \
     && rm /tmp/embedding-requirements.txt
@@ -468,6 +479,6 @@ CMD ["--help"]
 # The openneko binary linked as graphjin, for CI config validation and the
 # AdventureWorks eval stack.
 FROM alpine:3.22 AS graphjin-runtime
-RUN apk add --no-cache ca-certificates curl tini
+RUN apk add --no-cache --upgrade ca-certificates ca-certificates-bundle curl tini
 COPY --from=go-build /out/openneko /usr/local/bin/openneko
 RUN ln -s openneko /usr/local/bin/graphjin && graphjin version
