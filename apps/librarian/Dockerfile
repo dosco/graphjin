@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM golang:1.25-bookworm AS lazy-service-build
+FROM golang:1.26.10-bookworm AS lazy-service-build
 WORKDIR /src
 COPY apps/lazy-service .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/lazy-service .
@@ -10,7 +10,7 @@ FROM python:3.12.11-slim-bookworm@sha256:519591d6871b7bc437060736b9f7456b8731f14
 ENV UV_LINK_MODE=copy
 
 WORKDIR /app
-RUN --mount=type=cache,target=/root/.cache/pip pip install uv==0.8.15
+RUN --mount=type=cache,target=/root/.cache/pip pip install uv==0.13.4
 COPY apps/librarian/pyproject.toml apps/librarian/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
 
@@ -56,6 +56,11 @@ LABEL org.openneko.librarian.docling-slim="2.124.0" \
       org.openneko.librarian.tableformer-revision="fc0f2d45e2218ea24bce5045f58a389aed16dc23" \
       org.openneko.librarian.ocr="disabled"
 
+# The pinned base predates ca-certificates 20250419~deb12u2 (DLA-4845-1), which
+# drops the emSign ECC Root CA - G3 root after the eMudhra key compromise.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2
 RUN useradd --create-home --uid 10001 librarian \
  && install -d -o librarian -g librarian -m 0700 /var/lib/neko-librarian/results
 WORKDIR /app

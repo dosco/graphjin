@@ -15,7 +15,7 @@
 # documentation. Copy only the executable into the shared runtime lineage;
 # worker and agent add a pruned npm payload below because they genuinely offer
 # runtime package installation. Web and plugin sandboxes do not pay that tax.
-FROM node:24-bookworm-slim AS node-distribution
+FROM node:24.22.1-bookworm-slim AS node-distribution
 
 FROM node-distribution AS npm-payload
 RUN rm -rf /usr/local/lib/node_modules/npm/docs /usr/local/lib/node_modules/npm/man \
@@ -27,9 +27,12 @@ COPY --from=node-distribution /usr/local/share/doc/node /usr/local/share/doc/nod
 RUN ln -s node /usr/local/bin/nodejs
 # Retry transient apt mirror hiccups instead of hard-failing the image build.
 RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80-retries
+# ca-certificates >= 20250419~deb12u2 (DLA-4845-1) drops the emSign ECC Root
+# CA - G3 root after the eMudhra intermediate key compromise (CVE-2026-111943).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl tini \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2
 
 # npm is part of the worker/agent feature contract, but its generated manuals,
 # source maps, Corepack, Yarn, and development headers are not.
@@ -206,6 +209,9 @@ RUN --mount=type=cache,id=hermes-uv,target=/tmp/uv-cache \
     && UV_PROJECT_ENVIRONMENT=/usr/local/uv/tools/hermes-agent \
        UV_CACHE_DIR=/tmp/uv-cache \
        uv sync --locked --no-dev --extra acp --extra mcp --extra anthropic \
+    && UV_CACHE_DIR=/tmp/uv-cache \
+       uv pip install --python /usr/local/uv/tools/hermes-agent/bin/python 'certifi==2026.10.23' \
+    && /usr/local/uv/tools/hermes-agent/bin/python -c "import certifi; assert 'emSign ECC Root CA - G3' not in open(certifi.where()).read(), 'Hermes certifi still trusts the compromised eMudhra root'" \
     && ln -sf /usr/local/uv/tools/hermes-agent/bin/hermes /usr/local/bin/hermes \
     && rm -rf /root/.cache/uv \
     && hermes --version \
@@ -317,7 +323,7 @@ RUN sh scripts/prune-node-runtime.sh /app/apps/web/.next/standalone "$TARGETARCH
 # image so the agent's Bash tool can run `openneko install/secrets/...`
 # from inside the worker container. The same binary operators install via
 # Homebrew / GitHub Releases on their host.
-FROM golang:1.25-bookworm AS go-build
+FROM golang:1.26.10-bookworm AS go-build
 WORKDIR /src
 COPY apps/openneko/go.mod apps/openneko/go.sum apps/openneko/
 RUN cd apps/openneko && go mod download
@@ -338,7 +344,7 @@ RUN cd apps/openneko && \
 
 # Ax Harness: the Go agent behind the Ax backend. OpenShell pins model egress
 # to /usr/local/bin/ax-harness for Ax runs (AX_HARNESS_BINARY).
-FROM golang:1.25-bookworm AS ax-harness-build
+FROM golang:1.26.10-bookworm AS ax-harness-build
 WORKDIR /src
 COPY apps/ax-harness/go.mod apps/ax-harness/go.sum apps/ax-harness/
 RUN cd apps/ax-harness && go mod download
@@ -379,7 +385,7 @@ RUN mkdir -p /out/init-tools \
       --outfile=/out/init-tools/seed-adventureworks.js
 
 # Alpine one-shots likewise need only the Node executable, not npm/Yarn.
-FROM node:24-alpine AS node-alpine-distribution
+FROM node:24.22.1-alpine AS node-alpine-distribution
 
 FROM alpine:3.22 AS node-alpine-runtime
 RUN apk add --no-cache libstdc++
@@ -413,7 +419,7 @@ EXPOSE 8090
 ENTRYPOINT ["node", "/app/server.mjs"]
 
 # Shared listener used by the embedding and Docling service images.
-FROM golang:1.25-bookworm AS lazy-service-build
+FROM golang:1.26.10-bookworm AS lazy-service-build
 WORKDIR /src
 COPY apps/lazy-service .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/lazy-service .

@@ -1,6 +1,6 @@
 module github.com/open-neko/openneko/apps/ax-harness
 
-go 1.25.0
+go 1.26.10
 
 require (
 	github.com/ax-llm/ax/packages/go v0.0.0-20261008025325-987328ccf984
