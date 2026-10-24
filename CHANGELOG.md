@@ -1,5 +1,21 @@
 # Changelog
 
+## [5.0.0](https://github.com/open-neko/openneko/compare/v4.9.2...v5.0.0) (2026-10-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove the Hermes agent runtime; Ax is the only backend
+
+### Bug Fixes
+
+* **security:** remediate eMudhra CA compromise (CVE-2026-111943) ([3c580aa](https://github.com/open-neko/openneko/commit/3c580aa8279f98282adf1127bff698e516335c42))
+
+
+### Code Refactoring
+
+* remove the Hermes agent runtime; Ax is the only backend ([ff9eea5](https://github.com/open-neko/openneko/commit/ff9eea5a47f7779ba753292f342729ec65cc3c99))
+
 ## [4.9.2](https://github.com/open-neko/openneko/compare/v4.9.1...v4.9.2) (2026-10-24)
 
 
