@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.9.2](https://github.com/open-neko/openneko/compare/v4.9.1...v4.9.2) (2026-10-24)
+
+
+### Bug Fixes
+
+* **ax:** send one system message and keep the org prompt cacheable ([eca0222](https://github.com/open-neko/openneko/commit/eca02229c65fc6b53018a7d67b6e67d5603ca5bc))
+* **deps:** pin GraphJin 3.21.16 ([4367e44](https://github.com/open-neko/openneko/commit/4367e44d94e3549e8963ea0a8a4f4b16131c9693))
+* pin GraphJin 3.21.16, send one system message from Ax, update cask hook ([1ba18a3](https://github.com/open-neko/openneko/commit/1ba18a3724d3f4c3d4cd3521e17e992c2c77f0a8))
+* **release:** move the cask quarantine hook to install steps ([0d0ec5c](https://github.com/open-neko/openneko/commit/0d0ec5ccc35312f5344243bf383ff1dd341b2b18))
+
 ## [4.9.1](https://github.com/open-neko/openneko/compare/v4.9.0...v4.9.1) (2026-10-18)
 
 
