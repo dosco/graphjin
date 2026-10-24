@@ -21,7 +21,6 @@ export * from "./industry-researcher";
 export * from "./agent-backend";
 export { makeAgentBackend } from "./agent-runtime";
 export {
-  assertAxSupported,
   resolveAgentBackend,
   resolveAgentBackendId,
   resolveAgentConcurrency,
@@ -35,11 +34,11 @@ export {
   detectDataSourceAuthorizationError,
   detectUpstreamError,
 } from "./agent-error";
+export { AX_HARNESS_BINARY } from "./agent-runtime-contract";
 export {
   ensureHostConfigProvisioned,
   gatewayProviderName,
   provisionHostConfig,
-  VENDORED_HERMES_MODEL_BINARY,
   verifyAgentRuntimeReady,
 } from "./host-provision";
 export {

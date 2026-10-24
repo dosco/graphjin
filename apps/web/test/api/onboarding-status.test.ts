@@ -150,7 +150,7 @@ describeIfDb("/api/onboarding/status GET (enriched)", () => {
       "business_profile_build",
       "failed",
       undefined,
-      "hermes turn exceeded its 360s budget and was terminated",
+      "ax turn exceeded its 360s budget and was terminated",
     );
 
     const res = await callRoute(GET);

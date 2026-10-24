@@ -44,6 +44,7 @@ const M_0063 = join(
   "migrations",
   "0063_durable_workflow_scheduler.sql",
 );
+const M_0119 = join(REPO_ROOT, "db", "migrations", "0119_ax_only_agent.sql");
 const M_0064 = join(
   REPO_ROOT,
   "db",
@@ -344,6 +345,46 @@ describeIfDb("schema migrations", () => {
           enabled: true,
           config: { baseUrl: "https://api.anthropic.com" },
           secrets: { apiKey: "encrypted-primary" },
+        },
+      ]);
+    });
+  });
+
+  it("0119 moves every org's agent runtime to Ax and is idempotent", async () => {
+    await withTempDb(async (client) => {
+      await applyFile(client, M_0001);
+      await applyFile(client, M_0002);
+      await client.query(`
+        insert into organization (id, name) values ('ax-upgrade', 'Ax Upgrade');
+        insert into llm_provider_config
+          (org_id, scope, provider, model, enabled, config, secrets)
+        values
+          ('ax-upgrade', 'primary', 'anthropic', 'claude-sonnet-4-5', true,
+           '{"baseUrl":"https://api.anthropic.com"}', '{"apiKey":"encrypted-primary"}'),
+          ('ax-upgrade', 'agent', 'hermes', null, true,
+           '{"backend":"hermes","globalCap":7}', '{}');
+      `);
+
+      await applyFile(client, M_0119);
+      await applyFile(client, M_0119);
+
+      const result = await client.query<{
+        scope: string;
+        provider: string;
+        config: Record<string, unknown>;
+      }>(`
+        select scope, provider, config
+        from llm_provider_config
+        where org_id = 'ax-upgrade'
+        order by scope
+      `);
+
+      expect(result.rows).toEqual([
+        { scope: "agent", provider: "ax", config: { backend: "ax", globalCap: 7 } },
+        {
+          scope: "primary",
+          provider: "anthropic",
+          config: { baseUrl: "https://api.anthropic.com" },
         },
       ]);
     });

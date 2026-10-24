@@ -100,7 +100,7 @@ HARD CONSTRAINTS (violating any of these is a critical failure):
 ${
   // The agentic pack files are raw catalog JSON sized for on-demand reads,
   // not for prompts — inlining them verbatim (~50KB+) is the inline class
-  // that reproducibly hangs the hermes first stream. Same digests + caps
+  // that reproducibly hangs the first model stream. Same digests + caps
   // as the chat agent; deeper detail comes through gj_catalog on demand.
   agentic
     ? `================================================================================

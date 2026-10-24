@@ -34,28 +34,27 @@ Send exactly one object, at most 16 MiB. Unknown fields fail the run.
 
 ## Limits
 
-The limits match Hermes, so the two backends behave the same. OpenNeko sets
-them for both backends from one source, `packages/llm/src/agent-limits.ts`.
+OpenNeko sets the limits from one source, `packages/llm/src/agent-limits.ts`.
 The defaults below apply only when the host does not set a value.
 
-| Limit | Ax Harness | Hermes equivalent |
-| --- | --- | --- |
-| Prompt size | Model context window only; 16 MiB stdin sanity limit | No fixed cap; `model.context_length` |
-| Context window, output tokens | `context_window_tokens`, `max_output_tokens` | `model.context_length`, `model.max_tokens` |
-| Actor steps | Default 25, 1 to 500 | `agent.max_turns` 25; OpenNeko per-run override |
-| Child agent steps | Default 50, 1 to 500 | `delegation.max_iterations` 50 |
-| Tool calls, model calls | No cap unless set | No separate caps |
-| Run wall clock | Default 9 minutes, maximum 30 minutes | OpenNeko turn timeout, 9 minutes |
-| Actor code time | The run wall clock, including tool waits | No separate limit |
-| Inline tool result | 100,000 characters | `DEFAULT_RESULT_SIZE_CHARS` |
-| Saved result preview | 1,500 characters | `DEFAULT_PREVIEW_SIZE_CHARS` |
-| Inline results per actor step | No limit: results go to actor code, and only printed output reaches the model | `DEFAULT_TURN_BUDGET_CHARS` 200,000 |
-| Stored tool result | 16 MiB; MCP results 8 MiB, below the MCP SDK frame limit | Spilled to a file |
-| Terminal timeout | Default 180 s, maximum 600 s | `TERMINAL_TIMEOUT` default 180, `FOREGROUND_MAX_TIMEOUT` 600 |
-| Terminal output | 50,000 characters, head and tail | `DEFAULT_MAX_BYTES` 50,000 |
-| File read | 100,000 characters, 2,000 lines, 2,000 characters per line | `_DEFAULT_MAX_READ_CHARS`, `DEFAULT_MAX_LINES`, `DEFAULT_MAX_LINE_LENGTH` |
-| File write and edit | 1 MiB of content; readable files up to 10 MiB | No direct equivalent |
-| Skills catalog | 256 skills; descriptions up to 1,024 characters; bodies up to 64 KiB | No cap |
+| Limit | Ax Harness |
+| --- | --- |
+| Prompt size | Model context window only; 16 MiB stdin sanity limit |
+| Context window, output tokens | `context_window_tokens`, `max_output_tokens` |
+| Actor steps | Default 25, 1 to 500 |
+| Child agent steps | Default 50, 1 to 500 |
+| Tool calls, model calls | No cap unless set |
+| Run wall clock | Default 9 minutes, maximum 30 minutes |
+| Actor code time | The run wall clock, including tool waits |
+| Inline tool result | 100,000 characters |
+| Saved result preview | 1,500 characters |
+| Inline results per actor step | No limit: results go to actor code, and only printed output reaches the model |
+| Stored tool result | 16 MiB; MCP results 8 MiB, below the MCP SDK frame limit |
+| Terminal timeout | Default 180 s, maximum 600 s |
+| Terminal output | 50,000 characters, head and tail |
+| File read | 100,000 characters, 2,000 lines, 2,000 characters per line |
+| File write and edit | 1 MiB of content; readable files up to 10 MiB |
+| Skills catalog | 256 skills; descriptions up to 1,024 characters; bodies up to 64 KiB |
 
 A result above the inline limit, or above the step budget, returns a run-local
 reference with a preview. Actor code reads the full result with
@@ -240,8 +239,7 @@ once unless `replace_all` is true.
 
 `web_fetch` sends a GET with no cookies or credentials. Each redirect must stay
 on the allowlist. Without a proxy, connections reach public addresses only.
-HTML returns as plain text. The cap is 10 MiB of body and 2,000,000 characters,
-as in Hermes `web_extract`.
+HTML returns as plain text. The cap is 10 MiB of body and 2,000,000 characters.
 
 Every tool is a JavaScript function in the Goja actor. One actor step can call
 many tools, loop over results and filter them, so extra tool calls add no model

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { outsideFenceText } from "../src/agent-backends/hermes";
+import { outsideFenceText } from "../src/agent-backends/output";
 
 describe("outsideFenceText", () => {
   it("returns prose untouched when no fences are present", () => {

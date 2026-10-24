@@ -8,16 +8,17 @@ import {
 } from "../src/agent-backend";
 
 describe("isAgentBackendId", () => {
-  it("accepts hermes", () => {
-    expect(isAgentBackendId("hermes")).toBe(true);
+  it("accepts ax", () => {
+    expect(isAgentBackendId("ax")).toBe(true);
   });
   it("rejects removed backend ids", () => {
+    expect(isAgentBackendId("hermes")).toBe(false);
     expect(isAgentBackendId("removed-runtime")).toBe(false);
   });
   it("rejects unknown values", () => {
     expect(isAgentBackendId("openai")).toBe(false);
     expect(isAgentBackendId("")).toBe(false);
-    expect(isAgentBackendId("HERMES")).toBe(false); // case-sensitive
+    expect(isAgentBackendId("AX")).toBe(false); // case-sensitive
   });
 });
 

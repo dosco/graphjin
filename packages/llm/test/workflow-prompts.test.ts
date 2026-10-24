@@ -51,7 +51,7 @@ describe("buildWorkflowRunnerPrompt", () => {
     workflow: sampleWorkflow,
     mode: "headless" as const,
     memoryContext: "",
-    backend: "hermes" as const,
+    backend: "ax" as const,
     workspace: sampleWorkspace,
     knowledge: sampleKnowledge,
   };
@@ -172,16 +172,6 @@ describe("buildWorkflowRunnerPrompt", () => {
     expect(prompt).toContain("mcp_neko_memory_save");
   });
 
-  it("uses native dynamic delegation guidance for Hermes workflow runs", () => {
-    const prompt = buildWorkflowRunnerPrompt({
-      ...base,
-      backend: "hermes",
-      mcpTools: true,
-    });
-    expect(prompt).toContain("delegate_task");
-    expect(prompt).toContain("OpenNeko does not provide named subagent profiles");
-    expect(prompt).toContain("toolsets");
-  });
 
 });
 

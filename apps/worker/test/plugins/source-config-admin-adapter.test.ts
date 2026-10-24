@@ -256,7 +256,7 @@ describeIfDb("source_config_admin adapter (OL5)", () => {
       id: runId,
       org_id: orgId,
       thread_id: threadId,
-      backend: "hermes",
+      backend: "ax",
       status: "running",
       actor_role: "member",
     });
@@ -618,7 +618,7 @@ describeIfDb("source_config_admin adapter (OL5)", () => {
       id: runId,
       org_id: orgId,
       thread_id: threadId,
-      backend: "hermes",
+      backend: "ax",
       status: "running",
       actor_user_id: userId,
       actor_role: "admin",

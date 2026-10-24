@@ -266,7 +266,7 @@ async function handleActionRequestViaControlPlane(
 }
 
 /**
- * /work fence-emission context — Hermes emits `neko_action_request`
+ * /work fence-emission context — the agent emits `neko_action_request`
  * fences inline in its prose; the runtime parses them after the turn
  * ends and routes each through this handler. Mirrors
  * handleActionRequest but writes to the action_request row's

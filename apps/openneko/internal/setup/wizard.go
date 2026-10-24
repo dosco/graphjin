@@ -176,7 +176,7 @@ func stepsInteractive(ctx context.Context, c *Client, out io.Writer, cfg Config)
 		break
 	}
 
-	// 3. Hermes + primary provider (re-prompts until the key validates).
+	// 3. Agent + primary provider (re-prompts until the key validates).
 	agent, err := c.GetAgent(ctx)
 	if err != nil {
 		return passwordSet, err

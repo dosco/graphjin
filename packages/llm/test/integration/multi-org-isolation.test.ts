@@ -50,7 +50,7 @@ describeIfDb("multi-org isolation", () => {
         steps: [{ id: "s1", description: "x" }],
       });
       const threadA = await createWorkThread(orgA, "secret thread");
-      const workRunA = await createWorkRun(orgA, threadA.id, "hermes");
+      const workRunA = await createWorkRun(orgA, threadA.id, "ax");
       const wfRunA = await createWorkflowRun({
         orgId: orgA,
         workflowId: wfA.id,

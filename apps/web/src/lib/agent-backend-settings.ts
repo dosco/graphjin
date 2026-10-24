@@ -4,7 +4,6 @@ import { and, db, eq, llm_provider_config } from "@neko/db";
 import {
   AGENT_BACKEND_OPTIONS,
   AGENT_DEFAULT_GLOBAL_CAP,
-  assertAxSupported,
   isAgentBackendId,
   resolveAgentBackendId,
   type AgentBackendId,
@@ -109,7 +108,6 @@ export async function saveAgentSettingsDraft(
   };
   const backend: AgentBackendId =
     (draft.backend as AgentBackendId | undefined) ?? (await resolveAgentBackendId(orgId));
-  if (backend === "ax") await assertAxSupported(orgId);
   const globalCap = readPositiveInt(
     draft.globalCap ?? existingCfg.globalCap,
     AGENT_DEFAULT_GLOBAL_CAP,
@@ -120,7 +118,7 @@ export async function saveAgentSettingsDraft(
     await db()
       .update(llm_provider_config)
       .set({
-        provider: "hermes",
+        provider: "ax",
         config,
         updated_at: new Date(),
       })
@@ -129,7 +127,7 @@ export async function saveAgentSettingsDraft(
     await db().insert(llm_provider_config).values({
       org_id: orgId,
       scope: AGENT_SCOPE,
-      provider: "hermes",
+      provider: "ax",
       enabled: true,
       config,
       secrets: {},

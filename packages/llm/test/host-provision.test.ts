@@ -2,7 +2,6 @@ import {
   mkdtemp,
   readFile,
   rm,
-  stat,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir, platform } from "node:os";
@@ -37,8 +36,6 @@ import {
 import {
   ensureHostConfigProvisioned,
   gatewayProviderName,
-  hermesHomeForOrg,
-  hermesNativeReasoningConfigLines,
   patchGraphjinSourcesJwtSecret,
   provisionHostConfig,
   shouldReconcileDemoSourceAuthMode,
@@ -80,18 +77,7 @@ function graphjinPath(home: string): string {
 }
 
 const ORIGINAL_HOME = process.env.HOME;
-const ORIGINAL_HERMES_HOME = process.env.HERMES_HOME;
 const ORIGINAL_XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
-const DELEGATION_ENV_KEYS = [
-  "OPENNEKO_AGENT_DELEGATION_MAX_ITERATIONS",
-  "OPENNEKO_AGENT_DELEGATION_MAX_CONCURRENT_CHILDREN",
-  "OPENNEKO_AGENT_DELEGATION_MAX_SPAWN_DEPTH",
-  "OPENNEKO_AGENT_DELEGATION_CHILD_TIMEOUT_SECONDS",
-  "OPENNEKO_AGENT_DELEGATION_ORCHESTRATOR_ENABLED",
-] as const;
-const ORIGINAL_DELEGATION_ENV = Object.fromEntries(
-  DELEGATION_ENV_KEYS.map((key) => [key, process.env[key]]),
-);
 const ensureOpenShellProviderMock = vi.mocked(ensureOpenShellProvider);
 const verifyOpenShellGatewayMock = vi.mocked(verifyOpenShellGateway);
 
@@ -192,18 +178,6 @@ describe("shouldReconcileDemoSourceAuthMode", () => {
   });
 });
 
-describe("hermesNativeReasoningConfigLines", () => {
-  it("enables provider-native summaries for Gemini and Anthropic only", () => {
-    expect(hermesNativeReasoningConfigLines("google-gemini")).toEqual([
-      '  reasoning_effort: "high"',
-    ]);
-    expect(hermesNativeReasoningConfigLines("anthropic")).toEqual([
-      '  reasoning_effort: "high"',
-    ]);
-    expect(hermesNativeReasoningConfigLines("openai")).toEqual([]);
-  });
-});
-
 describe("gatewayProviderName", () => {
   it("isolates gateway credentials by organization without exposing the org id", () => {
     const first = gatewayProviderName("customer-a");
@@ -218,7 +192,6 @@ describe("gatewayProviderName", () => {
 describeIfDb("provisionHostConfig", () => {
   let orgId: string;
   let tempHome: string;
-  let hermesHome: string;
 
   beforeAll(async () => {
     orgId = uniqueOrgId("provision");
@@ -235,25 +208,15 @@ describeIfDb("provisionHostConfig", () => {
     verifyOpenShellGatewayMock.mockReset();
     verifyOpenShellGatewayMock.mockResolvedValue(undefined);
     tempHome = await mkdtemp(join(tmpdir(), "neko-test-home-"));
-    hermesHome = join(tempHome, ".hermes");
     process.env.HOME = tempHome;
-    process.env.HERMES_HOME = hermesHome;
     delete process.env.XDG_CONFIG_HOME;
-    for (const key of DELEGATION_ENV_KEYS) delete process.env[key];
   });
 
   afterEach(async () => {
     await rm(tempHome, { recursive: true, force: true });
     if (ORIGINAL_HOME) process.env.HOME = ORIGINAL_HOME;
-    if (ORIGINAL_HERMES_HOME) process.env.HERMES_HOME = ORIGINAL_HERMES_HOME;
-    else delete process.env.HERMES_HOME;
     if (ORIGINAL_XDG_CONFIG_HOME) process.env.XDG_CONFIG_HOME = ORIGINAL_XDG_CONFIG_HOME;
     else delete process.env.XDG_CONFIG_HOME;
-    for (const key of DELEGATION_ENV_KEYS) {
-      const original = ORIGINAL_DELEGATION_ENV[key];
-      if (original === undefined) delete process.env[key];
-      else process.env[key] = original;
-    }
     await clearProvider(orgId, "agent");
     await clearProvider(orgId, "primary");
     await db().delete(data_source).where(eq(data_source.org_id, orgId));
@@ -297,95 +260,7 @@ describeIfDb("provisionHostConfig", () => {
     expect(content.server).toBe("https://api.example.com");
   });
 
-  it("writes hermes config.yaml + .env when backend=hermes", async () => {
-    await seedDataSource(orgId);
-    await seedProvider(orgId, {
-      scope: "agent",
-      provider: "hermes",
-      config: { backend: "hermes" },
-    });
-    await seedProvider(orgId, {
-      scope: "primary",
-      provider: "google-gemini",
-      model: "gemini-pro-latest",
-      secrets: { apiKey: "test-gemini-key" },
-    });
-
-    await provisionHostConfig(orgId);
-
-    const yaml = await readFile(join(hermesHome, "config.yaml"), "utf8");
-    expect(yaml).toContain('default: "gemini-pro-latest"');
-    expect(yaml).toContain('provider: "gemini"');
-    expect(yaml).toContain("max_turns:");
-    expect(yaml).toContain('reasoning_effort: "high"');
-    expect(yaml).toContain("delegation:");
-    expect(yaml).toContain("max_iterations: 50");
-    expect(yaml).toContain("max_concurrent_children: 3");
-    expect(yaml).toContain("max_spawn_depth: 1");
-    expect(yaml).toContain("orchestrator_enabled: true");
-    expect(yaml).toContain("child_timeout_seconds: 0");
-
-    const env = await readFile(join(hermesHome, ".env"), "utf8");
-    expect(env).toContain("GEMINI_API_KEY=test-gemini-key");
-
-    const envStat = await stat(join(hermesHome, ".env"));
-    expect(envStat.mode & 0o777).toBe(0o600);
-  });
-
-  it("honors and clamps Hermes delegation env overrides", async () => {
-    process.env.OPENNEKO_AGENT_DELEGATION_MAX_ITERATIONS = "17.9";
-    process.env.OPENNEKO_AGENT_DELEGATION_MAX_CONCURRENT_CHILDREN = "5";
-    process.env.OPENNEKO_AGENT_DELEGATION_MAX_SPAWN_DEPTH = "99";
-    process.env.OPENNEKO_AGENT_DELEGATION_CHILD_TIMEOUT_SECONDS = "-10";
-    process.env.OPENNEKO_AGENT_DELEGATION_ORCHESTRATOR_ENABLED = "off";
-    await seedDataSource(orgId);
-    await seedProvider(orgId, {
-      scope: "agent",
-      provider: "hermes",
-      config: { backend: "hermes" },
-    });
-    await seedProvider(orgId, {
-      scope: "primary",
-      provider: "google-gemini",
-      model: "gemini-pro-latest",
-      secrets: { apiKey: "test-gemini-key" },
-    });
-
-    await provisionHostConfig(orgId);
-
-    const yaml = await readFile(join(hermesHome, "config.yaml"), "utf8");
-    expect(yaml).toContain("delegation:");
-    expect(yaml).toContain("max_iterations: 17");
-    expect(yaml).toContain("max_concurrent_children: 5");
-    expect(yaml).toContain("max_spawn_depth: 3");
-    expect(yaml).toContain("orchestrator_enabled: false");
-    expect(yaml).toContain("child_timeout_seconds: 0");
-  });
-
-  it("writes anthropic key var for anthropic provider", async () => {
-    await seedDataSource(orgId);
-    await seedProvider(orgId, {
-      scope: "agent",
-      provider: "hermes",
-      config: { backend: "hermes" },
-    });
-    await seedProvider(orgId, {
-      scope: "primary",
-      provider: "anthropic",
-      model: "claude-opus-4-7",
-      secrets: { apiKey: "sk-ant-test" },
-    });
-
-    await provisionHostConfig(orgId);
-
-    const yaml = await readFile(join(hermesHome, "config.yaml"), "utf8");
-    expect(yaml).toContain('provider: "anthropic"');
-    expect(yaml).toContain('reasoning_effort: "high"');
-    const env = await readFile(join(hermesHome, ".env"), "utf8");
-    expect(env).toContain("ANTHROPIC_API_KEY=sk-ant-test");
-  });
-
-  it("does not let an obsolete agent row gate Hermes provisioning", async () => {
+  it("does not let an obsolete agent row gate provider sync", async () => {
     await seedDataSource(orgId);
     await seedProvider(orgId, {
       scope: "agent",
@@ -404,11 +279,8 @@ describeIfDb("provisionHostConfig", () => {
     const gj = await readFile(graphjinPath(tempHome), "utf8");
     expect(gj).toContain("server");
 
-    await expect(readFile(join(hermesHome, "config.yaml"), "utf8")).resolves.toContain(
-      'provider: "anthropic"',
-    );
-    await expect(readFile(join(hermesHome, ".env"), "utf8")).resolves.toContain(
-      "ANTHROPIC_API_KEY=sk-ant-test",
+    expect(ensureOpenShellProviderMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ apiKey: "sk-ant-test" }),
     );
   });
 
@@ -416,8 +288,8 @@ describeIfDb("provisionHostConfig", () => {
     await seedDataSource(orgId);
     await seedProvider(orgId, {
       scope: "agent",
-      provider: "hermes",
-      config: { backend: "hermes" },
+      provider: "ax",
+      config: { backend: "ax" },
     });
     await expect(provisionHostConfig(orgId)).resolves.toEqual({
       modelHosts: [],
@@ -519,62 +391,12 @@ describeIfDb("provisionHostConfig", () => {
     expect(source?.authMode).toBe("jwt");
   });
 
-  it("writes hermes config under ~/.config/openneko/hermes/{orgId} when HERMES_HOME is unset", async () => {
-    delete process.env.HERMES_HOME;
-    await seedDataSource(orgId);
-    await seedProvider(orgId, {
-      scope: "agent",
-      provider: "hermes",
-      config: { backend: "hermes" },
-    });
-    await seedProvider(orgId, {
-      scope: "primary",
-      provider: "google-gemini",
-      model: "gemini-pro-latest",
-      secrets: { apiKey: "test-default-path-key" },
-    });
-
-    await provisionHostConfig(orgId);
-
-    const expectedHome = join(tempHome, ".config", "openneko", "hermes", orgId);
-    expect(hermesHomeForOrg(orgId)).toBe(expectedHome);
-
-    const yaml = await readFile(join(expectedHome, "config.yaml"), "utf8");
-    expect(yaml).toContain('default: "gemini-pro-latest"');
-    const env = await readFile(join(expectedHome, ".env"), "utf8");
-    expect(env).toContain("GEMINI_API_KEY=test-default-path-key");
-
-    expect(hermesHomeForOrg("other-org")).toBe(
-      join(tempHome, ".config", "openneko", "hermes", "other-org"),
-    );
-  });
-
-  it("writes empty .env when key is missing but provider row exists", async () => {
-    await seedDataSource(orgId);
-    await seedProvider(orgId, {
-      scope: "agent",
-      provider: "hermes",
-      config: { backend: "hermes" },
-    });
-    await seedProvider(orgId, {
-      scope: "primary",
-      provider: "google-gemini",
-      model: "gemini-pro-latest",
-      secrets: {},
-    });
-
-    await provisionHostConfig(orgId);
-
-    const env = await readFile(join(hermesHome, ".env"), "utf8");
-    expect(env).toBe("");
-  });
-
   it("re-derives the sandbox egress env on a provider switch", async () => {
     await seedDataSource(orgId);
     await seedProvider(orgId, {
       scope: "agent",
-      provider: "hermes",
-      config: { backend: "hermes" },
+      provider: "ax",
+      config: { backend: "ax" },
     });
     await seedProvider(orgId, {
       scope: "primary",
@@ -585,10 +407,7 @@ describeIfDb("provisionHostConfig", () => {
     const firstLaunch = await provisionHostConfig(orgId);
     expect(firstLaunch).toMatchObject({
       modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}-[a-f0-9]{8}$/),
-      modelHosts: [
-        { host: "generativelanguage.googleapis.com" },
-        { host: "models.dev" },
-      ],
+      modelHosts: [{ host: "generativelanguage.googleapis.com" }],
       keyAliases: [{ from: "MODEL_API_KEY", to: "GEMINI_API_KEY" }],
     });
 
@@ -605,12 +424,8 @@ describeIfDb("provisionHostConfig", () => {
     const secondLaunch = await provisionHostConfig(orgId);
     expect(secondLaunch).toMatchObject({
       modelProvider: expect.stringMatching(/^openneko-agent-[a-f0-9]{16}-[a-f0-9]{8}$/),
-      modelHosts: [
-        { host: "api.anthropic.com" },
-        { host: "models.dev" },
-      ],
+      modelHosts: [{ host: "api.anthropic.com" }],
       keyAliases: [{ from: "MODEL_API_KEY", to: "ANTHROPIC_API_KEY" }],
-      hermesHomeHostPath: hermesHomeForOrg(orgId),
     });
 
     // Persisted org configuration is returned as a run-local snapshot. It
@@ -628,8 +443,8 @@ describeIfDb("provisionHostConfig", () => {
     await seedDataSource(orgId);
     await seedProvider(orgId, {
       scope: "agent",
-      provider: "hermes",
-      config: { backend: "hermes" },
+      provider: "ax",
+      config: { backend: "ax" },
     });
     await seedProvider(orgId, {
       scope: "primary",
@@ -642,17 +457,14 @@ describeIfDb("provisionHostConfig", () => {
       modelHosts: [],
     });
     expect(ensureOpenShellProviderMock).toHaveBeenCalledTimes(3);
-
-    const yaml = await readFile(join(hermesHome, "config.yaml"), "utf8");
-    expect(yaml).toContain('provider: "gemini"');
     delete process.env.OPENNEKO_PROVISION_RETRY_BASE_MS;
   });
 
   it("verifies the gateway and syncs the provider before an agent job", async () => {
     await seedProvider(orgId, {
       scope: "agent",
-      provider: "hermes",
-      config: { backend: "hermes" },
+      provider: "ax",
+      config: { backend: "ax" },
     });
     await seedProvider(orgId, {
       scope: "primary",
@@ -688,8 +500,8 @@ describeIfDb("provisionHostConfig", () => {
       await seedDataSource(refreshOrgId);
       await seedProvider(refreshOrgId, {
         scope: "agent",
-        provider: "hermes",
-        config: { backend: "hermes" },
+        provider: "ax",
+        config: { backend: "ax" },
       });
 
       // The worker can become healthy before System Setup creates a primary
@@ -725,9 +537,6 @@ describeIfDb("provisionHostConfig", () => {
       // A rotated key gets a new provider in the same family; runs in flight keep the old one.
       expect(synced.at(-1)!.providerName).not.toBe(synced.at(-2)!.providerName);
       expect(synced.at(-1)!.providerName.startsWith(`${synced.at(-1)!.family}-`)).toBe(true);
-      await expect(
-        readFile(join(hermesHomeForOrg(refreshOrgId), ".env"), "utf8"),
-      ).resolves.toContain("GEMINI_API_KEY=key-b");
 
       await db()
         .update(llm_provider_config)
@@ -748,10 +557,7 @@ describeIfDb("provisionHostConfig", () => {
         expect.objectContaining({ apiKey: "key-c" }),
       );
       expect(anthropicLaunch).toMatchObject({
-        modelHosts: [
-          { host: "api.anthropic.com" },
-          { host: "models.dev" },
-        ],
+        modelHosts: [{ host: "api.anthropic.com" }],
         keyAliases: [{ from: "MODEL_API_KEY", to: "ANTHROPIC_API_KEY" }],
       });
 
@@ -768,9 +574,6 @@ describeIfDb("provisionHostConfig", () => {
         );
       const keylessLaunch = await ensureHostConfigProvisioned(refreshOrgId);
       expect(keylessLaunch.modelProvider).toBeUndefined();
-      await expect(
-        readFile(join(hermesHomeForOrg(refreshOrgId), ".env"), "utf8"),
-      ).resolves.toBe("");
 
       await db()
         .update(llm_provider_config)
@@ -781,10 +584,9 @@ describeIfDb("provisionHostConfig", () => {
             eq(llm_provider_config.scope, "primary"),
           ),
         );
-      await ensureHostConfigProvisioned(refreshOrgId);
-      await expect(
-        readFile(join(hermesHomeForOrg(refreshOrgId), "config.yaml"), "utf8"),
-      ).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(ensureHostConfigProvisioned(refreshOrgId)).resolves.toEqual({
+        modelHosts: [],
+      });
     } finally {
       await deleteTestOrg(refreshOrgId);
     }
@@ -797,8 +599,8 @@ describeIfDb("provisionHostConfig", () => {
       await seedDataSource(retryOrgId);
       await seedProvider(retryOrgId, {
         scope: "agent",
-        provider: "hermes",
-        config: { backend: "hermes" },
+        provider: "ax",
+        config: { backend: "ax" },
       });
       await seedProvider(retryOrgId, {
         scope: "primary",

@@ -5,10 +5,10 @@ import {
   type AgentReasoningEffort,
 } from "./agent-limits";
 
-export const AGENT_BACKEND_IDS = ["hermes", "ax"] as const;
+export const AGENT_BACKEND_IDS = ["ax"] as const;
 export type AgentBackendId = (typeof AGENT_BACKEND_IDS)[number];
 
-/** The backend for an org that has not chosen one, when its primary provider supports it. */
+/** The backend every org runs. */
 export const DEFAULT_AGENT_BACKEND: AgentBackendId = "ax";
 
 export { AGENT_DEFAULT_GLOBAL_CAP, METRIC_REFRESH_DEFAULT_CAP } from "./agent-limits";
@@ -23,13 +23,8 @@ export function metricRefreshConcurrency(globalCap: number, configured?: string)
 export const AGENT_BACKEND_OPTIONS = [
   {
     value: "ax",
-    label: "Ax (default)",
+    label: "Ax",
     description: "OpenNeko's Go agent. Calls tools from code, so one model step can run many tools.",
-  },
-  {
-    value: "hermes",
-    label: "Hermes",
-    description: "Subprocess agent. Works with any LLM provider.",
   },
 ] as const;
 
@@ -105,7 +100,7 @@ export type AgentEvent =
   // structured-output payloads (a2ui fences, tool-call JSON, etc.) here — use
   // the `surface` event for cards.
   | { type: "message"; role: "user" | "assistant"; content: string }
-  /** Hermes ACP's provider-neutral, model-authored mid-turn commentary. */
+  /** Mid-turn commentary stored by earlier runtimes; kept so old runs still render. */
   | { type: "interim"; id: string; content: string; source: "hermes_interim_assistant" }
   | {
       type: "tool_start";
@@ -230,6 +225,7 @@ export type AgentEvent =
   | {
       type: "skill_used";
       name: string;
+      /** "hermes" only on events stored by the retired Hermes runtime. */
       source: "hermes" | "read";
       contentHash: string;
       origin: "builtin" | "custom" | "pack";
@@ -300,7 +296,7 @@ export type AgentRunOptions = {
   backendState?: Record<string, unknown>;
   mcpServers?: Record<string, unknown>;
   /** Per-run context for backends that mount MCP servers as stdio child
-   *  processes (hermes/ACP) instead of in-process SDK instances. The bridge
+   *  processes instead of in-process SDK instances. The bridge
    *  entry (OPENNEKO_MCP_BRIDGE) rebuilds each named server from this env;
    *  broker coords are copied into the clean bridge-child env only. */
   mcpBridgeEnv?: Record<string, string>;
@@ -311,7 +307,7 @@ export type AgentRunOptions = {
    */
   nativeDelegation?: AgentNativeDelegationPolicy;
   /** Web turn ⇒ the agent renders a2ui cards. Backends that can't take the
-   *  in-process SDK card server (hermes) wire their own render tool when set.
+   *  in-process SDK card server wire their own render tool when set.
    *  See docs/PER_CHANNEL_RENDERING.md. */
   wantsCards?: boolean;
   /** Overrides the configured reasoning effort for this run. */
@@ -327,7 +323,7 @@ export type AgentRunResult = {
   /**
    * Unprocessed agent output, for out-of-band fence parsing by the runtime
    * (action/workflow/rule/memory fences). finalText is the cleaned display
-   * text — Hermes strips its hidden builder fences from it AND from the
+   * text — the backend strips its hidden builder fences from it AND from the
    * message stream, so neither carries the fence bodies. rawText preserves
    * them. Omit when finalText already carries any fences (the runtime falls
    * back to finalText).
@@ -344,7 +340,7 @@ export type AgentRunResult = {
   degraded?: boolean;
 };
 
-export type AgentNativeDelegation = "hermes-delegate-task" | "ax-worker";
+export type AgentNativeDelegation = "ax-worker";
 
 // Per-backend feature flags so shared runtime code (runChatTurn, prompt
 // builder, auto-memory dispatch) never branches on backend.id. Adding a new

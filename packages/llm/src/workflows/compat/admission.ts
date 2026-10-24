@@ -271,7 +271,7 @@ export async function admitReckonWebhookRun(input: {
     );
     await client.query(
       `insert into work_run (id, org_id, thread_id, backend, status, actor_user_id, actor_role, created_at, updated_at)
-       values ($1, $2, $3, coalesce((select config->>'backend' from llm_provider_config where org_id = $2 and scope = 'agent'), 'hermes'), 'queued', null, 'service', $4, $4)`,
+       values ($1, $2, $3, coalesce((select config->>'backend' from llm_provider_config where org_id = $2 and scope = 'agent'), 'ax'), 'queued', null, 'service', $4, $4)`,
       [workRunId, input.webhook.orgId, threadId, now],
     );
     await admitRunSpend(client, {

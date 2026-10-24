@@ -49,7 +49,6 @@ export default function AgentForm({
 }: {
   initial: { agent: AgentSettingsPayload; providers: SettingsPayload; graphjinAgent: GraphjinAgentPayload };
 }) {
-  const [backend, setBackend] = useState(initial.agent.agent.backend);
   const [concurrentJobs, setConcurrentJobs] = useState(String(initial.agent.agent.globalCap));
   const [primary, setPrimary] = useState({
     provider: initial.providers.primary.provider,
@@ -109,12 +108,11 @@ export default function AgentForm({
       const providerBody = await providerRes.json();
       if (!providerRes.ok) throw new Error(providerBody.error ?? "Primary provider save failed");
 
-      // After the provider: switching to Ax checks the saved provider.
       const cap = Number(concurrentJobs) || initial.agent.defaults.globalCap;
       const agentRes = await fetch("/api/settings/agent", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ backend, globalCap: cap }),
+        body: JSON.stringify({ globalCap: cap }),
       });
       const agentBody = await agentRes.json();
       if (!agentRes.ok) throw new Error(agentBody.error ?? "Agent settings save failed");
@@ -132,24 +130,11 @@ export default function AgentForm({
       <AppHeader back={{ href: "/admin/settings", label: "Settings" }} />
       <PageHeading
         title="Agent"
-        description="Choose the agent backend for the whole organization, its model provider and worker concurrency."
+        description="Choose the model provider for the whole organization and worker concurrency."
       />
 
       <section className="settings-card">
         <div className="grid gap-4">
-          <Field
-            label="Agent backend"
-            hint={initial.agent.options.find((o) => o.value === backend)?.description}
-          >
-            <Select
-              id="agent-backend"
-              value={backend}
-              onChange={setBackend}
-              options={initial.agent.options}
-              ariaLabel="Agent backend"
-            />
-          </Field>
-
           <div className="settings-grid">
             <Field label="Provider">
               <Select

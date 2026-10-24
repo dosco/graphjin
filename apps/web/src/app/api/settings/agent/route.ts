@@ -32,7 +32,7 @@ export async function PUT(request: NextRequest) {
       backend: body.backend,
       globalCap: body.globalCap,
     });
-    // Reprovision so Hermes uses the latest provider settings.
+    // Reprovision so the agent uses the latest provider settings.
     await provisionHostConfig((await getOrgId()));
     return NextResponse.json(saved);
   } catch (e) {

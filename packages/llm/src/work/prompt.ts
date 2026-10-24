@@ -299,21 +299,7 @@ Never invent a package name and never request credentials in chat.
 
 function buildNativeDelegationSection(supportedForRun: boolean, backend: AgentBackendId): string {
   if (!supportedForRun) return "";
-  if (backend === "ax") return AX_DELEGATION;
-  return `<delegation>
-You have Hermes native subagent delegation through \`delegate_task\`. Use it
-when a focused subtask would benefit from a fresh context, parallel work, or
-independent investigation. The parent agent decides whether to delegate and
-how to decompose the work; OpenNeko does not provide named subagent profiles.
-
-When delegating, pass all context the child needs in \`goal\` and \`context\`.
-Children do not know the parent conversation, prior tool calls, or unstated
-decisions. Choose \`toolsets\` per task (for example \`["file"]\` for read-only
-review, \`["terminal", "file"]\` for code work, \`["web"]\` for research) and
-use \`tasks\` for independent parallel subtasks. Use \`role: "orchestrator"\`
-only when nested delegation is truly worth the extra cost and the configured
-spawn depth allows it.
-</delegation>`;
+  return backend === "ax" ? AX_DELEGATION : "";
 }
 
 function triggerDiscovery(graphjinDataPath: GraphjinDataPath): string {

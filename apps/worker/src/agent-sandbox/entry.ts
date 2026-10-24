@@ -1,10 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
-import { rm, symlink } from "node:fs/promises";
-import { join } from "node:path";
 import {
   type AgentBackendId,
   type AgentEvent,
-  type AgentModelIdentity,
   type AgentRunOptions,
   type AgentRunResult,
   type AgentWorkspace,
@@ -37,7 +34,7 @@ import { startDataSocket, type DataSocket } from "./data-socket";
  * to the host (which scrubs + persists). The model key never enters the box.
  *
  * Events go over stdout because `openshell sandbox exec` streams stdout to the
- * host in real time. Hermes MCP tools use BrokerControlPlane only when the run
+ * host in real time. MCP tools use BrokerControlPlane only when the run
  * grants brokered control-plane capabilities.
  */
 interface SandboxJob {
@@ -48,7 +45,6 @@ interface SandboxJob {
   message: string;
   prompt: string;
   backendId: AgentBackendId;
-  configuredIdentity?: AgentModelIdentity;
   ax?: AxBackendConfig;
   model?: string;
   backendState?: Record<string, unknown>;
@@ -118,13 +114,6 @@ export async function main(job = loadJob()): Promise<void> {
   // unchanged built-ins from the agent image. Skill bodies remain filesystem
   // resources and are read only when the agent chooses one.
   await materializeBuiltinSkills(job.workspace.skillsRoot, job.allowedSkills);
-  // Hermes scans HERMES_HOME/skills. Point it at the per-run catalog so a
-  // required skill staged by the host is visible to Hermes' native skill tool.
-  if (process.env.HERMES_HOME) {
-    const hermesSkillsRoot = join(process.env.HERMES_HOME, "skills");
-    await rm(hermesSkillsRoot, { recursive: true, force: true });
-    await symlink(job.workspace.skillsRoot, hermesSkillsRoot, "dir");
-  }
   // Skills and workflow prompts name these folders; the agent's shell commands inherit them.
   process.env.RUN_DIR = job.workspace.runRoot;
   process.env.ARTIFACT_DIR = job.workspace.artifactRoot;
@@ -133,12 +122,11 @@ export async function main(job = loadJob()): Promise<void> {
 
   const backend = makeAgentBackend({
     id: job.backendId,
-    configuredIdentity: job.configuredIdentity,
     ...(job.ax ? { ax: job.ax } : {}),
   });
 
   // MCP tools reach the control plane through stdio bridge children that
-  // Hermes ACP launches from this path.
+  // the backend launches from this path.
   const controlPlane =
     brokerUrl && brokerToken
       ? new BrokerControlPlane(brokerUrl, brokerToken)
@@ -349,7 +337,6 @@ async function run(): Promise<void> {
         status: "ok",
         skillsRoot,
         mcpBridgePath: runtime.mcpBridgePath,
-        lazyInstallsDisabled: process.env.HERMES_DISABLE_LAZY_INSTALLS === "1",
       })}\n`,
     );
     return;

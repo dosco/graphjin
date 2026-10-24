@@ -5,7 +5,7 @@
  *
  * Used between sub-suites when iterating plans against the same org.
  * After this returns, callers should call `provisionHostConfig(orgId)` to
- * push the new state to host config files (Hermes config.yaml + .env,
+ * push the new state to host config (gateway provider sync and
  * graphjin client.json).
  */
 

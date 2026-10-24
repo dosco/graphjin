@@ -148,9 +148,9 @@ runner or report edit cannot silently change qualification.
 
 ## 6. Runtime contract
 
-The reference Hermes configuration records, rather than implies:
+The Ax v4 configuration records, rather than implies:
 
-- three repetitions and declared order;
+- one repetition and declared order;
 - one episode at a time with a cold cache;
 - 12-minute episode timeout;
 - 30-second GraphJin preflight RPC timeout;
@@ -158,17 +158,15 @@ The reference Hermes configuration records, rather than implies:
 - two harness attempts and one backend retry;
 - explicit provider output-token and model context limits;
 - candidate provider/model identity;
-- 40-hour and USD 175 cohort budget ceilings.
+- 16-hour and USD 90 cohort budget ceilings.
 
-The eval-neutral token limits are translated into the configuration fields used
-by the pinned Hermes runtime. Ranked Hermes configs fail preflight if either
-limit is missing, non-positive, or the output limit is not below the context
-limit. The public manifest records both resolved limits and any resolution
-notices.
+Ranked configs fail preflight if either eval-neutral token limit is missing,
+non-positive, or the output limit is not below the context limit. The public
+manifest records both resolved limits and any resolution notices.
 
 Provider traffic is always an explicit operator action. Validation, planning,
 schema generation, result verification, and the `scripted-good` v4 control use
-no paid provider. A provider-backed canary or `--full-v4` cohort must be reviewed
+no paid provider. A provider-backed `--ax-v4` cohort must be reviewed
 against its resolved plan and budget before credentials are supplied and the
 run is authorized.
 
@@ -222,12 +220,12 @@ pnpm openneko eval plan --config evals/configs/openneko-backend-scripted-good-v4
 pnpm eval:backend --smoke-v4 --no-promote
 ```
 
-Provider-backed reference cohort, only after explicit budget approval:
+Provider-backed Ax cohort, only after explicit budget approval:
 
 ```sh
-pnpm openneko eval validate --config evals/configs/openneko-backend-hermes-v4.yaml
-pnpm openneko eval plan --config evals/configs/openneko-backend-hermes-v4.yaml --json
-pnpm eval:backend --full-v4
+pnpm openneko eval validate --config evals/configs/openneko-backend-ax-gemini-3.8-flash-v4.yaml
+pnpm openneko eval plan --config evals/configs/openneko-backend-ax-gemini-3.8-flash-v4.yaml --json
+pnpm eval:backend --ax-v4
 ```
 
 Publish a provider result only from a clean released OpenNeko commit. Submit the

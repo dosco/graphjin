@@ -33,7 +33,7 @@ function fakeBackend(
   onRun: (opts: AgentRunOptions) => Promise<AgentRunResult>,
 ): AgentBackend {
   return {
-    id: "hermes",
+    id: "ax",
     capabilities: {
       mcpTools: true,
       sdkStopHook: false,
@@ -343,7 +343,7 @@ describeIfDb("runWorkflowTurn", () => {
       });
 
       // Aborting the signal mid-run simulates cancelAllAgents() on SIGTERM;
-      // hermes then surfaces the SIGKILLed child as a disposed-client reject.
+      // the backend then surfaces the SIGKILLed child as a disposed-client reject.
       const controller = new AbortController();
       const backend = fakeBackend(async () => {
         controller.abort();

@@ -43,7 +43,7 @@ results as readable cards and charts — not raw data dumps.
 | A memory that works by meaning | Teach the assistant a fact once and it recalls it by meaning, not keywords — memory is embedding-backed and saved/searched by the agent itself. | #17 |
 | Briefing → deep dive | Any briefing card opens into a full Ask thread seeded with that card's context — from "what's this number?" to a real investigation in one click. | #8 |
 | Editable business profile | The assistant's understanding of your company is right there to read — click into it and edit it like a document. | #10 |
-| Two runtimes, any model provider | Admins pick Hermes or Ax as the sandboxed agent runtime for the organisation. Ax is the default when the primary model provider supports it. Both keep the full administrative toolset, work with Anthropic, Google, OpenAI-compatible and other providers, and price each run from the same model price list. | #3, #112, #436, #449 |
+| One runtime, any model provider | Ax is the sandboxed agent runtime for every organisation. It keeps the full administrative toolset, works with Anthropic, Google, OpenAI-compatible and other providers, and prices each run from the model price list. | #3, #112, #436, #449 |
 | Information-dense Compact mode | A density toggle switches the whole app between a comfortable reading layout and an information-dense operator view. | #88 |
 
 ## Connect your data, conversationally

@@ -2,7 +2,7 @@
 
 The agent image ships two JavaScript bundles and built-in skills. It does not
 ship the worker's Node dependency tree, tsx, database libraries, or embedding
-stack. Hermes and the document tools remain part of the agent image.
+stack. The Ax Harness and the document tools are part of the agent image.
 
 Each run creates a fresh OpenShell sandbox with its own provider and egress
 policy. Creation runs `true`; execution starts `/app/entry.js` once. The entry
@@ -12,31 +12,18 @@ checks run during the image build on both release architectures.
 Measured image sizes, restart/readiness timings, single-agent and three-session
 results, and lazy document-service memory are recorded in the
 [12 September 2026 demo benchmark](benchmarks/2026-09-12-agent-startup.md).
-The follow-up [latency and warmed-session profile](benchmarks/2026-09-12-latency-profile.md)
-separates Hermes/ACP initialization, MCP setup, provider chunks, client delivery,
-and the memory cost of an initialized idle sandbox.
-The [request-independent preload experiment](benchmarks/2026-09-12-generic-prewarm.md)
-measures common Hermes/tool code before any model configuration or MCP attachment.
 
 ## Resource limits
 
 `OPENNEKO_AGENT_CPUS` defaults to `2`; `OPENNEKO_AGENT_MEMORY` defaults to `1Gi`.
 The launcher passes these as OpenShell `--cpu` and `--memory` creation flags.
-The limits cover the sandbox's process tree, including Hermes and tool children.
+The limits cover the sandbox's process tree, including the Ax Harness and tool children.
 The Compose overlays forward both variables to web and worker. Restart those
 hosts after changing them; existing sandboxes retain their creation limits.
 
 Ten sandboxes can consume at most 10 GiB at this default, leaving roughly 6 GiB
 on a 16 GiB host for the OS and services. This is a capacity budget, not proof
 that those services fit in the remainder.
-
-A local Linux ARM64 startup probe loaded the bundled entry, initialized a
-Hermes ACP session, and connected the real MCP bridge under a 1 GiB cap. Its
-cgroup peak was about 395 MiB (including charged file cache). It made no model
-calls and did not exercise document tools or delegation. Ten concurrently
-launched copies also initialized successfully, with per-container cgroup peaks
-of 233–266 MiB. Shared file-cache charging affects that comparison; it is not
-a benchmark of ten active model/document workloads.
 
 These are configurable starting limits, not measured workload peak requirements.
 Size them for the document/delegation workloads and maximum concurrent turns
@@ -51,14 +38,13 @@ Launcher logs contain JSON records with `type: "sandbox_phase"`, `runId`,
 - `create_upload`: OpenShell creation, image availability, policy setup,
   upload, and the initial command. Each retry has its own record.
 - `exec`: execute the agent and drain streamed event handlers. This includes
-  Hermes initialization, model time, tools, and the artifact scan.
+  Ax Harness startup, model time, tools, and the artifact scan.
 - `download`: recover artifacts when present or their state is unknown.
 - `delete`: destroy the sandbox and its remaining process tree.
 - `total`: the full launcher call, including staging, retries, and cleanup.
 
 Creation and upload share one CLI call, so the host does not claim separate
-gateway/provision/upload measurements. Compare these logs with
-`scripts/bench-hermes-acp.mjs` when investigating Hermes initialization.
+gateway/provision/upload measurements.
 Do not interpret `exec` or total lifecycle duration as time to first answer.
 
 ## Artifact recovery
@@ -73,7 +59,7 @@ their existing no-download behavior.
 
 ```sh
 pnpm --filter @neko/worker exec vitest run test/agent-sandbox
-pnpm --filter @neko/llm exec vitest run test/sandbox-launcher.test.ts test/hermes-install-contract.test.ts test/workflow-api-contract.test.ts
+pnpm --filter @neko/llm exec vitest run test/sandbox-launcher.test.ts test/workflow-api-contract.test.ts
 docker build --target agent -t openneko-agent:startup .
 ```
 
@@ -88,19 +74,6 @@ Embedding computation now runs in the shared embedding service. Both it and
 Docling use the [lazy processing listener](../lazy-service/README.md), releasing
 model memory after idle time. Incremental upload caches remain out of scope:
 fresh boxes have no upload baseline and unchanged built-in skills are already omitted.
-
-The [user-scoped warm pool experiment](benchmarks/2026-09-12-user-warm-pool.md)
-implements generic prewarming enabled by default (one slot), user reuse, and a
-three-minute idle timeout. Set `OPENNEKO_AGENT_WARM_POOL_SIZE=0` to disable it.
-The pool serves Hermes only. An organisation on the Ax backend starts each run in
-a fresh sandbox (about 2.5 s with the current supervisor), because the warm slot's
-idle timer ends long Ax runs after three minutes.
-
-Solo admin runs reuse their assigned sandbox by default. Userless runs use the
-recorded solo owner's persisted ID. Web requests automatically adopt or create
-that account, with no setup redirect or required email. The three-minute idle timeout starts after completion; active turns do
-not consume it. Expired generic spares replenish automatically while the host is
-alive. Changed model/provider or access configuration still invalidates reuse.
 
 ## Knowledge cache
 
@@ -118,11 +91,6 @@ An isolated diagnostic against `neko-vm` on 12 September measured a 13,515 ms
 cold build (41 HTTP calls), a 20 ms cached read (zero HTTP calls), and a 22 ms
 unchanged-revision check (one HTTP call). This used the patched cache in a
 temporary directory; it did not deploy the patch or change the live cache.
-
-Multi-user RBAC work must complete [RBAC-1 in the roadmap](../../ROADMAP.md#rbac-1-connect-effective-access-revisions-to-warm-sandbox-reuse)
-before enabling assigned reuse for actors with fine-grained grants. It documents
-the opaque revision string, the separate SHA-256 fingerprint, invalidation rules
-and acceptance checks.
 
 ## Solo admin identity
 
@@ -173,7 +141,7 @@ unversioned local images honestly report `unknown`.
 | Worker | queue wait, run lookup, provisioning, pack actions, broker readiness |
 | Shared turn | mark running, load thread, workspace, knowledge prefetch/read, identity and authorization revision, GraphJin config, compaction, memory, skills, persona, fallback plugin catalog |
 | Knowledge | snapshot read/age, hit/miss/coalesced wait, revision checks, individual catalog requests, rebuild, atomic publish, refresh failure and stale availability; 60-second background refresh |
-| Sandbox | acquire, staging, cold creation, configuration binding, provider/policy attachment, execution, download, deletion; assigned/generic hits, cold misses, model/auth/config changes, dead slots, concurrent users, idle expiry and spare replenishment |
+| Sandbox | staging, creation, workspace upload, provider readiness, execution, download, skill capture, deletion |
 | Streaming | SSE subscription, LISTEN setup, initial DB read, hello, first event and first assistant output enqueued |
 | Browser | submit through acknowledgement (including new-thread/upload preparation), stream open, first event, first assistant output and subsequent paint opportunity; terminal run without output |
 
@@ -193,16 +161,15 @@ startup. Do not add nested or parallel phase durations together.
 The existing outer model observation measures the agent loop; its first-output
 marker is explicitly tagged as agent output, **not provider TTFT**. Run-level
 first output includes the HTTP/worker prelude when a startup trace is present. Provider-internal scheduling/token timings are
-not exposed by the ACP event contract. Tool/delegation spans and usage continue
+not exposed by the agent event contract. Tool/delegation spans and usage continue
 through the existing agent-event observer. Prompts, SQL, catalog content, tokens
 and raw configuration are excluded from startup metrics; revisions are hashed.
 
 To compare turns, filter container JSON logs by `type == "startup_timing"`, then
 by `runId` (or `requestId` for a rejected/pre-run request). Compare the same
-version/commit and execution path, grouping sandbox outcomes and cache outcomes
-before calculating median/p95. Use `elapsedMs` for milestone timing and
-`durationMs` for individual phases. Join background eviction/replenishment logs
-by pool/slot; their originating run ID does not mean they blocked that run.
+version/commit and execution path, grouping cache outcomes before calculating
+median/p95. Use `elapsedMs` for milestone timing and
+`durationMs` for individual phases.
 
 ### Workflows, metrics and workflow API calls
 

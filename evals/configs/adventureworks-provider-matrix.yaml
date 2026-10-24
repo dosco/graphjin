@@ -1,6 +1,6 @@
 schema_version: openneko.eval/v1
 id: adventureworks-provider-matrix
-description: Matched direct-path comparison of Anthropic and Gemini through Hermes.
+description: Matched direct-path comparison of Anthropic and Gemini through Ax.
 adapter: adventureworks.metric
 semantics:
   ref: ../semantics.yaml
@@ -24,16 +24,16 @@ defaults:
   max_attempts: 2
 
 variants:
-  - id: hermes-anthropic-direct
-    backend: hermes
+  - id: ax-anthropic-direct
+    backend: ax
     outer_model:
       provider: anthropic
       model: claude-opus-4-7
       credential_ref: env:ANTHROPIC_API_KEY
     data_path: graphjin-direct
 
-  - id: hermes-gemini-direct
-    backend: hermes
+  - id: ax-gemini-direct
+    backend: ax
     outer_model:
       provider: google-gemini
       model: gemini-3.6-flash

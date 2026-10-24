@@ -42,9 +42,9 @@ import { BrokerControlPlane, postAgentEvents } from "./broker-client";
 const TOOL_CALL_TIMEOUT_MS = 180_000;
 
 /**
- * Stdio MCP server for ACP backends (hermes). The agent process can't hand
- * its in-process SDK server instances across a process boundary, so hermes'
- * `session/new` launches THIS script once for all named servers. The bridge
+ * Stdio MCP server for out-of-process backends. The agent process can't hand
+ * its in-process SDK server instances across a process boundary, so the
+ * backend launches THIS script once for all named servers. The bridge
  * rebuilds each logical server in-process and exposes a single multiplexed
  * stdio endpoint bound to the broker control plane. Keeping one Node process
  * instead of one per logical MCP
@@ -213,7 +213,7 @@ export function buildBridgeServer(
 }
 
 /**
- * Hermes exposes a tool as `mcp_<server>_<tool>`. Mounting one physical MCP
+ * The agent sees a tool as `mcp_<server>_<tool>`. Mounting one physical MCP
  * server called `neko` and publishing `<logical-server>_<tool>` therefore
  * preserves the exact model-facing names used before multiplexing:
  *
@@ -234,7 +234,7 @@ export async function buildMultiplexedBridgeServer(
   if (names.length === 0) throw new Error("mcp-bridge: no servers to multiplex");
 
   // Logical servers connect in memory at startup. Their tool catalogs resolve
-  // on Hermes' first tools/list, so a logical server whose catalog comes from
+  // on the backend's first tools/list, so a logical server whose catalog comes from
   // a remote service (neko_graphjin relays GraphJin's live tools/list) cannot
   // take the other servers down with it.
   const logicalClients: Array<{ name: string; client: Client }> = [];
@@ -338,7 +338,7 @@ async function warmUpBroker(baseUrl: string, name: string): Promise<void> {
     }
   }
   // Startup diagnostics, readable mid-run via `sandbox exec` — bridge stderr
-  // is swallowed by hermes, so a file is the only visible channel.
+  // is swallowed by the backend, so a file is the only visible channel.
   try {
     const envPick = Object.fromEntries(
       Object.entries(process.env)
@@ -410,7 +410,7 @@ if (invokedDirectly) {
   main().catch(async (err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[mcp-bridge] fatal:", message);
-    // Hermes stores MCP child stderr inside the ephemeral sandbox. Persist a
+    // The backend keeps MCP child stderr inside the ephemeral sandbox. Persist a
     // sanitized startup failure through the normal run event sink as well, so
     // a lost tool surface is diagnosable after teardown instead of silently
     // degrading the agent to filesystem/terminal tools.

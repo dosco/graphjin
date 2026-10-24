@@ -48,9 +48,9 @@ stack and may run date backfilling. The dedicated runner statically rejects the
 simulator, scenario injector, and backfill scripts, then verifies the frozen
 AdventureWorks fingerprint before and after the run.
 
-The Hermes v4 config is provider-backed. Validation and planning are free, but
-a canary or full cohort must not be started until the resolved model, 195
-episodes, runtime limits, and budget have explicit operator approval.
+The Ax v4 config (`pnpm eval:backend --ax-v4`) is provider-backed. Validation
+and planning are free, but a run must not be started until the resolved model,
+65 episodes, runtime limits, and budget have explicit operator approval.
 
 With only the seeded oracle database available, `oracles` resolves and prints
 every case's ground truth without any provider call:
@@ -95,7 +95,7 @@ pnpm openneko eval verify --result evals/results/<config-id>/<run-id>
 pnpm openneko eval report --result evals/results/<config-id>/<run-id>
 ```
 
-The metric adapter supports Hermes across model providers, direct GraphJin and
+The metric adapter supports Ax across model providers, direct GraphJin and
 the read-only delegated GraphJin server agent, independent outer/inner
 provider-model identities, and dataset/config variation. The lifecycle adapter
 executes watcher and approval-governed mutation state machines against isolated
@@ -169,8 +169,8 @@ able to vary and attribute at least these factors:
 | Factor | Initial values or examples |
 |---|---|
 | Product path | metric refresh, business profiling, bootstrap metrics, `/work` chat, workflow build/run, actions, source configuration |
-| Agent runtime | Hermes |
-| Outer provider/model | any valid Hermes provider/model |
+| Agent runtime | Ax |
+| Outer provider/model | any valid Ax provider/model |
 | Data path | direct GraphJin query, delegated GraphJin agent, later planner-then-host-execute |
 | Inner provider/model | GraphJin agent provider/model, independent from the outer model |
 | Dataset | AdventureWorks first; later other databases, files, OpenAPI sources, and multi-source packs |
@@ -396,24 +396,24 @@ defaults:
   content_capture: redacted
 
 variants:
-  - id: hermes-gemini-direct
-    backend: hermes
+  - id: ax-gemini-direct
+    backend: ax
     outer_model:
       provider: google-gemini
       model: ${OPENNEKO_EVAL_GEMINI_MODEL}
       credential_ref: env:GEMINI_API_KEY
     data_path: graphjin-direct
 
-  - id: hermes-gemini-delegated
-    extends: hermes-gemini-direct
+  - id: ax-gemini-delegated
+    extends: ax-gemini-direct
     data_path: graphjin-agent
     inner_model:
       provider: google-gemini
       model: ${OPENNEKO_EVAL_GRAPHJIN_MODEL}
       credential_ref: env:GEMINI_API_KEY
 
-  - id: hermes-anthropic-direct
-    backend: hermes
+  - id: ax-anthropic-direct
+    backend: ax
     outer_model:
       provider: anthropic
       model: ${OPENNEKO_EVAL_CLAUDE_MODEL}
@@ -762,7 +762,7 @@ openneko.eval.case                         # eval-only root
 
 For a workflow, use `invoke_workflow` as the outer production operation and
 link or nest the participating agent/action spans. Use W3C Trace Context across
-HTTP and messaging; pass trace context explicitly into the sandbox, Hermes/ACP
+HTTP and messaging; pass trace context explicitly into the sandbox, Ax Harness
 subprocess, MCP bridge, broker, and GraphJin client boundary.
 
 Standard attributes include:
@@ -909,7 +909,7 @@ work is deliberately visible:
 - define the checked-in eval config/result JSON schemas and custom attribute
   registry;
 - instrument the shared product-path boundaries and existing tool events;
-- normalize usage from Hermes and GraphJin with explicit coverage
+- normalize usage from Ax and GraphJin with explicit coverage
   and missing-reason fields;
 - expand the existing persisted summaries into a common `harness_run` index and
   trace-ID links;
@@ -944,7 +944,7 @@ work is deliberately visible:
   growing the read/calculation corpus toward several hundred cases;
 - add resettable watcher/reactive and mutation/action packs with pre-state,
   readiness, post-state, collateral, audit, and idempotency oracles;
-- cover Hermes across selected providers, direct/delegated GraphJin, and
+- cover Ax across selected providers, direct/delegated GraphJin, and
   provider/model variants with compatibility validation;
 - run repeated, counterbalanced baselines;
 - check in compact scored results through a PR;
@@ -966,7 +966,7 @@ work is deliberately visible:
 - A hard process kill during a run reuses every verified completed slot and
   safely reconstructs the in-flight mutation/watcher fixture instead of
   restarting or trusting ambiguous state.
-- The same case runs through Hermes with at least two providers, and through
+- The same case runs through Ax with at least two providers, and through
   direct and delegated GraphJin data paths.
 - Adding another dataset requires a dataset pack, not runner edits.
 - Every result identifies exact code/config/dataset/scorer/model provenance and

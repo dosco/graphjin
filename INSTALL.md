@@ -35,7 +35,7 @@ Then run `openneko setup` (guided), or `openneko start` to bring the stack up wi
 
 1. Choose an admin database password.
 2. Confirm the pre-filled GraphJin URL (`--mode demo`) or enter your own (`--mode prod`).
-3. Pick the model provider Hermes should use (Anthropic / OpenAI / Google / Ollama / others). Hermes runs inside the OpenShell sandbox with the full tool set, including the chat-first management tools.
+3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). The agent (Ax) runs inside the OpenShell sandbox with the full tool set, including the chat-first management tools.
 4. Add your provider API key.
 5. Add an industry research provider, or skip.
 
@@ -387,7 +387,7 @@ Install host-only CLIs the worker shells out to (Docker images already include t
 ./scripts/install-clis.sh
 ```
 
-Installs the GraphJin CLI and Hermes.
+Installs the GraphJin CLI.
 
 In the dev flow, use `http://localhost:8080` for customer-data GraphJin in the setup wizard.
 

@@ -201,7 +201,7 @@ describeIfDb("library layering and search", () => {
         ownerUserId: alice(),
       });
       const thread = await createWorkThread(orgId, workflow.name);
-      const workRun = await createWorkRun(orgId, thread.id, "hermes");
+      const workRun = await createWorkRun(orgId, thread.id, "ax");
       await createWorkflowRun({
         orgId,
         workflowId: workflow.id,

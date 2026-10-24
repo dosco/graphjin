@@ -262,9 +262,6 @@ jobs:
       - name: Install
         run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
 
-      - name: Verify Hermes-only agent backend contract
-        run: bash scripts/check-hermes-only.sh
-
       - name: Install graphjin CLI
         env:
           GRAPHJIN_VERSION: "3.21.16"

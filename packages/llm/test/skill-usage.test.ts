@@ -26,35 +26,6 @@ describe("detectSkillUse", () => {
     expect(detectSkillUse(event)).toBeNull();
   });
 
-  it("reads a Hermes skill tool name", () => {
-    const event: AgentEvent = {
-      type: "tool_start",
-      id: "tc-3",
-      name: "Skill",
-      input: { title: "Skill: magento-triage-fulfillment" },
-    };
-    expect(detectSkillUse(event)).toEqual({
-      name: "magento-triage-fulfillment",
-      source: "hermes",
-    });
-  });
-
-  it("reads a Hermes skill view title from a Magento run", () => {
-    const event: AgentEvent = {
-      type: "tool_start",
-      id: "tc-live",
-      name: "read",
-      input: {
-        title: "skill view (magento-investigate-refunds)",
-        locations: [],
-      },
-    };
-    expect(detectSkillUse(event)).toEqual({
-      name: "magento-investigate-refunds",
-      source: "hermes",
-    });
-  });
-
   it("ignores other tool starts", () => {
     const event: AgentEvent = {
       type: "tool_start",

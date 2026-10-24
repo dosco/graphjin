@@ -81,7 +81,7 @@ openneko install @open-neko/plugin-scalekit
 ## Under the hood
 
 - **Self-hosted via Docker.** One binary, one `start` command. Data lives on your Postgres.
-- **Bring your own LLM.** Hermes runs against Anthropic, OpenAI, Google, Ollama, and other compatible providers. Change providers without changing the sandboxed agent runtime.
+- **Bring your own LLM.** The Ax agent runs against Anthropic, OpenAI, Google, Ollama, and other compatible providers. Change providers without changing the sandboxed agent runtime.
 - **Plugins in OpenShell sandboxes.** Outbound network is allowlisted per manifest, not blanket-open.
 - **Agent in a sandbox by default.** The agent loop itself runs inside an OpenShell policy sandbox — default-deny egress, and the model API key never enters the box (the gateway proxy injects it on the wire). See [OPENSHELL.md](OPENSHELL.md).
 - **Apache-2.0.** Read the source, self-host, fork, and build on it. OpenNeko trademarks are separately controlled — see [LICENSING.md](LICENSING.md) and [TRADEMARKS.md](TRADEMARKS.md).

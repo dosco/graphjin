@@ -1,6 +1,6 @@
 // Parses agent-emitted `neko_memory` fences into memory operations.
 // Mirrors the neko_a2ui surface fence pattern in surface.ts so backends
-// without first-class MCP tool support (Hermes today) can still write
+// without first-class MCP tool support can still write
 // memories — the agent emits the fence, the runtime extracts and persists.
 //
 // Fence shape:

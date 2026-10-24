@@ -1,4 +1,4 @@
-import { chmod, mkdir, unlink } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
@@ -15,16 +15,14 @@ import {
   or,
 } from "@neko/db";
 import { maybeDecryptSecret } from "./secrets";
-import { VENDORED_HERMES_MODEL_BINARY } from "./agent-runtime-contract";
+import { AX_HARNESS_BINARY } from "./agent-runtime-contract";
 import { isPrimaryProvider } from "./config";
-import { hermesHomeForOrg } from "./hermes-home";
 import { getGoogleToken } from "./llm";
 import {
-  resolveHermesProviderRuntime,
-  type HermesProviderRuntime,
+  resolveProviderRuntime,
+  type ProviderRuntime,
   type ProviderEndpoint,
 } from "./provider-runtime";
-import { agentLimits, hermesLimitConfigLines } from "./agent-limits";
 import {
   ensureOpenShellProvider,
   verifyOpenShellGateway,
@@ -292,145 +290,24 @@ function decryptSecrets(secrets: Record<string, unknown> | null): Record<string,
   return out;
 }
 
-export { hermesHomeForOrg } from "./hermes-home";
-
-export { VENDORED_HERMES_MODEL_BINARY } from "./agent-runtime-contract";
-
-export function hermesNativeReasoningConfigLines(nekoProvider: string): string[] {
-  if (nekoProvider === "anthropic" || nekoProvider === "google-gemini") {
-    // Keep native provider summaries consistently enabled during tool-heavy
-    // runs. Lower effort can let a model skip thinking on individual steps,
-    // which makes otherwise active runs appear silent.
-    return ['  reasoning_effort: "high"'];
-  }
-  return [];
-}
-
-export function hermesModelConfigLines(runtime: HermesProviderRuntime): string[] {
-  const lines = [
-    "model:",
-    `  default: "${escapeYamlString(runtime.model)}"`,
-    `  provider: "${runtime.provider}"`,
-    `  base_url: "${escapeYamlString(runtime.baseUrl)}"`,
-  ];
-  if (runtime.apiMode) lines.push(`  api_mode: "${runtime.apiMode}"`);
-  if (runtime.provider === "custom" && runtime.keyEnv) {
-    lines.push(`  api_key: "\${${runtime.keyEnv}}"`);
-  }
-  return lines;
-}
-
-/**
- * Translate eval-neutral provider limits into the pinned Hermes 0.21 model
- * keys. Keeping this mapping here means the values recorded in an eval
- * manifest are the same values actually written to Hermes config.yaml.
- */
-export function hermesModelBudgetConfigLines(
-  config: Record<string, unknown> | null | undefined,
-): string[] {
-  const value = config ?? {};
-  const positiveInteger = (key: string): number | undefined => {
-    const candidate = value[key];
-    if (candidate === undefined) return undefined;
-    if (
-      typeof candidate !== "number" ||
-      !Number.isInteger(candidate) ||
-      candidate <= 0
-    ) {
-      throw new Error(`${key} must be a positive integer.`);
-    }
-    return candidate;
-  };
-  const maxOutputTokens = positiveInteger("max_output_tokens");
-  const contextWindowTokens = positiveInteger("context_window_tokens");
-  if (
-    maxOutputTokens !== undefined &&
-    contextWindowTokens !== undefined &&
-    maxOutputTokens >= contextWindowTokens
-  ) {
-    throw new Error(
-      "max_output_tokens must be smaller than context_window_tokens.",
-    );
-  }
-  return [
-    ...(contextWindowTokens !== undefined
-      ? [`  context_length: ${contextWindowTokens}`]
-      : []),
-    ...(maxOutputTokens !== undefined
-      ? [`  max_tokens: ${maxOutputTokens}`]
-      : []),
-  ];
-}
-
-async function provisionHermes(orgId: string): Promise<void> {
-  const row = await loadProviderRow(orgId, "primary");
-  const hermesHome = hermesHomeForOrg(orgId);
-  if (!row || !row.enabled) {
-    await Promise.all([
-      unlink(join(hermesHome, "config.yaml")).catch(() => undefined),
-      unlink(join(hermesHome, ".env")).catch(() => undefined),
-    ]);
-    return;
-  }
-
-  if (!isPrimaryProvider(row.provider)) {
-    throw new Error(`Unsupported primary provider: ${row.provider}`);
-  }
-  const runtime = resolveHermesProviderRuntime({
-    provider: row.provider,
-    model: row.model ?? "",
-    config: row.config,
-  });
-  const secrets = decryptSecrets(row.secrets);
-  const apiKey = secrets.apiKey;
-
-  await mkdir(hermesHome, { recursive: true });
-
-  const yamlLines = hermesModelConfigLines(runtime);
-  yamlLines.push(...hermesModelBudgetConfigLines(row.config));
-  yamlLines.push("");
-  yamlLines.push("agent:");
-  const limits = agentLimits("chat");
-  yamlLines.push(`  max_turns: ${limits.maxTurns}`);
-  // Hermes translates this into the provider's native thinking controls on
-  // the same request. Gemini receives includeThoughts=true; Anthropic receives
-  // thinking.display="summarized". Neither path makes a second model call or
-  // asks the model to narrate progress in the prompt.
-  yamlLines.push(...hermesNativeReasoningConfigLines(row.provider));
-  yamlLines.push("");
-  yamlLines.push(...hermesLimitConfigLines(limits));
-  yamlLines.push("");
-
-  await atomicWriteFile(join(hermesHome, "config.yaml"), yamlLines.join("\n"));
-
-  const envContent = apiKey && runtime.keyEnv ? `${runtime.keyEnv}=${apiKey}\n` : "";
-  await atomicWriteFile(join(hermesHome, ".env"), envContent, { mode: 0o600 });
-  await chmod(join(hermesHome, ".env"), 0o600);
-}
-
-function escapeYamlString(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
 /**
  * Derive the agent-sandbox egress from the org's model config: the API host
- * (explicit base_url, else the provider default) + models.dev for hermes model
- * resolution; the exact connecting binary (egress matches /proc/<pid>/exe);
- * and the env var the backend reads.
+ * (explicit base_url, else the provider default) and the env var the backend
+ * reads. Egress matches the exact connecting binary (/proc/<pid>/exe).
  */
 function deriveAgentEgress(
   row: StoredRow,
-): { endpoints: ProviderEndpoint[]; runtime: HermesProviderRuntime } {
+): { endpoints: ProviderEndpoint[]; runtime: ProviderRuntime } {
   if (!isPrimaryProvider(row.provider)) {
     throw new Error(`Unsupported primary provider: ${row.provider}`);
   }
-  const runtime = resolveHermesProviderRuntime({
+  const runtime = resolveProviderRuntime({
     provider: row.provider,
     model: row.model ?? "",
     config: row.config,
   });
   return {
-    endpoints: [runtime.endpoint, { host: "models.dev" }],
+    endpoints: [runtime.endpoint],
     runtime,
   };
 }
@@ -442,7 +319,7 @@ function deriveAgentEgress(
  * wire (the key never enters the box). Replaces the manual `openshell
  * provider create` + hand-set egress env.
  */
-// Operator-supplied provider/host/key/home values win permanently; empty or
+// Operator-supplied provider/host/key values win permanently; empty or
 // unset means "derive from the org's provider config". These values are
 // read-only. Persisted provider settings must never be copied into process.env:
 // Next.js can evaluate route bundles at different times, causing one bundle to
@@ -451,7 +328,6 @@ const OPERATOR_AGENT_ENV = {
   provider: process.env.OPENNEKO_AGENT_MODEL_PROVIDER || "",
   host: process.env.OPENNEKO_AGENT_MODEL_HOST || "",
   keyEnv: process.env.OPENNEKO_AGENT_MODEL_KEY_ENV || "",
-  hermesHome: process.env.OPENNEKO_AGENT_HERMES_HOME || "",
 };
 
 function modelHosts(value: string): ProviderEndpoint[] {
@@ -507,10 +383,6 @@ function agentRuntimeLaunchConfig(args: {
     (args.hasApiKey
       ? `${gatewayProviderName(args.orgId)}${args.credentialFingerprint ? `-${args.credentialFingerprint}` : ""}`
       : "");
-  const hermesHome =
-    OPERATOR_AGENT_ENV.hermesHome ||
-    (derivedEndpoints.length > 0 ? hermesHomeForOrg(args.orgId) : "");
-
   return {
     ...(modelProvider ? { modelProvider } : {}),
     modelHosts: OPERATOR_AGENT_ENV.host
@@ -519,7 +391,6 @@ function agentRuntimeLaunchConfig(args: {
     ...(keyEnv
       ? { keyAliases: [{ from: credentialName, to: keyEnv }] }
       : {}),
-    ...(hermesHome ? { hermesHomeHostPath: hermesHome } : {}),
   };
 }
 
@@ -576,7 +447,7 @@ async function provisionOpenShellRuntime(
   }
   if (lastError !== undefined) throw lastError;
   console.log(
-    `[host-provision] OpenShell agent runtime self-configured: provider="${launchConfig.modelProvider ?? ""}" egress="${launchConfig.modelHosts?.map(serializeModelEndpoint).join(",") ?? ""}" binary="${VENDORED_HERMES_MODEL_BINARY}" keyEnv=${launchConfig.keyAliases?.[0]?.to ?? ""}`,
+    `[host-provision] OpenShell agent runtime self-configured: provider="${launchConfig.modelProvider ?? ""}" egress="${launchConfig.modelHosts?.map(serializeModelEndpoint).join(",") ?? ""}" binary="${AX_HARNESS_BINARY}" keyEnv=${launchConfig.keyAliases?.[0]?.to ?? ""}`,
   );
   return launchConfig;
 }
@@ -608,7 +479,6 @@ const provisionedOrgs = new Map<string, HostProvisionState>();
 
 type ProvisionHostConfigOptions = {
   requireOpenShellSync?: boolean;
-  requireHermesSync?: boolean;
 };
 
 /** Build a content revision without retaining provider secrets in process
@@ -672,7 +542,7 @@ async function hostConfigRevision(
  * unchanged. This matters because provider settings are saved by the web
  * process, whose environment mutations cannot reach an already-running
  * worker. Calls for one org are serialized so a key rotation or provider
- * family switch cannot race two writers against the same Hermes files.
+ * family switch cannot race two writers against the same gateway provider.
  */
 export async function ensureHostConfigProvisioned(
   orgId: string,
@@ -711,7 +581,6 @@ export async function ensureHostConfigProvisioned(
     }
     const launchConfig = await provisionHostConfig(orgId, {
       requireOpenShellSync: true,
-      requireHermesSync: true,
     });
     provisionState.appliedRevision = current.revision;
     provisionState.launchConfig = launchConfig;
@@ -760,21 +629,8 @@ export async function provisionHostConfig(
     );
   }
 
-  let hermesError: unknown;
-  try {
-    await provisionHermes(orgId);
-  } catch (e) {
-    hermesError = e;
-    console.warn(
-      `[host-provision] hermes write failed: ${e instanceof Error ? e.message : e}`,
-    );
-  }
-
   if (openShellError && options.requireOpenShellSync) {
     throw openShellError;
-  }
-  if (hermesError && options.requireHermesSync) {
-    throw hermesError;
   }
   return launchConfig;
 }

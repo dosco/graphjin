@@ -20,17 +20,17 @@ func TestWebBaseURLUsesPersistedBindAddress(t *testing.T) {
 	}
 }
 
-func TestSetupRetainsHermesOnlyBackendFlagCompatibility(t *testing.T) {
+func TestSetupRetainsAxOnlyBackendFlagCompatibility(t *testing.T) {
 	flag := newSetupCmd().Flags().Lookup("backend")
 	if flag == nil || flag.Deprecated == "" {
 		t.Fatal("setup must retain the deprecated --backend flag for older automation")
 	}
-	if err := validateLegacyAgentBackend("hermes"); err != nil {
-		t.Fatalf("legacy --backend hermes must remain accepted: %v", err)
+	if err := validateLegacyAgentBackend("ax"); err != nil {
+		t.Fatalf("legacy --backend ax must remain accepted: %v", err)
 	}
-	err := validateLegacyAgentBackend("removed-runtime")
-	if err == nil || !strings.Contains(err.Error(), "Hermes is the only agent runtime") {
-		t.Fatalf("removed backend must fail with a Hermes-only message, got %v", err)
+	err := validateLegacyAgentBackend("hermes")
+	if err == nil || !strings.Contains(err.Error(), "Ax is the only agent runtime") {
+		t.Fatalf("removed backend must fail with an Ax-only message, got %v", err)
 	}
 }
 

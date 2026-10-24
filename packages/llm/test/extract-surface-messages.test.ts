@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractSurfaceMessages } from "../src/agent-backends/hermes";
+import { extractSurfaceMessages } from "../src/agent-backends/surface";
 import { coerceGeneratedSurfaceMessages, extractCardFences } from "../src/agent-backends/surface";
 import { outsideFenceText } from "../src/agent-backends/output";
 

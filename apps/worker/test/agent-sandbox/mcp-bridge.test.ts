@@ -133,7 +133,7 @@ async function callGraphjinTool(runKind: "work" | "agent-job") {
 }
 
 describe("mcp-bridge buildBridgeServer", () => {
-  it("constructs a connectable server for every name hermes mounts", () => {
+  it("constructs a connectable server for every name the backend mounts", () => {
     for (const name of SERVERS) {
       const server = buildBridgeServer(name, ctx());
       expect(server.instance, name).toBeTruthy();
@@ -298,7 +298,7 @@ describe("mcp-bridge buildBridgeServer", () => {
     }
   });
 
-  it("multiplexes logical servers while preserving Hermes-facing tool names", async () => {
+  it("multiplexes logical servers while preserving model-facing tool names", async () => {
     const skillsRoot = await mkdtemp(join(tmpdir(), "neko-mcp-skills-"));
     const multiplexed = await buildMultiplexedBridgeServer(
       ["neko_skills", "neko_memory"],

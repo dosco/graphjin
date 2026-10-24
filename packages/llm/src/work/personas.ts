@@ -1,5 +1,4 @@
-import { and, app_user, organization, db, eq, operator_profile, resolveUserGroups, work_run } from "@neko/db";
-import { resolveDeploymentProfile } from "./deployment-profile";
+import { and, db, eq, operator_profile, work_run } from "@neko/db";
 
 /**
  * CV3 — personas. The agent reads a compiled, persona-shaped brief as an
@@ -125,27 +124,6 @@ export async function getWorkRunActor(
     )
     .limit(1);
   return row ?? { userId: null, role: null };
-}
-
-/** Reuse is keyed to the persisted solo admin account. */
-export async function getSoloSandboxUser(
-  orgId: string,
-  actor: { userId: string | null; role: string | null },
-): Promise<{ principalId: string; authorizationRevision: string } | null> {
-  if (resolveDeploymentProfile() !== "solo" || actor.role !== "admin") return null;
-  const [org] = await db().select({ owner: organization.solo_admin_user_id })
-    .from(organization).where(eq(organization.id, orgId)).limit(1);
-  if (!org?.owner || (actor.userId && actor.userId !== org.owner)) return null;
-  const users = await db().select({ id: app_user.id, disabledAt: app_user.disabled_at, sub: app_user.sub })
-    .from(app_user).where(and(eq(app_user.org_id, orgId), eq(app_user.id, org.owner))).limit(1);
-  if (!users[0] || users[0].disabledAt || users[0].sub) return null;
-  if (!(await resolveUserGroups(orgId, users[0].id)).administrator) return null;
-  return {
-    principalId: users[0].id,
-    // Solo admin has unrestricted org access; fine-grained grants still use
-    // the authorization-revision hook. Launch configuration is hashed separately.
-    authorizationRevision: "solo-admin-v1",
-  };
 }
 
 /** Compiled prompt block. Empty string when there's nothing to say. */
