@@ -9,11 +9,13 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/core/v3/fstable"
 	"github.com/dosco/graphjin/serv/v3/filecontent"
+	"go.uber.org/zap"
 )
 
 // FileContentConfig turns on reading inside the files of file sources. Each
@@ -55,6 +57,13 @@ type fileContent struct {
 
 	mu      sync.Mutex
 	indexes map[string]*filecontent.Index
+
+	// Semantic search over passages; see file_content_semantic.go.
+	log      *zap.SugaredLogger
+	sources  func() []string
+	semMu    sync.Mutex // serialises setSemantic
+	sem      atomic.Pointer[fileSemantic]
+	backoffs []time.Duration // embedder retry delays; nil means the defaults
 }
 
 // fileContentOptions registers the content reader with the engine when
@@ -100,8 +109,17 @@ func (s *graphjinService) fileContentReader() *fileContent {
 				return live.gj.FilesystemSourceBackend(name)
 			},
 			indexes: map[string]*filecontent.Index{},
+			log:     s.log,
+			sources: func() []string {
+				names := make([]string, 0, len(live.conf.Core.Filesystems))
+				for _, f := range live.conf.Core.Filesystems {
+					names = append(names, f.Name)
+				}
+				return names
+			},
 		}
 		s.addCloseFn(s.fileContent.close)
+		s.fileContent.setSemantic(s.fileSemanticSpace())
 	})
 	return s.fileContent
 }
@@ -127,6 +145,8 @@ func (s *graphjinService) warmFileContent() {
 }
 
 func (f *fileContent) close() {
+	// The embedder uses the indexes, so it stops first.
+	f.setSemantic(nil)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for name, ix := range f.indexes {
@@ -166,8 +186,12 @@ func (f *fileContent) synced(ctx context.Context, source string) (*filecontent.I
 	if refresh <= 0 {
 		refresh = 10 * time.Second
 	}
-	if _, err := ix.Sync(ctx, b, refresh); err != nil {
+	st, err := ix.Sync(ctx, b, refresh)
+	if err != nil {
 		return nil, err
+	}
+	if st.Indexed > 0 {
+		f.wakeEmbedder()
 	}
 	return ix, nil
 }
@@ -196,7 +220,7 @@ func (f *fileContent) Search(ctx context.Context, source, query string, limit in
 	if err != nil {
 		return nil, err
 	}
-	matches, err := ix.Search(ctx, query, limit)
+	matches, err := f.search(ctx, ix, query, limit)
 	if err != nil {
 		return nil, err
 	}

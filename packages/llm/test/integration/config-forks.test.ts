@@ -26,20 +26,9 @@ import {
   uniqueOrgId,
 } from "@neko/db/test-helpers";
 
-vi.mock("../../src/embedding", async () => {
-  const EMBEDDING_DIM = 384;
-  return {
-    EMBEDDING_DIM,
-    embedText: vi.fn(async (text: string) => {
-      const seed = text
-        .split("")
-        .reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) >>> 0, 7);
-      const v = new Array<number>(EMBEDDING_DIM);
-      for (let i = 0; i < EMBEDDING_DIM; i++) v[i] = Math.sin(seed + i) * 0.1;
-      return v;
-    }),
-    vectorLiteral: (vec: number[]) => `[${vec.join(",")}]`,
-  };
+vi.mock("../../src/embedding", async (importOriginal) => {
+  const { fakeEmbedding } = await import("../helpers/fake-embedding");
+  return fakeEmbedding(await importOriginal());
 });
 
 import {

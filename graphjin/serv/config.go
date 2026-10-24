@@ -521,6 +521,17 @@ type SemanticCatalogSearchConfig struct {
 	// Dimensions selects tiny (768), small (1536), medium (3072), or the
 	// provider-native default. Named sizes are validated strictly.
 	Dimensions string `mapstructure:"dimensions" jsonschema:"title=Embedding Dimensions,default=small,enum=tiny,enum=small,enum=medium,enum=default"`
+
+	// QueryPrefix is prepended to every search query before it is embedded,
+	// for models trained with task prefixes (EmbeddingGemma uses
+	// "task: search result | query: "). Part of the embedding-space fingerprint.
+	QueryPrefix string `mapstructure:"query_prefix" jsonschema:"title=Query Embedding Prefix"`
+
+	// DocumentPrefix is prepended to every indexed document before it is
+	// embedded (EmbeddingGemma uses "title: none | text: "). File passages
+	// replace "title: none" with "title: <file name>". Part of the
+	// embedding-space fingerprint.
+	DocumentPrefix string `mapstructure:"document_prefix" jsonschema:"title=Document Embedding Prefix"`
 }
 
 func (c SemanticCatalogSearchConfig) dimensionCount() (int, bool, error) {
@@ -1158,6 +1169,8 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("catalog_search.semantic.api_key_env", "OPENAI_API_KEY")
 	vi.SetDefault("catalog_search.semantic.base_url", "")
 	vi.SetDefault("catalog_search.semantic.dimensions", "small")
+	vi.SetDefault("catalog_search.semantic.query_prefix", "")
+	vi.SetDefault("catalog_search.semantic.document_prefix", "")
 
 	// These section names contain underscores, so the generic GJ_* underscore-
 	// to-dot compatibility mapper cannot identify their dotted boundary
@@ -1174,6 +1187,8 @@ func newViperWithDefaults() *viper.Viper {
 	vi.BindEnv("catalog_search.semantic.api_key_env", "GJ_CATALOG_SEARCH_SEMANTIC_API_KEY_ENV", "SG_CATALOG_SEARCH_SEMANTIC_API_KEY_ENV", "SJ_CATALOG_SEARCH_SEMANTIC_API_KEY_ENV")                 //nolint:errcheck
 	vi.BindEnv("catalog_search.semantic.base_url", "GJ_CATALOG_SEARCH_SEMANTIC_BASE_URL", "SG_CATALOG_SEARCH_SEMANTIC_BASE_URL", "SJ_CATALOG_SEARCH_SEMANTIC_BASE_URL")                             //nolint:errcheck
 	vi.BindEnv("catalog_search.semantic.dimensions", "GJ_CATALOG_SEARCH_SEMANTIC_DIMENSIONS", "SG_CATALOG_SEARCH_SEMANTIC_DIMENSIONS", "SJ_CATALOG_SEARCH_SEMANTIC_DIMENSIONS")                     //nolint:errcheck
+	vi.BindEnv("catalog_search.semantic.query_prefix", "GJ_CATALOG_SEARCH_SEMANTIC_QUERY_PREFIX", "SG_CATALOG_SEARCH_SEMANTIC_QUERY_PREFIX", "SJ_CATALOG_SEARCH_SEMANTIC_QUERY_PREFIX")             //nolint:errcheck
+	vi.BindEnv("catalog_search.semantic.document_prefix", "GJ_CATALOG_SEARCH_SEMANTIC_DOCUMENT_PREFIX", "SG_CATALOG_SEARCH_SEMANTIC_DOCUMENT_PREFIX", "SJ_CATALOG_SEARCH_SEMANTIC_DOCUMENT_PREFIX") //nolint:errcheck
 
 	vi.SetDefault("env", "development")
 

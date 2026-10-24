@@ -32,6 +32,7 @@ const SETTINGS: Array<{ href: string; label: string }> = [
   { href: "/admin/settings/data", label: "Data source" },
   { href: "/admin/settings/spend", label: "Spending limits" },
   { href: "/admin/settings/security", label: "Security" },
+  { href: "/admin/settings/search", label: "Semantic search" },
   { href: "/admin/settings/packs", label: "Solution packs" },
   { href: "/admin/users", label: "Users" },
   { href: "/admin/settings/channels", label: "Channels" },

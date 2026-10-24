@@ -122,6 +122,7 @@ export {
   shouldReconcileDemoSourceAuthMode,
 } from "./graphjin/sources-config";
 import { provisionGraphjinAgent } from "./graphjin/agent-settings";
+import { provisionGraphjinSemanticSearch } from "./graphjin/semantic-search";
 import {
   atomicWriteFile,
   migrateGraphjinSystemSource,
@@ -475,6 +476,15 @@ export async function provisionHostConfig(
   } catch (e) {
     console.warn(
       `[host-provision] GraphJin agent provision failed: ${e instanceof Error ? e.message : e}`,
+    );
+  }
+
+  // Heals a semantic-search switch flip that did not reach GraphJin.
+  try {
+    await provisionGraphjinSemanticSearch(orgId);
+  } catch (e) {
+    console.warn(
+      `[host-provision] GraphJin semantic search provision failed: ${e instanceof Error ? e.message : e}`,
     );
   }
 

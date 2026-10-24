@@ -119,6 +119,12 @@ export {
   type GraphjinConfigSettings,
 } from "./graphjin-config";
 export {
+  SEMANTIC_SEARCH_ENABLED_SQL,
+  SEMANTIC_SEARCH_SCOPE,
+  readSemanticSearchEnabled,
+  writeSemanticSearchEnabled,
+} from "./semantic-search";
+export {
   GRAPHJIN_AGENT_REUSE_PRIMARY,
   GRAPHJIN_AGENT_SCOPE,
   getGraphjinAgentRow,

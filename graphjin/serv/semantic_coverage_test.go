@@ -105,7 +105,9 @@ func semanticCoverageFixture(t *testing.T, embedder SemanticEmbeddingClient) (*g
 			vectors:  []float32{1, 0, 0, 0, 0, 1, 0, 0},
 		},
 	}
-	return &graphjinService{semantic: semantic}, snapshot
+	service := &graphjinService{}
+	service.semantic.Store(semantic)
+	return service, snapshot
 }
 
 func TestSemanticCoverageUsesOneBatchCachesMissesAndReturnsRealPath(t *testing.T) {

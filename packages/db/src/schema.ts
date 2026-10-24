@@ -1082,7 +1082,7 @@ export const skill_embedding = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     skill_name: text("skill_name").notNull(),
     document: text("document").notNull().default(""),
-    embedding: vector("embedding", 384),
+    embedding: vector("embedding", 768),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },
   (t) => ({
@@ -1253,7 +1253,7 @@ export const work_memory = pgTable(
     integrity_hmac: text("integrity_hmac"),
     expires_at: ts("expires_at"),
     archived_at: ts("archived_at"),
-    embedding: vector("embedding", 384),
+    embedding: vector("embedding", 768),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },

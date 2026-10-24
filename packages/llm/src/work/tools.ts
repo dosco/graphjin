@@ -1118,10 +1118,10 @@ export function buildGraphjinAgentServer(opts: {
   });
 }
 
-// Memory surface: `search`, `save` and `update`. Reads use pgvector
-// context-search (matches the auto-context retrieval path), writes go
-// through the same rememberWorkMemory used by the `save:` chat command,
-// so embeddings get computed in lockstep. We deliberately don't expose
+// Memory surface: `search`, `save` and `update`. Reads use context search
+// (matches the auto-context retrieval path: by meaning when semantic search is
+// on, by keyword otherwise), writes go through the same rememberWorkMemory used
+// by the `save:` chat command, which queues the row for background indexing. We deliberately don't expose
 // `forget` from the agent — archival is operator-driven, not agent-driven.
 export type WorkMemoryServerOptions = {
   /**
@@ -1734,7 +1734,7 @@ export function buildSkillSearchServer(
   const controlPlane = requireControlPlane(options.controlPlane);
   const find = defineMcpTool(
     "find",
-    "Find the installed skill guides closest in meaning to the work described.",
+    "Find the installed skill guides that best match the work described.",
     { query: z.string().min(2).max(800), limit: z.number().int().min(1).max(10).optional() },
     async (args) => {
       const skills = await controlPlane.searchSkillsForRun({

@@ -94,6 +94,10 @@ worker, embedding, and `openneko serve`, one process that hosts the
 customer-facing GraphJin in sources (agentic) mode, the agent runtime, and the
 GraphJin that serves workflow subscriptions from the app database. The agent runtime (`openneko serve` and `agent-sandbox`)
 is part of the core — it is the only way agents run, in every mode.
+The embedding service is a small listener that loads its model (EmbeddingGemma 2,
+about 2 GB of memory) only when an admin turns on **Admin → Settings → Semantic
+search**, which is off by default; until then search is by keyword. See
+[INSTALL.md](INSTALL.md#semantic-search).
 
 | Mode | Layers on top of core | What's different |
 |------|----------------------|------------------|

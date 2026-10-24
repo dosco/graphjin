@@ -29,3 +29,4 @@ export {
   gjConfigRow,
   isCatalogRevisionConflict,
 } from "./config-apply";
+export * from "./semantic-search";

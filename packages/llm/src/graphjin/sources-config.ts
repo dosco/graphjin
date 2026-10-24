@@ -429,3 +429,55 @@ export async function atomicWriteFile(
   await writeFile(tmp, content, { encoding: "utf8", mode: opts?.mode ?? 0o664 });
   await rename(tmp, path);
 }
+
+/**
+ * GraphJin's semantic catalog search, which also gives Library file search
+ * meaning-based recall. It embeds through OpenNeko's embedding service
+ * (EmbeddingGemma 2) over the container network, with EmbeddingGemma's search
+ * prompts. `enabled` follows the admin "Semantic search" switch (off by
+ * default); OpenNeko owns every other key of this block.
+ */
+export const GRAPHJIN_SEMANTIC_SEARCH_SETTINGS = {
+  provider: "openai",
+  embedding_model: "google/embeddinggemma-2",
+  base_url: "http://embedding:5003/v1",
+  api_key_env: "OPENNEKO_EMBEDDING_API_KEY",
+  dimensions: "default",
+  query_prefix: "task: search result | query: ",
+  document_prefix: "title: none | text: ",
+} as const;
+
+/** The catalog_search.semantic block for a switch value. */
+export function graphjinSemanticSearchBlock(enabled: boolean): Record<string, unknown> {
+  return { enabled, ...GRAPHJIN_SEMANTIC_SEARCH_SETTINGS };
+}
+
+/**
+ * Writes catalog_search.semantic with `enabled` set to the switch value.
+ * Idempotent: an unchanged file is returned as is. Other catalog_search keys
+ * stay.
+ */
+export function patchGraphjinSemanticSearch(
+  raw: string,
+  enabled: boolean,
+): { content: string; changed: boolean } {
+  const document = parseDocument(raw);
+  if (document.errors.length > 0 || !isMap(document.contents)) {
+    throw new Error("GraphJin config is not valid YAML");
+  }
+  const before = document.toString();
+  // An empty `catalog_search:` or `semantic:` parses as null; replace it.
+  if (document.has("catalog_search") && !isMap(document.get("catalog_search", true))) {
+    document.delete("catalog_search");
+  }
+  if (document.hasIn(["catalog_search", "semantic"]) && !isMap(document.getIn(["catalog_search", "semantic"], true))) {
+    document.deleteIn(["catalog_search", "semantic"]);
+  }
+  for (const [key, value] of Object.entries(graphjinSemanticSearchBlock(enabled))) {
+    if (document.getIn(["catalog_search", "semantic", key]) !== value) {
+      document.setIn(["catalog_search", "semantic", key], value);
+    }
+  }
+  const content = document.toString();
+  return content === before ? { content: raw, changed: false } : { content, changed: true };
+}

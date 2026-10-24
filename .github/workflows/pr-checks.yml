@@ -167,11 +167,12 @@ jobs:
     needs: plan
     if: needs.plan.outputs.embedding_image == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - run: docker build --target embedding -t openneko-embedding:pr .
-      - run: docker run --rm --network none --memory 1g --cpus 1 --pids-limit 64 --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:size=64m --entrypoint node openneko-embedding:pr /app/smoke.mjs
+      - run: docker run --rm --network none --memory 2560m --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:size=256m -e OPENNEKO_EMBEDDING_TEST_MODEL=1 --entrypoint python3 openneko-embedding:pr -m unittest -v test_embedding_service
+      - run: docker run --rm --network none --memory 2560m --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:size=256m --entrypoint python3 openneko-embedding:pr /app/smoke.py
 
   design-system:
     name: Web design system

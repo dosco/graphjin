@@ -1082,8 +1082,8 @@ func (s *graphjinService) markArtifactChanged(reason string) {
 			Details:    map[string]any{"reason": reason, "error": err.Error()},
 		})
 	}
-	if s.semantic != nil {
-		s.semantic.CatalogChanged()
+	if semantic := s.semanticCatalog(); semantic != nil {
+		semantic.CatalogChanged()
 	}
 }
 

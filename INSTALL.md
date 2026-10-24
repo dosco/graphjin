@@ -125,6 +125,23 @@ openneko setup --mode prod
 
 Enter your GraphJin base URL when setup asks for it (terminal or browser). If GraphJin runs on your host, use `http://host.docker.internal:8080` — OpenNeko appends the GraphQL and MCP paths automatically.
 
+## Semantic search
+
+Semantic search is off by default. OpenNeko then finds memories, skills,
+Library files and data by keyword (Postgres full-text search) and never loads
+an embedding model; the `embedding` container is only a small idle listener.
+
+An admin turns it on under **Admin → Settings → Semantic search**. Memories,
+skills, Library files and data lookups then use meaning-based search with
+EmbeddingGemma 2, which loads on first use and needs about **2 GB of memory**:
+size the host for it before turning it on. Existing memories and skills are
+indexed in the background (batches of up to 64, about 20 short items a
+second); until an item is indexed it is still found by keyword. If the
+embedding service is slow or unavailable, searches fall back to keyword search.
+Turning it off stops all embedding work and keeps the stored vectors, so
+turning it back on only indexes what changed meanwhile. GraphJin follows the
+switch live, without a restart.
+
 ## Solution packs and skills
 
 ```bash

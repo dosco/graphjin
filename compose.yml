@@ -17,8 +17,8 @@ x-neko-app-env: &neko-app-env
 services:
   neko-db:
     # pgvector image — base postgres:16 + the vector extension preinstalled.
-    # work_memory.embedding stores 384-dim vectors from transformers.js
-    # (Xenova/all-MiniLM-L6-v2) for context-based memory retrieval.
+    # Memory and skill embeddings are 768-dim EmbeddingGemma 2 vectors, written
+    # only while the admin semantic search switch is on.
     build:
       context: .
       target: neko-db
@@ -182,6 +182,9 @@ services:
     environment:
       GO_ENV: agentic
       GRAPHJIN_AGENT_API_KEY: ${GRAPHJIN_AGENT_API_KEY:-}
+      # GraphJin's Ax embedding client needs a non-empty key; the embedding
+      # service ignores it.
+      OPENNEKO_EMBEDDING_API_KEY: local
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
       OPENNEKO_SANDBOX_SOCKET: /run/openneko/sandbox.sock
     volumes:
@@ -251,7 +254,8 @@ services:
     restart: "no"
 
   embedding:
-    # The listener is always available; ONNX/model memory exists only on demand.
+    # The listener is always available; the Python EmbeddingGemma 2 process and
+    # its ~2 GB of model memory exist only on demand.
     image: ${OPENNEKO_EMBEDDING_IMAGE:-openneko-embedding:dev}
     build:
       context: .
@@ -260,13 +264,14 @@ services:
     environment:
       OPENNEKO_SERVICE_IDLE_TIMEOUT: ${OPENNEKO_EMBEDDING_IDLE_TIMEOUT:-5m}
     read_only: true
-    cpus: ${OPENNEKO_EMBEDDING_CPUS:-1.0}
-    mem_limit: ${OPENNEKO_EMBEDDING_MEMORY:-1g}
-    pids_limit: 64
+    cpus: ${OPENNEKO_EMBEDDING_CPUS:-2.0}
+    mem_limit: ${OPENNEKO_EMBEDDING_MEMORY:-2560m}
+    # Go listener + Python HTTP threads (lazy-service admits 32) + torch threads.
+    pids_limit: 128
     cap_drop:
       - ALL
     tmpfs:
-      - /tmp:size=64m,mode=1777
+      - /tmp:size=256m,mode=1777
     security_opt:
       - no-new-privileges:true
     expose:

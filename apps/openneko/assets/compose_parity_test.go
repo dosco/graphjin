@@ -62,7 +62,7 @@ func TestEmbeddingIsBoundedAndLibrarianIsGone(t *testing.T) {
 			t.Fatalf("%s worker still waits for the retired librarian", label)
 		}
 		embedding := document.Services["embedding"]
-		if !embedding.ReadOnly || embedding.CPUs != "${OPENNEKO_EMBEDDING_CPUS:-1.0}" || embedding.MemLimit != "${OPENNEKO_EMBEDDING_MEMORY:-1g}" || len(embedding.Ports) != 0 {
+		if !embedding.ReadOnly || embedding.CPUs != "${OPENNEKO_EMBEDDING_CPUS:-2.0}" || embedding.MemLimit != "${OPENNEKO_EMBEDDING_MEMORY:-2560m}" || len(embedding.Ports) != 0 {
 			t.Fatalf("%s embedding must be bounded and private: %+v", label, embedding)
 		}
 		if embedding.Environment["OPENNEKO_SERVICE_IDLE_TIMEOUT"] != "${OPENNEKO_EMBEDDING_IDLE_TIMEOUT:-5m}" || !strings.Contains(fmt.Sprint(embedding.Healthcheck["test"]), "/health/ready") {

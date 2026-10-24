@@ -720,7 +720,7 @@ func (i *semanticCatalogIndex) embedMissing(ctx context.Context, documents []sem
 			for job := range jobs {
 				texts := make([]string, len(job.indices))
 				for j, index := range job.indices {
-					texts[j] = documents[index].Text
+					texts[j] = i.conf.DocumentPrefix + documents[index].Text
 				}
 				vectors, err := i.embedder.Embed(workerCtx, texts, dimensions)
 				if err == nil && len(vectors) != len(texts) {
@@ -1115,14 +1115,24 @@ func semanticEmbeddingFingerprint(conf SemanticCatalogSearchConfig) (string, err
 	// The resolved width, not just the preset name: what a name means can change
 	// between releases, and an index built at the old width must not be reused
 	// under the new one.
-	data, err := json.Marshal(map[string]string{
+	space := map[string]string{
 		"provider":            strings.ToLower(strings.TrimSpace(conf.Provider)),
 		"model":               strings.TrimSpace(conf.EmbeddingModel),
 		"base_url":            strings.TrimRight(strings.TrimSpace(conf.BaseURL), "/"),
 		"dimension_preset":    strings.ToLower(strings.TrimSpace(conf.Dimensions)),
 		"dimension_requested": fmt.Sprint(requested),
 		"document_format":     fmt.Sprint(semanticDocumentFormatVersion),
-	})
+	}
+	// Prefixes change what is embedded, so they are part of the space. They are
+	// added only when set, which keeps indexes built before prefixes existed
+	// valid for configurations that do not use them.
+	if conf.QueryPrefix != "" {
+		space["query_prefix"] = conf.QueryPrefix
+	}
+	if conf.DocumentPrefix != "" {
+		space["document_prefix"] = conf.DocumentPrefix
+	}
+	data, err := json.Marshal(space)
 	if err != nil {
 		return "", err
 	}

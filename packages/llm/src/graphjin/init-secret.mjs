@@ -11,6 +11,7 @@ import {
   patchGraphjinKeystoreKey,
   LIBRARY_SOURCE_ROOT,
   patchGraphjinLibrary,
+  patchGraphjinSemanticSearch,
   patchGraphjinWatches,
   watcherWebhookUrl,
   patchGraphjinSourcesJwtSecret,
@@ -110,6 +111,9 @@ const client = new pg.Client({
 await client.connect();
 
 let orgId;
+// The admin "Semantic search" switch (off with no row). Same query as
+// readSemanticSearchEnabled() in @neko/db.
+let semanticSearch = false;
 try {
   // Same transaction-scoped advisory lock as getOrgId(); whichever process
   // takes it first creates the single org row, everyone else re-reads it.
@@ -131,6 +135,10 @@ try {
     console.log(`[graphjin-secret-init] created organization ${orgId}`);
   }
   await client.query("commit");
+  const switchRow = await client.query(
+    "select enabled from llm_provider_config where scope = 'semantic-search' order by updated_at desc limit 1",
+  );
+  semanticSearch = switchRow.rows[0]?.enabled === true;
   await reconcileSubscriptionsRole(client);
 } catch (e) {
   await client.query("rollback").catch(() => {});
@@ -168,8 +176,16 @@ const watches = patchGraphjinWatches(keystore.content, watcherWebhookUrl());
 const library = patchGraphjinLibrary(watches.content);
 const libraryRoot = join(dirname(CONFIG_PATH), LIBRARY_SOURCE_ROOT);
 await mkdir(libraryRoot, { recursive: true, mode: 0o700 });
-if (migrated.changed || patched.changed || policy.changed || keystore.changed || watches.changed || library.changed) {
-  await atomicWriteFile(CONFIG_PATH, library.content);
+// Semantic catalog and Library search follow the admin switch; flips while
+// GraphJin runs are applied live through gj_config.
+const semantic = patchGraphjinSemanticSearch(library.content, semanticSearch);
+if (migrated.changed || patched.changed || policy.changed || keystore.changed || watches.changed || library.changed || semantic.changed) {
+  await atomicWriteFile(CONFIG_PATH, semantic.content);
+}
+if (semantic.changed) {
+  console.log(
+    `[graphjin-secret-init] set semantic search ${semanticSearch ? "on" : "off"} in ${CONFIG_PATH}`,
+  );
 }
 if (library.changed) {
   console.log(`[graphjin-secret-init] added the Library file source to ${CONFIG_PATH}`);

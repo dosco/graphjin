@@ -16,9 +16,8 @@ const (
 	skillMatchesPerSearch = 2
 	maxSkillMatches       = 5
 	shortlistSize         = 10
-	// MiniLM similarity below which a guide is unrelated to the request.
-	shortlistMinScore = 0.2
-	// The reranker keeps at most this many recalled guides.
+	// The reranker keeps at most this many recalled guides, and without a
+	// reranker the shortlist keeps the first this many.
 	rerankKeep = 2
 )
 
@@ -56,10 +55,13 @@ func skillShortlist(ctx context.Context, search *admittedTool, skills []Skill, q
 	for _, skill := range skills {
 		described[skill.Name] = skill.Description
 	}
+	// No score cutoff: the index answers with embedding similarity when
+	// semantic search is on and with full-text rank when it is off, two
+	// scales no single threshold fits, and EmbeddingGemma's similarities for
+	// fitting and unrelated guides overlap. The reranker decides fit.
 	var recalled []Skill
 	for _, match := range skillMatches(raw) {
-		description, staged := described[match.Name]
-		if staged && match.Score >= shortlistMinScore {
+		if description, staged := described[match.Name]; staged {
 			recalled = append(recalled, Skill{Name: match.Name, Description: description})
 		}
 	}
@@ -73,6 +75,9 @@ func skillShortlist(ctx context.Context, search *admittedTool, skills []Skill, q
 		if picked, rerankErr = rerank(ctx, query, recalled); rerankErr == nil {
 			names = picked
 		}
+	}
+	if (rerank == nil || rerankErr != nil) && len(names) > rerankKeep {
+		names = names[:rerankKeep]
 	}
 	if len(names) == 0 {
 		return "", nil, rerankErr

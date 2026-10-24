@@ -77,7 +77,7 @@ var newGraphJinAgentRunner = func(s *graphjinService, conf gjagent.Config, opts 
 	if s.agentNow != nil {
 		agentOpts = append(agentOpts, gjagent.WithNow(s.agentNow))
 	}
-	if s.semantic != nil {
+	if s.semanticCatalog() != nil {
 		agentOpts = append(agentOpts, gjagent.WithCatalogSearchFeatures(gjagent.CatalogSearchFeatures{
 			SemanticRecall: true,
 			CoverageBatch:  true,
@@ -280,7 +280,7 @@ func (r *serviceAgentRuntime) queryCatalogSnapshot(ctx context.Context, snap *co
 		return nil, err
 	}
 	var retrievalPtr *catalogRetrievalMetadata
-	if r.service.semantic != nil && strings.TrimSpace(q.Search) != "" {
+	if r.service.semanticCatalog() != nil && strings.TrimSpace(q.Search) != "" {
 		retrievalPtr = &retrieval
 	}
 	return agentCatalogResult{

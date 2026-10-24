@@ -292,16 +292,17 @@ func TestToolFailureReadsShellExitCode(t *testing.T) {
 	}
 }
 
-func TestSkillShortlistKeepsCloseStagedGuides(t *testing.T) {
+func TestSkillShortlistKeepsTheFirstStagedGuides(t *testing.T) {
+	// Full-text ranks are small numbers; no cutoff drops them.
 	index := &admittedTool{Capability: Capability{Name: SkillSearchTool, Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
-		return json.RawMessage(`{"content":["{\"skills\":[{\"name\":\"xlsx\",\"score\":0.61},{\"name\":\"gone\",\"score\":0.5},{\"name\":\"docx\",\"score\":0.12}]}"]}`), nil
+		return json.RawMessage(`{"content":["{\"skills\":[{\"name\":\"xlsx\",\"score\":0.06},{\"name\":\"gone\",\"score\":0.05},{\"name\":\"docx\",\"score\":0.01},{\"name\":\"pdf\",\"score\":0.01}]}"]}`), nil
 	}}}
-	skills := []Skill{{Name: "xlsx", Description: "Spreadsheets"}, {Name: "docx", Description: "Word documents"}}
+	skills := []Skill{{Name: "xlsx", Description: "Spreadsheets"}, {Name: "docx", Description: "Word documents"}, {Name: "pdf", Description: "PDF files"}}
 	got, names, err := skillShortlist(context.Background(), index, skills, "make an Excel file", nil)
-	if err != nil || strings.Join(names, ",") != "xlsx" {
-		t.Fatalf("names=%q err=%v", names, err)
+	if err != nil || strings.Join(names, ",") != "xlsx,docx" {
+		t.Fatalf("names=%q err=%v, want the first two staged guides without a reranker", names, err)
 	}
-	if !strings.Contains(got, "- xlsx — Spreadsheets") || strings.Contains(got, "gone") || strings.Contains(got, "docx") {
+	if !strings.Contains(got, "- xlsx — Spreadsheets") || strings.Contains(got, "gone") || strings.Contains(got, "pdf") {
 		t.Fatalf("shortlist = %q", got)
 	}
 	if text, _, _ := skillShortlist(context.Background(), index, skills, "  ", nil); text != "" {

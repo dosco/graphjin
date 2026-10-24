@@ -1,6 +1,7 @@
-// Integration tests for the pgvector-backed memory functions.
+// Integration tests for memory context search: pgvector when semantic search
+// is on, Postgres full-text search when it is off or the service fails.
 //
-// We mock embedText so the suite doesn't pull a 22MB model in CI, but
+// We fake the embedding service so the suite loads no model, but
 // hit a real Postgres so Drizzle column types and the SQL shape are
 // actually exercised — that's the bug class that bit us twice in a row
 // (rows.map / row.created_at.toISOString) on the first wiring.
@@ -14,27 +15,10 @@ import {
   uniqueOrgId,
 } from "@neko/db/test-helpers";
 
-// Mock the embedding service. The mock returns a deterministic 384-dim
-// unit-ish vector so we can stuff multiple rows with controllable
-// "distances" without loading the real model.
-vi.mock("../../src/embedding", async () => {
-  const EMBEDDING_DIM = 384;
-  return {
-    EMBEDDING_DIM,
-    embedText: vi.fn(async (text: string) => {
-      // Deterministic per-text vector: hash the text to a small set of
-      // anchor vectors so similarity comparisons are predictable.
-      const seed = text
-        .split("")
-        .reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) >>> 0, 7);
-      const v = new Array<number>(EMBEDDING_DIM);
-      for (let i = 0; i < EMBEDDING_DIM; i++) {
-        v[i] = Math.sin(seed + i) * 0.1;
-      }
-      return v;
-    }),
-    vectorLiteral: (vec: number[]) => `[${vec.join(",")}]`,
-  };
+// Fake the embedding service with a deterministic 768-dim vector per text.
+vi.mock("../../src/embedding", async (importOriginal) => {
+  const { fakeEmbedding } = await import("../helpers/fake-embedding");
+  return fakeEmbedding(await importOriginal());
 });
 
 import {
@@ -43,10 +27,12 @@ import {
   searchWorkMemoryByContext,
 } from "../../src/work/memory";
 
-import { runEmbeddingIndexJob } from "../../src/embedding-jobs";
+import { drainEmbeddingBacklog } from "../helpers/fake-embedding";
+import { setSemanticSearchEnabledForTests } from "../../src/semantic-search";
+import * as embedding from "../../src/embedding";
 async function rememberWorkMemory(input: Parameters<typeof saveMemory>[0]) {
   const memory = await saveMemory(input);
-  await runEmbeddingIndexJob({ kind: "memory", orgId: input.orgId, id: memory.id });
+  await drainEmbeddingBacklog();
   return memory;
 }
 
@@ -58,7 +44,9 @@ if (!reachable) {
 }
 
 describeIfDb("work memory context search (pgvector)", () => {
+  beforeEach(() => setSemanticSearchEnabledForTests(true));
   afterAll(async () => {
+    setSemanticSearchEnabledForTests(null);
     await pool().end();
   });
 
@@ -239,6 +227,62 @@ describeIfDb("work memory context search (pgvector)", () => {
       const matches = out.split(m.text).length - 1;
       expect(matches).toBe(1);
       expect(out).toContain("durable context");
+    } finally {
+      await deleteTestOrg(orgId);
+    }
+  });
+
+  it("searches by keyword without calling the embedding service when semantic search is off", async () => {
+    try {
+      setSemanticSearchEnabledForTests(false);
+      const memory = await saveMemory({ orgId, text: "Refunds are netted against gross revenue", kind: "business_rule", scope: "global" });
+      await saveMemory({ orgId, text: "Weekly reports go out on Monday", kind: "business_rule", scope: "global" });
+      vi.mocked(embedding.embedMemoryQuery).mockClear();
+      vi.mocked(embedding.embedMemoryDocuments).mockClear();
+      await drainEmbeddingBacklog();
+      const results = await searchWorkMemoryByContext({ orgId, query: "how are refunds handled in revenue?", limit: 5 });
+      expect(results.map((r) => r.memory.id)).toEqual([memory.id]);
+      expect(embedding.embedMemoryQuery).not.toHaveBeenCalled();
+      expect(embedding.embedMemoryDocuments).not.toHaveBeenCalled();
+    } finally {
+      await deleteTestOrg(orgId);
+    }
+  });
+
+  it("falls back to keyword search when the embedding service fails", async () => {
+    try {
+      const memory = await rememberWorkMemory({ orgId, text: "Inventory counts happen every Friday", kind: "business_rule", scope: "global" });
+      vi.mocked(embedding.embedMemoryQuery).mockRejectedValueOnce(new Error("embedding service returned HTTP 503"));
+      const results = await searchWorkMemoryByContext({ orgId, query: "when do we count inventory", limit: 5 });
+      expect(results.map((r) => r.memory.id)).toEqual([memory.id]);
+    } finally {
+      await deleteTestOrg(orgId);
+    }
+  });
+
+  it("finds memories the backfill has not indexed yet alongside indexed ones", async () => {
+    try {
+      const indexed = await rememberWorkMemory({ orgId, text: "Shipping cutoff is 3pm", kind: "business_rule", scope: "global" });
+      setSemanticSearchEnabledForTests(false);
+      const pending = await saveMemory({ orgId, text: "Shipping to Canada needs a customs form", kind: "business_rule", scope: "global" });
+      setSemanticSearchEnabledForTests(true);
+      const results = await searchWorkMemoryByContext({ orgId, query: "shipping customs", limit: 5 });
+      expect(results.map((r) => r.memory.id).sort()).toEqual([indexed.id, pending.id].sort());
+    } finally {
+      await deleteTestOrg(orgId);
+    }
+  });
+
+  it("applies the same layer visibility to keyword search as to vector search", async () => {
+    try {
+      setSemanticSearchEnabledForTests(false);
+      await saveMemory({ orgId, text: "Team note about invoices", kind: "business_rule", scope: "global", userId: null });
+      const archived = await saveMemory({ orgId, text: "Archived invoices rule", kind: "business_rule", scope: "global" });
+      await db().update(work_memory).set({ archived_at: new Date() }).where(eq(work_memory.id, archived.id));
+      const results = await searchWorkMemoryByContext({ orgId, query: "invoices", limit: 5 });
+      expect(results.map((r) => r.memory.text)).toEqual(["Team note about invoices"]);
+      const other = await searchWorkMemoryByContext({ orgId: "missing-org", query: "invoices", limit: 5 });
+      expect(other).toEqual([]);
     } finally {
       await deleteTestOrg(orgId);
     }

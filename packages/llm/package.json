@@ -14,6 +14,7 @@
     "./library/formats": "./src/library/formats.ts",
     "./library/source-files": "./src/library/source-files.ts",
     "./secrets": "./src/secrets.ts",
+    "./semantic-search": "./src/semantic-search-settings.ts",
     "./work": "./src/work/index.ts",
     "./work/answer-expression": "./src/work/answer-expression.ts",
     "./work/answer-tool-check": "./src/work/answer-tool-check.ts",

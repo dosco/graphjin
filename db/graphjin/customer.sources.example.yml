@@ -78,6 +78,21 @@ agent:
 
 analytics_mode: true
 
+# Semantic catalog and Library file search through OpenNeko's embedding
+# service (EmbeddingGemma 2). Off until an admin turns on Settings > Semantic
+# search; graphjin-secret-init writes `enabled` from that switch at startup and
+# OpenNeko applies later flips live through gj_config.
+catalog_search:
+  semantic:
+    enabled: false
+    provider: openai
+    embedding_model: google/embeddinggemma-2
+    base_url: http://embedding:5003/v1
+    api_key_env: OPENNEKO_EMBEDDING_API_KEY
+    dimensions: default
+    query_prefix: "task: search result | query: "
+    document_prefix: "title: none | text: "
+
 # Customer sources are read-only by default and may be absent on first boot.
 # OpenNeko watchers run as GraphJin watches. Their store is GraphJin's managed
 # SQLite file in this config directory, never a customer database.

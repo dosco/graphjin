@@ -1,20 +1,16 @@
-import { and, db, eq, inArray, isNotNull, skill_embedding, sql } from "@neko/db";
-import { embedText, vectorLiteral } from "../embedding";
+import { and, db, eq, inArray, isNotNull, isNull, skill_embedding, sql } from "@neko/db";
+import { embedSkillQuery, skillDocument, vectorLiteral } from "../embedding";
+import { semanticSearchEnabled } from "../semantic-search";
 import { entitlementActorForRun, runHeldItemIds } from "./entitlement-scope";
+import { interleaveResults, keywordTsQuery } from "./keyword-search";
 
 export type SkillSearchResult = { name: string; score: number };
 
-const INLINE_EMBEDS = 64;
-
-/** A skill is indexed by its name and description; longer guide text blurs MiniLM's ranking. */
-function skillDocument(skill: { name: string; description: string }): string {
-  return [skill.name, skill.description].filter(Boolean).join("\n");
-}
-
 /**
  * Keeps the org's skill index in step with its installed skills. A new or
- * changed description clears the vector; up to 64 are embedded now and the embedding
- * job queue indexes the rest.
+ * changed description clears the vector. Nothing is embedded here, so a chat
+ * turn never waits on the model: when semantic search is on, the embedding job
+ * indexes the cleared rows in the background.
  */
 export async function syncSkillIndex(
   orgId: string,
@@ -27,9 +23,11 @@ export async function syncSkillIndex(
   const known = new Map(existing.map((row) => [row.name, row.document]));
   const installed = new Set(skills.map((skill) => skill.name));
 
+  let changed = false;
   for (const skill of skills) {
     const document = skillDocument(skill);
     if (known.get(skill.name) === document) continue;
+    changed = true;
     await db()
       .insert(skill_embedding)
       .values({ org_id: orgId, skill_name: skill.name, document, embedding: null })
@@ -44,23 +42,56 @@ export async function syncSkillIndex(
       .delete(skill_embedding)
       .where(and(eq(skill_embedding.org_id, orgId), inArray(skill_embedding.skill_name, removed)));
   }
-
-  const pending = await db()
-    .select({ id: skill_embedding.id, document: skill_embedding.document })
-    .from(skill_embedding)
-    .where(and(eq(skill_embedding.org_id, orgId), sql`${skill_embedding.embedding} IS NULL`))
-    .limit(INLINE_EMBEDS);
-  for (const row of pending) {
-    const vector = vectorLiteral(await embedText(row.document));
-    // A guide changed in between keeps its null vector for the next pass.
-    await db()
-      .update(skill_embedding)
-      .set({ embedding: sql`${vector}::vector` })
-      .where(and(eq(skill_embedding.id, row.id), eq(skill_embedding.document, row.document)));
+  if (changed && (await semanticSearchEnabled())) {
+    const { requestEmbeddingBackfill } = await import("../embedding-jobs");
+    await requestEmbeddingBackfill("skills").catch((error) => {
+      // The minute sweep queues it instead.
+      console.warn("[skill-index] could not queue indexing:", error instanceof Error ? error.message : error);
+    });
   }
 }
 
-/** The installed skills closest in meaning to the query that the run's actor holds. */
+function clampLimit(limit: number | undefined): number {
+  return Math.min(Math.max(limit ?? 3, 1), 10);
+}
+
+/**
+ * Full-text search over each skill's name and description. With
+ * `unindexedOnly`, only skills that have no vector yet.
+ */
+async function keywordSkillSearch(
+  orgId: string,
+  held: string[] | null | undefined,
+  query: string,
+  limit: number,
+  unindexedOnly = false,
+): Promise<SkillSearchResult[]> {
+  const tsquery = keywordTsQuery(query);
+  const document = sql`to_tsvector('english', ${skill_embedding.document})`;
+  const rank = sql<number>`ts_rank_cd(${document}, ${tsquery})`;
+  const rows = await db()
+    .select({ name: skill_embedding.skill_name, rank })
+    .from(skill_embedding)
+    .where(
+      and(
+        eq(skill_embedding.org_id, orgId),
+        ...(held ? [inArray(skill_embedding.skill_name, held)] : []),
+        ...(unindexedOnly ? [isNull(skill_embedding.embedding)] : []),
+        sql`${document} @@ ${tsquery}`,
+      ),
+    )
+    .orderBy(sql`${rank} desc`, skill_embedding.skill_name)
+    .limit(limit);
+  return rows.map((row) => ({ name: row.name, score: Number(row.rank) || 0 }));
+}
+
+/**
+ * The installed skills that best match the query and that the run's actor
+ * holds. With semantic search on, skills are ranked by meaning; skills not yet
+ * indexed are still found by keyword, interleaved after the closest ones.
+ * With it off, or when the embedding service fails or is slow, the search is
+ * by keyword alone.
+ */
 export async function searchSkillsForRun(input: {
   orgId: string;
   runId: string;
@@ -73,19 +104,35 @@ export async function searchSkillsForRun(input: {
   if (!actor) return [];
   const held = await runHeldItemIds(actor, "skill");
   if (held && held.length === 0) return [];
-  const vector = vectorLiteral(await embedText(query));
+  const limit = clampLimit(input.limit);
+
+  if (!(await semanticSearchEnabled())) return keywordSkillSearch(input.orgId, held, query, limit);
+  let vector: string;
+  try {
+    vector = vectorLiteral(await embedSkillQuery(query));
+  } catch (error) {
+    console.warn(
+      "[skill-index] semantic search unavailable; searching by keyword:",
+      error instanceof Error ? error.message : error,
+    );
+    return keywordSkillSearch(input.orgId, held, query, limit);
+  }
   const distance = sql<number>`${skill_embedding.embedding} <=> ${vector}::vector`;
-  const rows = await db()
-    .select({ name: skill_embedding.skill_name, distance })
-    .from(skill_embedding)
-    .where(
-      and(
-        eq(skill_embedding.org_id, input.orgId),
-        isNotNull(skill_embedding.embedding),
-        ...(held ? [inArray(skill_embedding.skill_name, held)] : []),
-      ),
-    )
-    .orderBy(distance)
-    .limit(Math.min(Math.max(input.limit ?? 3, 1), 10));
-  return rows.map((row) => ({ name: row.name, score: 1 - Number(row.distance) }));
+  const [rows, unindexed] = await Promise.all([
+    db()
+      .select({ name: skill_embedding.skill_name, distance })
+      .from(skill_embedding)
+      .where(
+        and(
+          eq(skill_embedding.org_id, input.orgId),
+          isNotNull(skill_embedding.embedding),
+          ...(held ? [inArray(skill_embedding.skill_name, held)] : []),
+        ),
+      )
+      .orderBy(distance)
+      .limit(limit),
+    keywordSkillSearch(input.orgId, held, query, limit, true),
+  ]);
+  const semantic = rows.map((row) => ({ name: row.name, score: 1 - Number(row.distance) }));
+  return interleaveResults(semantic, unindexed, (result) => result.name, limit);
 }

@@ -139,7 +139,6 @@ WORKDIR /app
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json
-COPY apps/embedding/package.json apps/embedding/package.json
 COPY packages/avatars/package.json packages/avatars/package.json
 COPY packages/channels/package.json packages/channels/package.json
 COPY packages/db/package.json packages/db/package.json
@@ -240,25 +239,52 @@ COPY evals/environment/adventureworks/api/server.mjs /app/server.mjs
 EXPOSE 8090
 ENTRYPOINT ["node", "/app/server.mjs"]
 
-FROM source AS embedding-deploy
-ARG TARGETARCH
-RUN pnpm --filter @neko/embedding deploy --prod /out/embedding \
-    && sh scripts/prune-node-runtime.sh /out/embedding "$TARGETARCH"
-# Bake and test the model. Offline readiness is a build requirement.
-RUN cd /out/embedding && NEKO_TRANSFORMERS_CACHE=/out/embedding/models node model.mjs --prewarm
+# ─── 4y. embedding service (Python, google/embeddinggemma-2) ────────────
+# CPU-only torch from the PyTorch CPU index; the rest pinned from PyPI.
+# torchvision and pillow are required by the model's processor even for text.
+FROM python:3.13-slim-bookworm AS embedding-python
+RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80-retries \
+    && apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+COPY apps/embedding/requirements.txt /tmp/embedding-requirements.txt
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+      torch==2.14.1 torchvision==0.29.1 \
+    && pip install --no-cache-dir -r /tmp/embedding-requirements.txt \
+    && rm /tmp/embedding-requirements.txt
 
-FROM node-runtime AS embedding
+# Build-time only download of one pinned revision, reduced to the text model.
+FROM embedding-python AS embedding-model
+ARG EMBEDDING_MODEL_REVISION=914f7f89142e33e77833254d9c9b90c3cef7303b
+COPY apps/embedding/vendor_model.py /tmp/vendor_model.py
+RUN python /tmp/vendor_model.py /opt/embedding-model "$EMBEDDING_MODEL_REVISION"
+
+FROM embedding-python AS embedding
 RUN useradd --system --create-home --uid 10001 embedding
-COPY --from=embedding-deploy --chown=embedding:embedding /out/embedding /app
 # The shared lazy listener is the openneko binary's lazy-service role.
 COPY --from=go-build /out/openneko /usr/local/bin/openneko
 RUN ln -s openneko /usr/local/bin/lazy-service
-ENV NEKO_TRANSFORMERS_CACHE=/app/models
+COPY --from=embedding-model /opt/embedding-model /opt/embedding-model
+COPY apps/embedding/embedding_service.py apps/embedding/smoke.py apps/embedding/test_embedding_service.py /app/
+RUN python -m compileall -q /app
+# Runtime is offline and writes only to the /tmp tmpfs (read-only root).
+ENV OPENNEKO_EMBEDDING_MODEL_PATH=/opt/embedding-model \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    HF_HOME=/tmp/huggingface \
+    XDG_CACHE_HOME=/tmp/cache \
+    TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    TOKENIZERS_PARALLELISM=false \
+    MALLOC_ARENA_MAX=2
 WORKDIR /app
 USER embedding
+# Offline readiness is a build requirement: one embedding, 768 finite dims.
+RUN python /app/embedding_service.py --check
 EXPOSE 5003
 ENTRYPOINT ["lazy-service"]
-CMD ["--listen", ":5003", "--upstream", "http://127.0.0.1:5004", "--", "node", "/app/server.mjs"]
+CMD ["--listen", ":5003", "--upstream", "http://127.0.0.1:5004", "--", "python3", "/app/embedding_service.py"]
 
 # ─── 4z. agent runner bundle ───────────────────────────────────────────
 # Compile the runner entry and multiplexed tool bridge. Ship their assets,

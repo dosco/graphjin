@@ -12,6 +12,7 @@ import {
   graphjinKeystoreHasValues,
   migrateGraphjinSystemSource,
   patchGraphjinKeystoreKey,
+  patchGraphjinSemanticSearch,
   patchGraphjinSourcesJwtSecret,
   reconcileGraphjinWritePolicy,
   shouldReconcileDemoSourceAuthMode,
@@ -306,5 +307,60 @@ describe("graphjinKeystoreHasValues", () => {
     await writeFile(join(dir, "secrets.enc.yml"), "version: 1\nsecrets:\n  gjsecret://a:\n    ciphertext: abc\n");
     expect(await graphjinKeystoreHasValues(path, "secrets: {}\n")).toBe(true);
     expect(await graphjinKeystoreHasValues(path, "secrets:\n  keystore:\n    path: other.yml\n")).toBe(false);
+  });
+});
+
+describe("patchGraphjinSemanticSearch", () => {
+  const BASE = `sources:
+  - name: neko_library
+    kind: file
+catalog_search:
+  lexical: true
+`;
+
+  it("adds the semantic block, off by default, and leaves other keys", () => {
+    const patched = patchGraphjinSemanticSearch(BASE, false);
+    expect(patched.changed).toBe(true);
+    const config = parse(patched.content);
+    expect(config.catalog_search).toEqual({
+      lexical: true,
+      semantic: {
+        enabled: false,
+        provider: "openai",
+        embedding_model: "google/embeddinggemma-2",
+        base_url: "http://embedding:5003/v1",
+        api_key_env: "OPENNEKO_EMBEDDING_API_KEY",
+        dimensions: "default",
+        query_prefix: "task: search result | query: ",
+        document_prefix: "title: none | text: ",
+      },
+    });
+    expect(config.sources).toEqual([{ name: "neko_library", kind: "file" }]);
+  });
+
+  it("is idempotent and reflects the switch", () => {
+    const off = patchGraphjinSemanticSearch(BASE, false);
+    expect(patchGraphjinSemanticSearch(off.content, false)).toEqual({ content: off.content, changed: false });
+    const on = patchGraphjinSemanticSearch(off.content, true);
+    expect(on.changed).toBe(true);
+    expect(parse(on.content).catalog_search.semantic.enabled).toBe(true);
+    expect(patchGraphjinSemanticSearch(on.content, true).changed).toBe(false);
+    expect(parse(patchGraphjinSemanticSearch(on.content, false).content).catalog_search.semantic.enabled).toBe(false);
+  });
+
+  it("restores OpenNeko's settings an operator changed and replaces an empty block", () => {
+    const edited = patchGraphjinSemanticSearch(BASE, true).content.replace("google/embeddinggemma-2", "other-model");
+    const fixed = patchGraphjinSemanticSearch(edited, true);
+    expect(fixed.changed).toBe(true);
+    expect(parse(fixed.content).catalog_search.semantic.embedding_model).toBe("google/embeddinggemma-2");
+    const empty = patchGraphjinSemanticSearch("catalog_search:\n", true);
+    expect(parse(empty.content).catalog_search.semantic.enabled).toBe(true);
+  });
+
+  it("matches the shipped example configs", async () => {
+    for (const name of ["customer.sources.example.yml", "dev.sources.example.yml"]) {
+      const raw = await readFile(new URL(`../../../db/graphjin/${name}`, import.meta.url), "utf8");
+      expect(patchGraphjinSemanticSearch(raw, false).changed, name).toBe(false);
+    }
   });
 });

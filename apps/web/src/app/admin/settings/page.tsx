@@ -26,6 +26,7 @@ import { getAuthGateStatus } from "@/lib/auth";
 import { getInstallPolicy } from "@/lib/install-policy-settings";
 import { getContextRemote } from "@neko/llm/config-vcs";
 import { getSpendSettings } from "@neko/llm/spend";
+import { getSemanticSearchSetting } from "@neko/llm/semantic-search";
 import SetupWizard from "./SetupWizard";
 
 /**
@@ -77,6 +78,7 @@ export default async function SettingsPage() {
     installPolicy,
     workflowOrgLimits,
     contextRemote,
+    semanticSearch,
   ] = await Promise.all([
     hasDataSourceSetup(orgId),
     hasPrimaryProviderSetup(orgId),
@@ -98,6 +100,7 @@ export default async function SettingsPage() {
       [orgId],
     ),
     getContextRemote(orgId),
+    getSemanticSearchSetting(),
   ]);
   const liveProvider = authGate.provider?.pluginName ?? null;
   const pendingProvider = authGate.pending?.pluginName ?? null;
@@ -184,6 +187,17 @@ export default async function SettingsPage() {
               : new URL(contextRemote.url).hostname
             : "Not connected",
           statusTone: contextRemote ? (contextRemote.lastPublish?.status === "failed" ? "watch" : "success") : "neutral",
+        },
+        {
+          href: "/admin/settings/search",
+          title: "Semantic search",
+          copy: "Find memories, skills, Library files and data by meaning. Uses about 2 GB of memory when on.",
+          status: semanticSearch.enabled
+            ? (semanticSearch.waiting ?? 0) > 0
+              ? "On · Indexing"
+              : "On"
+            : "Off · Keyword search",
+          statusTone: semanticSearch.enabled ? "success" : "neutral",
         },
         {
           href: "/admin/settings/research",

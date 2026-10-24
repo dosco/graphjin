@@ -45,7 +45,11 @@ func (s *graphjinService) queryCatalogDetailed(ctx context.Context, snapshot *co
 		return core.CatalogQueryOutput{}, metadata, nil
 	}
 	lexical, err := snapshot.QueryResult(query)
-	if err != nil || s == nil || s.semantic == nil || strings.TrimSpace(query.Search) == "" {
+	var semantic *semanticCatalogIndex
+	if s != nil {
+		semantic = s.semanticCatalog()
+	}
+	if err != nil || semantic == nil || strings.TrimSpace(query.Search) == "" {
 		return lexical, metadata, err
 	}
 	if semanticExactIdentifier(query.Search, lexical) {
@@ -54,10 +58,10 @@ func (s *graphjinService) queryCatalogDetailed(ctx context.Context, snapshot *co
 		metadata.VisibleTableEndpoints = semanticVisibleTableEndpoints(lexical.Cards, 4)
 		return lexical, metadata, nil
 	}
-	hintSet, err := s.semantic.hintsDetailed(ctx, snapshot, query)
+	hintSet, err := semantic.hintsDetailed(ctx, snapshot, query)
 	if err != nil || !hintSet.indexReady {
 		if err != nil {
-			s.semantic.warnFallback(err)
+			semantic.warnFallback(err)
 		}
 		metadata.Mode = "lexical_fallback"
 		metadata.LexicalFallback = true
@@ -292,7 +296,7 @@ func (i *semanticCatalogIndex) queryVectors(ctx context.Context, queries []strin
 			vectors[n] = vector
 			continue
 		}
-		misses = append(misses, query)
+		misses = append(misses, i.conf.QueryPrefix+query)
 		missIndexes = append(missIndexes, n)
 	}
 	if len(misses) == 0 {

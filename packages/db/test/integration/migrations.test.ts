@@ -36,6 +36,8 @@ const M_0011 = join(REPO_ROOT, "db", "migrations", "0011_action_stack.sql");
 const M_0019 = join(REPO_ROOT, "db", "migrations", "0019_install_policy_scope.sql");
 const M_0048 = join(REPO_ROOT, "db", "migrations", "0048_graphjin_config_scope.sql");
 const M_0110 = join(REPO_ROOT, "db", "migrations", "0110_graphjin_agent_scope.sql");
+const M_0118 = join(REPO_ROOT, "db", "migrations", "0118_public_url_scope.sql");
+const M_0130 = join(REPO_ROOT, "db", "migrations", "0130_semantic_search_scope.sql");
 const M_0034 = join(REPO_ROOT, "db", "migrations", "0034_workflow_ownership.sql");
 const M_0051 = join(REPO_ROOT, "db", "migrations", "0051_app_state.sql");
 const M_0052 = join(REPO_ROOT, "db", "migrations", "0052_records_ops_health.sql");
@@ -221,6 +223,26 @@ describeIfDb("schema migrations", () => {
         await client.query(
           `insert into llm_provider_config (org_id, scope, provider) values ($1, $2, 'anthropic')`,
           ["chk2", scope],
+        );
+      }
+    });
+  });
+
+  it("0130 extends the scope check for the semantic search switch", async () => {
+    await withTempDb(async (client) => {
+      await applyFile(client, M_0001);
+      await applyFile(client, M_0002);
+      await applyFile(client, M_0048);
+      await applyFile(client, M_0110);
+      await applyFile(client, M_0118);
+      await applyFile(client, M_0130);
+      await applyFile(client, M_0130);
+
+      await client.query(`insert into organization (id, name) values ('chk130', 'Check Test 130')`);
+      for (const scope of ["primary", "graphjin-agent", "public-url", "semantic-search"]) {
+        await client.query(
+          `insert into llm_provider_config (org_id, scope, provider) values ($1, $2, $2)`,
+          ["chk130", scope],
         );
       }
     });

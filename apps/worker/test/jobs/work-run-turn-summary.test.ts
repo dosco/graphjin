@@ -29,11 +29,10 @@ import {
 vi.mock("@neko/llm/work", async (orig) => {
   return await orig();
 });
-vi.mock("../../../../packages/llm/src/embedding", () => ({
-  EMBEDDING_DIM: 384,
-  embedText: vi.fn(async () => Array(384).fill(0)),
-  vectorLiteral: (vec: number[]) => `[${vec.join(",")}]`,
-}));
+vi.mock("../../../../packages/llm/src/embedding", async (importOriginal) => {
+  const { fakeEmbedding } = await import("../../../../packages/llm/test/helpers/fake-embedding");
+  return fakeEmbedding(await importOriginal());
+});
 
 import {
   appendWorkRunEvent,
