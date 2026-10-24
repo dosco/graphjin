@@ -43,17 +43,14 @@ func (c *contextAnchorClient) anchored(request map[string]ax.Value) map[string]a
 	default:
 		return request
 	}
-	anchoredContent := false
-	for _, raw := range messages {
-		message, ok := raw.(map[string]ax.Value)
-		if !ok {
-			continue
-		}
-		if content, ok := message["content"].(string); ok && containsAll(content, c.request) {
-			anchoredContent = true
-			break
+	// Restore only the parts Ax cut to a preview, so the anchor stays cacheable across turns.
+	var missing []string
+	for _, part := range c.request {
+		if !anyContains(messages, part) {
+			missing = append(missing, part)
 		}
 	}
+	anchoredContent := len(missing) == 0
 	_, hasRoute := request["model"]
 	if anchoredContent && (hasRoute || c.contextRoute == "") {
 		return request
@@ -63,10 +60,7 @@ func (c *contextAnchorClient) anchored(request map[string]ax.Value) map[string]a
 		anchored[k] = value
 	}
 	if !anchoredContent {
-		copyMessages := make([]ax.Value, 0, len(messages)+1)
-		copyMessages = append(copyMessages, ax.Object("role", "system", "content", "Accepted user request and constraints (authoritative): "+strings.Join(c.request, "\n\n")))
-		copyMessages = append(copyMessages, messages...)
-		anchored[key] = copyMessages
+		anchored[key] = withSystemAnchor(messages, "Accepted user request and constraints (authoritative): "+strings.Join(missing, "\n\n"))
 	}
 	if !hasRoute && c.contextRoute != "" {
 		anchored["model"] = c.contextRoute
@@ -74,13 +68,37 @@ func (c *contextAnchorClient) anchored(request map[string]ax.Value) map[string]a
 	return anchored
 }
 
-func containsAll(content string, parts []string) bool {
-	for _, part := range parts {
-		if !strings.Contains(content, part) {
-			return false
+// withSystemAnchor puts the anchor at the start of the leading system message.
+// Some chat templates (Qwen, Llama) accept only one system message.
+func withSystemAnchor(messages []ax.Value, anchor string) []ax.Value {
+	if len(messages) > 0 {
+		if first, ok := messages[0].(map[string]ax.Value); ok && first["role"] == "system" {
+			if content, ok := first["content"].(string); ok {
+				merged := make(map[string]ax.Value, len(first))
+				for k, value := range first {
+					merged[k] = value
+				}
+				merged["content"] = anchor + "\n\n" + content
+				out := make([]ax.Value, 0, len(messages))
+				out = append(out, merged)
+				return append(out, messages[1:]...)
+			}
 		}
 	}
-	return true
+	out := make([]ax.Value, 0, len(messages)+1)
+	out = append(out, ax.Object("role", "system", "content", anchor))
+	return append(out, messages...)
+}
+
+func anyContains(messages []ax.Value, part string) bool {
+	for _, raw := range messages {
+		if message, ok := raw.(map[string]ax.Value); ok {
+			if content, ok := message["content"].(string); ok && strings.Contains(content, part) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (c *contextAnchorClient) Chat(ctx context.Context, request, options map[string]ax.Value) (ax.Value, error) {

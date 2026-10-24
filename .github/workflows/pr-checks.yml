@@ -60,7 +60,7 @@ jobs:
 
   design-system:
     name: Web design system
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # Solo-mode pages resolve a persisted identity, just like installed instances.
     services:
@@ -163,8 +163,8 @@ jobs:
           --health-retries 10
 
     env:
-      GRAPHJIN_VERSION: "3.21.13"
-      RECORDS_GRAPHJIN_IMAGE: openneko/graphjin-integration:3.21.13
+      GRAPHJIN_VERSION: "3.21.16"
+      RECORDS_GRAPHJIN_IMAGE: openneko/graphjin-integration:3.21.16
       REQUIRE_GRAPHJIN_INTEGRATION: "1"
       OPENNEKO_PG_ENV_OVERRIDE: "1"
       RECORDS_PG_HOST: localhost
@@ -267,7 +267,7 @@ jobs:
 
       - name: Install graphjin CLI
         env:
-          GRAPHJIN_VERSION: "3.21.13"
+          GRAPHJIN_VERSION: "3.21.16"
         run: |
           curl -fsSL -o /tmp/graphjin.tgz \
             "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_amd64.tar.gz"

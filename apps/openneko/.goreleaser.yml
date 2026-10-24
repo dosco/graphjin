@@ -65,9 +65,9 @@ homebrew_casks:
     # Gatekeeper "cannot be opened" prompt.
     hooks:
       post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/openneko"]
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/openneko"]
           end
     caveats: |
       OpenNeko needs Docker. Install Docker Desktop (macOS) or Docker Engine (Linux) first.

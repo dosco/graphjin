@@ -71,7 +71,7 @@ describeIfLive("records schema worker runtime", () => {
     const cli = new RecordsGraphjinSchemaCli({
       command: async (_binary, args) => {
         if (args[0] === "version") {
-          return { stdout: "GraphJin 3.21.13\n", stderr: "" };
+          return { stdout: "GraphJin 3.21.16\n", stderr: "" };
         }
         if (args.includes("diff")) {
           return {

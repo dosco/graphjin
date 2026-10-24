@@ -14,7 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
-GRAPHJIN_VERSION="${GRAPHJIN_VERSION:-3.21.13}"
+GRAPHJIN_VERSION="${GRAPHJIN_VERSION:-3.21.16}"
 # Pin Hermes to the same ref baked into the Dockerfile so local-dev installs
 # match what ships in the container image. v2026.8.31 / v0.21.0.
 HERMES_AGENT_REF="${HERMES_AGENT_REF:-29112bef099274229cadff79cdff7bf7b99c4b77}"
