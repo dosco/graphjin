@@ -27,7 +27,6 @@
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter @neko/worker test:e2e",
     "ui:check": "node scripts/check-web-design-system.mjs",
-    "bench:hermes": "node scripts/bench-hermes-acp.mjs",
     "skills:check": "node --experimental-strip-types scripts/skill-doctor.ts",
     "eval:backend": "sh scripts/eval-openneko-backend.sh",
     "skills:install": "node --experimental-strip-types scripts/skill-doctor.ts --install",

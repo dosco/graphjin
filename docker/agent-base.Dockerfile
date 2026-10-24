@@ -1,15 +1,16 @@
-# OpenShell sandbox OS base for the Hermes agent runtime. Agent turns reach the
+# OpenShell sandbox OS base for the Ax agent runtime. Agent turns reach the
 # trusted control plane only through the broker.
 #
 # This file is the OS base layer (the OpenShell-required shape: glibc +
 # iproute2/nftables + a `sandbox` user @ /sandbox, same as plugin-base). The
-# runnable agent image in the main Dockerfile adds Hermes, GraphJin, document
-# tooling, two standalone JavaScript bundles, and built-in skill assets. It does
-# not inherit the worker source or production dependency closure.
+# runnable agent image in the main Dockerfile adds the Ax Harness, DuckDB,
+# document tooling, two standalone JavaScript bundles, and built-in skill
+# assets. It does not inherit the worker source or production dependency
+# closure.
 # See docs/OPENSHELL_MIGRATION_PLAN.md (Phase 2c) for the full image + launcher.
 #   docker build -f docker/agent-base.Dockerfile -t ghcr.io/open-neko/agent-base:node24 .
 # Node 24 is retained for the standalone agent/MCP bundles and proxy-aware fetch.
-FROM node:24-bookworm-slim AS node-distribution
+FROM node:24.22.1-bookworm-slim AS node-distribution
 
 FROM node-distribution AS npm-payload
 RUN rm -rf /usr/local/lib/node_modules/npm/docs /usr/local/lib/node_modules/npm/man \
@@ -25,7 +26,8 @@ RUN ln -s node /usr/local/bin/nodejs \
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates iproute2 nftables \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2
 
 RUN groupadd -g 1000660000 sandbox \
     && useradd -u 1000660000 -g sandbox -d /sandbox -M sandbox \

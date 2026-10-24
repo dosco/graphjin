@@ -87,7 +87,7 @@ jobs:
       - uses: actions/setup-go@v6
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         with:
-          go-version: "1.25"
+          go-version: "1.26.10"
           cache-dependency-path: apps/openneko/go.sum
 
       - name: Build openneko binary
@@ -144,30 +144,20 @@ jobs:
             done
           done
 
-      - name: Verify Hermes egress executable contract
+      - name: Verify agent egress executable contract
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         env:
           OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
         run: |
           set -euo pipefail
-          resolve_interpreter() {
-            docker run --rm --entrypoint sh "$1" -lc \
-              'realpath /usr/local/uv/tools/hermes-agent/bin/python'
-          }
-          worker_binary=$(resolve_interpreter \
-            "ghcr.io/open-neko/neko-worker:$OPENNEKO_VERSION")
-          agent_binary=$(resolve_interpreter \
-            "ghcr.io/open-neko/agent:$OPENNEKO_VERSION")
+          # OpenShell binds model egress to this exact executable.
           configured_binary=$(docker run --rm --entrypoint node \
-            -e OPENNEKO_AGENT_MODEL_BINARY=/stale/operator/python \
             "ghcr.io/open-neko/neko-worker:$OPENNEKO_VERSION" \
             --import tsx/esm --input-type=module --eval \
-            'import { VENDORED_HERMES_MODEL_BINARY } from "@neko/llm"; console.log(VENDORED_HERMES_MODEL_BINARY)')
-          echo "worker Hermes executable: $worker_binary"
-          echo "agent Hermes executable:  $agent_binary"
+            'import { AX_HARNESS_BINARY } from "@neko/llm"; console.log(AX_HARNESS_BINARY)')
           echo "OpenNeko policy executable: $configured_binary"
-          test "$worker_binary" = "$agent_binary"
-          test "$configured_binary" = "$agent_binary"
+          docker run --rm --entrypoint sh "ghcr.io/open-neko/agent:$OPENNEKO_VERSION" \
+            -c "test -x '$configured_binary'"
 
       - name: Verify enforced database storage contract
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}

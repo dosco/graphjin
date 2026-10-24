@@ -19,7 +19,7 @@ export type MessageRecord = {
 
 export type RunRecord = {
   id: string;
-  backend: "hermes";
+  backend: string;
   status: string;
   error: string | null;
   createdAt: string;

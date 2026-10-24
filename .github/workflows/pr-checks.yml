@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version: "1.26.10"
           cache: false
       - run: go test -race ./...
         working-directory: apps/lazy-service
@@ -102,7 +102,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.22.1
           cache: pnpm
 
       - name: Install
@@ -182,7 +182,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.22.1
           cache: pnpm
 
       - name: Install
@@ -251,19 +251,16 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.22.1
           cache: pnpm
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: "1.26.10"
           cache-dependency-path: apps/openneko/go.sum
 
       - name: Install
         run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
-
-      - name: Verify Hermes-only agent backend contract
-        run: bash scripts/check-hermes-only.sh
 
       - name: Install graphjin CLI
         env:

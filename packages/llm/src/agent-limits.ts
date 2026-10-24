@@ -1,7 +1,6 @@
 /**
- * The one source for agent run limits and budgets. Hermes (config.yaml and
- * per-run env) and Ax (the run spec) both read their values from here, so the
- * two backends cannot diverge. Each value has an environment override.
+ * The one source for agent run limits and budgets. Ax reads its run spec and
+ * process environment from here. Each value has an environment override.
  */
 
 export type AgentReasoningEffort = "low" | "medium" | "high";
@@ -11,7 +10,7 @@ export type AgentRunKind = "chat" | "workflow" | "agent-job";
 export type AgentLimits = {
   /** Wall clock for one turn. The backend process is killed when it expires. */
   timeoutMs: number;
-  /** Model turns per run: Hermes agent.max_turns, Ax max_actor_steps. */
+  /** Model turns per run: Ax max_actor_steps. */
   maxTurns: number;
   /** Tool-calling iterations per run. Undefined means only maxTurns bounds them. */
   maxToolCalls?: number;
@@ -21,17 +20,10 @@ export type AgentLimits = {
   reasoningEffort?: AgentReasoningEffort;
   delegation: {
     maxIterations: number;
-    maxConcurrentChildren: number;
-    maxSpawnDepth: number;
-    /** 0 means no child timeout. */
-    childTimeoutSeconds: number;
-    orchestratorEnabled: boolean;
   };
   toolOutput: {
     /** Terminal output cap in characters. */
     maxBytes: number;
-    maxLines: number;
-    maxLineLength: number;
   };
   terminal: {
     /** Default command timeout. */
@@ -55,14 +47,6 @@ function readInt(name: string, fallback: number, min: number, max?: number): num
   return n;
 }
 
-function readBool(name: string, fallback: boolean): boolean {
-  const raw = process.env[name]?.trim().toLowerCase();
-  if (!raw) return fallback;
-  if (["1", "true", "yes", "on"].includes(raw)) return true;
-  if (["0", "false", "no", "off"].includes(raw)) return false;
-  return fallback;
-}
-
 export function isReasoningEffort(value: unknown): value is AgentReasoningEffort {
   return value === "low" || value === "medium" || value === "high";
 }
@@ -76,15 +60,9 @@ export function agentLimits(kind: AgentRunKind = "chat"): AgentLimits {
     maxTurns: readInt("OPENNEKO_AGENT_MAX_TURNS", 25, 1, 500),
     delegation: {
       maxIterations: readInt("OPENNEKO_AGENT_DELEGATION_MAX_ITERATIONS", 50, 1),
-      maxConcurrentChildren: readInt("OPENNEKO_AGENT_DELEGATION_MAX_CONCURRENT_CHILDREN", 3, 1),
-      maxSpawnDepth: readInt("OPENNEKO_AGENT_DELEGATION_MAX_SPAWN_DEPTH", 1, 1, 3),
-      childTimeoutSeconds: readInt("OPENNEKO_AGENT_DELEGATION_CHILD_TIMEOUT_SECONDS", 0, 0),
-      orchestratorEnabled: readBool("OPENNEKO_AGENT_DELEGATION_ORCHESTRATOR_ENABLED", true),
     },
     toolOutput: {
       maxBytes: readInt("OPENNEKO_AGENT_TOOL_OUTPUT_MAX_BYTES", 50_000, 1_000),
-      maxLines: readInt("OPENNEKO_AGENT_TOOL_OUTPUT_MAX_LINES", 2_000, 10),
-      maxLineLength: readInt("OPENNEKO_AGENT_TOOL_OUTPUT_MAX_LINE_LENGTH", 2_000, 80),
     },
     terminal: {
       timeoutSeconds: readInt("OPENNEKO_AGENT_TERMINAL_TIMEOUT_SECONDS", 180, 1, 600),
@@ -108,29 +86,6 @@ export function agentLimits(kind: AgentRunKind = "chat"): AgentLimits {
   };
 }
 
-/** Hermes config.yaml lines for the limits that Hermes reads from its config. */
-export function hermesLimitConfigLines(limits: AgentLimits): string[] {
-  const d = limits.delegation;
-  return [
-    "delegation:",
-    `  max_iterations: ${d.maxIterations}`,
-    `  max_concurrent_children: ${d.maxConcurrentChildren}`,
-    `  max_spawn_depth: ${d.maxSpawnDepth}`,
-    `  orchestrator_enabled: ${d.orchestratorEnabled ? "true" : "false"}`,
-    `  child_timeout_seconds: ${d.childTimeoutSeconds}`,
-    "",
-    "tool_output:",
-    `  max_bytes: ${limits.toolOutput.maxBytes}`,
-    `  max_lines: ${limits.toolOutput.maxLines}`,
-    `  max_line_length: ${limits.toolOutput.maxLineLength}`,
-  ];
-}
-
-/** Per-run Hermes environment for the limits that Hermes reads from env. */
-export function hermesLimitEnv(limits: AgentLimits): Record<string, string> {
-  return { TERMINAL_TIMEOUT: String(limits.terminal.timeoutSeconds) };
-}
-
 export type AxRunLimits = {
   timeout_ms: number;
   max_actor_steps: number;
@@ -140,8 +95,7 @@ export type AxRunLimits = {
 };
 
 /**
- * Ax run spec fields. A per-run tool-call cap replaces the turn count, as the
- * Hermes per-run iteration override does.
+ * Ax run spec fields. A per-run tool-call cap replaces the turn count.
  */
 export function axRunLimits(limits: AgentLimits): AxRunLimits {
   return {

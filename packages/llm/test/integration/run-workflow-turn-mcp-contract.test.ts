@@ -26,7 +26,7 @@ describeIfDb("runWorkflowTurn — native MCP contract", () => {
     await withTestOrg(async (orgId) => {
       const run = vi.fn();
       const backend: AgentBackend = {
-        id: "hermes",
+        id: "ax",
         capabilities: {
           mcpTools: false,
           sessionResume: false,

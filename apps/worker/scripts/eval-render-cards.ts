@@ -10,7 +10,7 @@
  *   OPENAI_API_KEY=… OPENAI_MODELS=gpt-5.2 \
  *   pnpm --filter @neko/worker eval:cards [--org <orgId>] [--out results.json]
  *
- * --bridge offers the tool the way Hermes tool search does: a tool_call bridge
+ * --bridge offers the tool the way the retired Hermes tool search did: a tool_call bridge
  * whose arguments parameter is an open object, with the schema as text.
  *
  * --rich offers the web schema with comparisons, what-if controls, maps,
@@ -240,8 +240,8 @@ function userMessage(testCase: Case): string {
   return `${testCase.question}\n\nSuccessful data tool result for this turn:\n${JSON.stringify(testCase.result, null, 2)}`;
 }
 
-// Hermes' Gemini adapter keeps only these schema keys (agent/gemini_schema.py).
-// Applying the same filter here sends Gemini exactly what production sends.
+// The retired Hermes Gemini adapter kept only these schema keys
+// (agent/gemini_schema.py). Applying the same filter reproduces that request shape.
 const GEMINI_SCHEMA_KEYS = new Set([
   "type", "format", "title", "description", "nullable", "enum", "maxItems", "minItems",
   "properties", "required", "minProperties", "maxProperties", "minLength", "maxLength",

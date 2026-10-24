@@ -27,7 +27,7 @@ const knowledge: KnowledgePackContents = {
 };
 
 function build(
-  backend: "hermes" | "ax",
+  backend: "ax",
   overrides: {
     wantsCards?: boolean;
     includeUxMetadata?: boolean;
@@ -95,9 +95,9 @@ function build(
 
 describe("buildWorkPrompt UX metadata", () => {
   it("omits only the UX closing instructions for efficacy evals", () => {
-    const production = build("hermes");
+    const production = build("ax");
     expect(production).toContain(VALUE_ESTIMATE_INSTRUCTIONS);
-    const evaluation = build("hermes", { includeUxMetadata: false });
+    const evaluation = build("ax", { includeUxMetadata: false });
     for (const block of ["neko_value", "neko_vitals", "neko_followups"]) {
       expect(production).toContain(block);
       expect(evaluation).not.toContain(block);
@@ -108,7 +108,7 @@ describe("buildWorkPrompt UX metadata", () => {
 
 describe("buildWorkPrompt GraphJin agent path", () => {
   it("describes only GraphJin's agent for data, including workflow triggers", () => {
-    const agent = build("hermes", { graphjinDataPath: "agent", supportsWorkflowTool: true });
+    const agent = build("ax", { graphjinDataPath: "agent", supportsWorkflowTool: true });
     expect(agent).toContain("`mcp_neko_graphjin_agent_ask`");
     expect(agent).not.toMatch(/mcp_neko_graphjin_(execute_graphql|query_catalog|validate_where_clause)/);
     expect(agent).not.toContain(knowledge.syntax);
@@ -118,8 +118,8 @@ describe("buildWorkPrompt GraphJin agent path", () => {
   });
 
   it("keeps the direct path unchanged", () => {
-    const direct = build("hermes", { supportsWorkflowTool: true });
-    expect(direct).toBe(build("hermes", { graphjinDataPath: "direct", supportsWorkflowTool: true }));
+    const direct = build("ax", { supportsWorkflowTool: true });
+    expect(direct).toBe(build("ax", { graphjinDataPath: "direct", supportsWorkflowTool: true }));
     expect(direct).toContain("`mcp_neko_graphjin_execute_graphql`");
     expect(direct).toContain("`mcp_neko_graphjin_query_catalog`");
     expect(direct).not.toContain("mcp_neko_graphjin_agent_ask");
@@ -128,7 +128,7 @@ describe("buildWorkPrompt GraphJin agent path", () => {
 
 describe("buildWorkPrompt records data surface", () => {
   it("routes generated-app questions only to native records tools", () => {
-    const prompt = build("hermes", {
+    const prompt = build("ax", {
       dataSurface: "records",
       supportsSourceConfigTool: true,
     });
@@ -146,8 +146,8 @@ describe("buildWorkPrompt records data surface", () => {
 });
 
 describe("buildWorkPrompt attachments guidance", () => {
-  it("tells Hermes how to read uploads and which path shape to expect", () => {
-    const prompt = build("hermes");
+  it("tells the agent how to read uploads and which path shape to expect", () => {
+    const prompt = build("ax");
     expect(prompt).toContain("<attachments>");
     expect(prompt).toContain("uploads/<threadId>/<filename>");
     expect(prompt).toContain("`Read` tool");
@@ -155,15 +155,14 @@ describe("buildWorkPrompt attachments guidance", () => {
     expect(prompt).toContain(workspace.orgRoot);
   });
 
-  it("references the hermes shell tool when running under hermes", () => {
-    const prompt = build("hermes");
+  it("references the terminal tool for non-text uploads", () => {
+    const prompt = build("ax");
     expect(prompt).toContain("<attachments>");
-    // The attachments block names Hermes' terminal tool for non-text formats.
     expect(prompt).toContain("`terminal`");
   });
 
   it("no longer dismisses uploaded files as 'auxiliary'", () => {
-    const prompt = build("hermes");
+    const prompt = build("ax");
     // The old wording told the model uploaded files were auxiliary, which it
     // routinely took as permission to ignore them. The new framing must
     // explicitly say to read them.
@@ -174,7 +173,7 @@ describe("buildWorkPrompt attachments guidance", () => {
 
 describe("buildWorkPrompt clarification contract", () => {
   it("tells an interactive agent to clarify material uncertainty and stop", () => {
-    const prompt = build("hermes", { supportsClarificationTool: true });
+    const prompt = build("ax", { supportsClarificationTool: true });
     expect(prompt).toContain("<clarification>");
     expect(prompt).toContain("mcp_neko_interaction_ask_user_question");
     expect(prompt).toContain("FINAL action of the turn");
@@ -185,7 +184,7 @@ describe("buildWorkPrompt clarification contract", () => {
   });
 
   it("publishes only run artifacts as downloads", () => {
-    const prompt = build("hermes", { supportsClarificationTool: true });
+    const prompt = build("ax", { supportsClarificationTool: true });
     expect(prompt).toContain("published as downloadable artifacts");
     expect(prompt).toContain("download boundary rejects every file");
     expect(prompt).toContain("uploads, skills, memory, knowledge");
@@ -194,7 +193,7 @@ describe("buildWorkPrompt clarification contract", () => {
 
 describe("buildWorkPrompt conversation contract", () => {
   it("keeps prose conversational without prompting the model for progress", () => {
-    const prompt = build("hermes", {
+    const prompt = build("ax", {
       wantsCards: true,
       supportsCardTool: true,
     });
@@ -207,21 +206,8 @@ describe("buildWorkPrompt conversation contract", () => {
 });
 
 describe("buildWorkPrompt skill catalog", () => {
-  it("includes compact discovery metadata and a path for on-demand instructions", () => {
-    const prompt = build("hermes", {
-      installedSkills: [
-        { name: "pdf", description: "Read, create, and inspect PDF files." },
-      ],
-    });
-
-    expect(prompt).toContain("pdf — Read, create, and inspect PDF files.");
-    expect(prompt).toContain(`${workspace.skillsRoot}/pdf/SKILL.md`);
-    expect(prompt).toContain("When a skill matches, read its SKILL.md");
-    expect(prompt).not.toContain("Full PDF skill body");
-  });
-
   it("uses typed mention metadata to distinguish skills from workflows", () => {
-    const prompt = build("hermes", {
+    const prompt = build("ax", {
       installedSkills: [
         { name: "revenue-review", description: "Inspect revenue movement." },
       ],
@@ -241,7 +227,7 @@ describe("buildWorkPrompt skill catalog", () => {
 
 describe("buildWorkPrompt action scopes", () => {
   it("teaches fence-based agents the fixed scope for records and plugin actions", () => {
-    const prompt = build("hermes", {
+    const prompt = build("ax", {
       pluginActions: [
         {
           kind: "record_create",
@@ -268,26 +254,26 @@ describe("buildWorkPrompt action scopes", () => {
 
 describe("per-channel rendering gate", () => {
   it("renders via the render_cards tool on web turns (wantsCards)", () => {
-    const hermesMcp = build("hermes", { wantsCards: true, supportsCardTool: true });
-    expect(hermesMcp).toContain("<cards>");
-    expect(hermesMcp).toContain("mcp__neko__ui_render_cards");
-    expect(hermesMcp).not.toContain("mcp_neko_ui_render_cards");
-    expect(hermesMcp).toContain('Three or more time periods: a table of the periods with chart "line"');
-    expect(hermesMcp).toContain('A breakdown by category: a table with chart "bar"');
-    expect(hermesMcp).toContain('{"title": "Website sessions by month", "table": "Month | Sessions\\nMarch | 39800');
-    expect(hermesMcp).toContain("add a watch callout");
-    expect(hermesMcp).not.toMatch(/A2UI|createSurface|surfaceId|envelope/);
-    expect(hermesMcp).not.toContain("BriefingCard");
+    const mcpCards = build("ax", { wantsCards: true, supportsCardTool: true });
+    expect(mcpCards).toContain("<cards>");
+    expect(mcpCards).toContain("mcp__neko__ui_render_cards");
+    expect(mcpCards).not.toContain("mcp_neko_ui_render_cards");
+    expect(mcpCards).toContain('Three or more time periods: a table of the periods with chart "line"');
+    expect(mcpCards).toContain('A breakdown by category: a table with chart "bar"');
+    expect(mcpCards).toContain('{"title": "Website sessions by month", "table": "Month | Sessions\\nMarch | 39800');
+    expect(mcpCards).toContain("add a watch callout");
+    expect(mcpCards).not.toMatch(/A2UI|createSurface|surfaceId|envelope/);
+    expect(mcpCards).not.toContain("BriefingCard");
 
-    const hermesWeb = build("hermes", { wantsCards: true, supportsCardTool: false });
-    expect(hermesWeb).toContain("<cards>");
-    expect(hermesWeb).toContain("render_cards");
+    const webCards = build("ax", { wantsCards: true, supportsCardTool: false });
+    expect(webCards).toContain("<cards>");
+    expect(webCards).toContain("render_cards");
     // The web-UI-coupled fence is gone from the prompt entirely.
-    expect(hermesWeb).not.toContain("neko_a2ui");
+    expect(webCards).not.toContain("neko_a2ui");
   });
 
   it("omits all rendering vocabulary on non-web turns", () => {
-    const prompt = build("hermes", { wantsCards: false, supportsCardTool: true });
+    const prompt = build("ax", { wantsCards: false, supportsCardTool: true });
     expect(prompt).not.toContain("<cards>");
     expect(prompt).not.toContain("neko_a2ui");
     expect(prompt).not.toContain("render_cards");
@@ -296,7 +282,7 @@ describe("per-channel rendering gate", () => {
 
 describe("tool-result grounding", () => {
   it("forbids unsupported figures and failed sources in prose, cards, and vitals", () => {
-    const prompt = build("hermes", {
+    const prompt = build("ax", {
       wantsCards: true,
       supportsCardTool: true,
     });
@@ -323,7 +309,7 @@ describe("tool-result grounding", () => {
 
 describe("buildWorkPrompt workflow + policy management", () => {
   it("advertises workflow tools when supportsWorkflowTool is true", () => {
-    const prompt = build("hermes", { supportsWorkflowTool: true });
+    const prompt = build("ax", { supportsWorkflowTool: true });
     expect(prompt).toContain("mcp_neko_workflow_builder_list_workflows");
     expect(prompt).toContain("mcp_neko_workflow_builder_create_workflow");
     // Operators are not developers — should warn against showing cron syntax.
@@ -331,18 +317,18 @@ describe("buildWorkPrompt workflow + policy management", () => {
   });
 
   it("falls back to the workflow save fence when MCP tools unavailable", () => {
-    const prompt = build("hermes", { supportsWorkflowTool: false });
+    const prompt = build("ax", { supportsWorkflowTool: false });
     expect(prompt).toContain("neko_workflow_save");
     expect(prompt).not.toContain("mcp_neko_workflow_builder_");
   });
 
   it("teaches the data-change trigger in both workflow tool modes", () => {
-    const mcp = build("hermes", { supportsWorkflowTool: true });
+    const mcp = build("ax", { supportsWorkflowTool: true });
     expect(mcp).toContain("triggers.when");
     expect(mcp).not.toContain("create_subscription");
     expect(mcp).not.toContain("dry_run");
 
-    const fence = build("hermes", { supportsWorkflowTool: false });
+    const fence = build("ax", { supportsWorkflowTool: false });
     expect(fence).toContain("triggers.when");
     // The trigger must not surface as a separate "subscription" tool/fence.
     expect(fence).not.toContain("neko_subscription");
@@ -350,19 +336,19 @@ describe("buildWorkPrompt workflow + policy management", () => {
   });
 
   it("advertises rule tools when supportsPolicyTool is true", () => {
-    const prompt = build("hermes", { supportsPolicyTool: true });
+    const prompt = build("ax", { supportsPolicyTool: true });
     expect(prompt).toContain("mcp_neko_rule_builder_list_rules");
     expect(prompt).toContain("mcp_neko_rule_builder_save_rule");
   });
 
   it("falls back to the rule save fence when MCP tools unavailable", () => {
-    const prompt = build("hermes", { supportsPolicyTool: false });
+    const prompt = build("ax", { supportsPolicyTool: false });
     expect(prompt).toContain("neko_rule_save");
     expect(prompt).not.toContain("mcp_neko_rule_builder_");
   });
 
   it("advertises GraphJin source-config tools only when enabled", () => {
-    const enabled = build("hermes", { supportsSourceConfigTool: true });
+    const enabled = build("ax", { supportsSourceConfigTool: true });
     expect(enabled).toContain("graphjin-config");
     expect(enabled).toContain(`${workspace.skillsRoot}/graphjin-config/SKILL.md`);
     expect(enabled).toContain("mcp_neko_source_config_manager_describe_source_graph");
@@ -377,19 +363,19 @@ describe("buildWorkPrompt workflow + policy management", () => {
     expect(enabled).not.toContain("globally read-only");
     expect(enabled).not.toContain("outside the sandbox");
 
-    const disabled = build("hermes", { supportsSourceConfigTool: false });
+    const disabled = build("ax", { supportsSourceConfigTool: false });
     expect(disabled).not.toContain("mcp_neko_source_config_manager_");
   });
 
   it("frames /work as the single chat surface for everything", () => {
-    const prompt = build("hermes");
+    const prompt = build("ax");
     expect(prompt).toMatch(/only chat surface/i);
   });
 });
 
 describe("buildWorkPrompt capability recovery", () => {
   it("uses the plugin manager approval tool when MCP tools are available", () => {
-    const prompt = build("hermes", {
+    const prompt = build("ax", {
       supportsPluginManagerTool: true,
     });
 
@@ -402,8 +388,8 @@ describe("buildWorkPrompt capability recovery", () => {
     expect(prompt).toMatch(/operator's yes\/no question/i);
   });
 
-  it("gives Hermes exact marketplace names and an approval-gated action fence", () => {
-    const prompt = build("hermes", {
+  it("gives the agent exact marketplace names and an approval-gated action fence", () => {
+    const prompt = build("ax", {
       pluginCatalog: {
         installed: [],
         available: [
@@ -427,15 +413,6 @@ describe("buildWorkPrompt capability recovery", () => {
 });
 
 describe("buildWorkPrompt native delegation guidance", () => {
-  it("teaches Hermes to use delegate_task without OpenNeko-named profiles", () => {
-    const prompt = build("hermes");
-    expect(prompt).toContain("<delegation>");
-    expect(prompt).toContain("delegate_task");
-    expect(prompt).toContain("OpenNeko does not provide named subagent profiles");
-    expect(prompt).not.toContain("researcher");
-    expect(prompt).not.toContain("coder");
-  });
-
   it("gives Ax its worker child instead of delegate_task", () => {
     const prompt = build("ax");
     expect(prompt).toContain("<delegation>");
@@ -444,7 +421,7 @@ describe("buildWorkPrompt native delegation guidance", () => {
   });
 
   it("omits native delegation guidance when the run disables it", () => {
-    const prompt = build("hermes", { supportsNativeDelegation: false });
+    const prompt = build("ax", { supportsNativeDelegation: false });
     expect(prompt).not.toContain("<delegation>");
     expect(prompt).not.toContain("delegate_task");
   });
@@ -463,7 +440,7 @@ describe("buildBotSection", () => {
   });
 
   it("leaves the prompt without a bot section for an ordinary chat", () => {
-    expect(build("hermes")).not.toContain("<bot>");
+    expect(build("ax")).not.toContain("<bot>");
   });
 });
 
@@ -472,12 +449,6 @@ describe("buildWorkPrompt skills catalog", () => {
     { name: "xlsx", description: "Use this skill any time a spreadsheet file is the primary input or output" },
     { name: "docx", description: "Create and edit Word documents" },
   ];
-
-  it("lists installed skills for Hermes", () => {
-    const prompt = build("hermes", { installedSkills });
-    expect(prompt).toContain("- xlsx — Use this skill any time a spreadsheet");
-    expect(prompt).not.toContain("discover(");
-  });
 
   it("sends Ax to skill search instead of listing every skill", () => {
     const prompt = build("ax", { installedSkills });

@@ -30,16 +30,7 @@ Suites (default: --smoke):
   --smoke-v3          Provider-free 59-call stateful walking skeleton
   --smoke-v4          Provider-free 195-episode v4 qualification control
   --contrast          Provider-free 52-call good/bad discrimination run
-  --identity          Single-episode Hermes identity and transport canary
-  --canary            Seven-episode Hermes capability canary
-  --canary-v2         21-episode Hermes capability and breadth canary
-  --canary-v3         Eight-episode Hermes state-machine canary
-  --diagnostic-v3     12-episode Hermes API/watcher/Records/safety diagnostic
-  --composition       Nine-episode mutation-first composition/provenance canary
-  --core              Three-repetition, 39-episode Hermes v1 cohort
-  --full              Three-repetition, 159-episode Hermes v2 reference cohort
-  --full-v3           Three-repetition, 177-episode Hermes v3 reference cohort
-  --full-v4           Three-repetition, 195-episode Hermes v4 reference cohort
+  --ax-v4             One-repetition, 65-episode Ax v4 Gemini cohort
   --config PATH       Run another openneko.work-backend config
 
 Options:
@@ -57,7 +48,7 @@ Environment overrides:
   OPENNEKO_EVAL_AGENT_IMAGE                    default openneko-agent:eval
   OPENNEKO_EVAL_ADVENTUREWORKS_DATABASE_URL   full oracle URL override
 
-Hermes and Ax configs declare their credential as env:NAME. That variable must be
+Ax configs declare their credential as env:NAME. That variable must be
 non-empty before this script starts. Credentials are never written to eval
 artifacts or forwarded directly into the agent container.
 EOF
@@ -88,35 +79,8 @@ while [ "$#" -gt 0 ]; do
     --contrast)
       select_config evals/configs/openneko-backend-scripted.yaml
       ;;
-    --identity)
-      select_config evals/configs/openneko-backend-hermes-identity.yaml
-      ;;
-    --canary)
-      select_config evals/configs/openneko-backend-hermes-canary.yaml
-      ;;
-    --canary-v2)
-      select_config evals/configs/openneko-backend-hermes-canary-v2.yaml
-      ;;
-    --canary-v3)
-      select_config evals/configs/openneko-backend-hermes-canary-v3.yaml
-      ;;
-    --diagnostic-v3)
-      select_config evals/configs/openneko-backend-hermes-diagnostic-v3.yaml
-      ;;
-    --composition)
-      select_config evals/configs/openneko-backend-hermes-composition.yaml
-      ;;
-    --core)
-      select_config evals/configs/openneko-backend-hermes-v1.yaml
-      ;;
-    --full)
-      select_config evals/configs/openneko-backend-hermes-v2.yaml
-      ;;
-    --full-v3)
-      select_config evals/configs/openneko-backend-hermes-v3.yaml
-      ;;
-    --full-v4)
-      select_config evals/configs/openneko-backend-hermes-v4.yaml
+    --ax-v4)
+      select_config evals/configs/openneko-backend-ax-gemini-3.8-flash-v4.yaml
       ;;
     --config)
       [ "$#" -ge 2 ] || { echo "--config requires a path" >&2; exit 2; }
@@ -198,7 +162,7 @@ esac
 }
 
 requires_agent=0
-if grep -Eq '^[[:space:]]*backend:[[:space:]]*(hermes|ax)([[:space:]#]|$)' "$config_path"; then
+if grep -Eq '^[[:space:]]*backend:[[:space:]]*ax([[:space:]#]|$)' "$config_path"; then
   requires_agent=1
   credential_env=$(sed -n \
     's/^[[:space:]]*credential_ref:[[:space:]]*env:\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*$/\1/p' \

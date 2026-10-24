@@ -9,8 +9,8 @@
  * pg-boss `stop({graceful:true})` so jobs fail fast instead of blocking
  * the systemd unit past its TimeoutStopSec.
  *
- * Why this is necessary: agent backends spawn external CLIs (hermes,
- * Hermes) which may fork their own subprocesses (Python venvs, browser
+ * Why this is necessary: agent backends spawn external CLIs (ax-harness)
+ * which may fork their own subprocesses (Python venvs, browser
  * tools, etc.). Some of those grandchildren detach themselves and
  * survive even systemd's cgroup SIGKILL, leaving orphan processes
  * across redeploys. Application-level cancellation is the only reliable

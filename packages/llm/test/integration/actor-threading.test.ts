@@ -52,7 +52,7 @@ describeIfDb("K1 actor threading", () => {
     const thread = await createWorkThread(orgId, "t", "web", userId);
     expect(thread.created_by_user_id).toBe(userId);
 
-    const run = await createWorkRun(orgId, thread.id, "hermes", {
+    const run = await createWorkRun(orgId, thread.id, "ax", {
       userId,
       role: "member",
     });
@@ -70,11 +70,11 @@ describeIfDb("K1 actor threading", () => {
     const thread = await createWorkThread(orgId, "t2", "telegram");
     expect(thread.created_by_user_id).toBeNull();
 
-    const channelRun = await createWorkRun(orgId, thread.id, "hermes", {
+    const channelRun = await createWorkRun(orgId, thread.id, "ax", {
       userId: null,
       role: "member",
     });
-    const serviceRun = await createWorkRun(orgId, thread.id, "hermes", {
+    const serviceRun = await createWorkRun(orgId, thread.id, "ax", {
       userId: null,
       role: "service",
     });
@@ -99,7 +99,7 @@ describeIfDb("K1 actor threading", () => {
 
   it("legacy callers without an actor still create runs (null actor)", async () => {
     const thread = await createWorkThread(orgId);
-    const run = await createWorkRun(orgId, thread.id, "hermes");
+    const run = await createWorkRun(orgId, thread.id, "ax");
     const [row] = await db()
       .select({ actorRole: work_run.actor_role })
       .from(work_run)

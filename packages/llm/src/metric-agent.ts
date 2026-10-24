@@ -10,7 +10,7 @@ import {
   type AgentTokenUsage,
 } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
-import { parseJsonFromOutput } from "./agent-backends/hermes";
+import { parseJsonFromOutput } from "./agent-backends/output";
 import { runValidatedAgentTurn } from "./agent-validate-loop";
 import {
   buildDiscoveryPathwaysSection,

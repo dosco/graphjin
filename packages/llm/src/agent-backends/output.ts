@@ -89,7 +89,7 @@ export function parseJsonFromOutput(raw: string): unknown {
     const last = candidate.lastIndexOf("}");
     if (first === -1 || last === -1 || last < first) {
       throw new Error(
-        `hermes output not parseable as JSON (no object braces found): ${candidate.slice(0, 200)}`,
+        `agent output not parseable as JSON (no object braces found): ${candidate.slice(0, 200)}`,
       );
     }
     return JSON.parse(candidate.slice(first, last + 1));

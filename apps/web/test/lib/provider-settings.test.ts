@@ -126,11 +126,11 @@ describeIfDb("provider-settings", () => {
     });
   });
 
-  describe("saveProviderDraft — Hermes providers", () => {
+  describe("saveProviderDraft — agent providers", () => {
     it("allows any supported primary provider", async () => {
       await seedProvider(orgId, {
         scope: "agent",
-        provider: "hermes",
+        provider: "ax",
         config: { globalCap: 10 },
       });
       await expect(

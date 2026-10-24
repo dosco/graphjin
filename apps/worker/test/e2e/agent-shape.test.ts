@@ -7,14 +7,14 @@
  * in afterAll.
  *
  * Plan matrix (gated independently by env keys):
- *   - Hermes × Google Gemini (GEMINI_API_KEY + `hermes` CLI)
- *   - Hermes × Anthropic     (ANTHROPIC_API_KEY + `hermes` CLI)
+ *   - Ax × Google Gemini (GEMINI_API_KEY + `ax-harness` on PATH)
+ *   - Ax × Anthropic     (ANTHROPIC_API_KEY + `ax-harness` on PATH)
  *
  * Required external state:
  *   - docker compose stack up (neko-db + adventureworks-db + graphjin)
  *   - At least one of GEMINI_API_KEY / ANTHROPIC_API_KEY set
  *   - graphjin CLI on PATH
- *   - Hermes CLI on PATH
+ *   - ax-harness on PATH
  *
  * Asserts only shape — validateResult returns null, mood + chartType +
  * chartData fields are well-formed. NOT an accuracy gate.
@@ -119,7 +119,7 @@ describeIfRunnable("E2E: metric agent shape", () => {
   describe.each(runnable)("plan=$id", (plan) => {
     beforeAll(async () => {
       await applyPlan(testOrgId, plan);
-      // Re-provision so Hermes picks up the selected provider configuration.
+      // Re-provision so the agent picks up the selected provider configuration.
       await provisionHostConfig(testOrgId);
     });
 

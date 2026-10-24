@@ -50,8 +50,8 @@ describeIfDb("run entitlements", () => {
       await grantItem(orgId, { groupId: finance.id, itemType: "skill", itemId: "docx" });
 
       const thread = await createWorkThread(orgId, "t");
-      const annRun = await createWorkRun(orgId, thread.id, "hermes", { userId: `${orgId}-ann`, role: "member" });
-      const bossRun = await createWorkRun(orgId, thread.id, "hermes", { userId: `${orgId}-boss`, role: "admin" });
+      const annRun = await createWorkRun(orgId, thread.id, "ax", { userId: `${orgId}-ann`, role: "member" });
+      const bossRun = await createWorkRun(orgId, thread.id, "ax", { userId: `${orgId}-boss`, role: "admin" });
 
       const annList = await inProcessControlPlane.listWorkflowsWithTriggers({ orgId, runId: annRun.id });
       expect(annList.workflows.map((w) => w.name).sort()).toEqual(["Daily revenue check", "Mine"]);
@@ -67,12 +67,12 @@ describeIfDb("run entitlements", () => {
       expect(await runHeldItemIds(annActor!, "skill")).toEqual(["docx"]);
       expect(await runHeldItemIds((await entitlementActorForRun(orgId, bossRun.id))!, "skill")).toBeUndefined();
       expect(await entitlementActorForRun(orgId, "00000000-0000-0000-0000-000000000000")).toBeNull();
-      const channelRun = await createWorkRun(orgId, thread.id, "hermes", { userId: null, role: "member" });
+      const channelRun = await createWorkRun(orgId, thread.id, "ax", { userId: null, role: "member" });
       const anonymous = (await entitlementActorForRun(orgId, channelRun.id))!;
       expect(anonymous.kind).toBe("anonymous");
       expect(await runHeldItemIds(anonymous, "skill")).toEqual([]);
       expect((await inProcessControlPlane.listWorkflowsWithTriggers({ orgId, runId: channelRun.id })).total).toBe(0);
-      const serviceRun = await createWorkRun(orgId, thread.id, "hermes", { userId: null, role: "service" });
+      const serviceRun = await createWorkRun(orgId, thread.id, "ax", { userId: null, role: "service" });
       expect((await entitlementActorForRun(orgId, serviceRun.id))!.kind).toBe("service");
     });
   });
@@ -84,7 +84,7 @@ describeIfDb("run entitlements", () => {
       await revokeItem(orgId, { groupId: everyone, itemType: "action", itemId: "*" });
       await grantItem(orgId, { groupId: everyone, itemType: "action", itemId: "send_slack_message" });
       const thread = await createWorkThread(orgId, "t");
-      const run = await createWorkRun(orgId, thread.id, "hermes", { userId: `${orgId}-ann`, role: "member" });
+      const run = await createWorkRun(orgId, thread.id, "ax", { userId: `${orgId}-ann`, role: "member" });
       const actor = (await entitlementActorForRun(orgId, run.id))!;
 
       const descriptors = [{ kind: "send_slack_message", description: "" }, { kind: "manage_inventory", description: "" }];
@@ -110,7 +110,7 @@ describeIfDb("run entitlements", () => {
       const everyone = await builtinGroupId(orgId, "everyone");
       await revokeItem(orgId, { groupId: everyone, itemType: "saved_query", itemId: "*" });
       const thread = await createWorkThread(orgId, "t");
-      const run = await createWorkRun(orgId, thread.id, "hermes", { userId: `${orgId}-ann`, role: "member" });
+      const run = await createWorkRun(orgId, thread.id, "ax", { userId: `${orgId}-ann`, role: "member" });
       const result = await inProcessControlPlane.callGraphjinTool({
         orgId, runId: run.id, name: "execute_saved_query", arguments: { name: "average_order_value" },
       });

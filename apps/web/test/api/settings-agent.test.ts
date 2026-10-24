@@ -70,7 +70,7 @@ describeIfDb("/api/settings/agent", () => {
     expect(res.body).toEqual({
       agent: {
         source: "default",
-        backend: "hermes",
+        backend: "ax",
         globalCap: AGENT_DEFAULT_GLOBAL_CAP,
       },
       options: AGENT_BACKEND_OPTIONS,
@@ -88,15 +88,15 @@ describeIfDb("/api/settings/agent", () => {
     expect(mockProvisionHostConfig).not.toHaveBeenCalled();
   });
 
-  it("PUT accepts Hermes", async () => {
+  it("PUT accepts Ax", async () => {
     const res = await callRoute(PUT, {
       method: "PUT",
-      body: { backend: "hermes", globalCap: 12 },
+      body: { backend: "ax", globalCap: 12 },
     });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       source: "org",
-      backend: "hermes",
+      backend: "ax",
       globalCap: 12,
     });
   });
@@ -107,7 +107,7 @@ describeIfDb("/api/settings/agent", () => {
       body: { globalCap: 30 },
     });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ source: "org", backend: "hermes", globalCap: 30 });
+    expect(res.body).toEqual({ source: "org", backend: "ax", globalCap: 30 });
     expect(mockProvisionHostConfig).toHaveBeenCalledWith(orgId);
 
     const [row] = await db()
@@ -119,7 +119,7 @@ describeIfDb("/api/settings/agent", () => {
           eq(llm_provider_config.scope, "agent"),
         ),
       );
-    expect(row).toEqual({ provider: "hermes", config: { backend: "hermes", globalCap: 30 } });
+    expect(row).toEqual({ provider: "ax", config: { backend: "ax", globalCap: 30 } });
   });
 
   it("PUT falls back for an invalid cap", async () => {
@@ -130,7 +130,7 @@ describeIfDb("/api/settings/agent", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       source: "org",
-      backend: "hermes",
+      backend: "ax",
       globalCap: AGENT_DEFAULT_GLOBAL_CAP,
     });
   });

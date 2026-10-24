@@ -1,6 +1,6 @@
 # OpenNeko agent MCP runtime
 
-This package owns the runtime contract between Hermes, OpenNeko's sandbox
+This package owns the runtime contract between the Ax agent, OpenNeko's sandbox
 bridge, the trusted worker control plane, GraphJin, and the A2UI renderer.
 
 ## GraphJin MCP
@@ -77,7 +77,7 @@ needs a GraphJin restart first.
 ### Lazy catalogs
 
 The sandbox bridge connects every logical server in memory at startup and
-resolves tool catalogs on Hermes' first `tools/list`. A logical server whose
+resolves tool catalogs on the agent's first `tools/list`. A logical server whose
 catalog fails (for example `neko_graphjin` for an org with no data source) logs
 the failure and drops out of that listing; the other servers keep working, and
 the next `tools/list` retries it.
@@ -114,10 +114,10 @@ absent from the tool list until a source is configured.
 ## A2UI rendering
 
 A web turn mounts one logical server, `neko_ui`, with one tool,
-`render_cards`. Its canonical Hermes ACP title is
-`mcp_neko_ui_render_cards`. There is no separate Hermes render stub or live
-fence path; the brokered server validates the call and solely emits the
-surface.
+`render_cards`. The brokered server validates the call and emits the surface.
+The Ax responder writes the answer without tool access, so it puts the same
+`render_cards` arguments in `neko_cards` fences in its reply. The host
+validates them with the same validator and removes them from the text.
 
 [`src/work/a2ui-contract.ts`](src/work/a2ui-contract.ts) is the source of truth
 for the names, the Zod validator, and the JSON Schema generated from it. Every
@@ -142,13 +142,10 @@ string splitting: rows on line breaks (or a literal `\n`), cells on `|`, and
 numbers with `Number()` after removing thousands separators. `keyFigures`
 entries are `Label: value` with an optional trailing `(note)`.
 
-Flat text fields matter because Hermes defers MCP tools behind a `tool_call`
-bridge whose `arguments` parameter is an open object. The model then sees the
-schema only as text and gets no structural guidance, so small models fill flat
-strings reliably and nested objects poorly. `normalizeRenderCardsInput`
-recovers the bridge's call shapes: a second `{name, arguments}` wrapper, the
-call sent as JSON text, and `null` / `false` / `""` placeholders.
-`pnpm --filter @neko/worker eval:cards --bridge` reproduces that path.
+Flat text fields matter because small models fill flat strings reliably and
+nested objects poorly. `normalizeRenderCardsInput` recovers common malformed
+call shapes: a second `{name, arguments}` wrapper, the call sent as JSON text,
+and `null` / `false` / `""` placeholders.
 
 The source configuration form is a separate tool, `present_source_form`, on the
 `neko_source_config_manager` server; the host builds that form from the

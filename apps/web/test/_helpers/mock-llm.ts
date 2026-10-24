@@ -16,7 +16,7 @@
  *     runMetricAgent,
  *     classifyQuestion,
  *     provisionHostConfig: vi.fn(),
- *     resolveAgentBackendId: vi.fn().mockResolvedValue("hermes"),
+ *     resolveAgentBackendId: vi.fn().mockResolvedValue("ax"),
  *   }));
  *
  *   beforeEach(() => {

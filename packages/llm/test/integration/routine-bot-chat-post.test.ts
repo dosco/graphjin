@@ -30,7 +30,7 @@ describeIfDb("routine runs post how they ended to the bot chat", () => {
       ownerUserId: userId,
     });
     const startRun = async (threadId: string) => {
-      const workRun = await createWorkRun(orgId, threadId, "hermes");
+      const workRun = await createWorkRun(orgId, threadId, "ax");
       const run = await createWorkflowRun({
         orgId,
         workflowId: workflow.id,

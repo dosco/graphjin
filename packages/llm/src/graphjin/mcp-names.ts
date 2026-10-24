@@ -2,7 +2,7 @@
 export const OPENNEKO_GRAPHJIN_MCP_SERVER_NAME = "neko_graphjin" as const;
 
 /**
- * Hermes' ACP title for a native GraphJin tool after the physical `neko`
+ * The ACP title for a native GraphJin tool after the physical `neko`
  * multiplexer restores the logical server prefix.
  */
 export function graphjinMcpToolTitle(nativeToolName: string): string {

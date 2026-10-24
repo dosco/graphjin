@@ -54,7 +54,7 @@ async function setOrgLimits(orgId: string, usd: Partial<Record<string, number>>)
 
 async function run(orgId: string, spend?: Parameters<typeof createWorkRun>[4]) {
   const thread = await createWorkThread(orgId, "spend", "web");
-  return createWorkRun(orgId, thread.id, "hermes", undefined, spend);
+  return createWorkRun(orgId, thread.id, "ax", undefined, spend);
 }
 
 async function workflow(orgId: string): Promise<string> {

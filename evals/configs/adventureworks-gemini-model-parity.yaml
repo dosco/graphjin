@@ -24,16 +24,16 @@ defaults:
   max_attempts: 2
 
 variants:
-  - id: hermes-gemini-3.6-flash-direct
-    backend: hermes
+  - id: ax-gemini-3.6-flash-direct
+    backend: ax
     outer_model:
       provider: google-gemini
       model: gemini-3.6-flash
       credential_ref: env:GEMINI_API_KEY
     data_path: graphjin-direct
 
-  - id: hermes-gemini-3.5-flash-lite-direct
-    backend: hermes
+  - id: ax-gemini-3.5-flash-lite-direct
+    backend: ax
     outer_model:
       provider: google-gemini
       model: gemini-3.5-flash-lite

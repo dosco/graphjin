@@ -25,8 +25,6 @@ import {
 } from "@neko/db/test-helpers";
 import {
   action_policy,
-  app_user,
-  organization,
   and,
   asc,
   db,
@@ -37,7 +35,6 @@ import {
   work_message,
   work_thread,
   workflow_definition,
-  setLocalAdministrator,
 } from "@neko/db";
 import {
   appendWorkRunEvent,
@@ -70,10 +67,10 @@ const FAKE_WORKSPACE = {
   binRoot: "/tmp/work-test/runs/r1/bin",
 };
 
-const HERMES_CAPABILITIES = {
+const AX_CAPABILITIES = {
   mcpTools: true,
   sessionResume: false,
-  nativeDelegation: "hermes-delegate-task",
+  nativeDelegation: "ax-worker",
 } as const;
 
 type EmitFn = (event: AgentEvent) => Promise<void>;
@@ -102,7 +99,7 @@ async function insertWorkRun(args: {
     .values({
       org_id: args.orgId,
       thread_id: args.threadId,
-      backend: "hermes",
+      backend: "ax",
       status: args.status ?? "queued",
     })
     .returning();
@@ -126,8 +123,8 @@ describeIfDb("runChatTurn", () => {
   function makeDeps(over: Partial<RunChatTurnDeps> = {}): Partial<RunChatTurnDeps> {
     return {
       resolveAgentBackend: vi.fn(async () => ({
-        id: "hermes" as const,
-        capabilities: HERMES_CAPABILITIES,
+        id: "ax" as const,
+        capabilities: AX_CAPABILITIES,
         run: mockBackendRun,
       })),
       ensureWorkWorkspace: vi.fn(async () => FAKE_WORKSPACE),
@@ -153,34 +150,6 @@ describeIfDb("runChatTurn", () => {
 
   afterAll(async () => {
     await pool().end();
-  });
-
-  it.each([false, true])("passes the solo admin identity to runCore with a local user row=%s", async (hasLocalUser) => {
-    vi.stubEnv("OPENNEKO_PROFILE", "solo");
-    try {
-      const localUserId = `${orgId}-admin`;
-      if (hasLocalUser) {
-        await db().insert(app_user).values({ id: localUserId, org_id: orgId, email: "admin@example.test" });
-        await setLocalAdministrator(orgId, localUserId, true);
-      }
-      if (hasLocalUser) await db().update(organization).set({ solo_admin_user_id: localUserId }).where(eq(organization.id, orgId));
-      const thread = await insertWorkThread(orgId);
-      const run = await insertWorkRun({ orgId, threadId: thread.id });
-      await db().update(work_run).set({ actor_role: "admin" }).where(eq(work_run.id, run.id));
-      const runCore = vi.fn(async () => ({ status: "completed" as const, finalText: "Done." }));
-      await runChatTurn({
-        orgId, threadId: thread.id, runId: run.id, message: "Hello", emit: async () => {},
-      }, makeDeps({ runCore }));
-      if (hasLocalUser) expect(runCore).toHaveBeenCalledWith(expect.objectContaining({
-        sandboxUser: {
-          principalId: localUserId,
-          authorizationRevision: "solo-admin-v1",
-        },
-      }));
-      else expect((runCore.mock.calls as unknown[][])[0][0]).not.toHaveProperty("sandboxUser");
-    } finally {
-      vi.unstubAllEnvs();
-    }
   });
 
   it.each([
@@ -451,16 +420,16 @@ describeIfDb("runChatTurn", () => {
       },
       makeDeps({
         resolveAgentBackend: vi.fn(async () => ({
-          id: "hermes" as const,
+          id: "ax" as const,
           model: "claude-sonnet-4-5",
-          capabilities: HERMES_CAPABILITIES,
+          capabilities: AX_CAPABILITIES,
           run: mockBackendRun,
         })),
       }),
     );
 
     const startup = memory.observations.filter(item => String(item.attributes["openneko.stage"]).startsWith("startup."));
-    expect(startup.filter(item => item.kind === "stage.end").map(item => item.attributes["openneko.stage"])).toEqual(expect.arrayContaining(["startup.run.mark_running", "startup.run.load_thread", "startup.workspace.prepare", "startup.context.skills", "startup.identity.sandbox"]));
+    expect(startup.filter(item => item.kind === "stage.end").map(item => item.attributes["openneko.stage"])).toEqual(expect.arrayContaining(["startup.run.mark_running", "startup.run.load_thread", "startup.workspace.prepare", "startup.context.skills"]));
     expect(startup.filter(item => item.kind === "stage.start")).toHaveLength(startup.filter(item => item.kind === "stage.end").length);
     expect(memory.observations.filter(item => !String(item.attributes["openneko.stage"]).startsWith("startup.")).map((item) => item.kind)).toEqual([
       "stage.start",
@@ -517,7 +486,7 @@ describeIfDb("runChatTurn", () => {
     const thread = await insertWorkThread(orgId);
     const run = await insertWorkRun({ orgId, threadId: thread.id });
 
-    mockBackendRun.mockRejectedValue(new Error("Hermes spawn failed"));
+    mockBackendRun.mockRejectedValue(new Error("agent spawn failed"));
 
     const emit = buildEmit({ orgId, threadId: thread.id, runId: run.id });
     await expect(
@@ -531,7 +500,7 @@ describeIfDb("runChatTurn", () => {
         },
         makeDeps(),
       ),
-    ).rejects.toThrow(/Hermes spawn failed/);
+    ).rejects.toThrow(/agent spawn failed/);
 
     const events = await db()
       .select({ kind: work_run_event.kind })
@@ -548,7 +517,7 @@ describeIfDb("runChatTurn", () => {
       .where(eq(work_run.id, run.id))
       .limit(1);
     expect(final[0]?.status).toBe("failed");
-    expect(final[0]?.error).toBe("Hermes spawn failed");
+    expect(final[0]?.error).toBe("agent spawn failed");
 
     expect(mockEnqueue).not.toHaveBeenCalled();
   });

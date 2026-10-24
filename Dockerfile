@@ -15,7 +15,7 @@
 # documentation. Copy only the executable into the shared runtime lineage;
 # worker and agent add a pruned npm payload below because they genuinely offer
 # runtime package installation. Web and plugin sandboxes do not pay that tax.
-FROM node:24-bookworm-slim AS node-distribution
+FROM node:24.22.1-bookworm-slim AS node-distribution
 
 FROM node-distribution AS npm-payload
 RUN rm -rf /usr/local/lib/node_modules/npm/docs /usr/local/lib/node_modules/npm/man \
@@ -27,9 +27,12 @@ COPY --from=node-distribution /usr/local/share/doc/node /usr/local/share/doc/nod
 RUN ln -s node /usr/local/bin/nodejs
 # Retry transient apt mirror hiccups instead of hard-failing the image build.
 RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80-retries
+# ca-certificates >= 20250419~deb12u2 (DLA-4845-1) drops the emSign ECC Root
+# CA - G3 root after the eMudhra intermediate key compromise (CVE-2026-111943).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl tini \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2
 
 # npm is part of the worker/agent feature contract, but its generated manuals,
 # source maps, Corepack, Yarn, and development headers are not.
@@ -160,91 +163,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 FROM npm-runtime AS graphjin-node-runtime
 COPY --from=graphjin-bin /usr/local/bin/graphjin /usr/local/bin/graphjin
 
-# ─── 2b. agent runtime: Hermes (sandbox only) ──────────────────────────
+# ─── 2b. agent runtime base (sandbox only) ────────────────────────────
 FROM npm-runtime AS agent-base
-ARG HERMES_AGENT_REF=29112bef099274229cadff79cdff7bf7b99c4b77
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git patch python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
-# Hermes uses Debian's system Python instead of downloading a second Python
-# distribution. Hermes 0.21 intentionally blocks wheel builds, so install its
-# exact source revision into an isolated editable environment (the supported
-# upstream layout). Keep checkout, patching, dependency installation, and
-# pruning in one layer: deleting upstream development assets in a later layer
-# would leave their bytes in the compressed image. OpenNeko supplies
-# HERMES_HOME/skills for every run, so the upstream development, desktop, web,
-# evaluation, and optional-catalog trees are outside the curated ACP runtime.
-COPY scripts/patches/hermes-acp-reasoning-config.patch /tmp/hermes-acp-reasoning-config.patch
-COPY scripts/patches/hermes-acp-interim-messages.patch /tmp/hermes-acp-interim-messages.patch
-COPY scripts/patches/hermes-acp-anthropic-reasoning.patch /tmp/hermes-acp-anthropic-reasoning.patch
-COPY scripts/patches/hermes-acp-native-delegation-policy.patch /tmp/hermes-acp-native-delegation-policy.patch
-COPY scripts/patches/hermes-acp-tool-usage.patch /tmp/hermes-acp-tool-usage.patch
-COPY scripts/patches/hermes-acp-mcp-output.patch /tmp/hermes-acp-mcp-output.patch
-COPY scripts/patches/hermes-acp-cost.patch /tmp/hermes-acp-cost.patch
-COPY scripts/patches/hermes-acp-run-budget.patch /tmp/hermes-acp-run-budget.patch
-COPY scripts/test-hermes-acp-tool-usage.py /tmp/test-hermes-acp-tool-usage.py
-COPY scripts/test-hermes-acp-cost.py /tmp/test-hermes-acp-cost.py
-RUN --mount=type=cache,id=hermes-uv,target=/tmp/uv-cache \
-    curl -LsSf --retry 5 --retry-delay 5 --retry-all-errors https://astral.sh/uv/install.sh \
-      | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh \
-    && mkdir -p /usr/local/lib/hermes-agent \
-    && git -C /usr/local/lib/hermes-agent init \
-    && git -C /usr/local/lib/hermes-agent remote add origin https://github.com/NousResearch/hermes-agent.git \
-    && git -C /usr/local/lib/hermes-agent fetch --depth 1 origin "$HERMES_AGENT_REF" \
-    && git -C /usr/local/lib/hermes-agent checkout --detach FETCH_HEAD \
-    && test "$(git -C /usr/local/lib/hermes-agent rev-parse HEAD)" = "$HERMES_AGENT_REF" \
-    && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-reasoning-config.patch \
-    && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-interim-messages.patch \
-    && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-anthropic-reasoning.patch \
-    && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-native-delegation-policy.patch \
-    && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-tool-usage.patch \
-    && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-mcp-output.patch \
-    && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-cost.patch \
-    && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-run-budget.patch \
-    && rm /tmp/hermes-acp-run-budget.patch /tmp/hermes-acp-cost.patch /tmp/hermes-acp-mcp-output.patch /tmp/hermes-acp-tool-usage.patch /tmp/hermes-acp-reasoning-config.patch /tmp/hermes-acp-interim-messages.patch /tmp/hermes-acp-anthropic-reasoning.patch /tmp/hermes-acp-native-delegation-policy.patch \
-    && cd /usr/local/lib/hermes-agent \
-    && UV_PROJECT_ENVIRONMENT=/usr/local/uv/tools/hermes-agent \
-       UV_CACHE_DIR=/tmp/uv-cache \
-       uv sync --locked --no-dev --extra acp --extra mcp --extra anthropic \
-    && ln -sf /usr/local/uv/tools/hermes-agent/bin/hermes /usr/local/bin/hermes \
-    && rm -rf /root/.cache/uv \
-    && hermes --version \
-    && /usr/local/uv/tools/hermes-agent/bin/python -c "import hermes_cli; assert hermes_cli.__version__ == '0.21.0'" \
-    && /usr/local/uv/tools/hermes-agent/bin/python -c "import openai; assert openai.__version__, 'Hermes OpenAI provider SDK missing'" \
-    && /usr/local/uv/tools/hermes-agent/bin/python -c "import anthropic; assert anthropic.__version__, 'Hermes Anthropic provider SDK missing'" \
-    && /usr/local/uv/tools/hermes-agent/bin/python -c "from mcp.types import CallToolResult; import websockets; result = CallToolResult(content=[]); assert hasattr(result, 'is_error')" \
-    && /usr/local/uv/tools/hermes-agent/bin/python -c "from acp_adapter.session import SessionManager; import inspect; source = inspect.getsource(SessionManager._make_agent); assert 'reasoning_config' in source and 'resolve_reasoning_config' in source, 'Hermes ACP must pass configured reasoning into AIAgent'" \
-    && /usr/local/uv/tools/hermes-agent/bin/python -c "from acp_adapter.server import HermesACPAgent; import inspect; source = inspect.getsource(HermesACPAgent.prompt); assert 'usage=usage' in source, 'Hermes ACP prompt response must expose exact turn usage'" \
-    && /usr/local/uv/tools/hermes-agent/bin/python -c "from acp_adapter.events import make_interim_message_cb; from acp_adapter.server import HermesACPAgent; import inspect; source = inspect.getsource(HermesACPAgent.prompt); assert 'interim_assistant_callback' in source and 'pending_streamed_message.append(text)' in source and 'raw_interim_cb(text, already_streamed=False)' in source and 'not streamed_message' not in source; assert callable(make_interim_message_cb), 'Hermes ACP buffered interim callback missing'" \
-    && /usr/local/uv/tools/hermes-agent/bin/python -c "from agent import chat_completion_helpers; from pathlib import Path; source = Path(chat_completion_helpers.__file__).read_text(); assert '_emit_unstreamed_anthropic_reasoning' in source and 'reasoning_was_streamed' in source, 'Hermes ACP Anthropic reasoning fallback missing'" \
-    && /usr/local/uv/tools/hermes-agent/bin/python -c "from acp_adapter.session import _openneko_disabled_toolsets; import os; os.environ['OPENNEKO_HERMES_NATIVE_DELEGATION']='disabled'; assert _openneko_disabled_toolsets() == ['delegation'], 'Hermes ACP native delegation policy missing'" \
-    && /usr/local/uv/tools/hermes-agent/bin/python -c "from acp_adapter.session import _openneko_run_budget; import os; os.environ['OPENNEKO_HERMES_REASONING_EFFORT']='medium'; os.environ['OPENNEKO_HERMES_MAX_ITERATIONS']='60'; b = _openneko_run_budget(); assert b['max_iterations'] == 60 and b['reasoning_config'], 'Hermes ACP run budget missing'" \
-    && /usr/local/uv/tools/hermes-agent/bin/python /tmp/test-hermes-acp-tool-usage.py \
-    && /usr/local/uv/tools/hermes-agent/bin/python /tmp/test-hermes-acp-cost.py \
-    && rm /tmp/test-hermes-acp-tool-usage.py /tmp/test-hermes-acp-cost.py \
-    && rm -rf \
-      /usr/local/lib/hermes-agent/.git \
-      /usr/local/lib/hermes-agent/.github \
-      /usr/local/lib/hermes-agent/apps \
-      /usr/local/lib/hermes-agent/contributors \
-      /usr/local/lib/hermes-agent/docs \
-      /usr/local/lib/hermes-agent/evals \
-      /usr/local/lib/hermes-agent/native \
-      /usr/local/lib/hermes-agent/nix \
-      /usr/local/lib/hermes-agent/optional-skills \
-      /usr/local/lib/hermes-agent/scripts \
-      /usr/local/lib/hermes-agent/tests \
-      /usr/local/lib/hermes-agent/ui-tui \
-      /usr/local/lib/hermes-agent/web \
-      /usr/local/lib/hermes-agent/website \
-    && find /usr/local/lib/hermes-agent /usr/local/uv/tools/hermes-agent \
-      -type d -name __pycache__ -prune -exec rm -rf '{}' + \
-    && test ! -e /usr/local/lib/hermes-agent/tests \
-    && test ! -e /usr/local/lib/hermes-agent/apps \
-    && test ! -e /usr/local/lib/hermes-agent/website \
-    && PYTHONDONTWRITEBYTECODE=1 hermes --version \
-    && PYTHONDONTWRITEBYTECODE=1 /usr/local/uv/tools/hermes-agent/bin/python -c "from acp_adapter.server import HermesACPAgent; import toolsets; assert HermesACPAgent and toolsets" \
-    && echo "hermes v0.21 ACP/MCP runtime present"
 
 # ─── 2c. document toolchain (agent image only) ─────────────────────────
 # Bundled skills (xlsx / pptx / docx / pdf / document-extraction) shell out to
@@ -317,7 +240,7 @@ RUN sh scripts/prune-node-runtime.sh /app/apps/web/.next/standalone "$TARGETARCH
 # image so the agent's Bash tool can run `openneko install/secrets/...`
 # from inside the worker container. The same binary operators install via
 # Homebrew / GitHub Releases on their host.
-FROM golang:1.25-bookworm AS go-build
+FROM golang:1.26.10-bookworm AS go-build
 WORKDIR /src
 COPY apps/openneko/go.mod apps/openneko/go.sum apps/openneko/
 RUN cd apps/openneko && go mod download
@@ -338,7 +261,7 @@ RUN cd apps/openneko && \
 
 # Ax Harness: the Go agent behind the Ax backend. OpenShell pins model egress
 # to /usr/local/bin/ax-harness for Ax runs (AX_HARNESS_BINARY).
-FROM golang:1.25-bookworm AS ax-harness-build
+FROM golang:1.26.10-bookworm AS ax-harness-build
 WORKDIR /src
 COPY apps/ax-harness/go.mod apps/ax-harness/go.sum apps/ax-harness/
 RUN cd apps/ax-harness && go mod download
@@ -379,7 +302,7 @@ RUN mkdir -p /out/init-tools \
       --outfile=/out/init-tools/seed-adventureworks.js
 
 # Alpine one-shots likewise need only the Node executable, not npm/Yarn.
-FROM node:24-alpine AS node-alpine-distribution
+FROM node:24.22.1-alpine AS node-alpine-distribution
 
 FROM alpine:3.22 AS node-alpine-runtime
 RUN apk add --no-cache libstdc++
@@ -413,7 +336,7 @@ EXPOSE 8090
 ENTRYPOINT ["node", "/app/server.mjs"]
 
 # Shared listener used by the embedding and Docling service images.
-FROM golang:1.25-bookworm AS lazy-service-build
+FROM golang:1.26.10-bookworm AS lazy-service-build
 WORKDIR /src
 COPY apps/lazy-service .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/lazy-service .
@@ -493,7 +416,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 # The worker runs from source via tsx (not a build step). It serves /health +
 # admin endpoints on port 4100 for liveness probes. Records config validation
 # and approved schema diff/sync require the shared pinned GraphJin CLI; this
-# parent supplies it without inheriting Hermes or the document toolchain.
+# parent supplies it without inheriting the document toolchain.
 FROM graphjin-node-runtime AS worker
 ARG OPENNEKO_VERSION=unknown
 ARG OPENNEKO_COMMIT=unknown
@@ -506,14 +429,9 @@ WORKDIR /app
 # (poppler-utils) covers PDFs. Deliberately no pip deps and no tesseract —
 # scanned-PDF OCR runs in the agent image; a worker-side extraction miss
 # fails the document row with a clear reason and is retryable from /library.
-# Hermes remains agent-only. The zero-payload interpreter marker lets the
-# worker resolve the agent's exact /proc/<pid>/exe identity for OpenShell
-# egress without reinstalling the Hermes tool or virtual environment here.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git openssh-client python3 poppler-utils unzip postgresql-client \
-    && rm -rf /var/lib/apt/lists/* \
-    && install -d /usr/local/uv/tools/hermes-agent/bin \
-    && ln -s /usr/bin/python3 /usr/local/uv/tools/hermes-agent/bin/python
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=openshell-bin /usr/local/bin/openshell /usr/local/bin/openshell
 ENV NODE_ENV=production \
     PORT=4100 \
@@ -571,11 +489,6 @@ RUN cd apps/worker && pnpm exec esbuild \
 
 FROM cli AS agent
 USER root
-# Late-bound warm slots must observe policy/provider revisions promptly.
-ENV OPENSHELL_POLICY_POLL_INTERVAL_SECS=1
-# OpenNeko pre-installs the ACP/MCP feature set. Never let a sandbox spend its
-# startup budget trying a lazy install through the restricted egress policy.
-ENV HERMES_DISABLE_LAZY_INSTALLS=1
 # Supervisor egress-netns tools + a non-root `sandbox` user (high UID, OpenShell
 # convention). GraphJin never enters this image; the agent can reach it only
 # through the authenticated host broker.
@@ -588,7 +501,6 @@ RUN groupadd -g 1000660000 sandbox \
     && install -d -o sandbox -g sandbox /sandbox
 # Only the two bundles and built-in skills enter the agent filesystem.
 COPY --from=agent-deploy --chown=1000660000:1000660000 /out/agent-app /app
-COPY --chown=1000660000:1000660000 apps/worker/src/agent-sandbox/hermes-warm.py /app/hermes-warm.py
 # OpenShell may execute as a remapped non-root UID. Build output can inherit
 # restrictive source modes, so every runtime bundle and parent directory must
 # be readable regardless of the sandbox's assigned UID.

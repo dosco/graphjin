@@ -64,7 +64,7 @@ import {
 } from "@neko/llm";
 import { loadRecordAppBlueprint } from "@neko/records";
 import { callGraphjinMcpTool } from "@neko/llm/graphjin";
-import { closeSandboxPools } from "@neko/llm/work/sandbox-launcher";
+import { closeSandboxLauncher } from "@neko/llm/work/sandbox-launcher";
 import {
   dbReachable,
   deleteTestOrg,
@@ -161,8 +161,6 @@ const SCORER = {
 
 const RUNTIME_ENVIRONMENT_NAMES = [
   "XDG_CONFIG_HOME",
-  "HERMES_HOME",
-  "OPENNEKO_AGENT_HERMES_HOME",
   "OPENNEKO_AGENT_MODEL_PROVIDER",
   "OPENNEKO_AGENT_MODEL_HOST",
   "OPENNEKO_AGENT_MODEL_KEY_ENV",
@@ -2473,7 +2471,7 @@ export function createOpenNekoBackendDriver(context: {
       };
     }
 
-    if (variant.backend !== "hermes" && variant.backend !== "ax") {
+    if (variant.backend !== "ax") {
       throw new EvalEnvironmentError(
         `no runtime adapter is installed for backend ${variant.backend}`,
         "backend_adapter_missing",
@@ -2504,7 +2502,6 @@ export function createOpenNekoBackendDriver(context: {
     evalProviderNames.add(gatewayProviderName(fixture.orgId));
     const launchConfig = await provisionHostConfig(fixture.orgId, {
       requireOpenShellSync: true,
-      requireHermesSync: variant.backend === "hermes",
     });
     const broker = await ensureAgentBroker();
     if (!broker) {
@@ -2594,7 +2591,6 @@ export function createOpenNekoBackendDriver(context: {
       for (const variant of loaded.config.variants) {
         if (
           !variant.backend.startsWith("scripted-") &&
-          variant.backend !== "hermes" &&
           variant.backend !== "ax"
         ) {
           throw new EvalEnvironmentError(
@@ -3269,7 +3265,7 @@ export function createOpenNekoBackendDriver(context: {
     },
     async close() {
       await oraclePool.end();
-      await closeSandboxPools();
+      closeSandboxLauncher();
       await shutdownAgentBroker();
       const providerCleanupFailures: string[] = [];
       for (const providerName of evalProviderNames) {

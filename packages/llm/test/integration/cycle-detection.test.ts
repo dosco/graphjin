@@ -30,7 +30,7 @@ describeIfDb("isWorkflowInAncestorChain", () => {
         steps: [{ id: "s1", description: "x" }],
       });
       const thread = await createWorkThread(orgId, workflow.name);
-      const workRun = await createWorkRun(orgId, thread.id, "hermes");
+      const workRun = await createWorkRun(orgId, thread.id, "ax");
       const wfRun = await createWorkflowRun({
         orgId,
         workflowId: workflow.id,
@@ -62,7 +62,7 @@ describeIfDb("isWorkflowInAncestorChain", () => {
       });
 
       const threadA = await createWorkThread(orgId, a.name);
-      const workRunA = await createWorkRun(orgId, threadA.id, "hermes");
+      const workRunA = await createWorkRun(orgId, threadA.id, "ax");
       const runA = await createWorkflowRun({
         orgId,
         workflowId: a.id,
@@ -85,7 +85,7 @@ describeIfDb("isWorkflowInAncestorChain", () => {
       });
 
       const threadB = await createWorkThread(orgId, b.name);
-      const workRunB = await createWorkRun(orgId, threadB.id, "hermes");
+      const workRunB = await createWorkRun(orgId, threadB.id, "ax");
       const runB = await createWorkflowRun({
         orgId,
         workflowId: b.id,

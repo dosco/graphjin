@@ -24,8 +24,8 @@ defaults:
   max_attempts: 2
 
 variants:
-  - id: hermes-gemini-direct
-    backend: hermes
+  - id: ax-gemini-direct
+    backend: ax
     outer_model:
       provider: google-gemini
       model: gemini-3.6-flash

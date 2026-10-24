@@ -1,6 +1,6 @@
 module github.com/open-neko/neko/apps/openneko
 
-go 1.25.0
+go 1.26.10
 
 require (
 	github.com/charmbracelet/huh v1.0.0

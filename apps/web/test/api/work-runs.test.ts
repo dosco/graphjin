@@ -105,7 +105,7 @@ describeIfDb("/api/work/threads/[threadId]/runs POST", () => {
     await createTestOrg(orgId);
     mockGetOrgId.mockResolvedValue(orgId);
     mockEnqueue.mockResolvedValue("queue-id-stub");
-    mockResolveBackend.mockResolvedValue({ id: "hermes", run: vi.fn() });
+    mockResolveBackend.mockResolvedValue({ id: "ax", run: vi.fn() });
 
     const ins = await db()
       .insert(work_thread)
@@ -138,7 +138,7 @@ describeIfDb("/api/work/threads/[threadId]/runs POST", () => {
     expect(res.status).toBe(200);
     const { runId, backend } = res.body as { runId: string; backend: string };
     expect(runId).toBeTruthy();
-    expect(backend).toBe("hermes");
+    expect(backend).toBe("ax");
 
     const runs = await db()
       .select({ status: work_run.status, backend: work_run.backend })
@@ -146,7 +146,7 @@ describeIfDb("/api/work/threads/[threadId]/runs POST", () => {
       .where(eq(work_run.id, runId))
       .limit(1);
     expect(runs[0]).toBeDefined();
-    expect(runs[0]?.backend).toBe("hermes");
+    expect(runs[0]?.backend).toBe("ax");
 
     // Old behavior gone: no processing_job, no enqueue.
     const procs = await db()
@@ -209,7 +209,7 @@ describeIfDb("/api/work/threads/[threadId]/runs POST", () => {
       .values({
         org_id: orgId,
         thread_id: threadId,
-        backend: "hermes",
+        backend: "ax",
         status: "running",
       })
       .returning({ id: work_run.id });

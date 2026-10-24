@@ -2,7 +2,7 @@ import type { HarnessObserver } from "@neko/telemetry";
 import type { AgentBackend } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
 import { observeAgentJob } from "./agent-job-telemetry";
-import { parseJsonFromOutput } from "./agent-backends/hermes";
+import { parseJsonFromOutput } from "./agent-backends/output";
 import { sandboxAgentBackendForJob } from "./work/sandbox-launcher";
 import { ensureIsolatedJobWorkspace } from "./work/workspace";
 

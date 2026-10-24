@@ -130,8 +130,6 @@ function costMeasurements(input: {
 const HEADLINE_PATTERN = /^([+-]?\d+(?:\.\d+)?)\s*(?:(thousand|million|billion)\b|([kmb])\b)?\s*(?:[%x]|[a-z][a-z\s]*)?$/iu;
 const RUNTIME_ENVIRONMENT_NAMES = [
   "XDG_CONFIG_HOME",
-  "HERMES_HOME",
-  "OPENNEKO_AGENT_HERMES_HOME",
   "OPENNEKO_AGENT_MODEL_PROVIDER",
   "OPENNEKO_AGENT_MODEL_HOST",
   "OPENNEKO_AGENT_MODEL_KEY_ENV",

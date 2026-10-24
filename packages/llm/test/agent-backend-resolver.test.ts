@@ -44,9 +44,9 @@ describeIfDb("agent backend resolution", () => {
     await pool().end();
   });
 
-  it("resolves Hermes when no primary provider can run Ax", async () => {
-    expect(await resolveAgentBackendId(orgId)).toBe("hermes");
-    expect((await resolveAgentBackend(orgId)).id).toBe("hermes");
+  it("resolves Ax even before a primary provider is configured", async () => {
+    expect(await resolveAgentBackendId(orgId)).toBe("ax");
+    expect((await resolveAgentBackend(orgId)).id).toBe("ax");
   });
 
   it("defaults to Ax when the primary provider has an Ax route", async () => {
@@ -58,7 +58,7 @@ describeIfDb("agent backend resolution", () => {
     expect(await resolveAgentBackendId(orgId)).toBe("ax");
   });
 
-  it("keeps a saved Hermes choice", async () => {
+  it("moves a stale saved Hermes choice to Ax", async () => {
     await seedProvider(orgId, {
       scope: "primary",
       provider: "google-gemini",
@@ -69,19 +69,19 @@ describeIfDb("agent backend resolution", () => {
       provider: "hermes",
       config: { backend: "hermes" },
     });
-    expect(await resolveAgentBackendId(orgId)).toBe("hermes");
+    expect(await resolveAgentBackendId(orgId)).toBe("ax");
   });
 
-  it("exposes the exact provider and model configured for the Hermes runtime", async () => {
+  it("exposes the exact provider and model configured for the runtime", async () => {
     await seedProvider(orgId, {
       scope: "primary",
       provider: "google-gemini",
       model: "gemini-3.6-flash",
     });
 
-    const backend = await resolveAgentBackend(orgId, "hermes");
+    const backend = await resolveAgentBackend(orgId, "ax");
     expect(backend.configuredIdentity).toEqual({
-      provider: "gemini",
+      provider: "google-gemini",
       model: "gemini-3.6-flash",
     });
     expect(backend.model).toBe("gemini-3.6-flash");
@@ -106,8 +106,8 @@ describeIfDb("agent backend resolution", () => {
       provider: "obsolete-runtime",
       config: { backend: "obsolete-runtime", globalCap: 30 },
     });
-    expect(await resolveAgentBackendId(orgId)).toBe("hermes");
-    expect((await resolveAgentBackend(orgId)).id).toBe("hermes");
+    expect(await resolveAgentBackendId(orgId)).toBe("ax");
+    expect((await resolveAgentBackend(orgId)).id).toBe("ax");
     expect((await resolveAgentConcurrency(orgId)).globalCap).toBe(30);
   });
 
@@ -120,7 +120,7 @@ describeIfDb("agent backend resolution", () => {
   it("falls back when stored concurrency is malformed", async () => {
     await seedProvider(orgId, {
       scope: "agent",
-      provider: "hermes",
+      provider: "ax",
       config: { globalCap: "not-a-number" },
     });
     expect((await resolveAgentConcurrency(orgId)).globalCap).toBe(

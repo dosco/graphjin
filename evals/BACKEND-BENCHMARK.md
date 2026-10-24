@@ -21,8 +21,8 @@ case + frozen fixture
   -> answer + trusted evidence + post-state
 ```
 
-Ax and AxCrew are not dependencies of this benchmark. Hermes is a standalone
-ACP candidate. GraphJin's Ax-based internal agent is excluded from the ranked
+The provider-backed candidate is Ax, run through the Ax Harness in the
+sandbox. GraphJin's Ax-based internal agent is excluded from the ranked
 direct-tool track so it cannot do the candidate's reasoning for it.
 
 ## 1. Tracks and controlled variables
@@ -259,7 +259,7 @@ source revision.
 Before spending on a cohort, a candidate must pass:
 
 1. backend registration, executable, version, and config attestation;
-2. balanced normalized ACP/tool events, timeout, cancellation, and usage;
+2. balanced normalized agent/tool events, timeout, cancellation, and usage;
 3. exact logical MCP catalog plus one successful call per required surface;
 4. direct GraphJin catalog/query, source-aware mutation policy, actor identity
    through the real HTTP broker, and delegation denial;
@@ -268,7 +268,7 @@ Before spending on a cohort, a candidate must pass:
 7. a planted-sentinel capability canary.
 
 The direct and brokered GraphJin checks execute before the model is contacted.
-Hermes variants also declare `max_tool_calls`; attempting a call beyond that
+Ax variants also declare `max_tool_calls`; attempting a call beyond that
 workload-sized safety ceiling cancels the sandbox turn and records a stable
 candidate failure instead of allowing a repair loop to consume the remaining
 cohort budget. The ceiling is not an efficiency target: actual tool calls are
@@ -289,7 +289,7 @@ manual edits to result files:
 | Eval core | Scripted good/bad candidates produce expected scores; private evidence survives resume and deterministic rescore |
 | Pairing | Candidate and ablation comparisons pair without including candidate ID in the pair key |
 | Environment | Dedicated project seeds, fingerprints, runs without mutators, verifies unchanged, and tears down without touching dev volumes |
-| Work path | A scripted backend completes one fixture-to-answer episode through production `runChatTurn` and the real in-process MCP servers; Hermes conformance separately proves OpenShell and broker transport |
+| Work path | A scripted backend completes one fixture-to-answer episode through production `runChatTurn` and the real in-process MCP servers; Ax conformance separately proves OpenShell and broker transport |
 | Attribution | Required memory, skill, library, workflow, and GraphJin operations are proven by trusted host evidence |
 | Safety | Direct-only tool policy blocks delegated GraphJin while leaving source-aware operation authorization to GraphJin; scored evidence proves frozen database writes are rejected, explicitly exposed API `call` mutations remain possible, prompt injection is resisted, and tenant scope is actor-bound |
 | Stateful orchestration | Model-built workflows/watchers, real workflow execution, approval/rejection, action idempotency, captured delivery, Records proposal integrity, and compaction preservation pass host-read state-machine oracles |
@@ -297,16 +297,15 @@ manual edits to result files:
 | Qualification | A versioned policy independently decides capability, reliability, safety, and production qualification from assertion-level evidence |
 | Reporting | A decision-oriented `summary.md` links to a deterministic `technical.md` with gate rationale, coverage, task IDs, runtime limits, and provenance |
 | Privacy | Promoted report contains no raw evidence bodies, planted sentinels, prompts, credentials, or oracle answers |
-| Hermes | Identity canary and the thirteen cases complete at one repetition before the three-repetition reference cohort |
 
-No paid Hermes cohort should run until the scripted walking skeleton satisfies
+No paid Ax cohort should run until the scripted walking skeleton satisfies
 the first seven rows.
 
 ## 8. Supported runner
 
 Run the complete lifecycle from the repository root. The runner validates the
 configuration, checks required credentials and OpenShell before creating
-resources, builds the current agent image for Hermes, starts an isolated
+resources, builds the current agent image, starts an isolated
 metadata database, applies and verifies every migration, restores and
 fingerprints AdventureWorks, runs the durable cohort, verifies post-state, and
 removes only the dedicated metadata volumes and eval containers.
@@ -317,17 +316,8 @@ pnpm eval:backend --smoke-v2              # provider-free 53-call v2 smoke run
 pnpm eval:backend --smoke-v3              # provider-free 59-call v3 stateful smoke run
 pnpm eval:backend --smoke-v4              # provider-free 195-episode v4 qualification control
 pnpm eval:backend --contrast              # 52-call good/bad discrimination
-pnpm eval:backend --identity              # single-episode Hermes identity/transport gate
-pnpm eval:backend --canary                # seven-episode Hermes canary
-pnpm eval:backend --canary-v2             # 21-episode Hermes v2 capability/breadth canary
-pnpm eval:backend --canary-v3             # eight-episode Hermes mutation/state canary
-pnpm eval:backend --diagnostic-v3         # 12-episode Hermes API/watcher/Records/safety diagnostic
-pnpm eval:backend --composition           # nine-episode mutation-first composition/provenance canary
-pnpm eval:backend --core                  # 39-episode Hermes v1 cohort
-pnpm eval:backend --full                  # 159-episode Hermes v2 reference cohort
-pnpm eval:backend --full-v3                # 177-episode Hermes v3 reference cohort
-pnpm eval:backend --full-v4                # 195-episode Hermes v4 reference cohort (provider-backed)
-pnpm eval:backend --canary --resume RUN_ID
+pnpm eval:backend --ax-v4                 # one-repetition, 65-episode Ax v4 Gemini cohort (provider-backed)
+pnpm eval:backend --ax-v4 --resume RUN_ID
 ```
 
 The frozen AdventureWorks volumes are retained between runs. Durable private
@@ -337,5 +327,5 @@ By default the runner also writes a sanitized result under `evals/results` and
 runs the integrity, privacy, coverage, and suite-gate verifier against it. Use
 `--no-promote` only when intentionally retaining private checkpoint state
 without a shareable result.
-The runner never reads credentials from `.env` files: a Hermes config's
+The runner never reads credentials from `.env` files: an Ax config's
 declared `env:NAME` credential must already be exported.

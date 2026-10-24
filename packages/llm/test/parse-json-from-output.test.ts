@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseJsonFromOutput } from "../src/agent-backends/hermes";
+import { parseJsonFromOutput } from "../src/agent-backends/output";
 
 describe("parseJsonFromOutput", () => {
   it("parses raw JSON object", () => {

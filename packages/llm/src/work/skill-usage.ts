@@ -17,10 +17,8 @@ import { getOrgAgentRoot, readSkillOrigin } from "./workspace";
 const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SKILL_MD_PATH_RE =
   /(?:^|\/)skills\/([a-z0-9]+(?:-[a-z0-9]+)*)\/SKILL\.md(?:$|[?#])/i;
-const SKILL_VIEW_RE =
-  /skill view \(([a-z0-9]+(?:-[a-z0-9]+)*)(?:\/|\))/i;
 
-export type SkillUseSource = "hermes" | "read";
+export type SkillUseSource = "read";
 export type SkillOriginKind = "builtin" | "custom" | "pack";
 
 export type DetectedSkillUse = {
@@ -32,17 +30,7 @@ export function detectSkillUse(event: AgentEvent): DetectedSkillUse | null {
   if (event.type !== "tool_start") return null;
 
   const fromPath = skillNameFromPaths(collectStrings(event.input));
-  if (fromPath) return { name: fromPath, source: "read" };
-
-  const fromView = skillNameFromSkillView(collectStrings(event.input));
-  if (fromView) return { name: fromView, source: "hermes" };
-
-  const toolName = event.name.trim();
-  if (!isHermesSkillTool(toolName, event.input)) return null;
-
-  const named = skillNameFromHermesInput(event.input);
-  if (!named) return null;
-  return { name: named, source: "hermes" };
+  return fromPath ? { name: fromPath, source: "read" } : null;
 }
 
 export async function recordSkillUsageFromEvent(input: {
@@ -163,45 +151,6 @@ async function lookupPackSkill(
   return { packId: row.packId, version: row.version };
 }
 
-function isHermesSkillTool(toolName: string, input: unknown): boolean {
-  if (/^skill$/i.test(toolName)) return true;
-  const title = stringField(input, "title");
-  return typeof title === "string" && /^skill\b/i.test(title.trim());
-}
-
-function skillNameFromHermesInput(input: unknown): string | null {
-  const candidates = [
-    stringField(input, "name"),
-    stringField(input, "skill"),
-    stringField(input, "skillName"),
-    stringField(input, "title"),
-  ];
-  const raw = asRecord(input)?.rawInput;
-  if (raw && typeof raw === "object") {
-    candidates.push(
-      stringField(raw, "name"),
-      stringField(raw, "skill"),
-      stringField(raw, "skillName"),
-    );
-  }
-  for (const value of candidates) {
-    if (!value) continue;
-    const trimmed = value.replace(/^skill[:\s]+/i, "").trim();
-    const fromPath = skillNameFromPaths([trimmed]);
-    if (fromPath) return fromPath;
-    if (SKILL_NAME_RE.test(trimmed)) return trimmed;
-  }
-  return null;
-}
-
-function skillNameFromSkillView(values: string[]): string | null {
-  for (const value of values) {
-    const match = SKILL_VIEW_RE.exec(value);
-    if (match?.[1] && SKILL_NAME_RE.test(match[1])) return match[1];
-  }
-  return null;
-}
-
 function skillNameFromPaths(values: string[]): string | null {
   for (const value of values) {
     const normalized = value.replace(/\\/g, "/");
@@ -223,15 +172,4 @@ function collectStrings(value: unknown, depth = 0): string[] {
     );
   }
   return [];
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
-
-function stringField(value: unknown, key: string): string | null {
-  const record = asRecord(value);
-  const field = record?.[key];
-  return typeof field === "string" ? field : null;
 }

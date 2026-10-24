@@ -8,7 +8,7 @@ threat model, the architecture, how to turn it on, and what's verified.
 > **Status:** OpenShell is the only runtime — agents and plugins always run in
 > sandboxes (SEC11 made it the default, SEC9 removed the in-process and
 > microsandbox paths). Both gateway shapes are verified end-to-end: the
-> **host-process gateway** via the web UI on macOS (hermes/gemini), and the
+> **host-process gateway** via the web UI on macOS, and the
 > **containerised** gateway on Linux and macOS/OrbStack — see
 > [Deployment](#deployment).
 
@@ -38,7 +38,7 @@ treated as untrusted code and runs in a default-deny sandbox:
             │                              ┌───────────────────────────┐
             │   launch + stream  ─────────▶│  OpenShell sandbox         │
             │   (events over stdout/SSE)   │   worker workspace + tsx    │
-            │                              │   → Hermes (ACP/MCP)        │
+            │                              │   → Ax Harness (MCP)        │
             │                              └────────────┬──────────────┘
             │                                  egress (default-deny)
             │                                           ▼
@@ -58,8 +58,8 @@ and the web chat route launch the sandbox through the same shared launcher
 
 **Runtime.** The image uses the v2.28 architecture: a production `pnpm deploy`
 closure of the worker workspace, with the sandbox entrypoint executed from
-source through its deployed `tsx` dependency. Hermes streams output and uses
-MCP tools through the host-side broker. Action/workflow fences are parsed
+source through its deployed `tsx` dependency. The Ax Harness streams output and
+uses MCP tools through the host-side broker. Action/workflow fences are parsed
 host-side, and model credentials are injected by the gateway rather than copied
 into the sandbox. GraphJin follows the same contract: work and workflow reads
 use the native `neko_graphjin` MCP server with an actor-bound broker token;
@@ -80,7 +80,7 @@ Set these on the **worker** (channel runs) and/or the **web** process
 |---|---|
 | `OPENNEKO_AGENT_IMAGE` | The agent image (Dockerfile `agent` stage) |
 | `OPENNEKO_AGENT_MODEL_PROVIDER` | Gateway-side provider name (auto-synced; see below) |
-| `OPENNEKO_AGENT_MODEL_HOST` | Comma-separated egress hosts (e.g. `generativelanguage.googleapis.com,models.dev`) |
+| `OPENNEKO_AGENT_MODEL_HOST` | Comma-separated egress hosts (e.g. `generativelanguage.googleapis.com`) |
 | `OPENNEKO_AGENT_MODEL_KEY_ENV` | The env var the backend reads (e.g. `GEMINI_API_KEY`) |
 | `OPENSHELL_GATEWAY` / `OPENSHELL_GATEWAY_ENDPOINT` | Gateway selection (mTLS name, or endpoint) |
 | `OPENNEKO_METRIC_REFRESH_CONCURRENCY` | Metric refreshes that run at once, each in its own sandbox (worker only; default 2, never above the agent concurrency cap) |
@@ -92,9 +92,8 @@ egress; the box only ever sees the placeholder.
 
 **Connecting binary.** Egress is matched on the executable reported by
 `/proc/<pid>/exe`. OpenNeko owns this as part of its vendored agent-image
-contract and does not accept an installation override. Release validation
-requires the configured policy executable to equal Hermes' resolved
-interpreter inside the published image.
+contract and does not accept an installation override. Model egress is bound
+to the Ax Harness binary, `/usr/local/bin/ax-harness`.
 
 ## Plugins
 
@@ -132,7 +131,7 @@ until an authenticated gateway readiness call succeeds.
 - **Containerised gateway** (`compose.openshell.yml`, what `openneko start`
   uses) — validated end-to-end on **both Linux** (neko-vm) **and macOS/OrbStack**:
   gateway boots with mTLS, the Docker driver creates a sandbox, the per-sandbox
-  JWT delivers, `exec` runs, and the launcher drives a real hermes turn with the
+  JWT delivers, `exec` runs, and the launcher drives a real agent turn with the
   key isolated. Requires the Docker socket, mTLS PKI, and **matched
   host:container bind paths** for the state dir. The one macOS subtlety: OrbStack
   only maps paths under `$HOME` into its Linux VM, so `OPENSHELL_STATE_DIR` must

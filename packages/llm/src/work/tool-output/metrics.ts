@@ -7,7 +7,7 @@
 // it's zero-cost when off.
 //
 // Wired into run-chat-turn's wrappedEmit at the `tool_end` boundary, so it
-// records Hermes tool-output behavior through one seam.
+// records tool-output behavior through one seam.
 
 import { compactJson } from "./compact-json";
 

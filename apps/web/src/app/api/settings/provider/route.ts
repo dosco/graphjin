@@ -20,7 +20,7 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
     const saved = await saveProviderDraft((await getOrgId()), body);
-    // Saving the primary provider rewrites the Hermes config + key file so
+    // Saving the primary provider re-syncs the gateway-side credential so
     // the next agent run picks up the new credentials without a restart.
     if (body?.scope === "primary") {
       await provisionHostConfig((await getOrgId()));

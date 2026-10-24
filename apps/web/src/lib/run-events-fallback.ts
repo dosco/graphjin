@@ -1,4 +1,4 @@
-// Hermes-style backends sometimes deliver SSE message deltas in an order
+// Streaming backends sometimes deliver SSE message deltas in an order
 // that doesn't match the agent's emission sequence, which scrambles the
 // concatenated text on the client. The persisted work_run_event log IS
 // stored in seq order, though — so after a run completes, re-fetching from

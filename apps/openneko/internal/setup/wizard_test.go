@@ -120,7 +120,7 @@ func TestHeadlessConfigure(t *testing.T) {
 	}
 }
 
-func TestHeadlessHermesAllowsAnyProvider(t *testing.T) {
+func TestHeadlessAllowsAnyProvider(t *testing.T) {
 	var recs []recorded
 	srv := mockSetupServer(true, &recs) // password already changed
 	defer srv.Close()
@@ -138,11 +138,11 @@ func TestHeadlessHermesAllowsAnyProvider(t *testing.T) {
 	if outcome.PasswordSet != "" {
 		t.Errorf("PasswordSet = %q, want empty (password already set)", outcome.PasswordSet)
 	}
-	// Hermes preserves the selected provider.
+	// Setup preserves the selected provider.
 	if _, ok := findWhere(recs, "PUT", "/api/settings/provider", func(b map[string]any) bool {
 		return b["scope"] == "primary" && b["provider"] == "openai"
 	}); !ok {
-		t.Error("Hermes should preserve the selected primary provider")
+		t.Error("setup should preserve the selected primary provider")
 	}
 }
 

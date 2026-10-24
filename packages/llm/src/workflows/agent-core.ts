@@ -21,7 +21,7 @@ import { formatScriptStepResults, runScriptSteps } from "./script-steps";
 import type { WorkflowStep } from "./store";
 
 export interface RunWorkflowAgentBackendInput {
-  /** Hermes backend. In the sandbox it is reconstructed from config. */
+  /** Agent backend. In the sandbox it is reconstructed from config. */
   backend: AgentBackend;
   prompt: string;
   userMessage: string;
@@ -151,7 +151,7 @@ export async function runWorkflowAgentBackend(
   let heldTimeoutError: AgentEvent | null = null;
   const turnEmit = async (event: AgentEvent): Promise<void> => {
     trail.record(event);
-    if (event.type === "error" && event.message.startsWith("hermes turn exceeded its ")) {
+    if (event.type === "error" && event.message.startsWith("ax turn exceeded its ")) {
       heldTimeoutError = event;
       return;
     }

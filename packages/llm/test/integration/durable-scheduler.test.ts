@@ -301,7 +301,7 @@ describeIfDb("durable workflow scheduler persistence", () => {
     );
     await pool().query(
       `insert into work_run (id, org_id, thread_id, backend, status)
-       values ($1, $2, $3, 'hermes', 'completed')`,
+       values ($1, $2, $3, 'ax', 'completed')`,
       [workRunId, orgId, threadId],
     );
     await pool().query(
@@ -357,7 +357,7 @@ describeIfDb("durable workflow scheduler persistence", () => {
     );
     await pool().query(
       `insert into work_run (id, org_id, thread_id, backend, status)
-       values ($1, $2, $3, 'hermes', 'cancelled')`,
+       values ($1, $2, $3, 'ax', 'cancelled')`,
       [workRunId, orgId, threadId],
     );
     await pool().query(

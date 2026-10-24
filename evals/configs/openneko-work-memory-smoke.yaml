@@ -19,7 +19,7 @@ defaults:
   max_attempts: 2
 variants:
   - id: deterministic-product-runtime
-    backend: hermes
+    backend: ax
     outer_model:
       provider: deterministic
       model: no-model-calls

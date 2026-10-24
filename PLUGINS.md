@@ -59,7 +59,7 @@ For pure-procedural-knowledge skills (no network, no secrets) shipped as agentsk
 openneko install https://github.com/owner/repo
 
 # Skill inside a monorepo:
-openneko install https://github.com/NousResearch/hermes-agent#optional-skills/finance/dcf-model
+openneko install https://github.com/owner/repo#skills/finance/dcf-model
 ```
 
 The CLI shallow-clones, validates `SKILL.md`, and drops the folder under `~/.openneko/skills/<skill-name>/`. The worker picks it up on the next agent turn. URLs must be HTTPS against github / gitlab / codeberg.

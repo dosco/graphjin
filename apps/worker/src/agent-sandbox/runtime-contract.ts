@@ -33,10 +33,6 @@ export function configureAgentRuntime(
 ): AgentRuntimeContract {
   const env = options.env ?? process.env;
   const pathExists = options.pathExists ?? existsSync;
-  if (!env.HERMES_DISABLE_LAZY_INSTALLS?.trim()) {
-    env.HERMES_DISABLE_LAZY_INSTALLS = "1";
-  }
-
   const configuredBridge = env.OPENNEKO_MCP_BRIDGE?.trim();
   const mcpBridgePath = configuredBridge
     ? resolve(configuredBridge)
