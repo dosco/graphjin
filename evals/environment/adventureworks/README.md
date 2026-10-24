@@ -48,7 +48,7 @@ or `scenario-injector.sh`; the static contract rejects those references as well
 as the simulator and scenario-injector Compose services.
 
 The database and snapshot tools use the same multi-platform digest for
-PostgreSQL `16.15-alpine3.24`; the GraphJin build pins version `3.21.13`.
+PostgreSQL `16.15-alpine3.24`; the GraphJin build pins version `3.21.16`.
 
 It also checks canonical seed sentinels (68 business tables, 31,465 sales
 orders, 121,317 sales lines, 19,972 people, and 504 products). Only then does
