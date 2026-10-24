@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -92,4 +93,36 @@ type userFolderSearch struct{ fakeFileContent }
 
 func (userFolderSearch) Search(context.Context, string, string, int) ([]FileMatch, error) {
 	return []FileMatch{{Key: "users/bob/b1/secret.pdf"}, {Key: "users/alice/a1/plan.pdf"}, {Key: "team/handbook.md"}}, nil
+}
+
+// crowdedSearch ranks thirty of bob's files above everything alice can see,
+// the way a semantic ranking over a shared library can.
+type crowdedSearch struct {
+	fakeFileContent
+	limits *[]int
+}
+
+func (s crowdedSearch) Search(_ context.Context, _, _ string, limit int) ([]FileMatch, error) {
+	*s.limits = append(*s.limits, limit)
+	var all []FileMatch
+	for i := 0; i < 30; i++ {
+		all = append(all, FileMatch{Key: fmt.Sprintf("users/bob/b1/f%d.pdf", i)})
+	}
+	all = append(all, FileMatch{Key: "users/alice/a1/plan.pdf"}, FileMatch{Key: "team/handbook.md"})
+	if limit < len(all) {
+		all = all[:limit]
+	}
+	return all, nil
+}
+
+func TestSearchRanksDeeperWhenAccessRulesThinThePage(t *testing.T) {
+	var limits []int
+	gj := userFolderEngine(t, OptionSetFileContent(crowdedSearch{limits: &limits}))
+	alice := context.WithValue(context.Background(), UserIDKey, "alice")
+	if got := strings.Join(libraryKeys(t, gj, alice, `query { library(search: "plan", limit: 2) { key } }`), ","); got != "team/handbook.md,users/alice/a1/plan.pdf" {
+		t.Fatalf("alice search = %q after ranking limits %v", got, limits)
+	}
+	if limits[0] != 2 || limits[len(limits)-1] > maxFilesystemSearchFetch {
+		t.Fatalf("ranking limits = %v", limits)
+	}
 }

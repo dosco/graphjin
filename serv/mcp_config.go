@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -330,8 +331,8 @@ func (ms *mcpServer) registerConfigTools() {
 			mcp.WithStringItems(),
 		),
 		mcp.WithObject("serv",
-			mcp.Description("Merge-patch for server-side settings (serv.Config). Writable v1 keys: agent (model, structured_output_mode, response_format [deprecated alias], service_tier, max_steps, timeout_seconds, read_only, return_trace, seed_limit, catalog_default_limit, rate_limit), log_level, log_format, web_ui (no-op, kept for one release), http_compress, server_timing, rate_limiter (rate, bucket, ip_header). "+
-				"agent changes are read live; the rest are persisted and take effect on the next restart (automatic when reload_on_config_change is enabled). "+
+			mcp.Description("Merge-patch for server-side settings (serv.Config). Writable v1 keys: agent (model, structured_output_mode, response_format [deprecated alias], service_tier, max_steps, timeout_seconds, read_only, return_trace, seed_limit, catalog_default_limit, rate_limit), log_level, log_format, web_ui (no-op, kept for one release), http_compress, server_timing, rate_limiter (rate, bucket, ip_header), catalog_search (semantic: enabled, provider, embedding_model, api_key_env, base_url, dimensions, query_prefix, document_prefix). "+
+				"agent and catalog_search changes apply live (catalog_search swaps the semantic catalog index and file passage embedder in place); the rest are persisted and take effect on the next restart (automatic when reload_on_config_change is enabled). "+
 				"Secret-bearing sections (auth, redis, uploads) are read-only on gj_config and cannot be patched here. scope reports serv or mixed and reload_mode reports hot or restart."),
 		),
 	)
@@ -983,6 +984,11 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	var servReload string
 	if rawServ, ok := args["serv"].(map[string]interface{}); ok && len(rawServ) > 0 {
 		servChanges, reload, err := validateServConfigPatch(rawServ)
+		if raw, ok := rawServ["catalog_search"].(map[string]any); ok && err == nil {
+			// Checked against the running settings: enabling needs a model,
+			// which may already be configured or arrive in the same patch.
+			_, err = mergeCatalogSearchPatch(ms.service.conf.CatalogSearch, raw)
+		}
 		if err != nil {
 			errors = append(errors, err.Error())
 		} else {
@@ -1807,6 +1813,11 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		// Stage only the patched serv keys into viper so saveConfigToDisk
 		// persists them without rewriting unrelated defaults.
 		setServPatchViper(ms.service.conf.viper, ms.service.conf, servPatch)
+		if _, ok := servPatch["catalog_search"]; ok {
+			// Applied live: the semantic index and file passage embedder are
+			// swapped in place, never by restarting the process.
+			ms.service.reconfigureSemanticSearch()
+		}
 		ms.service.markCatalogChanged("config mutation")
 		if servReload == servReloadRestart {
 			changes = append(changes, "restart required for serv changes to take effect (auto when reload_on_config_change is enabled)")
@@ -2534,6 +2545,9 @@ var servWritableReload = map[string]string{
 	"http_compress": servReloadRestart,
 	"server_timing": servReloadRestart,
 	"rate_limiter":  servReloadRestart,
+	// catalog_search.semantic swaps the semantic index and the file passage
+	// embedder in place; see reconfigureSemanticSearch.
+	"catalog_search": servReloadHot,
 }
 
 // agentWritableFields are the agent settings gj_config can change at runtime.
@@ -2694,6 +2708,15 @@ func validateServConfigPatch(patch map[string]any) (changes []string, reload str
 				}
 			}
 			changes = append(changes, "updated serv.rate_limiter")
+		case "catalog_search":
+			m, ok := patch[key].(map[string]any)
+			if !ok {
+				return nil, "", fmt.Errorf("serv.catalog_search must be an object")
+			}
+			if _, err := mergeCatalogSearchPatch(CatalogSearchConfig{}, m); err != nil && !errors.Is(err, errSemanticModelRequired) {
+				return nil, "", err
+			}
+			changes = append(changes, "updated serv.catalog_search (applied live)")
 		}
 		if cls == servReloadRestart {
 			reload = servReloadRestart
@@ -2722,8 +2745,86 @@ func applyServConfigPatch(conf *Config, patch map[string]any) {
 			conf.Serv.ServerTiming, _ = raw.(bool)
 		case "rate_limiter":
 			applyRateLimiterPatch(&conf.Serv.RateLimiter, raw.(map[string]any))
+		case "catalog_search":
+			if merged, err := mergeCatalogSearchPatch(conf.Serv.CatalogSearch, raw.(map[string]any)); err == nil {
+				conf.Serv.CatalogSearch = merged
+			}
 		}
 	}
+}
+
+// errSemanticModelRequired reports enabling semantic search without a model.
+var errSemanticModelRequired = errors.New("catalog_search.semantic.embedding_model is required when semantic search is enabled")
+
+// semanticWritableFields are the catalog_search.semantic settings gj_config
+// can change; every one is a string except enabled.
+var semanticWritableFields = map[string]bool{
+	"enabled": true, "provider": true, "embedding_model": true, "api_key_env": true,
+	"base_url": true, "dimensions": true, "query_prefix": true, "document_prefix": true,
+}
+
+// mergeCatalogSearchPatch applies a serv.catalog_search patch to current and
+// returns the normalized result, or why it is invalid.
+func mergeCatalogSearchPatch(current CatalogSearchConfig, m map[string]any) (CatalogSearchConfig, error) {
+	out := current
+	for key := range m {
+		if key != "semantic" {
+			return current, fmt.Errorf("serv.catalog_search.%s is not writable; writable fields: semantic", key)
+		}
+	}
+	raw, exists := m["semantic"]
+	if !exists {
+		return out, nil
+	}
+	sem, ok := raw.(map[string]any)
+	if !ok {
+		return current, fmt.Errorf("serv.catalog_search.semantic must be an object")
+	}
+	conf := &out.Semantic
+	for _, field := range sortedKeys(sem) {
+		if !semanticWritableFields[field] {
+			return current, fmt.Errorf("serv.catalog_search.semantic.%s is not writable; writable fields: %s", field, strings.Join(sortedKeys(semanticWritableFields), ", "))
+		}
+		value := sem[field]
+		if field == "enabled" {
+			enabled, ok := value.(bool)
+			if !ok {
+				return current, fmt.Errorf("serv.catalog_search.semantic.enabled must be a boolean")
+			}
+			conf.Enabled = enabled
+			continue
+		}
+		text, ok := value.(string)
+		if !ok {
+			return current, fmt.Errorf("serv.catalog_search.semantic.%s must be a string", field)
+		}
+		switch field {
+		case "provider":
+			conf.Provider = text
+		case "embedding_model":
+			conf.EmbeddingModel = text
+		case "api_key_env":
+			conf.APIKeyEnv = text
+		case "base_url":
+			conf.BaseURL = text
+		case "dimensions":
+			conf.Dimensions = text
+		case "query_prefix":
+			conf.QueryPrefix = text
+		case "document_prefix":
+			conf.DocumentPrefix = text
+		}
+	}
+	// The same defaults and checks a config file gets at load.
+	normalized := Config{Serv: Serv{CatalogSearch: out}}
+	normalized.DiscoveryCache.Path = "-"
+	if err := normalizeDiscoveryAndSemanticConfig(&normalized); err != nil {
+		if strings.Contains(err.Error(), "embedding_model is required") {
+			return current, errSemanticModelRequired
+		}
+		return current, err
+	}
+	return normalized.CatalogSearch, nil
 }
 
 func applyAgentConfigPatch(a *AgentConfig, m map[string]any) {
@@ -4650,6 +4751,9 @@ func setServPatchViper(v *viper.Viper, conf *Config, patch map[string]any) {
 			v.Set("server_timing", conf.Serv.ServerTiming)
 		case "rate_limiter":
 			v.Set("rate_limiter", conf.Serv.RateLimiter)
+		case "catalog_search":
+			// Snake-case keys, as the config file spells them.
+			v.Set("catalog_search", catalogSearchConfigMap(conf.Serv.CatalogSearch))
 		}
 	}
 }

@@ -100,7 +100,8 @@ type graphjinService struct {
 	gj                     *core.GraphJin
 	disc                   *DiscoveryManager
 	discovery              *discoveryGenerationManager
-	semantic               *semanticCatalogIndex
+	semantic               atomic.Pointer[semanticCatalogIndex] // read through semanticCatalog; swapped live by reconfigureSemanticSearch
+	semanticMu             sync.Mutex                           // serialises semantic reconfiguration
 	semanticEmbedder       SemanticEmbeddingClient
 	agentClientFactory     gjagent.ClientFactory
 	mcpToolRecorder        func(MCPToolEvent)
@@ -449,8 +450,8 @@ func (s *HttpService) Shutdown(ctx context.Context) error {
 // is idempotent already.
 func (s *graphjinService) closeServResources() {
 	s.closeMCPHTTPTransport()
-	if s.semantic != nil {
-		s.semantic.Close()
+	if semantic := s.semantic.Swap(nil); semantic != nil {
+		semantic.Close()
 	}
 	s.closeDiscovery()
 	if s.closeFn != nil {
@@ -909,15 +910,7 @@ func (s *graphjinService) normalStart() error {
 		return err
 	}
 	s.disc = NewDiscoveryManager(s.gj)
-	if s.conf.CatalogSearch.Semantic.Enabled {
-		semantic, err := newSemanticCatalogIndex(s)
-		if err != nil {
-			s.log.Warnf("semantic catalog initialization failed; using lexical search: %s", redactRuntimeError(err))
-		} else {
-			s.semantic = semantic
-			semantic.Start()
-		}
-	}
+	s.reconfigureSemanticSearch()
 	if s.discovery != nil {
 		s.discovery.Start()
 	}

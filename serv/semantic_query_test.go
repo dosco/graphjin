@@ -104,7 +104,8 @@ func TestHybridCatalogRetrievalFixtureAndLexicalFallback(t *testing.T) {
 			docs:     docs, vectors: flat,
 		},
 	}
-	service := &graphjinService{semantic: semantic}
+	service := &graphjinService{}
+	service.semantic.Store(semantic)
 
 	assertContains := func(search string, required ...string) core.CatalogQueryOutput {
 		t.Helper()

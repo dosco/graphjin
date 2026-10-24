@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -34,6 +35,12 @@ type Index struct {
 
 	mu       sync.Mutex // serialises syncs
 	lastSync time.Time
+
+	// generation counts changes to units and vectors, so the in-memory
+	// vector set used by SearchSemantic knows when to reload.
+	generation atomic.Uint64
+	vecMu      sync.Mutex
+	vecs       *vectorSet
 }
 
 // DefaultMaxFileBytes caps the files the index reads.
@@ -79,6 +86,16 @@ func Open(dir string, maxFileBytes int64) (*Index, error) {
 		)`,
 		`create index if not exists tables_key on tables(key)`,
 		`create virtual table if not exists units using fts5(key unindexed, location unindexed, body, tokenize = 'porter unicode61')`,
+		// Passage embeddings, one per unit row, in the embedding space named
+		// by fingerprint. They go with their file: deleteKey drops them.
+		`create table if not exists unit_vectors (
+			unit integer primary key,
+			key text not null,
+			fingerprint text not null,
+			vector blob not null
+		)`,
+		`create index if not exists unit_vectors_key on unit_vectors(key)`,
+		`create index if not exists unit_vectors_fingerprint on unit_vectors(fingerprint)`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {
 			db.Close()
@@ -260,6 +277,7 @@ func (ix *Index) index(ctx context.Context, b fstable.Backend, e fstable.Entry) 
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	ix.generation.Add(1)
 	return exErr
 }
 
@@ -291,6 +309,7 @@ func (ix *Index) remove(ctx context.Context, key string) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	ix.generation.Add(1)
 	return os.RemoveAll(filepath.Join(ix.dir, "tables", fileID(key)))
 }
 
@@ -299,6 +318,7 @@ func deleteKey(ctx context.Context, tx *sql.Tx, key string) error {
 		`delete from files where key = ?`,
 		`delete from tables where key = ?`,
 		`delete from units where key = ?`,
+		`delete from unit_vectors where key = ?`,
 	} {
 		if _, err := tx.ExecContext(ctx, stmt, key); err != nil {
 			return err

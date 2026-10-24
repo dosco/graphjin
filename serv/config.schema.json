@@ -1779,6 +1779,16 @@
 					"title": "Embedding Dimensions",
 					"description": "Dimensions selects tiny (768), small (1536), medium (3072), or the\nprovider-native default. Named sizes are validated strictly.",
 					"default": "small"
+				},
+				"query_prefix": {
+					"type": "string",
+					"title": "Query Embedding Prefix",
+					"description": "QueryPrefix is prepended to every search query before it is embedded,\nfor models trained with task prefixes (EmbeddingGemma uses\n\"task: search result | query: \"). Part of the embedding-space fingerprint."
+				},
+				"document_prefix": {
+					"type": "string",
+					"title": "Document Embedding Prefix",
+					"description": "DocumentPrefix is prepended to every indexed document before it is\nembedded (EmbeddingGemma uses \"title: none | text: \"). File passages\nreplace \"title: none\" with \"title: \u003cfile name\u003e\". Part of the\nembedding-space fingerprint."
 				}
 			},
 			"additionalProperties": false,

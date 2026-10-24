@@ -480,8 +480,8 @@ func (m *discoveryGenerationManager) loadActivated(id string) {
 	if err := m.service.refreshMetadataGraph(); err != nil && m.service.log != nil {
 		m.service.log.Warnf("metadata refresh after discovery activation failed: %s", redactRuntimeError(err))
 	}
-	if m.service.semantic != nil {
-		m.service.semantic.CatalogChanged()
+	if semantic := m.service.semanticCatalog(); semantic != nil {
+		semantic.CatalogChanged()
 	}
 }
 

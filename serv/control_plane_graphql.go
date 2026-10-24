@@ -398,10 +398,27 @@ func servConfigMap(conf *Config) map[string]any {
 		"caching":                 redactedConfigValue(s.Caching),
 		"uploads":                 redactedConfigValue(s.Uploads),
 		"runtime_events":          redactedConfigValue(s.RuntimeEvents),
+		"catalog_search":          catalogSearchConfigMap(s.CatalogSearch),
 		// Clients check this before a config update that carries plaintext
 		// secrets; the key itself never leaves the server.
 		"secrets_keystore_configured": strings.TrimSpace(conf.Secrets.Keystore.Key) != "",
 	}
+}
+
+// catalogSearchConfigMap is the snake_case view of catalog_search. It holds
+// no secrets: api_key_env names a variable, never its value.
+func catalogSearchConfigMap(c CatalogSearchConfig) map[string]any {
+	sem := c.Semantic
+	return map[string]any{"semantic": map[string]any{
+		"enabled":         sem.Enabled,
+		"provider":        sem.Provider,
+		"embedding_model": sem.EmbeddingModel,
+		"api_key_env":     sem.APIKeyEnv,
+		"base_url":        sem.BaseURL,
+		"dimensions":      sem.Dimensions,
+		"query_prefix":    sem.QueryPrefix,
+		"document_prefix": sem.DocumentPrefix,
+	}}
 }
 
 func mcpConfigMap(conf *Config) map[string]any {

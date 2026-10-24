@@ -1197,6 +1197,10 @@ func (b *filesystemBridge) entryToRow(ctx context.Context, e fstable.Entry, plan
 	return row, nil
 }
 
+// maxFilesystemSearchFetch caps how deep resolveSearch ranks to fill a page
+// the caller's access rules thinned out.
+const maxFilesystemSearchFetch = 500
+
 // resolveSearch ranks files by their content. Results keep relevance order
 // unless the query sorts them; where filters still apply.
 func (b *filesystemBridge) resolveSearch(ctx context.Context, req ResolverReq, plan filesystemQueryPlan) ([]byte, error) {
@@ -1207,33 +1211,47 @@ func (b *filesystemBridge) resolveSearch(ctx context.Context, req ResolverReq, p
 	if limit <= 0 {
 		limit = 20
 	}
-	matches, err := b.content.Search(ctx, b.name, plan.search, plan.offset+limit)
-	if err != nil {
-		return nil, fmt.Errorf("filesystem(%s): search: %w", b.name, err)
-	}
 	type hit struct {
 		entry    fstable.Entry
 		passages []FilePassage
 	}
-	hits := make([]hit, 0, len(matches))
-	for _, m := range matches {
-		if plan.prefix != "" && !strings.HasPrefix(m.Key, plan.prefix) {
-			continue
-		}
-		e, err := b.backend.Stat(ctx, m.Key)
-		if errors.Is(err, fstable.ErrNotFound) {
-			continue
-		}
+	// The ranking covers every file of the source, while the caller may see
+	// only some of them: other users' folders read as not found and where
+	// filters drop more. When that leaves the page short, rank deeper, so a
+	// caller's own files are not crowded out by files they cannot see.
+	want := plan.offset + limit
+	fetch := want
+	maxFetch := max(want, maxFilesystemSearchFetch)
+	var hits []hit
+	for {
+		matches, err := b.content.Search(ctx, b.name, plan.search, fetch)
 		if err != nil {
-			return nil, fmt.Errorf("filesystem(%s): stat: %w", b.name, err)
+			return nil, fmt.Errorf("filesystem(%s): search: %w", b.name, err)
 		}
-		ok, err := filesystemEntryMatches(e, req.Sel.Where.Exp, req.Vars, filesystemCursorState{})
-		if err != nil {
-			return nil, err
+		hits = make([]hit, 0, len(matches))
+		for _, m := range matches {
+			if plan.prefix != "" && !strings.HasPrefix(m.Key, plan.prefix) {
+				continue
+			}
+			e, err := b.backend.Stat(ctx, m.Key)
+			if errors.Is(err, fstable.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return nil, fmt.Errorf("filesystem(%s): stat: %w", b.name, err)
+			}
+			ok, err := filesystemEntryMatches(e, req.Sel.Where.Exp, req.Vars, filesystemCursorState{})
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				hits = append(hits, hit{entry: e, passages: m.Passages})
+			}
 		}
-		if ok {
-			hits = append(hits, hit{entry: e, passages: m.Passages})
+		if len(hits) >= want || len(matches) < fetch || fetch >= maxFetch {
+			break
 		}
+		fetch = min(fetch*4, maxFetch)
 	}
 	if len(req.Sel.OrderBy) != 0 {
 		entries := make([]fstable.Entry, len(hits))

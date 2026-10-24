@@ -63,24 +63,28 @@ func (s *graphjinService) queryCatalogCoverage(ctx context.Context, snapshot *co
 	}
 
 	var index *semanticPersistedIndex
-	if s != nil && s.semantic != nil {
-		index = s.semantic.current()
+	var semantic *semanticCatalogIndex
+	if s != nil {
+		semantic = s.semanticCatalog()
+	}
+	if semantic != nil {
+		index = semantic.current()
 	}
 	indexReady := index != nil && index.manifest.ActualDimension > 0
 	var vectors [][]float32
 	var vectorErr error
 	if len(missing) != 0 && indexReady {
 		queryCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		vectors, vectorErr = s.semantic.queryVectors(queryCtx, missing, index.manifest.ActualDimension)
+		vectors, vectorErr = semantic.queryVectors(queryCtx, missing, index.manifest.ActualDimension)
 		cancel()
 		if vectorErr != nil && strings.Contains(strings.ToLower(vectorErr.Error()), "dimension") {
-			s.semantic.invalidateDimension()
+			semantic.invalidateDimension()
 		}
 	}
 
 	if len(missing) != 0 && (!indexReady || vectorErr != nil) {
 		if vectorErr != nil {
-			s.semantic.warnFallback(vectorErr)
+			semantic.warnFallback(vectorErr)
 		}
 		aggregate.Mode = "coverage_lexical_fallback"
 		aggregate.LexicalFallback = true
@@ -95,7 +99,7 @@ func (s *graphjinService) queryCatalogCoverage(ctx context.Context, snapshot *co
 			query := base
 			query.Search = groups[groupIndex].search
 			query.Explain = true
-			hints := s.semantic.hintsForVector(ctx, snapshot, query, index, vector)
+			hints := semantic.hintsForVector(ctx, snapshot, query, index, vector)
 			result := groups[groupIndex].result
 			var err error
 			if len(hints.hints) != 0 {

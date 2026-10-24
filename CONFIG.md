@@ -1352,6 +1352,23 @@ catalog_search:
     api_key_env: OPENAI_API_KEY
     base_url: ""
     dimensions: tiny
+    query_prefix: ""
+    document_prefix: ""
+```
+
+For a local OpenAI-compatible EmbeddingGemma service (as OpenNeko runs it):
+
+```yaml
+catalog_search:
+  semantic:
+    enabled: true
+    provider: openai
+    embedding_model: embeddinggemma-2
+    api_key_env: OPENNEKO_EMBEDDING_API_KEY   # any non-empty placeholder; the service ignores it
+    base_url: http://embedding:5003/v1
+    dimensions: tiny                          # 768
+    query_prefix: "task: search result | query: "
+    document_prefix: "title: none | text: "
 ```
 
 ### Discovery cache options
@@ -1401,12 +1418,14 @@ When Redis is configured but unavailable:
 | `catalog_search.semantic.embedding_model` | string | - | Embedding model identifier. Required when semantic search is enabled. |
 | `catalog_search.semantic.api_key_env` | string | `OPENAI_API_KEY` | Environment variable containing the embedding provider key. |
 | `catalog_search.semantic.base_url` | string | - | Optional provider-compatible endpoint override. |
-| `catalog_search.semantic.dimensions` | string | `tiny` | `tiny` (128), `small` (256), `medium` (512), or `default` (provider-native). |
+| `catalog_search.semantic.dimensions` | string | `tiny` | `tiny` (768), `small` (1536), `medium` (3072), or `default` (provider-native). |
+| `catalog_search.semantic.query_prefix` | string | - | Prepended to every search query before it is embedded, for models trained with task prefixes. Kept verbatim, trailing space included. |
+| `catalog_search.semantic.document_prefix` | string | - | Prepended to every catalog document before it is embedded. File passages replace `title: none` in it with `title: <file name>`. |
 
-Named dimensions are strict. A response with a different dimension is rejected
-and catalog queries fall back to lexical results. Provider, model, base URL,
-dimension preset, and semantic document format form the embedding-space
-fingerprint. Changing any of them causes a full rebuild; compatible catalog
+A provider that ignores the requested dimension is accepted: the index follows
+the width it returns and logs a warning. Provider, model, base URL, dimension
+preset, the prefixes (when set), and semantic document format form the
+embedding-space fingerprint. Changing any of them causes a full rebuild; compatible catalog
 changes reuse vectors by canonical document hash and embed only added or
 changed documents.
 
@@ -1436,6 +1455,62 @@ fields instead.
 Query embeddings are never persisted. Each serving replica keeps a 1,024-entry
 in-memory LRU for ten minutes. Embedding errors and the two-second query timeout
 return lexical results instead of failing `query_catalog`.
+
+### Turning semantic search on and off live
+
+`catalog_search.semantic` is writable through `gj_config` (and the
+`update_current_config` MCP tool) under `serv`, and every change applies to
+the running process without a restart; `reload_on_config_change` is not
+involved:
+
+```graphql
+mutation {
+  gj_config(id: "current", update: {
+    mode: "preview"
+    expected_catalog_revision: "<from gj_config>"
+    serv: { catalog_search: { semantic: { enabled: true } } }
+  }) { valid preview_id errors_json }
+}
+```
+
+Resend the same update with `mode: "apply"` and the `preview_id`, as for any
+source-mode change (legacy configurations apply directly). The update reports `scope: serv` and `reload_mode: hot`, and in dev
+mode is saved to the config file like other `gj_config` changes.
+
+- Turning it on builds and starts the semantic index; catalog queries stay
+  lexical until it is ready, as on a cold start. It also starts semantic file
+  search (below).
+- Turning it off closes the index and stops the file passage embedder; no
+  further embedding calls are made. Stored vectors are kept on disk.
+- Changing provider, model, base URL, key variable, dimensions or prefixes
+  swaps in a new index; the old one is closed. Queries already running finish
+  against the old index.
+
+Enabling requires `embedding_model`, either already configured or in the same
+patch. The current settings appear on `gj_config` as `serv.catalog_search`.
+
+### Semantic file search
+
+With `file_content.enabled`, the same switch and provider settings also rank
+file search (`search:` on file tables) by passage embeddings. Each passage is
+embedded as `document_prefix` with `title: none` replaced by
+`title: <file name>`, and queries use `query_prefix`. Vectors live in the file
+content index next to the full-text table, versioned by the embedding-space
+fingerprint, and are dropped with their file when it changes or is removed.
+
+A background worker embeds passages that have no vector, one request at a time,
+each holding at most 64 passages and about 16,000 characters of text so a slow
+local model finishes well within its proxy timeout. When the service answers
+with an error (429, 503, a gateway timeout) the worker backs off, from 2 seconds
+up to 2 minutes, and halves the request size down to a single passage, growing
+it back as requests succeed. It resumes after a restart where it left off. It never
+blocks indexing or queries. A file whose passages are not all embedded yet is
+ranked by full-text search at the place full-text search gives it, so new files
+are findable at once. When the switch is off, or the query cannot be embedded
+within three seconds, search is full-text exactly as without semantic search.
+Access rules are unchanged: per-user folders, `where` filters and role rules
+apply to semantic results as to full-text ones, and the ranking goes deeper
+when they leave a page short.
 
 See [Discovery Cache And Semantic Search](/configure/discovery-semantic-search/)
 for the complete startup matrix, storage layout, safety boundaries, and
@@ -1647,7 +1722,7 @@ When it is on, each file source gets an index of its files, kept in `dir` and re
 
 File tables then gain:
 
-- `search:` — ranks the source's files by their content, best first, using full-text search over each file's pages, slides, sheets and sections. Every word of the query counts toward the rank, and file names are searched too. `where` filters still apply.
+- `search:` — ranks the source's files by their content, best first, using full-text search over each file's pages, slides, sheets and sections. Every word of the query counts toward the rank, and file names are searched too. `where` filters still apply. With `catalog_search.semantic.enabled`, files are ranked by passage embeddings instead; see [Semantic file search](#semantic-file-search).
 - `passages` — with `search`, up to three matching passages per file, each `{location, snippet}`, where location names the page, slide, sheet or section.
 - `tables` — the SQL tables derived from a sheet or CSV file: a typed table with columns named from the detected header rows (two header rows are combined, e.g. `units_sold_2024`) plus `source_row`, and a raw table ending in `__raw` with every cell as text, columns named by letter and `row_number`.
 - `text` — for PDF, Word, PowerPoint and Excel files, the extracted text with `[page n]`, `[slide n]` and `[sheet name]` markers. UTF-8 files are returned as they are.

@@ -148,8 +148,8 @@ func (s *graphjinService) markCatalogChanged(reason string) {
 		return
 	}
 	s.invalidateCatalogCache()
-	if s.semantic != nil {
-		s.semantic.CatalogChanged()
+	if semantic := s.semanticCatalog(); semantic != nil {
+		semantic.CatalogChanged()
 	}
 	if s.systemNanoDB != nil {
 		s.markSystemNanoChanged(reason)

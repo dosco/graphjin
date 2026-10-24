@@ -103,8 +103,8 @@ func (s *graphjinService) projectionPollLoopWithRecoveryForDomain(
 		// A revision signal may originate on another replica. The projection is
 		// current now, so let the local semantic worker compare the combined
 		// catalog/artifact revision and rebuild only when needed.
-		if domain == "artifacts" && s.semantic != nil {
-			s.semantic.CatalogChanged()
+		if semantic := s.semanticCatalog(); domain == "artifacts" && semantic != nil {
+			semantic.CatalogChanged()
 		}
 		if retryTimer != nil {
 			if !retryTimer.Stop() {
