@@ -271,6 +271,11 @@ func (ms *mcpServer) registerConfigTools() {
 			mcp.Description("Replace the running configuration with the config file and keystore on disk, through the same staged reload as other updates. "+
 				"Use it to roll back after restoring an earlier config file. It cannot be combined with other changes."),
 		),
+		mcp.WithString("config_yaml",
+			mcp.Description("The full text of an edited config file to stage as the next configuration. Its data sections reload live; "+
+				"changed server settings apply through the serv rules. GraphJin does not write the file; the caller does once the update applies. "+
+				"It cannot be combined with other changes."),
+		),
 		mcp.WithBoolean("create_if_not_exists",
 			mcp.Description("Dev mode only. When true, creates databases on the server if they don't exist before connecting. "+
 				"Works for PostgreSQL, MySQL/MariaDB, MSSQL, and Oracle. "+
@@ -944,7 +949,24 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	conf := &stagedCore
 
 	reloadFromDisk, _ := args["reload_from_disk"].(bool)
-	if reloadFromDisk {
+	if text, ok := args["config_yaml"].(string); ok {
+		// An edited config file: staged like reload_from_disk, and like it
+		// never written back by GraphJin; the caller writes the file.
+		edited, servEdits, mcpEdits, err := ms.editedConfig(args, text)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("config_yaml: %v", err))
+		} else {
+			stagedCore = edited
+			reloadFromDisk = true
+			changes = append(changes, "applied the edited configuration")
+			if servEdits != nil {
+				args["serv"] = servEdits
+			}
+			if mcpEdits != nil {
+				args["mcp"] = mcpEdits
+			}
+		}
+	} else if reloadFromDisk {
 		disk, err := ms.diskCoreConfig(args)
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("reload_from_disk: %v", err))

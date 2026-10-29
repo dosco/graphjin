@@ -4,6 +4,7 @@ import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
 import { graphjinAdminQuery, parseGraphjinJson } from "@/lib/graphjin-admin";
 import { AdminDenied } from "../../AdminShell";
+import { ActionGroup } from "@/components/ui/action-group";
 import { Badge } from "@/components/ui/badge";
 import { buttonClassName } from "@/components/ui/button";
 import { Disclosure } from "@/components/ui/disclosure";
@@ -53,7 +54,7 @@ export default async function AdminGraphjinConfigPage() {
     <GraphjinShell
       current="/admin/graphjin/config"
       title="Config"
-      subtitle="GraphJin's effective configuration, read-only, with secrets redacted."
+      subtitle="GraphJin's effective configuration, with secrets redacted. Edit the config file to change it."
     >
       {!result.ok ? (
         <GraphjinUnavailable title="Config" error={result.error} />
@@ -85,9 +86,14 @@ function ConfigView({ row }: { row: ConfigRow }) {
         title="Config location"
         copy={row.config_path || "GraphJin did not report a config path."}
         aside={
-          <Link href="/admin/settings/graphjin" className={buttonClassName({ size: "sm" })}>
-            Change settings
-          </Link>
+          <ActionGroup>
+            <Link href="/admin/settings/graphjin" className={buttonClassName({ size: "sm" })}>
+              Change settings
+            </Link>
+            <Link href="/admin/graphjin/config/edit" className={buttonClassName({ size: "sm" })}>
+              Edit config file
+            </Link>
+          </ActionGroup>
         }
       >
         <div className="flex flex-wrap gap-2">

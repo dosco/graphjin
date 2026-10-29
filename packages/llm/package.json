@@ -32,6 +32,7 @@
     "./graphjin/openapi-assets": "./src/graphjin/openapi-assets.ts",
     "./graphjin/openapi-spec": "./src/graphjin/openapi-spec.ts",
     "./graphjin/persist-source-config": "./src/graphjin/persist-source-config.ts",
+    "./graphjin/config-editor": "./src/graphjin/config-editor.ts",
     "./work/sandbox-launcher": "./src/work/sandbox-launcher.ts",
     "./spend": "./src/spend/index.ts",
     "./workflows/compat": "./src/workflows/compat/index.ts"
