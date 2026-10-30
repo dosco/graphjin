@@ -271,11 +271,6 @@ func (ms *mcpServer) registerConfigTools() {
 			mcp.Description("Replace the running configuration with the config file and keystore on disk, through the same staged reload as other updates. "+
 				"Use it to roll back after restoring an earlier config file. It cannot be combined with other changes."),
 		),
-		mcp.WithString("config_yaml",
-			mcp.Description("The full text of an edited config file to stage as the next configuration. Its data sections reload live; "+
-				"changed server settings apply through the serv rules. GraphJin does not write the file; the caller does once the update applies. "+
-				"It cannot be combined with other changes."),
-		),
 		mcp.WithBoolean("create_if_not_exists",
 			mcp.Description("Dev mode only. When true, creates databases on the server if they don't exist before connecting. "+
 				"Works for PostgreSQL, MySQL/MariaDB, MSSQL, and Oracle. "+
@@ -906,6 +901,12 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	}()
 
 	args := req.GetArguments()
+	if _, ok := args["config_yaml"]; ok && ctx.Value(editedConfigKey{}) == nil {
+		// Replacing the whole config is for the host that owns the file
+		// (EditConfig), never for a token over the network.
+		msg := "config_yaml is not accepted here; change individual settings instead"
+		return ms.finishConfigUpdate(ctx, ConfigUpdateResult{Success: false, Message: msg, Errors: []string{msg}, ErrorsJSON: jsonStringValue([]string{msg})})
+	}
 	sourceMode := ms.service != nil && ms.service.conf != nil && ms.service.conf.Core.IsSourcesUsed()
 	mode, expectedRev, patchHash, previewID, gateFailure := ms.sourceModeConfigGate(ctx, args)
 	if sourceMode && gateFailure != nil {

@@ -1,6 +1,7 @@
 package serv
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,9 +10,51 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
 )
+
+// editedConfigKey marks the context of an EditConfig call, the only caller
+// whose update may carry config_yaml.
+type editedConfigKey struct{}
+
+// EditConfig checks the full text of an edited config file or, with apply,
+// applies it live, through the same staged update as gj_config. It is for
+// the host that runs GraphJin in its own process and owns the file: no
+// GraphQL or MCP request can send config_yaml, since replacing the whole
+// configuration is a step for whoever can write the file, not for whoever
+// holds a token. The result is gj_config's update result. GraphJin does not
+// write the file; the caller does once an apply succeeds.
+func (s1 *HttpService) EditConfig(ctx context.Context, text string, apply bool) map[string]any {
+	ms := &mcpServer{service: s1.Load().(*graphjinService), ctx: ctx}
+	ctx = context.WithValue(ctx, editedConfigKey{}, true)
+	revision := ms.currentConfigCatalogRevision(ctx)
+	run := func(mode, previewID string) map[string]any {
+		args := map[string]any{"config_yaml": text, "mode": mode}
+		if revision != "" {
+			args["expected_catalog_revision"] = revision
+		}
+		if previewID != "" {
+			args["preview_id"] = previewID
+		}
+		res, err := ms.handleUpdateCurrentConfig(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: args}})
+		return mcpResultPayload(res, err)
+	}
+	if !apply {
+		return run("validate", "")
+	}
+	if !ms.service.conf.Core.IsSourcesUsed() {
+		return run("apply", "")
+	}
+	preview := run("preview", "")
+	previewID, _ := preview["preview_id"].(string)
+	if preview["success"] == false || preview["valid"] != true || previewID == "" {
+		// Invalid, or valid with nothing to change.
+		return preview
+	}
+	return run("apply", previewID)
+}
 
 // editedConfigArgs are the update arguments config_yaml may be combined with.
 var editedConfigArgs = map[string]bool{
