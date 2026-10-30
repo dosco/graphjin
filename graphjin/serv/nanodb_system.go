@@ -491,7 +491,6 @@ func configNanoColumns() []core.NanoColumn {
 		{Name: "update_saved_queries", Type: "json"},
 		{Name: "remove_saved_queries", Type: "json"},
 		{Name: "reload_from_disk", Type: "boolean"},
-		{Name: "config_yaml", Type: "text"},
 		{Name: "valid", Type: "boolean"},
 		{Name: "applied", Type: "boolean"},
 		{Name: "expires_at", Type: "text"},

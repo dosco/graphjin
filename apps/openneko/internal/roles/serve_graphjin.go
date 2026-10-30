@@ -37,7 +37,7 @@ func runServe(args []string) {
 		fmt.Fprintf(os.Stderr, "openneko serve: %v\n", err)
 		os.Exit(2)
 	}
-	serve.MainWith(args, serve.Options{Ask: graphJinAsker(gj)})
+	serve.MainWith(args, serve.Options{Ask: graphJinAsker(gj), EditConfig: graphJinConfigEditor(gj)})
 }
 
 // graphJinPath takes --path out of args, as `graphjin serve` spells it.
@@ -80,6 +80,15 @@ func startGraphJin(dir string) (*gjserv.HttpService, error) {
 		}
 	}()
 	return gj, nil
+}
+
+// graphJinConfigEditor checks and applies the admin config editor's edits on
+// the hosted GraphJin. Only serve's socket reaches it, never GraphJin's own
+// APIs.
+func graphJinConfigEditor(gj *gjserv.HttpService) serve.ConfigEditor {
+	return func(ctx context.Context, text string, apply bool) (json.RawMessage, error) {
+		return json.Marshal(gj.EditConfig(ctx, text, apply))
+	}
 }
 
 // askingAgent is the part of GraphJin's service the asker uses.

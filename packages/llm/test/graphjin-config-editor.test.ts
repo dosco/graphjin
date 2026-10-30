@@ -1,14 +1,17 @@
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   applyEditedGraphjinConfig,
+  checkEditedGraphjinConfig,
   configHash,
   GraphjinConfigEditorError,
   HIDDEN_VALUE,
   isSecretKey,
   maskGraphjinConfig,
+  serveGraphjinConfigEdit,
   unmaskGraphjinConfig,
 } from "../src/graphjin/config-editor";
 
@@ -84,21 +87,21 @@ describe("GraphJin config editor", () => {
     const configFile = join(dir, "agentic.yml");
     await writeFile(configFile, RAW, { mode: 0o640 });
     const applied: string[] = [];
-    const connection = { endpoint: "http://graphjin.invalid", headers: {} };
     const edited = maskGraphjinConfig(RAW).text.replace("read: authenticated", "read: admin");
 
     await expect(
-      applyEditedGraphjinConfig({ configFile, edited, baseHash: "stale", connection, apply: async () => {} }),
+      applyEditedGraphjinConfig({ configFile, edited, baseHash: "stale", edit: async () => ({ success: true, valid: true }) }),
     ).rejects.toMatchObject({ status: 409 });
 
     const { hash } = await applyEditedGraphjinConfig({
       configFile,
       edited,
       baseHash: configHash(RAW),
-      connection,
-      apply: async (update) => {
-        applied.push(String(update.config_yaml));
+      edit: async (text, apply) => {
+        expect(apply).toBe(true);
+        applied.push(text);
         expect(await readFile(configFile, "utf8")).toBe(RAW); // file written only after GraphJin took it
+        return { success: true, valid: true, applied: true };
       },
     });
     const written = await readFile(configFile, "utf8");
@@ -112,13 +115,50 @@ describe("GraphJin config editor", () => {
       configFile,
       edited: maskGraphjinConfig(written).text.replace("read: admin", "read: nobody"),
       baseHash: hash,
-      connection,
-      apply: async () => {
-        throw new Error("source shop with password shop-password-123 is invalid");
-      },
+      edit: async () => ({ success: false, errors: ["source shop with password shop-password-123 is invalid"] }),
     });
     await expect(rejected).rejects.toMatchObject({ status: 422 });
     await expect(rejected).rejects.toThrow(`source shop with password ${HIDDEN_VALUE} is invalid`);
     expect(await readFile(configFile, "utf8")).toBe(written);
+  });
+
+  it("checks through serve's socket without applying, and scrubs GraphJin's messages", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "gj-editor-"));
+    const configFile = join(dir, "agentic.yml");
+    await writeFile(configFile, RAW);
+    const socket = join(dir, "serve.sock");
+    const frames: unknown[] = [];
+    const server = createServer((conn) => {
+      conn.once("data", (data) => {
+        frames.push(JSON.parse(data.toString()));
+        const result = { success: true, valid: false, errors: ["shop-password-123 was refused"], reload_mode: "hot" };
+        conn.end(`${JSON.stringify({ type: "result", result })}\n${JSON.stringify({ type: "exit", code: 0 })}\n`);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socket, resolve));
+    try {
+      const edited = maskGraphjinConfig(RAW).text.replace("read: authenticated", "read: admin");
+      const check = await checkEditedGraphjinConfig({ configFile, edited, baseHash: configHash(RAW), edit: serveGraphjinConfigEdit(socket) });
+      expect(check).toMatchObject({ valid: false, reloadMode: "hot", errors: [`${HIDDEN_VALUE} was refused`] });
+      expect(frames).toEqual([{ type: "config", config: { text: unmaskGraphjinConfig(RAW, edited), apply: false } }]);
+      expect(await readFile(configFile, "utf8")).toBe(RAW);
+    } finally {
+      server.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports serve refusing or missing", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "gj-editor-"));
+    const socket = join(dir, "serve.sock");
+    await expect(serveGraphjinConfigEdit(socket)("a: 1\n", false)).rejects.toThrow(/openneko serve unavailable/);
+    const server = createServer((conn) => conn.end(`${JSON.stringify({ type: "exit", code: 2, error: "serve hosts no GraphJin" })}\n`));
+    await new Promise<void>((resolve) => server.listen(socket, resolve));
+    try {
+      await expect(serveGraphjinConfigEdit(socket)("a: 1\n", true)).rejects.toThrow("serve hosts no GraphJin");
+    } finally {
+      server.close();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -1,18 +1,20 @@
 // The admin GraphJin config file editor. Admins edit the whole config file
 // as YAML, with secrets shown as <hidden>; a save puts the hidden values back,
-// has GraphJin check and apply the edited text live (gj_config config_yaml),
-// and then writes the file, so the running GraphJin and the file never
-// disagree and nothing restarts.
+// has GraphJin check and apply the edited text live, and then writes the
+// file, so the running GraphJin and the file never disagree and nothing
+// restarts.
+//
+// The edited text goes to GraphJin over openneko serve's local socket, not
+// GraphJin's API: GraphJin refuses a whole config from any token, so only
+// web and the worker, which can reach the socket, can replace one. Protocol:
+// apps/ax-harness/serve/config.go.
 
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createConnection } from "node:net";
+import { createInterface } from "node:readline";
 import { isMap, isScalar, isSeq, parseDocument, Scalar, type Document } from "yaml";
-import { data_source, db, desc, eq } from "@neko/db";
-import { graphjinQuery } from "./client";
-import { applyGraphjinConfigUpdate, currentRevisionFromConflict, gjConfigRow, isCatalogRevisionConflict } from "./config-apply";
-import { graphjinInputWithJsonVariables } from "./config-change";
 import { acquireGraphjinConfigLock } from "./persist-source-config";
-import { mintGraphjinToken } from "./token";
 
 /** What the editor shows in place of a secret value. */
 export const HIDDEN_VALUE = "<hidden>";
@@ -162,21 +164,59 @@ export type GraphjinConfigCheck = {
   errors: string[];
 };
 
-type Connection = { endpoint: string; headers: Record<string, string> };
+/** GraphJin's answer to a config check or apply (its gj_config update result). */
+export type GraphjinConfigEditResult = {
+  success?: boolean;
+  valid?: boolean;
+  applied?: boolean;
+  message?: string;
+  errors?: string[];
+  scope?: string;
+  reload_mode?: string;
+  change_summary_json?: string;
+  findings_json?: string;
+};
 
-/** The org's GraphJin and an admin token for its config API. */
-export async function graphjinAdminConnection(orgId: string, userId: string): Promise<Connection | null> {
-  const [row] = await db()
-    .select({ graphql_url: data_source.graphql_url })
-    .from(data_source)
-    .where(eq(data_source.org_id, orgId))
-    .orderBy(desc(data_source.is_default), data_source.created_at)
-    .limit(1);
-  if (!row?.graphql_url) return null;
-  return {
-    endpoint: row.graphql_url,
-    headers: { authorization: `Bearer ${mintGraphjinToken({ orgId, userId, role: "admin", ttlSeconds: 120 })}` },
-  };
+/** Checks text, or with apply applies it, on the GraphJin openneko serve hosts. */
+export type GraphjinConfigEdit = (text: string, apply: boolean) => Promise<GraphjinConfigEditResult>;
+
+/** Sends edits to the GraphJin that openneko serve at socket hosts. */
+export function serveGraphjinConfigEdit(socket: string, timeoutMs = 120_000): GraphjinConfigEdit {
+  return (text, apply) =>
+    new Promise((resolve, reject) => {
+      const conn = createConnection(socket);
+      let settled = false;
+      const settle = (error: Error | null, value?: GraphjinConfigEditResult) => {
+        if (settled) return;
+        settled = true;
+        conn.destroy();
+        if (error) reject(error);
+        else resolve(value!);
+      };
+      const fail = (error: Error) => settle(error);
+      conn.setTimeout(timeoutMs, () => fail(new Error("openneko serve did not answer the config edit in time")));
+      conn.on("error", (error) => fail(new Error(`openneko serve unavailable: ${error.message}`)));
+      let result: GraphjinConfigEditResult | null = null;
+      const lines = createInterface({ input: conn });
+      // readline repeats the socket's errors, which the handler above reports.
+      lines.on("error", () => {});
+      lines.on("line", (line) => {
+        if (!line.trim()) return;
+        let frame: { type?: string; result?: GraphjinConfigEditResult; code?: number; error?: string };
+        try {
+          frame = JSON.parse(line);
+        } catch {
+          fail(new Error("openneko serve sent an unreadable answer"));
+          return;
+        }
+        if (frame.type === "result") result = frame.result ?? null;
+        if (frame.type !== "exit") return;
+        if (frame.code || !result) fail(new Error(frame.error || "openneko serve could not edit the config"));
+        else settle(null, result);
+      });
+      lines.on("close", () => fail(new Error("openneko serve hung up during the config edit")));
+      conn.write(`${JSON.stringify({ type: "config", config: { text, apply } })}\n`);
+    });
 }
 
 function parseJSON(value: string | undefined): unknown {
@@ -188,12 +228,19 @@ function parseJSON(value: string | undefined): unknown {
   }
 }
 
+/** GraphJin's errors: those it listed, else its message when it failed. */
+function editErrors(result: GraphjinConfigEditResult): string[] {
+  const errors = (result.errors ?? []).map(String).filter(Boolean);
+  if (errors.length === 0 && result.success === false) errors.push(result.message || "GraphJin refused the config");
+  return errors;
+}
+
 /** Has GraphJin check the edited config without changing anything. */
 export async function checkEditedGraphjinConfig(input: {
   configFile: string;
   edited: string;
   baseHash: string;
-  connection: Connection;
+  edit: GraphjinConfigEdit;
 }): Promise<GraphjinConfigCheck> {
   const raw = await readFile(input.configFile, "utf8");
   if (configHash(raw) !== input.baseHash) {
@@ -201,51 +248,17 @@ export async function checkEditedGraphjinConfig(input: {
   }
   const text = unmaskGraphjinConfig(raw, input.edited);
   const scrub = scrubber(raw, text);
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const name = `ConfigRevision_${randomUUID().replaceAll("-", "")}`;
-    const current = await graphjinQuery<{ gj_config?: { catalog_revision?: string } | Array<{ catalog_revision?: string }> }>({
-      baseUrl: input.connection.endpoint,
-      configurationOnly: true,
-      headers: input.connection.headers,
-      query: `query ${name} { gj_config(id: "current") { catalog_revision } }`,
-    });
-    const revision = gjConfigRow(current.data?.gj_config)?.catalog_revision;
-    if (!revision) throw new Error("GraphJin config revision unavailable");
-    const request = graphjinInputWithJsonVariables({ mode: "validate", expected_catalog_revision: revision, config_yaml: text });
-    const result = await graphjinQuery<{
-      gj_config?: GjCheckRow | GjCheckRow[];
-    }>({
-      baseUrl: input.connection.endpoint,
-      configurationOnly: true,
-      longRunning: true,
-      headers: input.connection.headers,
-      query: `mutation${request.variableDefinitions} { gj_config(id: "current", update: ${request.literal}) { valid scope reload_mode change_summary_json findings_json errors_json } }`,
-      variables: request.variables,
-    });
-    const messages = (result.errors ?? []).map((error) => error.message);
-    if (messages.length > 0 && attempt < 3 && isCatalogRevisionConflict(messages) && currentRevisionFromConflict(messages)) continue;
-    const row = gjConfigRow(result.data?.gj_config);
-    const errors = [...messages, ...(Array.isArray(parseJSON(row?.errors_json)) ? (parseJSON(row?.errors_json) as unknown[]).map(String) : [])];
-    return {
-      valid: errors.length === 0 && row?.valid === true,
-      scope: row?.scope ?? null,
-      reloadMode: row?.reload_mode ?? null,
-      changes: parseJSON(scrub(row?.change_summary_json ?? "")),
-      findings: parseJSON(scrub(row?.findings_json ?? "")),
-      errors: errors.map(scrub),
-    };
-  }
-  throw new Error("GraphJin config revision did not stabilize");
+  const result = await input.edit(text, false);
+  const errors = editErrors(result);
+  return {
+    valid: errors.length === 0 && result.valid === true,
+    scope: result.scope ?? null,
+    reloadMode: result.reload_mode ?? null,
+    changes: parseJSON(scrub(result.change_summary_json ?? "")),
+    findings: parseJSON(scrub(result.findings_json ?? "")),
+    errors: errors.map(scrub),
+  };
 }
-
-type GjCheckRow = {
-  valid?: boolean;
-  scope?: string;
-  reload_mode?: string;
-  change_summary_json?: string;
-  findings_json?: string;
-  errors_json?: string;
-};
 
 /**
  * Applies the edited config live, then writes the file. Holds the config lock
@@ -257,13 +270,13 @@ export async function applyEditedGraphjinConfig(input: {
   configFile: string;
   edited: string;
   baseHash: string;
-  connection: Connection;
-  apply?: (update: Record<string, unknown>) => Promise<unknown>;
+  edit: GraphjinConfigEdit;
 }): Promise<{ hash: string }> {
-  const apply =
-    input.apply ??
-    ((update: Record<string, unknown>) =>
-      applyGraphjinConfigUpdate({ endpoint: input.connection.endpoint, headers: input.connection.headers, update }));
+  const apply = async (text: string) => {
+    const result = await input.edit(text, true);
+    const errors = editErrors(result);
+    if (errors.length > 0 || result.valid === false) throw new Error(errors.join("; ") || "GraphJin refused the config");
+  };
   const release = await acquireGraphjinConfigLock({ configFile: input.configFile });
   try {
     const raw = await readFile(input.configFile, "utf8");
@@ -274,7 +287,7 @@ export async function applyEditedGraphjinConfig(input: {
     if (text === raw) return { hash: input.baseHash };
     const scrub = scrubber(raw, text);
     try {
-      await apply({ config_yaml: text });
+      await apply(text);
     } catch (error) {
       throw new GraphjinConfigEditorError(scrub(error instanceof Error ? error.message : String(error)), 422);
     }
@@ -289,7 +302,7 @@ export async function applyEditedGraphjinConfig(input: {
         throw error;
       }
     } catch (error) {
-      await apply({ config_yaml: raw }).catch(() => {});
+      await apply(raw).catch(() => {});
       throw error;
     }
     return { hash: configHash(text) };

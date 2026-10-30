@@ -16,7 +16,8 @@ const mocks = vi.hoisted(() => {
     read: vi.fn(async (path: string) => ({ path, text: "auth:\n  secret: <hidden>\n", hash: "h1", hidden: 1 })),
     check: vi.fn(async () => ({ valid: true, scope: "core", reloadMode: "hot", changes: [], findings: [], errors: [] })),
     apply: vi.fn(async () => ({ hash: "h2" })),
-    connection: vi.fn(async () => ({ endpoint: "http://graphjin:8080/api/v1/graphql", headers: {} })),
+    edit: vi.fn(),
+    serveEdit: vi.fn((_socket: string) => mocks.edit),
   };
 });
 
@@ -25,12 +26,11 @@ vi.mock("@/lib/admin-auth", () => ({
     mocks.admin ? { role: "admin", userId: "u1" } : NextResponse.json({ error: "Admins only" }, { status: 403 }),
   isDenied: (value: unknown) => value instanceof Response,
 }));
-vi.mock("@/lib/db", () => ({ getOrgId: async () => "org-1" }));
 vi.mock("@neko/llm/graphjin/config-editor", () => ({
   readEditableGraphjinConfig: mocks.read,
   checkEditedGraphjinConfig: mocks.check,
   applyEditedGraphjinConfig: mocks.apply,
-  graphjinAdminConnection: mocks.connection,
+  serveGraphjinConfigEdit: mocks.serveEdit,
   GraphjinConfigEditorError: mocks.GraphjinConfigEditorError,
 }));
 
@@ -40,10 +40,12 @@ describe("/api/admin/graphjin/config-file", () => {
   beforeEach(() => {
     mocks.admin = true;
     process.env.OPENNEKO_GRAPHJIN_CONFIG = "/config/graphjin/agentic.yml";
-    for (const fn of [mocks.read, mocks.check, mocks.apply, mocks.connection]) fn.mockClear();
+    process.env.OPENNEKO_SERVE_SOCKET = "/run/openneko/serve.sock";
+    for (const fn of [mocks.read, mocks.check, mocks.apply, mocks.serveEdit]) fn.mockClear();
   });
   afterEach(() => {
     delete process.env.OPENNEKO_GRAPHJIN_CONFIG;
+    delete process.env.OPENNEKO_SERVE_SOCKET;
   });
 
   it("is for admins only", async () => {
@@ -66,8 +68,11 @@ describe("/api/admin/graphjin/config-file", () => {
 
     const applied = await callRoute(POST, { method: "POST", body: { action: "apply", text: "a: 1", baseHash: "h1" } });
     expect(applied).toMatchObject({ status: 200, body: { applied: true, hash: "h2" } });
-    expect(mocks.apply).toHaveBeenCalledWith(expect.objectContaining({ configFile: "/config/graphjin/agentic.yml", edited: "a: 1", baseHash: "h1" }));
-    expect(mocks.connection).toHaveBeenCalledWith("org-1", "u1");
+    expect(mocks.apply).toHaveBeenCalledWith(
+      expect.objectContaining({ configFile: "/config/graphjin/agentic.yml", edited: "a: 1", baseHash: "h1", edit: mocks.edit }),
+    );
+    // Edits go to GraphJin over serve's local socket, not its API.
+    expect(mocks.serveEdit).toHaveBeenCalledWith("/run/openneko/serve.sock");
   });
 
   it("passes editor errors through with their status", async () => {
@@ -76,8 +81,10 @@ describe("/api/admin/graphjin/config-file", () => {
     expect(res).toMatchObject({ status: 409, body: { error: "The config file changed since you opened it." } });
   });
 
-  it("rejects bad requests and deployments without a config file", async () => {
+  it("rejects bad requests, and deployments without a config file or serve", async () => {
     expect((await callRoute(POST, { method: "POST", body: { action: "delete", text: "", baseHash: "" } })).status).toBe(400);
+    delete process.env.OPENNEKO_SERVE_SOCKET;
+    expect((await callRoute(POST, { method: "POST", body: { action: "check", text: "a: 1", baseHash: "h1" } })).status).toBe(409);
     delete process.env.OPENNEKO_GRAPHJIN_CONFIG;
     expect((await callRoute(GET)).status).toBe(404);
   });

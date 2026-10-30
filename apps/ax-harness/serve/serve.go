@@ -10,7 +10,8 @@
 //	serve → worker  {"type":"exit","code":0,"error":""}
 //
 // A connection that opens with a fetch frame is one model call instead: see
-// gateway.go.
+// gateway.go. One that opens with a config frame checks or applies an edited
+// GraphJin config: see config.go.
 //
 // Closing the connection cancels the turn. Serve holds the model keys for
 // the turn: the worker names the variable and sends the org's key in
@@ -70,6 +71,10 @@ type Frame struct {
 	Status  int               `json:"status,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
 	Data    []byte            `json:"data,omitempty"`
+	// Config and Result carry an edited GraphJin config and GraphJin's
+	// answer.
+	Config *ConfigRequest  `json:"config,omitempty"`
+	Result json.RawMessage `json:"result,omitempty"`
 }
 
 // GraphJinIdentity is who a turn asks GraphJin as: the JWT the host minted
@@ -113,6 +118,9 @@ type Asker func(ctx context.Context, token string, req AskRequest) (AskResult, e
 type Options struct {
 	// Ask, when set, is the GraphJin agent this serve hosts.
 	Ask Asker
+	// EditConfig, when set, checks and applies edits to the config of the
+	// GraphJin this serve hosts.
+	EditConfig ConfigEditor
 }
 
 // Server runs turns for connections on a listener.
@@ -125,6 +133,9 @@ type Server struct {
 	Run func(context.Context, harness.Turn) (int, error)
 	// Ask is the GraphJin agent serve hosts; nil leaves turns on the bridge.
 	Ask Asker
+	// EditConfig edits the hosted GraphJin's config; nil refuses config
+	// frames.
+	EditConfig ConfigEditor
 	// Client makes the gateway's model calls; nil uses a default client.
 	Client *http.Client
 
@@ -155,7 +166,7 @@ func MainWith(args []string, opts Options) {
 		os.Exit(2)
 	}
 	fmt.Fprintf(os.Stderr, "openneko serve: listening on %s\n", *socket)
-	server := &Server{Getenv: os.Getenv, MaxTurns: intEnv("OPENNEKO_SERVE_MAX_TURNS", defaultTurns), Ask: opts.Ask}
+	server := &Server{Getenv: os.Getenv, MaxTurns: intEnv("OPENNEKO_SERVE_MAX_TURNS", defaultTurns), Ask: opts.Ask, EditConfig: opts.EditConfig}
 	if err := server.Serve(ctx, listener); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -240,6 +251,10 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 	start, err := readFrame(reader)
 	if err == nil && start.Type == "fetch" {
 		s.fetch(parent, conn, reader, out, start.Request)
+		return
+	}
+	if err == nil && start.Type == "config" {
+		s.editConfig(parent, out, start.Config)
 		return
 	}
 	if err != nil || start.Type != "start" || len(start.Spec) == 0 {

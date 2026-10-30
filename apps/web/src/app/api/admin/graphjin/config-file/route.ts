@@ -2,12 +2,11 @@ import { NextResponse } from "next/server";
 import {
   applyEditedGraphjinConfig,
   checkEditedGraphjinConfig,
-  graphjinAdminConnection,
   GraphjinConfigEditorError,
   readEditableGraphjinConfig,
+  serveGraphjinConfigEdit,
 } from "@neko/llm/graphjin/config-editor";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
-import { getOrgId } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,7 +41,8 @@ export async function GET() {
 
 /**
  * Checks ("check") or applies ("apply") an edited config. Apply changes the
- * running GraphJin live and then writes the file.
+ * running GraphJin live and then writes the file. The edit reaches GraphJin
+ * over openneko serve's local socket; GraphJin's own API refuses it.
  */
 export async function POST(request: Request) {
   const actor = await requireAdminActor();
@@ -57,10 +57,10 @@ export async function POST(request: Request) {
   if (Buffer.byteLength(body.text) > MAX_CONFIG_BYTES) {
     return NextResponse.json({ error: "The config is larger than 1 MB." }, { status: 413 });
   }
+  const socket = process.env.OPENNEKO_SERVE_SOCKET?.trim();
+  if (!socket) return NextResponse.json({ error: "This deployment cannot change GraphJin's config live." }, { status: 409 });
   try {
-    const connection = await graphjinAdminConnection(await getOrgId(), actor.userId ?? "graphjin-config-editor");
-    if (!connection) return NextResponse.json({ error: "No GraphJin data source is connected." }, { status: 409 });
-    const input = { configFile: file, edited: body.text, baseHash: body.baseHash, connection };
+    const input = { configFile: file, edited: body.text, baseHash: body.baseHash, edit: serveGraphjinConfigEdit(socket) };
     if (action === "check") return NextResponse.json(await checkEditedGraphjinConfig(input));
     const { hash } = await applyEditedGraphjinConfig(input);
     return NextResponse.json({ applied: true, ...(await readEditableGraphjinConfig(file)), hash });
