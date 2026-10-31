@@ -45,6 +45,10 @@ func parseGQL(fs FS, fname, rootDir string, r io.Writer) (err error) {
 		return err
 	}
 	s := bufio.NewScanner(bytes.NewReader(b))
+	// The complete file is already in memory. A compact query or imported
+	// fragment can exceed Scanner's default 64KiB token limit, so allow any
+	// line in this file plus space for the terminating newline.
+	s.Buffer(nil, len(b)+1)
 	for s.Scan() {
 		m := incRe.FindStringSubmatch(s.Text())
 		if len(m) == 0 {
@@ -66,7 +70,7 @@ func parseGQL(fs FS, fname, rootDir string, r io.Writer) (err error) {
 			return err
 		}
 	}
-	return
+	return s.Err()
 }
 
 func resolveImportPath(rootDir, currentDir, incFile string) (string, error) {

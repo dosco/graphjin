@@ -221,9 +221,10 @@ func attachToken(req *http.Request, cfg AuthConfig, tok, defaultName, defaultFor
 // + its TTL; the cache handles concurrency and a 30-second pre-expiry
 // refresh to avoid the race where a token expires mid-request.
 type cachedToken struct {
-	mu      sync.Mutex
-	token   string
-	expires time.Time
+	mu           sync.Mutex
+	token        string
+	expires      time.Time
+	refreshGuard time.Duration
 }
 
 // get returns a valid token, fetching a new one when the cached value is
@@ -235,8 +236,7 @@ func (c *cachedToken) get(ctx context.Context, fetch func(ctx context.Context) (
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	const refreshGuard = 30 * time.Second
-	if c.token != "" && time.Now().Before(c.expires.Add(-refreshGuard)) {
+	if c.token != "" && time.Now().Before(c.expires.Add(-c.refreshGuard)) {
 		return c.token, nil
 	}
 
@@ -245,6 +245,10 @@ func (c *cachedToken) get(ctx context.Context, fetch func(ctx context.Context) (
 		return "", err
 	}
 	c.token = tok
+	c.refreshGuard = 30 * time.Second
+	if ttl > 0 && ttl < 2*c.refreshGuard {
+		c.refreshGuard = ttl / 2
+	}
 	if ttl > 0 {
 		c.expires = time.Now().Add(ttl)
 	} else {
