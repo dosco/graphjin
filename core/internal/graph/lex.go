@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -192,6 +193,15 @@ func unescapeStringValue(value []byte) []byte {
 		case 'u':
 			if i+4 < len(value) {
 				if r, err := strconv.ParseUint(string(value[i+1:i+5]), 16, 32); err == nil {
+					if r >= 0xD800 && r <= 0xDBFF && i+10 < len(value) &&
+						value[i+5] == '\\' && value[i+6] == 'u' {
+						if low, err := strconv.ParseUint(string(value[i+7:i+11]), 16, 32); err == nil &&
+							low >= 0xDC00 && low <= 0xDFFF {
+							out = utf8.AppendRune(out, utf16.DecodeRune(rune(r), rune(low)))
+							i += 10
+							continue
+						}
+					}
 					out = utf8.AppendRune(out, rune(r))
 					i += 4
 					continue
@@ -384,7 +394,7 @@ func lexString(l *lexer) StateFn {
 				return nil
 			}
 			if r == '\\' {
-				escaped = true
+				escaped = !escaped
 				continue
 			}
 			if !escaped && r == sr {
