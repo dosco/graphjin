@@ -178,6 +178,10 @@ func responseSchemaShape(schema *openapi3.Schema, seen map[*openapi3.Schema]bool
 		}
 		if out.Items == nil {
 			out.Items = branch.Items
+		} else if branch.Items != nil && out.Items != branch.Items {
+			// Every allOf branch constrains the same array elements. Keep all
+			// item schemas, just as we do for overlapping object properties.
+			out.Items = &openapi3.SchemaRef{Value: &openapi3.Schema{AllOf: openapi3.SchemaRefs{out.Items, branch.Items}}}
 		}
 		out.Required = append(out.Required, branch.Required...)
 		for name, property := range branch.Properties {

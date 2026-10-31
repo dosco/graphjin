@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -45,7 +46,12 @@ paths:
                       data:
                         allOf:
                           - type: array
-                            items: {$ref: '#/components/schemas/Record'}
+                            items: {$ref: '#/components/schemas/Base'}
+                          - type: array
+                            items:
+                              type: object
+                              required: [name]
+                              properties: {name: {type: string}}
 components:
   schemas:
     Base:
@@ -100,6 +106,49 @@ components:
 	}
 	if len(response.AllOf) != 2 || len(response.Properties) != 0 {
 		t.Fatal("column synthesis mutated the loaded response schema")
+	}
+}
+
+func TestComposedArrayItemsRetainEveryBranch(t *testing.T) {
+	identifier := openapi3.NewIntegerSchema()
+	identifier.Nullable = true
+	first := openapi3.NewObjectSchema().WithProperty("id", identifier)
+	first.Required = []string{"id"}
+	second := openapi3.NewObjectSchema().WithProperty("name", openapi3.NewStringSchema())
+	second = second.WithProperty("id", openapi3.NewFloat64Schema())
+	second.Required = []string{"name"}
+	firstRef := &openapi3.SchemaRef{Ref: "#/components/schemas/Identity", Value: first}
+	secondRef := &openapi3.SchemaRef{Ref: "#/components/schemas/Label", Value: second}
+	firstArray := openapi3.NewArraySchema()
+	firstArray.Items = firstRef
+	secondArray := openapi3.NewArraySchema()
+	secondArray.Items = secondRef
+	for _, directItems := range []bool{false, true} {
+		t.Run(fmt.Sprintf("direct=%v", directItems), func(t *testing.T) {
+			array := &openapi3.Schema{AllOf: openapi3.SchemaRefs{{Value: secondArray}}}
+			if directItems {
+				array.Type = firstArray.Type
+				array.Items = firstRef
+			} else {
+				array.AllOf = append(openapi3.SchemaRefs{{Value: firstArray}}, array.AllOf...)
+			}
+			wrapper := openapi3.NewObjectSchema().WithProperty("data", array)
+			for _, wrapped := range []bool{false, true} {
+				response, path := array, []string(nil)
+				if wrapped {
+					response, path = wrapper, []string{"data"}
+				}
+				for range 2 {
+					cols := SynthesiseColumns("public", "records", &openapi3.SchemaRef{Value: response}, path)
+					if len(cols) != 2 || cols[0].Name != "id" || cols[0].Type != "bigint" || !cols[0].NotNull || cols[1].Name != "name" || !cols[1].NotNull {
+						t.Fatalf("composed array lost item columns: %+v", cols)
+					}
+				}
+			}
+			if firstArray.Items != firstRef || secondArray.Items != secondRef || len(first.Properties) != 1 || len(second.Properties) != 2 || !identifier.Nullable || !reflect.DeepEqual(first.Required, []string{"id"}) || !reflect.DeepEqual(second.Required, []string{"name"}) {
+				t.Fatal("discovery mutated shared item schemas")
+			}
+		})
 	}
 }
 
