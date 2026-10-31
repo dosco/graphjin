@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -9,6 +10,53 @@ func TestFragmentsCanReferenceLaterDefinitions(t *testing.T) {
 	_, err := Parse([]byte(`fragment A on products { id ...B } fragment B on products { name } query { products { ...A } }`))
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func fragmentChain(count int, cyclic, reverse bool) []byte {
+	var query strings.Builder
+	for j := 0; j < count; j++ {
+		i := j
+		if reverse {
+			i = count - j - 1
+		}
+		fmt.Fprintf(&query, "fragment F%d on products { ", i)
+		if i+1 < count {
+			fmt.Fprintf(&query, "...F%d", i+1)
+		} else if cyclic {
+			query.WriteString("...F0")
+		} else {
+			query.WriteString("id")
+		}
+		query.WriteString(" } ")
+	}
+	query.WriteString("query { products { ...F0 } }")
+	return []byte(query.String())
+}
+
+func TestFragmentDependencyDepthIsBounded(t *testing.T) {
+	for _, reverse := range []bool{false, true} {
+		if op, err := Parse(fragmentChain(100, false, reverse)); err != nil || len(op.Fields) != 2 {
+			t.Fatalf("valid chain: fields=%d err=%v", len(op.Fields), err)
+		}
+		for _, cyclic := range []bool{false, true} {
+			for _, count := range []int{101, 3000} {
+				_, err := Parse(fragmentChain(count, cyclic, reverse))
+				if err == nil {
+					t.Fatalf("accepted chain of %d fragments (cyclic=%v, reverse=%v)", count, cyclic, reverse)
+				}
+				if len(err.Error()) > 256 {
+					t.Fatalf("fragment error grew with dependency chain: %d bytes", len(err.Error()))
+				}
+			}
+		}
+	}
+}
+
+func TestSharedFragmentDependenciesRemainReusable(t *testing.T) {
+	op, err := Parse([]byte(`fragment A on products { ...C } fragment B on products { ...C } fragment C on products { id } query { products { ...A ...B } }`))
+	if err != nil || len(op.Fields) != 3 {
+		t.Fatalf("shared dependency: fields=%d err=%v", len(op.Fields), err)
 	}
 }
 

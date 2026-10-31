@@ -13,8 +13,9 @@ import (
 var errEOT = errors.New("end of tokens")
 
 const (
-	maxFields = 1200
-	maxArgs   = 25
+	maxFields        = 1200
+	maxArgs          = 25
+	maxFragmentDepth = 100
 )
 
 type ParserType int8
@@ -60,6 +61,7 @@ type Fragment struct {
 	On     string
 	Fields []Field
 	Value  []byte
+	depth  int // longest fragment dependency path, including this fragment
 }
 
 type Field struct {
@@ -117,6 +119,7 @@ type Parser struct {
 	frags     map[string]Fragment
 	fragPos   map[string]int
 	resolving map[string]bool
+	fragDepth [maxFragmentDepth]int
 	input     []byte // the string being scanned
 	pos       int
 	items     []item
@@ -250,7 +253,7 @@ func (p *Parser) indexFragment() error {
 
 func (p *Parser) resolveFragment(name string) (Fragment, error) {
 	if frag, ok := p.frags[name]; ok {
-		return frag, nil
+		return frag, p.recordFragmentDepth(frag.depth)
 	}
 	pos, ok := p.fragPos[name]
 	if !ok {
@@ -259,16 +262,41 @@ func (p *Parser) resolveFragment(name string) (Fragment, error) {
 	if p.resolving[name] {
 		return Fragment{}, fmt.Errorf("cyclic fragment reference: %s", name)
 	}
+	if len(p.resolving) >= maxFragmentDepth {
+		return Fragment{}, fmt.Errorf("fragment reference depth exceeds limit of %d", maxFragmentDepth)
+	}
 	if p.resolving == nil {
 		p.resolving = make(map[string]bool)
 	}
 	p.resolving[name] = true
+	p.fragDepth[len(p.resolving)-1] = 1
 	saved := p.pos
 	p.reset(pos)
 	frag, err := p.parseFragment()
 	p.reset(saved)
+	frag.depth = p.fragDepth[len(p.resolving)-1]
 	delete(p.resolving, name)
-	return frag, err
+	if err != nil {
+		return Fragment{}, err
+	}
+	if p.frags == nil {
+		p.frags = make(map[string]Fragment)
+	}
+	p.frags[name] = frag
+	return frag, p.recordFragmentDepth(frag.depth)
+}
+
+// Include cached dependency paths in the limit so acceptance does not depend
+// on which fragment definition was resolved first.
+func (p *Parser) recordFragmentDepth(depth int) error {
+	n := len(p.resolving)
+	if n+depth > maxFragmentDepth {
+		return fmt.Errorf("fragment reference depth exceeds limit of %d", maxFragmentDepth)
+	}
+	if n != 0 && p.fragDepth[n-1] < depth+1 {
+		p.fragDepth[n-1] = depth + 1
+	}
+	return nil
 }
 
 func (p *Parser) parseFragment() (frag Fragment, err error) {
@@ -304,7 +332,6 @@ func (p *Parser) parseFragment() (frag Fragment, err error) {
 
 	frag.Fields, err = p.parseFields(frag.Fields)
 	if err != nil {
-		err = fmt.Errorf("fragment: %v", err)
 		return
 	}
 
@@ -314,14 +341,6 @@ func (p *Parser) parseFragment() (frag Fragment, err error) {
 
 	e := p.curr().pos + 1
 	frag.Value = p.input[s:e]
-
-	if p.frags == nil {
-		p.frags = map[string]Fragment{
-			frag.Name: frag,
-		}
-	} else {
-		p.frags[frag.Name] = frag
-	}
 
 	return frag, nil
 }
