@@ -2,9 +2,10 @@ package valid
 
 import (
 	"encoding/json"
+	"testing"
+
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
-	"testing"
 )
 
 func compileStringConstraint(t *testing.T, dialect, directive string) *qcode.QCode {
@@ -23,6 +24,58 @@ func compileStringConstraint(t *testing.T, dialect, directive string) *qcode.QCo
 		t.Fatal(err)
 	}
 	return compiled
+}
+
+func TestConstraintStringsUseDecodedJSONValues(t *testing.T) {
+	for _, dialect := range []string{"postgres", "mysql", "sqlite"} {
+		for _, tc := range []struct{ value, raw string }{
+			{"<tag>", `"<tag>"`},
+			{"A&B", `"A&B"`},
+			{"a>b", `"a>b"`},
+			{"Ada", `"\u0041da"`},
+			{"a/b", `"a\/b"`},
+			{"line\nfeed", `"line\u000afeed"`},
+			{"café🙂", `"caf\u00e9\ud83d\ude42"`},
+			{"a\u2028b", "\"a\u2028b\""},
+		} {
+			t.Run(dialect+"/"+tc.value, func(t *testing.T) {
+				literal, _ := json.Marshal(tc.value)
+				for _, validator := range []string{"equals", "notEquals", "oneOf", "equalsField", "notEqualsField", "requiredIf", "requiredUnless"} {
+					t.Run(validator, func(t *testing.T) {
+						argument := string(literal)
+						vars := qcode.Vars{"target": json.RawMessage(tc.raw)}
+						wantError := validator == "notEquals" || validator == "notEqualsField" || validator == "requiredIf"
+						switch validator {
+						case "oneOf":
+							argument = "[" + argument + "]"
+						case "equalsField", "notEqualsField":
+							argument = `"other"`
+							vars["other"] = literal
+						case "requiredIf", "requiredUnless":
+							argument = "{other:" + argument + "}"
+							delete(vars, "target")
+							vars["other"] = json.RawMessage(tc.raw)
+						}
+						compiled := compileStringConstraint(t, dialect, validator+":"+argument)
+						if got := len(compiled.ProcessConstraints(vars)) != 0; got != wantError {
+							t.Fatalf("equivalent JSON encodings: rejected=%v, want %v", got, wantError)
+						}
+					})
+				}
+			})
+		}
+	}
+}
+
+func TestConstraintStringComparisonKeepsValueAndTypeDistinct(t *testing.T) {
+	for _, directive := range []string{`equals:"1"`, `oneOf:["1"]`} {
+		compiled := compileStringConstraint(t, "postgres", directive)
+		for _, raw := range []string{`1`, `null`, `true`, `"2"`, `"\u0031!"`} {
+			if errs := compiled.ProcessConstraints(qcode.Vars{"target": json.RawMessage(raw)}); len(errs) != 1 {
+				t.Fatalf("%s accepted distinct value %s: %v", directive, raw, errs)
+			}
+		}
+	}
 }
 
 func TestConstraintStringLiteralsMatchJSONVariables(t *testing.T) {
