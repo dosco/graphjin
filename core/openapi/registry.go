@@ -163,9 +163,13 @@ func (op *OpDescriptor) ResolveCallParams(args map[string]string) (CallParams, e
 				v, ok = d, true
 			}
 		}
-		if ok {
-			p.QueryValues[qs.Name] = v
+		if !ok {
+			if qs.Required {
+				return p, fmt.Errorf("openapi: required query param %q missing for %s", qs.Name, op.OperationID)
+			}
+			continue
 		}
+		p.QueryValues[qs.Name] = v
 	}
 	return p, nil
 }
