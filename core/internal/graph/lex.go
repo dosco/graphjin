@@ -367,11 +367,11 @@ func lexName(l *lexer) StateFn {
 
 			switch {
 			case equals(val, onToken):
-				l.emitL(itemOn)
+				l.emit(itemOn)
 			case equals(val, trueToken):
-				l.emitL(itemBoolVal)
+				l.emit(itemBoolVal)
 			case equals(val, falseToken):
-				l.emitL(itemBoolVal)
+				l.emit(itemBoolVal)
 			default:
 				l.emit(itemName)
 			}
