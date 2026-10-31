@@ -335,26 +335,24 @@ func (c *Caller) buildURL(p CallParams) (string, error) {
 	return u.String(), nil
 }
 
-// stripResultPath walks a sequence of object keys and returns the
-// re-encoded value at the end of the path. We deliberately round-trip
-// through map[string]interface{} rather than streaming — the round-trip
-// is a few microseconds on payloads of any sane size, and the streaming
-// alternative is much harder to make correct against arbitrary input.
+// stripResultPath walks a sequence of object keys and returns the JSON value
+// at the end of the path. Raw messages preserve numeric precision and avoid
+// decoding values that do not participate in the result path.
 func stripResultPath(body []byte, path []string) ([]byte, error) {
-	var v interface{}
-	if err := json.Unmarshal(body, &v); err != nil {
+	var value json.RawMessage
+	if err := json.Unmarshal(body, &value); err != nil {
 		return nil, err
 	}
 	for _, key := range path {
-		m, ok := v.(map[string]interface{})
-		if !ok {
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal(value, &object); err != nil || object == nil {
 			return nil, fmt.Errorf("expected object at result_path step %q", key)
 		}
-		next, ok := m[key]
+		next, ok := object[key]
 		if !ok {
 			return nil, fmt.Errorf("result_path key %q not found in response", key)
 		}
-		v = next
+		value = next
 	}
-	return json.Marshal(v)
+	return value, nil
 }
