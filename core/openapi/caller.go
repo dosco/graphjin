@@ -324,9 +324,6 @@ func (c *Caller) buildURL(p CallParams) (string, error) {
 	if len(p.QueryValues) > 0 {
 		q := u.Query()
 		for k, v := range p.QueryValues {
-			if v == "" {
-				continue
-			}
 			q.Set(k, v)
 		}
 		u.RawQuery = q.Encode()
