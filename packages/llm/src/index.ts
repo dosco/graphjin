@@ -34,6 +34,7 @@ export {
   detectDataSourceAuthorizationError,
   detectUpstreamError,
 } from "./agent-error";
+export { AX_HARNESS_BINARY } from "./agent-runtime-contract";
 export {
   ensureHostConfigProvisioned,
   loadAgentModelKeys,

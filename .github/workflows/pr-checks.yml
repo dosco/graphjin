@@ -180,7 +180,7 @@ jobs:
     name: Web design system
     needs: plan
     if: needs.plan.outputs.design_system == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # Solo-mode pages resolve a persisted identity, just like installed instances.
     services:
