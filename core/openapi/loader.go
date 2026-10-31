@@ -131,7 +131,15 @@ func Load(opts LoaderOptions, configs map[string]SpecConfig, logger *log.Logger)
 
 		baseURL := cfg.BaseURL
 		if baseURL == "" && len(doc.Servers) > 0 {
-			baseURL = doc.Servers[0].URL
+			server := doc.Servers[0]
+			baseURL = server.URL
+			replacements := make([]string, 0, len(server.Variables)*2)
+			for name, variable := range server.Variables {
+				if variable != nil {
+					replacements = append(replacements, "{"+name+"}", variable.Default)
+				}
+			}
+			baseURL = strings.NewReplacer(replacements...).Replace(baseURL)
 		}
 
 		spec := &Spec{
