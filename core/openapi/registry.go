@@ -119,6 +119,10 @@ type OpDescriptor struct {
 	// tables so they are visible to GraphQL introspection.
 	ResponseSchema *openapi3.SchemaRef
 
+	// ResponseMediaTypes are the declared JSON success representations the
+	// caller can consume. They form the outgoing Accept header.
+	ResponseMediaTypes []string
+
 	// Mutation request/response contract retained from the OpenAPI operation.
 	RequestMediaType    string
 	RequestBodySchema   *openapi3.SchemaRef
@@ -163,9 +167,13 @@ func (op *OpDescriptor) ResolveCallParams(args map[string]string) (CallParams, e
 				v, ok = d, true
 			}
 		}
-		if ok {
-			p.QueryValues[qs.Name] = v
+		if !ok {
+			if qs.Required {
+				return p, fmt.Errorf("openapi: required query param %q missing for %s", qs.Name, op.OperationID)
+			}
+			continue
 		}
+		p.QueryValues[qs.Name] = v
 	}
 	return p, nil
 }

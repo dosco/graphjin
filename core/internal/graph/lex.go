@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -192,6 +193,15 @@ func unescapeStringValue(value []byte) []byte {
 		case 'u':
 			if i+4 < len(value) {
 				if r, err := strconv.ParseUint(string(value[i+1:i+5]), 16, 32); err == nil {
+					if r >= 0xD800 && r <= 0xDBFF && i+10 < len(value) &&
+						value[i+5] == '\\' && value[i+6] == 'u' {
+						if low, err := strconv.ParseUint(string(value[i+7:i+11]), 16, 32); err == nil &&
+							low >= 0xDC00 && low <= 0xDFFF {
+							out = utf8.AppendRune(out, utf16.DecodeRune(rune(r), rune(low)))
+							i += 10
+							continue
+						}
+					}
 					out = utf8.AppendRune(out, rune(r))
 					i += 4
 					continue
@@ -346,22 +356,17 @@ func lexName(l *lexer) StateFn {
 	for {
 		r := l.next()
 
-		if r == eof {
-			l.emit(itemEOF)
-			return nil
-		}
-
 		if !isAlphaNumeric(r) {
 			l.backup()
 			val := l.current()
 
 			switch {
 			case equals(val, onToken):
-				l.emitL(itemOn)
+				l.emit(itemOn)
 			case equals(val, trueToken):
-				l.emitL(itemBoolVal)
+				l.emit(itemBoolVal)
 			case equals(val, falseToken):
-				l.emitL(itemBoolVal)
+				l.emit(itemBoolVal)
 			default:
 				l.emit(itemName)
 			}
@@ -384,7 +389,7 @@ func lexString(l *lexer) StateFn {
 				return nil
 			}
 			if r == '\\' {
-				escaped = true
+				escaped = !escaped
 				continue
 			}
 			if !escaped && r == sr {
@@ -418,12 +423,32 @@ func lexNumber(l *lexer) StateFn {
 func (l *lexer) scanNumber() bool {
 	// Optional leading sign.
 	l.accept(signsToken)
+	integerStart := l.pos
 	l.acceptRun(digitToken)
+	integerEnd := l.pos
+	hasInteger := integerEnd > integerStart
+	exponent := false
 	if _, ok := l.accept(dotToken); ok {
 		l.acceptRun(digitToken)
 	}
-	// Is it imaginary?
-	l.accept([]byte("i"))
+	if _, ok := l.accept([]byte("eE")); ok {
+		exponent = true
+		if !hasInteger || l.input[l.start] == '+' ||
+			(integerEnd-integerStart > 1 && l.input[integerStart] == '0') ||
+			l.input[l.pos-2] == '.' {
+			return false
+		}
+		l.accept(signsToken)
+		start := l.pos
+		l.acceptRun(digitToken)
+		if start == l.pos {
+			return false
+		}
+	}
+	// Preserve the existing imaginary-number extension for non-exponent values.
+	if !exponent {
+		l.accept([]byte("i"))
+	}
 	// Next thing mustn't be alphanumeric.
 	if isAlphaNumeric(l.peek()) {
 		l.next()
@@ -434,7 +459,7 @@ func (l *lexer) scanNumber() bool {
 
 // isSpace reports whether r is a space character.
 func isSpace(r rune) bool {
-	return r == ',' || r == ' ' || r == '\t'
+	return r == ',' || r == ' ' || r == '\t' || r == '\uFEFF'
 }
 
 // isEndOfLine reports whether r is an end-of-line character.

@@ -2,6 +2,7 @@ package valid
 
 import (
 	"bytes"
+	"fmt"
 	"strconv"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
@@ -173,11 +174,14 @@ func requiredUnless(args []string) (fn qcode.ValidFn, err error) {
 }
 
 func requiredIfUnless(args []string, isIf bool) (fn qcode.ValidFn, err error) {
+	if len(args)%2 != 0 {
+		return nil, fmt.Errorf("conditional values must be field/value pairs")
+	}
 	keys := make([]string, len(args)/2)
 	values := make([][]byte, len(args)/2)
 	for i := 0; i < len(args); i += 2 {
-		keys[i] = args[i]
-		values[i] = []byte(args[(i + 1)])
+		keys[i/2] = args[i]
+		values[i/2] = []byte(args[i+1])
 	}
 	fn = func(vars qcode.Vars, c qcode.Constraint) bool {
 		m := true
@@ -257,6 +261,7 @@ func equalsAndNotEquals(args []string, equals bool, field bool) (fn qcode.ValidF
 		val = []byte(args[0])
 	}
 	fn = func(vars qcode.Vars, c qcode.Constraint) bool {
+		expected := val
 		v1, ok := vars[c.VarName]
 		if !ok {
 			return false
@@ -266,12 +271,12 @@ func equalsAndNotEquals(args []string, equals bool, field bool) (fn qcode.ValidF
 			if !ok {
 				return false
 			}
-			val = v2
+			expected = v2
 		}
 		if equals {
-			return bytes.Equal(v1, val)
+			return bytes.Equal(v1, expected)
 		} else {
-			return !bytes.Equal(v1, val)
+			return !bytes.Equal(v1, expected)
 		}
 	}
 	return
@@ -294,26 +299,29 @@ func requiredWithoutAll(args []string) (fn qcode.ValidFn, err error) {
 }
 
 func conditionalRequired(args []string, with, all bool) (fn qcode.ValidFn, err error) {
-	keys := make([]string, len(args)/2)
-	values := make([][]byte, len(args)/2)
-	for i := 0; i < len(args); i += 2 {
-		keys[i] = args[i]
-		values[i] = []byte(args[(i + 1)])
+	keys := make([]string, len(args))
+	for i, arg := range args {
+		key, decodeErr := strconv.Unquote(arg)
+		if decodeErr != nil {
+			key = arg
+		}
+		keys[i] = key
 	}
 	fn = func(vars qcode.Vars, c qcode.Constraint) bool {
-		m := all // if all then m = true else m = false
-		for _, k := range keys {
-			_, ok := vars[k]
-			if all && !ok {
+		m := all
+		for _, key := range keys {
+			_, present := vars[key]
+			matches := present == with
+			if all && !matches {
 				m = false
 				break
-			} else if !all && ok {
+			}
+			if !all && matches {
 				m = true
 				break
 			}
 		}
-		// required if with one or all or required if without one or all
-		if (with && m) || (!with && !m) {
+		if m {
 			_, ok := vars[c.VarName]
 			return ok
 		}
@@ -383,6 +391,7 @@ func greaterAndLessThanAndOrEquals(args []string, greater, equals, field bool) (
 		}
 	}
 	fn = func(vars qcode.Vars, c qcode.Constraint) bool {
+		expected := val
 		v1, ok := vars[c.VarName]
 		if !ok {
 			return false
@@ -392,10 +401,11 @@ func greaterAndLessThanAndOrEquals(args []string, greater, equals, field bool) (
 			if !ok {
 				return false
 			}
-			val, err = strconv.Atoi(string(v2))
-			if err != nil {
+			parsed, parseErr := strconv.Atoi(string(v2))
+			if parseErr != nil {
 				return false
 			}
+			expected = parsed
 		}
 		n, err := strconv.Atoi(string(v1))
 		if err != nil {
@@ -403,13 +413,13 @@ func greaterAndLessThanAndOrEquals(args []string, greater, equals, field bool) (
 		}
 		switch {
 		case greater && !equals:
-			return n > val
+			return n > expected
 		case greater && equals:
-			return n >= val
+			return n >= expected
 		case !greater && !equals:
-			return n < val
+			return n < expected
 		case !greater && equals:
-			return n <= val
+			return n <= expected
 		default:
 			return false
 		}
