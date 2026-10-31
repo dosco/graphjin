@@ -144,7 +144,6 @@ describe("buildProfilerPrompt knowledge inlining", () => {
     const prompt = buildProfilerPrompt({
       orgName: "Acme",
       companyNote: "",
-      shellTool: "terminal",
       queryTool: "mcp_neko_graphjin_execute_graphql",
       knowledge: {
         mode: "agentic",
@@ -173,7 +172,6 @@ describe("buildProfilerPrompt knowledge inlining", () => {
     const prompt = buildProfilerPrompt({
       orgName: "Acme",
       companyNote: "",
-      shellTool: "terminal",
       queryTool: "mcp_neko_graphjin_execute_graphql",
       knowledge: {
         mode: "legacy",
@@ -190,7 +188,6 @@ describe("buildProfilerPrompt knowledge inlining", () => {
     const prompt = buildProfilerPrompt({
       orgName: "Acme",
       companyNote: "",
-      shellTool: "terminal",
       queryTool: "mcp_neko_graphjin_execute_graphql",
       knowledge: {
         mode: "agentic",

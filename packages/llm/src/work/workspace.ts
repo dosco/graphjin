@@ -428,7 +428,27 @@ export async function copySkillOverrides(
   return copied;
 }
 
+/**
+ * Built-in skills that left the bundle because they ran scripts. A workspace
+ * copy nobody changed is removed; a copy an admin edited is theirs and stays.
+ */
+export const RETIRED_BUILTIN_SKILLS = [
+  "3-statement-model", "comps-analysis", "dcf-model", "document-extraction", "docx", "excel-author",
+  "lbo-model", "merger-model", "pdf", "pptx", "pptx-author", "skill-creator", "xlsx",
+] as const;
+
+async function pruneRetiredBuiltinSkills(skillsRoot: string): Promise<void> {
+  for (const name of RETIRED_BUILTIN_SKILLS) {
+    const dir = join(skillsRoot, name);
+    const origin = await readSkillOrigin(dir);
+    if (origin?.kind !== "builtin") continue;
+    const unchanged = await fingerprintSkillTree(dir).then((hash) => hash === origin.sourceHash, () => false);
+    if (unchanged) await rm(dir, { recursive: true, force: true });
+  }
+}
+
 async function seedBuiltinSkills(skillsRoot: string, allowedSkills?: readonly string[]): Promise<void> {
+  await pruneRetiredBuiltinSkills(skillsRoot);
   const allowed = allowedSkills ? new Set(allowedSkills) : null;
   const entries = await readdir(BUILTIN_SKILLS_ROOT, { withFileTypes: true });
   for (const entry of entries) {

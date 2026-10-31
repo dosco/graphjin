@@ -14,7 +14,7 @@
  *   - docker compose stack up (neko-db + adventureworks-db + graphjin)
  *   - At least one of GEMINI_API_KEY / ANTHROPIC_API_KEY set
  *   - graphjin CLI on PATH
- *   - the agent runtime: `openneko serve` and `openneko sandbox`
+ *   - the agent runtime: `openneko serve`
  *     (pnpm dev:agent), with OPENNEKO_SERVE_SOCKET set
  *
  * Asserts only shape — validateResult returns null, mood + chartType +

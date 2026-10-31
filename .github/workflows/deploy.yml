@@ -153,35 +153,6 @@ jobs:
               console.log("authenticated_datasource_query=ok");
             '
 
-            # Exercise the path that ordinary HTTP health checks missed in
-            # PR #208: a supervisor inside a fresh sandbox must call back to
-            # the containerised gateway and reach Ready.
-            trap 'docker exec "$WORKER" openshell sandbox delete --gateway openneko neko-deploy-smoke >/dev/null 2>&1 || true' EXIT
-            docker exec -i "$WORKER" sh -c 'cat > /tmp/openneko-smoke-policy.yaml' <<'POLICY'
-          version: 1
-          filesystem_policy:
-            include_workdir: true
-            read_only: [/usr, /lib, /proc, /dev/urandom, /app, /etc, /var/log]
-            read_write: [/sandbox, /tmp, /dev/null]
-          landlock:
-            compatibility: best_effort
-          process:
-            run_as_user: sandbox
-            run_as_group: sandbox
-          network_policies: {}
-          POLICY
-            docker exec "$WORKER" openshell sandbox create \
-              --gateway openneko --name neko-deploy-smoke \
-              --from "ghcr.io/open-neko/agent:$DEPLOY_IMAGE_TAG" \
-              --policy /tmp/openneko-smoke-policy.yaml \
-              --detach --no-tty --no-auto-providers -- sleep infinity
-            docker exec "$WORKER" openshell sandbox exec \
-              --gateway openneko -n neko-deploy-smoke --no-tty -- \
-              node /app/entry.js --preflight
-            docker exec "$WORKER" openshell sandbox delete \
-              --gateway openneko neko-deploy-smoke
-            trap - EXIT
-
             # Process liveness used to pass while pg-boss's schedule polling
             # had silently stopped. Require a successful durable scheduler DB
             # transaction after this worker boot before accepting the deploy.

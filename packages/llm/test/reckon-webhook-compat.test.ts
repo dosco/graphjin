@@ -116,9 +116,9 @@ describe("reckon webhook contract", () => {
     });
     expect(message).toContain("[webhook run started at 2026-09-18T07:00:00.000Z]");
     expect(message).toContain('"accounts"');
-    expect(message).toContain("$ARTIFACT_DIR/result.csv");
+    expect(message).toContain("result.csv in the run's artifact folder");
     expect(message).toContain("chunks of at most 250 records");
-    expect(message).toContain("$RUN_DIR/trigger_input.json");
+    expect(message).toContain("in the run folder as trigger_input.json");
     expect(reckonSeedMessageFrom({ openneko_reckon_webhook: { message } })).toBe(message);
     expect(reckonSeedMessageFrom({ other: 1 })).toBeNull();
   });
@@ -166,7 +166,7 @@ describeIfDb("reckon webhook admission", () => {
         [workflowId],
       );
       expect(admission.rows[0]).toMatchObject({ status: "pending", execution_mode: "single", trigger_kind: "api", run_status: "queued" });
-      expect(reckonSeedMessageFrom(admission.rows[0].request_payload)).toContain("$ARTIFACT_DIR/result.csv");
+      expect(reckonSeedMessageFrom(admission.rows[0].request_payload)).toContain("result.csv in the run's artifact folder");
 
       const reservation = await pool().query(
         "select source, reserved_micros from spend_reservation where org_id = $1",

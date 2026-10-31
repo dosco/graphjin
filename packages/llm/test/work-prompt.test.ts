@@ -109,16 +109,17 @@ describe("buildWorkPrompt attachments guidance", () => {
     const prompt = build("ax");
     expect(prompt).toContain("<attachments>");
     expect(prompt).toContain("uploads/<threadId>/<filename>");
-    expect(prompt).toContain("`Read` tool");
+    expect(prompt).toContain("a text\nfile with your file tools");
     // Path is relative to cwd, which is orgRoot.
     expect(prompt).toContain(workspace.orgRoot);
   });
 
-  it("references the agent's shell tool", () => {
+  it("reads documents and spreadsheets through the Library", () => {
     const prompt = build("ax");
     expect(prompt).toContain("<attachments>");
-    // The attachments block names the terminal tool for non-text formats.
-    expect(prompt).toContain("`terminal`");
+    expect(prompt).toContain("`mcp_neko_library_search`");
+    expect(prompt).not.toContain("`terminal`");
+    expect(prompt).not.toContain("Python 3");
   });
 
   it("no longer dismisses uploaded files as 'auxiliary'", () => {
@@ -259,8 +260,8 @@ describe("tool-result grounding", () => {
     expect(prompt).toContain("use a shared source label only when every named");
     expect(prompt).toContain("displayed rows must reconcile");
     expect(prompt).toContain("explicitly stated multi-day summaries");
-    expect(prompt).toContain("use it instead of");
-    expect(prompt).toContain("direct network access from the terminal");
+    expect(prompt).toContain("When a brokered integration can perform a live request, use it.");
+    expect(prompt).toContain("A network denial means live data is unavailable.");
   });
 });
 

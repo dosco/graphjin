@@ -2,7 +2,6 @@ import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { data_source, db, desc, eq, graphjinAgentEnabledForOrg } from "@neko/db";
 import { errorCodeOf, observeSafely, type HarnessObserver } from "@neko/telemetry";
 import {
-  shellToolName,
   type AgentBackend,
   type AgentEvent,
   type AgentRunResult,
@@ -213,7 +212,6 @@ async function runMetricAgentTraced(
       input,
       knowledge,
       workspace: isolated.workspace,
-      shellTool: shellToolName(backend.id),
       ...(graphjinPath === "direct"
         ? { queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE }
         : { dataAgentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE }),

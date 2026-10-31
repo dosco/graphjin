@@ -1,4 +1,4 @@
-import { shellToolName, type AgentBackendId, type AgentChatMessage, type AgentWorkspace } from "../agent-backend";
+import { type AgentBackendId, type AgentChatMessage, type AgentWorkspace } from "../agent-backend";
 import { type KnowledgePackContents } from "../knowledge-pack";
 import {
   AX_DELEGATION,
@@ -465,12 +465,7 @@ function buildSkillsSection(
 \`mcp_neko_skills_create_skill\`.`
       : `When the user asks you to create or update a skill, write its
 agentskills.io-style files to
-\`${workspace.skillsRoot}/<skill-name>/SKILL.md\` using your shell tool.`;
-
-  const libraries = `The host image ships
-Python 3, LibreOffice (\`soffice\`), Poppler (\`pdftotext\`), qpdf, plus
-pip libs: pypdf, pdfplumber, reportlab, Pillow, openpyxl, python-pptx,
-python-docx, PyYAML.`;
+\`${workspace.skillsRoot}/<skill-name>/SKILL.md\` with your file tools.`;
 
   return `<skills>
 Skill guides hold the team's instructions for recurring work of every kind:
@@ -480,16 +475,13 @@ are listed under it; load the one that fits with discover({ skills: ["<name>"] }
 before you start. For work no listed guide covers, search with
 discover({ skills: ["<the task, in a few words>"] }). Follow a loaded guide over
 your own approach. Each guide and its supporting files live under
-skills/<name>/; read or edit them with your file tools. ${libraries}
+skills/<name>/; read or edit them with your file tools.
 
 ${creationGuidance}
 </skills>`;
 }
 
-function buildWorkspaceSection(
-  workspace: AgentWorkspace,
-  shellTool: string,
-): string {
+function buildWorkspaceSection(workspace: AgentWorkspace): string {
   return `<workspace>
 Your cwd is ${workspace.orgRoot}. Shared directories:
 
@@ -497,6 +489,7 @@ Your cwd is ${workspace.orgRoot}. Shared directories:
 - Memory: ${workspace.memoryRoot}
 - Knowledge: ${workspace.knowledgeRoot}
 - Uploads for this thread: ${workspace.threadUploadsRoot}
+- This run's folder: ${workspace.runRoot}
 - Artifacts for this run: ${workspace.artifactRoot}
 
 Read and write within those directories when needed. Save generated
@@ -512,9 +505,11 @@ When the user attaches files, their message will end with lines like:
   I've attached a file:
   - uploads/<threadId>/<filename>  (<filename>, <size> KB)
 
-Those paths are relative to your cwd. Before answering, read the file with
-the \`Read\` tool (or \`${shellTool}\` for non-text formats) — the user expects
-you to actually inspect what they attached. Cite the relative path when you
+Those paths are relative to your cwd. Before answering, read the file: a text
+file with your file tools, and a PDF, Office document or spreadsheet through
+the Library, where the upload is also saved. Find it with
+\`mcp_neko_library_search\` and read or query it with your GraphJin data
+tools. The user expects you to actually inspect what they attached. Cite the relative path when you
 reference content from the file.
 </attachments>
 </workspace>`;
@@ -556,12 +551,11 @@ ${GRAPHJIN_DATE_RULE}
   unless each date-to-value mapping is unambiguous in the tool result. Prefer
   the source's explicitly stated multi-day summaries over a plausible-looking
   daily table.
-- When a brokered integration can perform a live request, use it instead of
-  attempting direct network access from the terminal. Sandbox network access
-  is default-deny. If one path fails but another returns the requested live
+- When a brokered integration can perform a live request, use it. If one
+  path fails but another returns the requested live
   data, answer from the successful result and do not present the failed path as
   the outcome.
-- A sandbox network denial means live data is unavailable. Never replace a
+- A network denial means live data is unavailable. Never replace a
   denied live request with seasonal norms, remembered values, or invented
   figures. State exactly what could not be reached and offer an approved
   integration. Only provide an estimate when the operator explicitly asks for
@@ -770,7 +764,6 @@ export function buildWorkPrompt(args: {
     graphjinDataPath = "direct",
     bot,
   } = args;
-  const shellTool = shellToolName(backend);
 
   const sections: string[] = [
     `<role>
@@ -791,12 +784,10 @@ that flags churn risk every Monday."
     buildSourceConfigSection(supportsSourceConfigTool, workspace),
     buildNativeDelegationSection(supportsNativeDelegation, backend),
     graphjinDataPath === "agent"
-      ? buildDataAccessSection({ shellTool, agentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE, workspace, knowledge, inlineKnowledge: "syntax" })
+      ? buildDataAccessSection({ agentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE, workspace, knowledge, inlineKnowledge: "syntax" })
       : buildDataAccessSection({
-          shellTool,
           queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
           queryIdentity: "actor",
-          scriptAccess: true,
           workspace,
           knowledge,
           inlineKnowledge: "syntax",
@@ -807,7 +798,7 @@ that flags churn risk every Monday."
     // Prompt caches reuse the identical prefix: org-wide sections above, per-user to per-message below.
     operatorProfile ?? "",
     bot ? buildBotSection(bot) : "",
-    buildWorkspaceSection(workspace, shellTool),
+    buildWorkspaceSection(workspace),
     buildMemorySection({
       searchTool: supportsMemoryTool,
       saveMode: supportsMemoryTool ? "tool" : "fence",

@@ -295,42 +295,6 @@ jobs:
             exit 1
           fi
 
-      - name: OpenShell work sandbox lifecycle smoke
-        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
-        env:
-          OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
-        run: |
-          set -euo pipefail
-          worker=$(docker ps -q \
-            --filter label=com.docker.compose.project=openneko-demo \
-            --filter label=com.docker.compose.service=worker | head -1)
-          test -n "$worker"
-          sandbox="neko-smoke-$$"
-          trap 'docker exec "$worker" openshell --gateway openneko sandbox delete "$sandbox" >/dev/null 2>&1 || true' EXIT
-          # Work sandboxes supply /app in their creation policy. Without it,
-          # OpenShell's no-network default denies the agent bundle under Landlock.
-          docker exec -i "$worker" sh -c 'cat > /tmp/openneko-smoke-policy.yaml' <<'POLICY'
-          version: 1
-          filesystem_policy:
-            include_workdir: true
-            read_only: [/usr, /lib, /proc, /dev/urandom, /app, /etc, /var/log]
-            read_write: [/sandbox, /tmp, /dev/null]
-          landlock:
-            compatibility: best_effort
-          process:
-            run_as_user: sandbox
-            run_as_group: sandbox
-          network_policies: {}
-          POLICY
-          docker exec "$worker" openshell sandbox create \
-            --gateway openneko \
-            --name "$sandbox" \
-            --from "ghcr.io/open-neko/agent:$OPENNEKO_VERSION" \
-            --policy /tmp/openneko-smoke-policy.yaml \
-            --detach --no-tty --no-auto-providers -- sleep infinity
-          docker exec "$worker" openshell --gateway openneko sandbox exec \
-            -n "$sandbox" --no-tty -- node /app/entry.js --preflight
-
       # Failed releases are demoted to prerelease by the failure path below.
       # A manual recovery must reverse that state before this workflow ends:
       # Deploy-to-VM is triggered by our completion and resolves releases/latest.

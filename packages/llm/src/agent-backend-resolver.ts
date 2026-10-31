@@ -80,15 +80,6 @@ export async function resolveAgentConcurrency(orgId: string): Promise<AgentConcu
   };
 }
 
-/**
- * Whether the org's agent may use the terminal. On unless an admin turned it
- * off at Admin → Settings → Agent; read for every run, so a change applies to
- * the next run.
- */
-export async function resolveAgentTerminal(orgId: string): Promise<boolean> {
-  const row = await loadRow(orgId, "agent");
-  return (row?.config as { terminal?: unknown } | null)?.terminal !== false;
-}
 
 function positiveInt(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;

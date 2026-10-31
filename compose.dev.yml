@@ -1,5 +1,5 @@
 # Development backing services. Web and worker run on the host with hot
-# reload (`pnpm dev`), and so do `openneko serve` and `openneko sandbox`
+# reload (`pnpm dev`), and so does `openneko serve`
 # (scripts/dev-agent.sh). `pnpm dev:up` starts these services with
 # compose.yml, compose.adventureworks.yml and compose.graphjin-agent.yml
 # (sources-mode customer GraphJin).

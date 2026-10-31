@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  RETIRED_BUILTIN_SKILLS,
   SKILL_ORIGIN_FILE,
   copySkillOverrides,
   ensureIsolatedJobWorkspace,
@@ -92,8 +93,8 @@ describe("work workspace", () => {
     const workspace = await ensureOrgWorkspace("org-test");
     const skills = await readdir(workspace.skillsRoot);
     expect(skills).not.toContain("records");
-    expect(skills).toContain("skill-creator");
-    expect(skills).toContain("pdf");
+    expect(skills).toContain("graphjin-config");
+    expect(skills).toContain("internal-comms");
   }, 30_000);
 
   it("creates per-thread and per-run directories", async () => {
@@ -113,7 +114,7 @@ describe("work workspace", () => {
     process.env.HOME = home;
 
     const workspace = await ensureOrgWorkspace("org-test");
-    const modified = join(workspace.skillsRoot, "skill-creator", "SKILL.md");
+    const modified = join(workspace.skillsRoot, "graphjin-config", "SKILL.md");
     await writeFile(modified, `${await readFile(modified, "utf8")}\nOrg override.\n`);
     const custom = join(workspace.skillsRoot, "quarterly-review");
     await mkdir(custom, { recursive: true });
@@ -125,12 +126,12 @@ describe("work workspace", () => {
     const stagedSkills = join(stage, "skills");
     const copied = await copySkillOverrides(workspace.skillsRoot, stagedSkills);
     expect(copied).toContain("quarterly-review");
-    expect(copied).toContain("skill-creator");
-    expect(copied).not.toContain("pdf");
+    expect(copied).toContain("graphjin-config");
+    expect(copied).not.toContain("internal-comms");
 
     await materializeBuiltinSkills(stagedSkills);
-    expect(await readdir(stagedSkills)).toContain("pdf");
-    expect(await readFile(join(stagedSkills, "skill-creator", "SKILL.md"), "utf8"))
+    expect(await readdir(stagedSkills)).toContain("internal-comms");
+    expect(await readFile(join(stagedSkills, "graphjin-config", "SKILL.md"), "utf8"))
       .toContain("Org override.");
   }, 30_000);
 
@@ -139,16 +140,16 @@ describe("work workspace", () => {
     cleanupPaths.push(skills);
     await materializeBuiltinSkills(skills);
     const seeded = await unmodifiedBuiltinSkills(skills);
-    expect(seeded).toContain("pdf");
-    expect(seeded).toContain("skill-creator");
+    expect(seeded).toContain("internal-comms");
+    expect(seeded).toContain("graphjin-config");
 
-    await writeFile(join(skills, "pdf", "SKILL.md"), "Edited by an admin.");
+    await writeFile(join(skills, "internal-comms", "SKILL.md"), "Edited by an admin.");
     await mkdir(join(skills, "quarterly-review"), { recursive: true });
     await writeFile(join(skills, "quarterly-review", "SKILL.md"), "Org skill.");
     const after = await unmodifiedBuiltinSkills(skills);
-    expect(after).not.toContain("pdf");
+    expect(after).not.toContain("internal-comms");
     expect(after).not.toContain("quarterly-review");
-    expect(after).toContain("skill-creator");
+    expect(after).toContain("graphjin-config");
   }, 30_000);
 
   it("stages and seeds only the skills the run's actor holds", async () => {
@@ -164,13 +165,13 @@ describe("work workspace", () => {
     }
 
     const stagedSkills = join(stage, "skills");
-    const allowed = ["quarterly-review", "pdf"];
+    const allowed = ["quarterly-review", "internal-comms"];
     expect(await copySkillOverrides(workspace.skillsRoot, stagedSkills, [], allowed)).toEqual(["quarterly-review"]);
     await materializeBuiltinSkills(stagedSkills, allowed);
-    expect((await readdir(stagedSkills)).sort()).toEqual(["pdf", "quarterly-review"]);
+    expect((await readdir(stagedSkills)).sort()).toEqual(["internal-comms", "quarterly-review"]);
 
     const forced = join(stage, "forced");
-    expect(await copySkillOverrides(workspace.skillsRoot, forced, ["pdf"], [])).toEqual(["pdf"]);
+    expect(await copySkillOverrides(workspace.skillsRoot, forced, ["internal-comms"], [])).toEqual(["internal-comms"]);
   }, 30_000);
 
   it("records a builtin seed origin and skips a stale unmodified seed", async () => {
@@ -180,31 +181,56 @@ describe("work workspace", () => {
     process.env.HOME = home;
 
     const workspace = await ensureOrgWorkspace("org-test");
-    const pdfDir = join(workspace.skillsRoot, "pdf");
-    const origin = await readSkillOrigin(pdfDir);
+    const commsDir = join(workspace.skillsRoot, "internal-comms");
+    const origin = await readSkillOrigin(commsDir);
     expect(origin?.kind).toBe("builtin");
-    expect(origin?.sourceHash).toBe(await fingerprintSkillTree(pdfDir));
+    expect(origin?.sourceHash).toBe(await fingerprintSkillTree(commsDir));
 
     await writeFile(
-      join(pdfDir, "SKILL.md"),
-      `${await readFile(join(pdfDir, "SKILL.md"), "utf8")}\nStale seed body.\n`,
+      join(commsDir, "SKILL.md"),
+      `${await readFile(join(commsDir, "SKILL.md"), "utf8")}\nStale seed body.\n`,
     );
     await writeFile(
-      join(pdfDir, SKILL_ORIGIN_FILE),
+      join(commsDir, SKILL_ORIGIN_FILE),
       `${JSON.stringify({
         kind: "builtin",
-        sourceHash: await fingerprintSkillTree(pdfDir),
+        sourceHash: await fingerprintSkillTree(commsDir),
       })}\n`,
     );
 
     const stagedSkills = join(stage, "skills");
     const copied = await copySkillOverrides(workspace.skillsRoot, stagedSkills);
-    expect(copied).not.toContain("pdf");
+    expect(copied).not.toContain("internal-comms");
 
     await materializeBuiltinSkills(stagedSkills);
-    expect(await readFile(join(stagedSkills, "pdf", "SKILL.md"), "utf8")).not.toContain(
+    expect(await readFile(join(stagedSkills, "internal-comms", "SKILL.md"), "utf8")).not.toContain(
       "Stale seed body.",
     );
+  }, 30_000);
+
+  it("removes untouched copies of retired built-in skills and keeps edited ones", async () => {
+    const skills = await mkdtemp(join(tmpdir(), "neko-retired-skills-"));
+    cleanupPaths.push(skills);
+    const seed = async (name: string, body: string) => {
+      const dir = join(skills, name);
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "SKILL.md"), body);
+      await writeFile(join(dir, SKILL_ORIGIN_FILE), `${JSON.stringify({ kind: "builtin", sourceHash: await fingerprintSkillTree(dir) })}\n`);
+      return dir;
+    };
+    expect(RETIRED_BUILTIN_SKILLS).toContain("xlsx");
+    await seed("xlsx", "Seeded copy.");
+    const edited = await seed("pdf", "Seeded copy.");
+    await writeFile(join(edited, "SKILL.md"), "Edited by an admin.");
+    await mkdir(join(skills, "docx"), { recursive: true });
+    await writeFile(join(skills, "docx", "SKILL.md"), "An org skill that took a retired name.");
+
+    await materializeBuiltinSkills(skills);
+    const names = await readdir(skills);
+    expect(names).not.toContain("xlsx");
+    expect(names).toContain("pdf");
+    expect(names).toContain("docx");
+    expect(names).toContain("internal-comms");
   }, 30_000);
 
   it("creates an empty disposable tree for non-interactive agent jobs", async () => {

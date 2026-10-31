@@ -145,9 +145,8 @@ export function CapabilityDeniedNotice({
         <div>
           <h3>{endpoint} is outside this workspace</h3>
           <p>
-            OpenNeko did not receive live data. The sandbox stayed
-            default-deny, so this answer must not present fallback estimates as
-            current facts.
+            OpenNeko did not receive live data, so this answer must not present
+            fallback estimates as current facts.
           </p>
           <code>
             {denial.method ?? "REQUEST"} {denial.path ?? "/"}

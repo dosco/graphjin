@@ -72,7 +72,7 @@ describe("buildWorkflowRunnerPrompt", () => {
     expect(first.indexOf("<long_term_memory>")).toBeGreaterThan(first.indexOf("<files>"));
     expect(splitStablePrompt(first).stable).toBe(stable.trimEnd());
     expect(splitStablePrompt(second).stable).toBe(stable.trimEnd());
-    expect(splitStablePrompt(second).turn).toMatch(/^<files>\nSave every report or file you make under \/tmp\/org\/runs\/r2\/artifacts/);
+    expect(splitStablePrompt(second).turn).toMatch(/^<files>\nThe run folder is \/tmp\/org\/runs\/r2\. Save every report or file you make\nunder \/tmp\/org\/runs\/r2\/artifacts/);
   });
 
   it("uses MCP tool names when mcpTools=true", () => {

@@ -218,18 +218,14 @@ two-second timeout, is fire-and-forget, and never blocks the governed operation.
 Alert delivery failures are themselves emitted as structured critical stderr
 events.
 
-### Agent sandboxing
+### Agent runtime
 
 Each agent run runs in a runner process started by web or the worker. Its
-turns run in `openneko serve` (the `openneko-serve` service, which also hosts the
-customer GraphJin), which holds the model key only
-for the turn, and its terminal commands run in `agent-sandbox`
-(`openneko sandbox`) as a user of the turn's own, with no secrets in their
-environment. The sandbox is only on its own `agent-sandbox` network: commands
-can reach the internet but none of the stack's databases or services. To
-restrict that internet access, firewall the `<project>_agent-sandbox` Docker
-network. Both services are part of the stack and their image is pulled with
-the rest at install. See [AGENT_RUNTIME.md](AGENT_RUNTIME.md).
+turns run in `openneko serve` (the `openneko-serve` service, which also hosts
+the customer GraphJin), which holds the model key only for the turn. The agent
+runs no code of its own: it has no terminal, and OpenNeko runs no script from
+a skill or a workflow. The service is part of the stack and its image is
+pulled with the rest at install. See [AGENT_RUNTIME.md](AGENT_RUNTIME.md).
 
 
 ## Upgrade
@@ -387,9 +383,9 @@ pnpm dev
 
 Web and worker run on the host with hot reload. Everything else runs in Docker.
 
-- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, `openneko-serve` (the customer GraphJin and the subscriptions GraphJin), `embedding`, and AdventureWorks with its simulator. It builds the `openneko` binary (whose `graphjin`, `serve` and `sandbox` roles host processes use) into `.openneko/dev/bin`, runs migrations from source, and writes the GraphJin JWT secret. The customer GraphJin container runs that binary as your user, so it reads what the host web and worker write beside its config: Library uploads and the key for GraphJin's agent, which chat runs ask over HTTP in dev.
+- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, `openneko-serve` (the customer GraphJin and the subscriptions GraphJin), `embedding`, and AdventureWorks with its simulator. It builds the `openneko` binary (whose `graphjin` and `serve` roles host processes use) into `.openneko/dev/bin`, runs migrations from source, and writes the GraphJin JWT secret. The customer GraphJin container runs that binary as your user, so it reads what the host web and worker write beside its config: Library uploads and the key for GraphJin's agent, which chat runs ask over HTTP in dev.
 - `pnpm dev:seed` seeds demo workflows. `pnpm dev:setup` runs both steps.
-- `pnpm dev` runs `openneko serve` and `openneko sandbox` on the host (`scripts/dev-agent.sh`; the sandbox runs commands as you, not as per-turn users), `next dev` on port 3000, and `tsx watch` for the worker. Edits to `apps/web`, `apps/worker`, and workspace packages reload without an image build.
+- `pnpm dev` runs `openneko serve` on the host (`scripts/dev-agent.sh`), `next dev` on port 3000, and `tsx watch` for the worker. Edits to `apps/web`, `apps/worker`, and workspace packages reload without an image build.
 - `scripts/dev-env.sh` holds the host settings. Each service a host process calls has a loopback port; `pnpm dev:web` and `pnpm dev:worker` source the file.
 - The customer GraphJin runs in sources mode from `db/graphjin/dev.sources.example.yml`. Its config lives in `.openneko/dev/graphjin`, and the worker manages it like the core stack.
 - OpenNeko state uses your XDG config home. Set `OPENNEKO_DEV_CONFIG_HOME=$PWD/.openneko/dev/config` to keep a worktree's stack separate, and a distinct `COMPOSE_PROJECT_NAME` with its ports when two stacks run at once.

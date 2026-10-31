@@ -28,8 +28,6 @@ import { bridgeContextFromEnv, buildMultiplexedBridgeServer } from "./mcp-bridge
 import { ARTIFACTS_MARKER, EVENT_MARKER, RESULT_MARKER } from "./protocol";
 import { configureAgentRuntime } from "./runtime-contract";
 import { hasArtifacts } from "./artifacts";
-import { installDataClient } from "./data-client";
-import { startDataSocket, type DataSocket } from "./data-socket";
 
 /**
  * The agent runner: one child process of web or the worker per run. The
@@ -37,8 +35,7 @@ import { startDataSocket, type DataSocket } from "./data-socket";
  * workspace, and starts this. We reconstruct the backend, run the agent loop
  * (each turn in openneko serve, which gets the model key with the turn), and
  * STREAM events back as tagged stdout lines that the launcher relays to the
- * host (which scrubs + persists). Terminal commands run in the sandbox
- * service, which holds no key.
+ * host (which scrubs + persists).
  *
  * The agent's MCP tools use BrokerControlPlane only when the run grants
  * brokered control-plane capabilities.
@@ -69,7 +66,6 @@ interface SandboxJob {
   networkHosts?: string[];
   triggeredByObservationId?: string | null;
   steps?: RunWorkflowAgentBackendInput["steps"];
-  input?: Record<string, unknown>;
   maxContinuations?: number;
   workspace: AgentWorkspace;
   /** Skill names the run's actor holds. Undefined means every skill. */
@@ -117,16 +113,13 @@ function loadJob(): SandboxJob {
 }
 
 export async function main(job = loadJob()): Promise<void> {
-  // The run's terminal runs as another user in the shared group, so files
-  // this runner writes stay group-writable.
+  // openneko serve reads and writes the run's files as another user in the
+  // shared group, so files this runner writes stay group-writable.
   process.umask(0o007);
   // The launcher transfers only custom or modified skill directories. Fill in
   // unchanged built-ins from the agent image. Skill bodies remain filesystem
   // resources and are read only when the agent chooses one.
   await materializeBuiltinSkills(job.workspace.skillsRoot, job.allowedSkills);
-  // Skills and workflow prompts name these folders; the agent's shell commands inherit them.
-  process.env.RUN_DIR = job.workspace.runRoot;
-  process.env.ARTIFACT_DIR = job.workspace.artifactRoot;
   const brokerUrl = process.env.OPENNEKO_BROKER_URL;
   const brokerToken = process.env.OPENNEKO_BROKER_TOKEN;
 
@@ -162,49 +155,7 @@ export async function main(job = loadJob()): Promise<void> {
   if (kind !== "agent-job" && !controlPlane) {
     throw new Error("agent-sandbox: work run missing broker control plane");
   }
-  const dataSocket = await startRunDataSocket(job, controlPlane);
-  try {
-    await runJob(job, kind, backend, controlPlane, emit);
-  } finally {
-    await dataSocket?.close();
-  }
-}
-
-/**
- * Gives skill scripts the run's neko_graphjin tools, so a script fetches its
- * own data instead of passing every query through the model.
- */
-async function startRunDataSocket(
-  job: SandboxJob,
-  controlPlane: BrokerControlPlane | undefined,
-): Promise<DataSocket | undefined> {
-  if (!controlPlane) return undefined;
-  const kind = job.kind ?? "work";
-  // Scripts query GraphJin directly, so they get no socket on the agent path.
-  if (job.graphjinDataPath === "agent") return undefined;
-  const enabled =
-    kind === "workflow" ||
-    kind === "work" ||
-    (kind === "agent-job" && job.agentAccess?.graphjinRead === true);
-  if (!enabled) return undefined;
-  const socket = await startDataSocket({
-    runId: job.runId,
-    buildServer: () =>
-      buildGraphjinMcpServer({
-        orgId: job.orgId,
-        ...(kind === "agent-job" ? {} : { runId: job.runId }),
-        controlPlane,
-        ...(kind === "work" && job.graphjinToolPolicy
-          ? { toolPolicy: job.graphjinToolPolicy }
-          : {}),
-      }),
-  });
-  await installDataClient(job.workspace.binRoot, socket.path);
-  process.env.OPENNEKO_DATA_SOCKET = socket.path;
-  process.env.PYTHONPATH = [job.workspace.binRoot, process.env.PYTHONPATH]
-    .filter(Boolean)
-    .join(":");
-  return socket;
+  await runJob(job, kind, backend, controlPlane, emit);
 }
 
 async function runJob(
@@ -301,7 +252,6 @@ async function runJob(
       emit,
       timeoutMs: job.agentRun?.timeoutMs,
       steps: job.steps ?? [],
-      input: job.input ?? {},
       maxContinuations: job.maxContinuations ?? 0,
       ...(job.wantsCards === false ? { wantsCards: false } : {}),
       ...(job.allowedSkills ? { allowedSkills: job.allowedSkills } : {}),

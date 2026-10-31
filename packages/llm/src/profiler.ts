@@ -1,6 +1,5 @@
 import {
   agentTurnTimeoutMs,
-  shellToolName,
   type AgentBackend,
   type AgentRunOptions,
   type AgentWorkspace,
@@ -38,7 +37,6 @@ export function buildProfilerPrompt(args: {
   orgName: string;
   companyNote: string;
   knowledge: KnowledgePackContents;
-  shellTool: string;
   queryTool: string;
   /** Set when the org opted in to GraphJin's server-side agent. */
   agentTool?: string;
@@ -301,7 +299,6 @@ async function profile(
       orgName,
       companyNote,
       knowledge,
-      shellTool: shellToolName(backend.id),
       queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
       ...(agentPath ? { agentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE } : {}),
       workspace: isolated.workspace,

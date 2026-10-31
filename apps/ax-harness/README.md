@@ -5,7 +5,8 @@ framework. It is OpenNeko's agent backend.
 
 The harness runs one agent turn per process. It reads one run specification
 on stdin, runs an Ax agent with tools, and writes events as JSON lines on
-stdout. The host owns history, approvals, the sandbox and scheduling.
+stdout. The host owns history, approvals and scheduling. The harness runs no
+commands.
 
 ## Layout
 
@@ -14,7 +15,7 @@ stdout. The host owns history, approvals, the sandbox and scheduling.
 | `internal/agent` | The agent loop, budgets, the budget summary, usage and cost, model routes and fallback, reasoning, the child agent and the skills catalog. |
 | `internal/command` | Run input, model routes for any Ax provider, and the event stream. |
 | `internal/mcp` | A stdio MCP client that exposes server tools as capabilities. |
-| `internal/localtool` | File, upload and skill tools confined to one directory, and the `terminal` tool. |
+| `internal/localtool` | File, upload and skill tools confined to one directory, and `web_fetch`. |
 | `cmd/ax-harness` | The OpenNeko entry point. It is the only OpenNeko-aware code. |
 | `compat` | Checks of the pinned Ax behavior that the harness uses. |
 

@@ -16,7 +16,7 @@ import {
 } from "../work/tools";
 import { buildWorkflowActionServer } from "./action-tool-server";
 import { buildWorkflowOutputServer } from "./output-tool-server";
-import { formatScriptStepResults, runScriptSteps } from "./script-steps";
+import { assertNoScriptSteps } from "./script-steps";
 import type { WorkflowStep } from "./store";
 
 export interface RunWorkflowAgentBackendInput {
@@ -45,10 +45,8 @@ export interface RunWorkflowAgentBackendInput {
   signal?: AbortSignal;
   timeoutMs?: number;
   tag?: string;
-  /** Steps with a script run in order before the agent turn. */
+  /** The workflow's steps; a saved script step stops the run. */
   steps?: readonly WorkflowStep[];
-  /** Trigger payload, exposed to script steps. */
-  input?: Record<string, unknown>;
   reasoningEffort?: AgentReasoningEffort;
   maxToolIterations?: number;
   /** Keep the answer card. Defaults to true; the API returns its table. */
@@ -133,18 +131,8 @@ export async function runWorkflowAgentBackend(
 
   void mode;
 
-  const stepResults = steps.some((step) => step.script)
-    ? await runScriptSteps({
-        steps,
-        workspace,
-        emit,
-        ...(input.input ? { input: input.input } : {}),
-        ...(input.allowedSkills ? { allowedSkills: input.allowedSkills } : {}),
-        ...(signal ? { signal } : {}),
-      })
-    : [];
-  const stepBlock = formatScriptStepResults(stepResults);
-  const firstPrompt = stepBlock ? `${prompt}\n\n${stepBlock}` : prompt;
+  assertNoScriptSteps(steps);
+  const firstPrompt = prompt;
 
   // A turn that hits its budget is continued in the same run directory. Its
   // timeout error is held back unless no continuation follows.

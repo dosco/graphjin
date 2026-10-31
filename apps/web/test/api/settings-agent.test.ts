@@ -71,9 +71,8 @@ describeIfDb("/api/settings/agent", () => {
       agent: {
         source: "default",
         globalCap: AGENT_DEFAULT_GLOBAL_CAP,
-        terminal: true,
       },
-      defaults: { globalCap: AGENT_DEFAULT_GLOBAL_CAP, terminal: true },
+      defaults: { globalCap: AGENT_DEFAULT_GLOBAL_CAP },
     });
   });
 
@@ -93,7 +92,7 @@ describeIfDb("/api/settings/agent", () => {
       body: { globalCap: 30 },
     });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ source: "org", globalCap: 30, terminal: true });
+    expect(res.body).toEqual({ source: "org", globalCap: 30 });
     expect(mockProvisionHostConfig).toHaveBeenCalledWith(orgId);
 
     const [row] = await db()
@@ -105,16 +104,13 @@ describeIfDb("/api/settings/agent", () => {
           eq(llm_provider_config.scope, "agent"),
         ),
       );
-    expect(row).toEqual({ provider: "ax", config: { globalCap: 30, terminal: true } });
+    expect(row).toEqual({ provider: "ax", config: { globalCap: 30 } });
   });
 
-  it("PUT turns the terminal off and refuses a non-boolean", async () => {
-    const off = await callRoute(PUT, { method: "PUT", body: { terminal: false } });
-    expect(off.status).toBe(200);
-    expect(off.body).toMatchObject({ source: "org", terminal: false });
-    const bad = await callRoute(PUT, { method: "PUT", body: { terminal: "off" } });
-    expect(bad.status).toBe(400);
-    expect(bad.body).toEqual({ error: "terminal must be true or false" });
+  it("PUT refuses the retired terminal setting", async () => {
+    const res = await callRoute(PUT, { method: "PUT", body: { terminal: false } });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "Unsupported agent setting: terminal" });
   });
 
   it("PUT falls back for an invalid cap", async () => {
@@ -126,7 +122,6 @@ describeIfDb("/api/settings/agent", () => {
     expect(res.body).toEqual({
       source: "org",
       globalCap: AGENT_DEFAULT_GLOBAL_CAP,
-      terminal: true,
     });
   });
 });

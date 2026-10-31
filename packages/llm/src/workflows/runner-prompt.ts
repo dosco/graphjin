@@ -1,5 +1,4 @@
 import {
-  shellToolName,
   type AgentBackendId,
   type AgentWorkspace,
 } from "../agent-backend";
@@ -154,26 +153,19 @@ export function buildWorkflowRunnerPrompt(
     throw new Error("Workflow runs require the native GraphJin broker tool");
   }
   const pluginActions = input.pluginActions ?? [];
-  const shellTool = shellToolName(backend);
   const dataAccessSection = input.graphjinDataPath === "agent"
-    ? buildDataAccessSection({ shellTool, agentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE, workspace, knowledge, inlineKnowledge: "syntax" })
+    ? buildDataAccessSection({ agentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE, workspace, knowledge, inlineKnowledge: "syntax" })
     : buildDataAccessSection({
-        shellTool,
         queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
         queryIdentity: "actor",
         readOnly: true,
-        scriptAccess: true,
         workspace,
         knowledge,
         inlineKnowledge: "syntax",
       });
 
   const stepsBlock = workflow.steps
-    .map((step, index) =>
-      step.script
-        ? `  ${index + 1}. ${step.description} (script step: already ran; see <step_results>)`
-        : `  ${index + 1}. ${step.description}`,
-    )
+    .map((step, index) => `  ${index + 1}. ${step.description}`)
     .join("\n");
 
   const overlay = workflow.systemPromptOverlay.trim();
@@ -252,9 +244,10 @@ ${VALUE_ESTIMATE_INSTRUCTIONS}`}
 ${mode === "headless" ? HEADLESS_TAIL : LIVE_TAIL}
 
 <files>
-Save every report or file you make under ${workspace.artifactRoot}. Files
-saved there become downloads for the operator. Files saved anywhere else are
-lost when the run ends.
+The run folder is ${workspace.runRoot}. Save every report or file you make
+under ${workspace.artifactRoot}, the run's artifact folder. Files saved there
+become downloads for the operator. Files saved anywhere else are lost when
+the run ends.
 </files>
 
 ${memorySection}`;

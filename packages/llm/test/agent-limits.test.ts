@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   agentLimits,
-  axLimitEnv,
   axRunLimits,
 } from "../src/agent-limits";
 import { agentTurnTimeoutMs, workflowTurnBudget } from "../src/agent-backend";
@@ -17,8 +16,6 @@ describe("agentLimits", () => {
     expect(limits.maxTurns).toBe(25);
     expect(limits.maxToolCalls).toBeUndefined();
     expect(limits.delegation).toEqual({ maxIterations: 50 });
-    expect(limits.toolOutput).toEqual({ maxBytes: 50_000 });
-    expect(limits.terminal.timeoutSeconds).toBe(180);
   });
 
   it("gives workflows a tool-call cap, continuations and medium effort", () => {
@@ -33,12 +30,10 @@ describe("agentLimits", () => {
     vi.stubEnv("OPENNEKO_AGENT_TURN_TIMEOUT_MS", "120000");
     vi.stubEnv("OPENNEKO_AGENT_MAX_TURNS", "9000");
     vi.stubEnv("OPENNEKO_AGENT_DELEGATION_MAX_ITERATIONS", "0");
-    vi.stubEnv("OPENNEKO_AGENT_TERMINAL_TIMEOUT_SECONDS", "x");
     const limits = agentLimits("chat");
     expect(limits.timeoutMs).toBe(120_000);
     expect(limits.maxTurns).toBe(500);
     expect(limits.delegation.maxIterations).toBe(1);
-    expect(limits.terminal.timeoutSeconds).toBe(180);
   });
 
   it("keeps the older helpers on the shared source", () => {
@@ -55,7 +50,7 @@ describe("agentLimits", () => {
 });
 
 describe("backend mappings", () => {
-  it("maps the same limits onto the Ax run spec and env", () => {
+  it("maps the same limits onto the Ax run spec", () => {
     expect(axRunLimits(agentLimits("chat"))).toEqual({
       timeout_ms: 9 * 60_000,
       max_actor_steps: 25,
@@ -67,10 +62,6 @@ describe("backend mappings", () => {
       max_child_steps: 50,
       max_operations: 150,
       reasoning_effort: "medium",
-    });
-    expect(axLimitEnv(agentLimits("chat"))).toEqual({
-      OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS: "180",
-      OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT: "50000",
     });
   });
 });

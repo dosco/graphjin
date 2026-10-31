@@ -5,7 +5,7 @@
 //	0  ok
 //	1  generic error
 //	2  usage error (missing args, unknown flag)
-//	3  host not supported for the sandbox runtime
+//	3  host not supported (the stack needs Docker)
 package cli
 
 import (

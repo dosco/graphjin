@@ -22,11 +22,6 @@ export function isAgentBackendId(value: string): value is AgentBackendId {
   return (AGENT_BACKEND_IDS as readonly string[]).includes(value);
 }
 
-export function shellToolName(backendId: AgentBackendId): string {
-  void backendId;
-  return "terminal";
-}
-
 export type AgentSurfaceMessage = {
   version: "v0.9" | "v1.0";
   [key: string]: unknown;

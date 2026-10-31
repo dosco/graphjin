@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 
@@ -19,7 +18,6 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/internal/command"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/localtool"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/mcp"
-	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 // The bridge's ask tool ends the turn until the operator answers.
@@ -122,33 +120,6 @@ func RunTurn(ctx context.Context, turn Turn) (int, error) {
 		tools.Capabilities = append(tools.Capabilities, files.Capabilities()...)
 		closers = append(closers, files.Close)
 	}
-	if enabled := getenv("OPENNEKO_HARNESS_SHELL"); enabled != "" {
-		if enabled != "1" || workspace == "" {
-			return failed(fmt.Errorf("the terminal needs OPENNEKO_HARNESS_SHELL=1 and OPENNEKO_HARNESS_WORKSPACE_DIR"))
-		}
-		shell, err := localtool.NewShell(workspace, shellStripList(getenv))
-		if err != nil {
-			return failed(fmt.Errorf("terminal unavailable: %w", err))
-		}
-		shell.SetEnviron(environ)
-		if socket := getenv("OPENNEKO_SANDBOX_SOCKET"); socket != "" {
-			shell.SetExecutor(sandbox.NewClient(socket, workspace))
-			closers = append(closers, shell.Close)
-		}
-		shell.SetSkillsRoot(getenv("OPENNEKO_MCP_SKILLS_ROOT"))
-		timeout, err := intEnv(getenv, "OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS", 180)
-		if err != nil {
-			return failed(err)
-		}
-		maxOutput, err := intEnv(getenv, "OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT", 50_000)
-		if err != nil {
-			return failed(err)
-		}
-		if err := shell.SetLimits(timeout, maxOutput); err != nil {
-			return failed(err)
-		}
-		tools.Capabilities = append(tools.Capabilities, shell.Capability())
-	}
 	if hosts := getenv("OPENNEKO_HARNESS_WEB_HOSTS"); hosts != "" {
 		web, err := localtool.OpenWeb(hosts)
 		if err != nil {
@@ -244,25 +215,6 @@ func bridgeCommand(bridge, servers string, environ []string) *exec.Cmd {
 		}
 	}
 	return cmd
-}
-
-// shellStripList names the variables a terminal command must not inherit:
-// the broker binding and every model credential.
-func shellStripList(getenv func(string) string) []string {
-	return append([]string{"OPENNEKO_BROKER_URL", "OPENNEKO_BROKER_TOKEN"}, command.KeyEnvNames(getenv)...)
-}
-
-// intEnv reads a host limit; an unset variable keeps the default and a malformed one fails the run.
-func intEnv(getenv func(string) string, name string, fallback int) (int, error) {
-	raw := getenv(name)
-	if raw == "" {
-		return fallback, nil
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil {
-		return 0, fmt.Errorf("invalid %s", name)
-	}
-	return n, nil
 }
 
 func validateScope(orgID, threadID string) error {

@@ -5,7 +5,7 @@ import { verifyAgentRuntimeReady } from "@neko/llm";
 export const AGENT_RUNTIME_UNAVAILABLE_CODE = "agent_runtime_unavailable";
 
 const RECOVERY_MESSAGE =
-  "The agent runtime (openneko serve) is unavailable. Restart this OpenNeko stack, wait for `openneko status` to show graphjin and agent-sandbox serving, then try again. If it still fails, inspect `openneko logs graphjin`.";
+  "The agent runtime (openneko serve) is unavailable. Restart this OpenNeko stack, wait for `openneko status` to show graphjin serving, then try again. If it still fails, inspect `openneko logs graphjin`.";
 
 export class AgentRuntimeUnavailableError extends Error {
   readonly code = AGENT_RUNTIME_UNAVAILABLE_CODE;

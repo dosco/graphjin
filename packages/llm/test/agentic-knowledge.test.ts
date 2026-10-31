@@ -99,7 +99,6 @@ describe("prefetchAgenticKnowledgePack", () => {
 
   it("shows catalog API operations when a source has no tables", () => {
     const section = buildDataAccessSection({
-      shellTool: "bash",
       queryTool: "mcp_neko_graphjin_execute_graphql",
       workspace: { orgRoot: "/w", knowledgeRoot: "/w/knowledge" } as AgentWorkspace,
       knowledge: {
@@ -122,7 +121,6 @@ describe("buildDataAccessSection layering", () => {
   } as AgentWorkspace;
 
   const base = {
-    shellTool: "bash",
     queryTool: "mcp_neko_graphjin_execute_graphql",
     queryIdentity: "service" as const,
     workspace,

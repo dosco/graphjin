@@ -43,7 +43,7 @@ results as readable cards and charts — not raw data dumps.
 | A memory that works by meaning | Teach the assistant a fact once and it recalls it — saved and searched by the agent itself. Search is by keyword out of the box; when an admin turns on Semantic search, memories, skills, Library files and data lookups are found by meaning with a local EmbeddingGemma 2 model (about 2 GB of memory, indexed in the background, keyword search as the fallback). | #17 |
 | Briefing → deep dive | Any briefing card opens into a full Ask thread seeded with that card's context — from "what's this number?" to a real investigation in one click. | #8 |
 | Editable business profile | The assistant's understanding of your company is right there to read — click into it and edit it like a document. | #10 |
-| One runtime, any model provider | Ax is the sandboxed agent runtime for every organisation. It keeps the full administrative toolset, works with Anthropic, Google, OpenAI-compatible and other providers, and prices each run from the model price list. | #3, #112, #436, #449 |
+| One runtime, any model provider | Ax is the agent runtime for every organisation. It keeps the full administrative toolset, works with Anthropic, Google, OpenAI-compatible and other providers, and prices each run from the model price list. | #3, #112, #436, #449 |
 | Information-dense Compact mode | A density toggle switches the whole app between a comfortable reading layout and an information-dense operator view. | #88 |
 
 ## Connect your data, conversationally
@@ -131,14 +131,14 @@ restorable.
 
 ## Security you can verify
 
-The assistant is treated as untrusted by design: its terminal runs in a
-locked-down sandbox that never holds your keys, and it leaves a tamper-evident
-trail you can hand to an auditor.
+The assistant is treated as untrusted by design. It runs no code of its own,
+it never holds your keys, and it leaves a tamper-evident trail you can hand to
+an auditor.
 
 | Feature | What it does for you | Shipped in |
 |---|---|---|
-| Always sandboxed | The agent's terminal commands run in a separate sandbox container, each turn as a user of its own, on a network that reaches none of the stack's databases or services — this is the only mode, not an option you might forget to turn on. | #82, #96, #98 |
-| Your keys never enter the sandbox | Model keys reach only the run's runner and `openneko serve`, and serve holds them only for the turn; the terminal gets no secrets in its environment. | #82 |
+| Runs no code | The agent has no terminal, and OpenNeko runs no script from a skill or a workflow. The agent works through file tools confined to its run, GraphJin's governed data tools, and actions a person approves. | #82, #96, #98 |
+| Your keys stay out of the agent's reach | Model keys reach only the run's runner and `openneko serve`, and serve holds them only for the turn. No agent tool can read them. | #82 |
 | Secrets encrypted at rest | Tokens, passwords, and keys are encrypted on disk everywhere they're stored. | #96 |
 | Bring your own vault | Plug in an external secrets manager (Infisical) instead of local files, with no change to how anything else works. | #96 |
 | Approval gates | Anything that changes the world — sending, installing, configuring, inviting — becomes a proposal a human approves first, governed by per-organisation policies. | #11, #96 |
@@ -169,7 +169,7 @@ truth when something is wrong — in language an operator can act on.
 | Feature | What it does for you | Shipped in |
 |---|---|---|
 | The `openneko` binary | One Go binary supervises everything: start/stop/status/logs, migrations, seeding, packs, secrets, doctor. No Node toolchain required to operate. | #26 |
-| One-command sandboxed install | `openneko start` brings up the full stack — agent runtime and sandbox included — with migrations applied before anything that needs them. | #82, #49, #54 |
+| One-command install | `openneko start` brings up the full stack, agent runtime included, with migrations applied before anything that needs them. | #82, #49, #54 |
 | A demo with living data | The trial workspace ships with simulated sales trickling in and scripted scenarios firing, so briefings move and workflows have something real to find. | #47, #118, #121 |
 | Honest status | `openneko status` probes what's actually serving — failures read as what they are (transient, cosmetic, or real) instead of all looking fatal. | #86 |
 | Releases that gate themselves | Every release is installed and smoke-tested after it builds; a broken one is automatically demoted so installers always get the last good version. | #86, #105, #106, #107 |

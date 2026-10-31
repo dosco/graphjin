@@ -38,17 +38,3 @@ func TestBridgeCommandGetsOnlyBridgeEnvironment(t *testing.T) {
 		t.Fatalf("args=%v", js.Args)
 	}
 }
-
-func TestShellStripListCoversBrokerAndModelKeys(t *testing.T) {
-	list := strings.Join(shellStripList(func(name string) string {
-		if name == "HARNESS_MODEL_ROUTES" {
-			return `{"context":"a","executor":"a","responder":"a","routes":[{"key":"a","model":"m","url":"https://a.example/v1","api_key_env":"HARNESS_A_KEY"}]}`
-		}
-		return ""
-	}), ",")
-	for _, name := range []string{"OPENNEKO_BROKER_URL", "OPENNEKO_BROKER_TOKEN", "HARNESS_MODEL_API_KEY", "HARNESS_MODEL_ROUTES", "HARNESS_A_KEY"} {
-		if !strings.Contains(list, name) {
-			t.Fatalf("%s is not stripped: %s", name, list)
-		}
-	}
-}

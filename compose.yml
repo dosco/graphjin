@@ -147,8 +147,8 @@ services:
   # The customer GraphJin and the agent runtime in one process: `openneko
   # serve --path /config` serves GraphJin's HTTP API on :8080 and runs each
   # agent turn web and the worker send over /run/openneko/serve.sock. A turn
-  # asks GraphJin's agent in this process, as the run's user. Terminal
-  # commands go to agent-sandbox; model keys arrive only with each turn. A
+  # asks GraphJin's agent in this process, as the run's user. Model keys
+  # arrive only with each turn. A
   # second GraphJin on :8089 serves the worker's workflow subscriptions from
   # neko-db, as the read-only neko_subscriptions role.
   openneko-serve:
@@ -169,8 +169,6 @@ services:
       # keys, so start only after that reconciliation has completed.
       graphjin-secret-init:
         condition: service_completed_successfully
-      agent-sandbox:
-        condition: service_started
     # `graphjin` was this service's name before it was renamed; the alias
     # keeps URLs saved with the old hostname working.
     networks:
@@ -186,7 +184,6 @@ services:
       # service ignores it.
       OPENNEKO_EMBEDDING_API_KEY: local
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
-      OPENNEKO_SANDBOX_SOCKET: /run/openneko/sandbox.sock
     volumes:
       - openneko-graphjin-cli:/config
       - openneko-run:/run/openneko
@@ -281,42 +278,6 @@ services:
       interval: 15s
       timeout: 3s
       retries: 3
-
-  # Runs terminal commands as a per-turn user (uid 20000 and up, group 1001)
-  # in the run's staged workspace. It needs root to switch users, so every
-  # other capability is dropped. It sits only on the agent-sandbox network:
-  # commands can reach the internet but not neko-db, GraphJin,
-  # the broker or any other service of this stack.
-  agent-sandbox:
-    image: ${OPENNEKO_AGENT_IMAGE:-openneko-agent:dev}
-    build:
-      context: .
-      target: agent
-    user: "0:0"
-    command: ["openneko", "sandbox", "--socket", "/run/openneko/sandbox.sock"]
-    restart: unless-stopped
-    environment:
-      OPENNEKO_SANDBOX_WORKSPACES: /var/lib/openneko/agent-runs
-      OPENNEKO_SANDBOX_HOMES: /var/lib/openneko/sandbox-homes
-      OPENNEKO_SANDBOX_GID: "1001"
-    volumes:
-      - openneko-run:/run/openneko
-      - openneko-agent-runs:/var/lib/openneko/agent-runs
-      - openneko-sandbox-homes:/var/lib/openneko/sandbox-homes
-    networks:
-      - agent-sandbox
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - DAC_OVERRIDE
-      - FOWNER
-      - KILL
-      - SETGID
-      - SETUID
-    security_opt:
-      - no-new-privileges:true
-    pids_limit: 1024
 
   web:
     build:
@@ -423,12 +384,6 @@ volumes:
   openneko-graphjin-cli:
   openneko-agent-home:
   openneko-agent-tmp:
-  # Agent runtime: sockets, staged run workspaces, per-run sandbox homes.
+  # Agent runtime: sockets and staged run workspaces.
   openneko-run:
   openneko-agent-runs:
-  openneko-sandbox-homes:
-
-networks:
-  # The sandbox's only network. Terminal commands reach the internet through
-  # it and nothing else of the stack is attached.
-  agent-sandbox:

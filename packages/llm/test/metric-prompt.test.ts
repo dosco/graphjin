@@ -42,7 +42,6 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "terminal",
       ...directDataAccess,
     });
     expect(typeof prompt).toBe("string");
@@ -62,7 +61,6 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "terminal",
       ...directDataAccess,
     });
     expect(prompt).toContain(fakeKnowledge.tables);
@@ -76,7 +74,6 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "Bash",
       ...directDataAccess,
     });
     expect(prompt).not.toContain("`Bash`");
@@ -88,11 +85,10 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "terminal",
       ...directDataAccess,
     });
     expect(prompt).toContain("`mcp_neko_graphjin_execute_graphql`");
-    expect(prompt).toContain("service credential never enter your sandbox");
+    expect(prompt).toContain("service credential never enter this run");
     expect(prompt).not.toContain("graphjin cli execute_graphql");
   });
 
@@ -101,7 +97,6 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "terminal",
       dataAgentTool: "mcp_neko_graphjin_agent_ask",
     });
     expect(prompt).toContain("`mcp_neko_graphjin_agent_ask`");
@@ -117,7 +112,6 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "terminal",
       queryTool: "mcp_neko_graphjin_execute_graphql",
       dataAgentTool: "mcp_neko_graphjin_agent_ask",
     } as unknown as Parameters<typeof buildMetricPrompt>[0];
@@ -131,7 +125,6 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "terminal",
       ...directDataAccess,
     });
     for (const key of [
@@ -158,7 +151,6 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "terminal",
       ...directDataAccess,
     });
     expect(prompt).toContain('"cardTitle": "Top Product"');
@@ -177,7 +169,6 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "terminal",
       ...directDataAccess,
       memoryContext: ctx,
     });
@@ -189,7 +180,6 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "terminal",
       supportsMemorySearch: true,
       ...directDataAccess,
     });
@@ -197,7 +187,6 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "terminal",
       supportsMemorySearch: false,
       ...directDataAccess,
     });
@@ -210,7 +199,6 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "terminal",
       supportsMemorySearch: true,
       ...directDataAccess,
     });
@@ -222,7 +210,6 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "terminal",
       supportsMemorySearch: false,
       ...directDataAccess,
     });
@@ -234,7 +221,6 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "terminal",
       ...directDataAccess,
     });
     expect(prompt).toContain("flattened");
@@ -247,7 +233,6 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "terminal",
       ...directDataAccess,
     });
     expect(prompt).toContain("max(<date_col>)");
@@ -258,7 +243,6 @@ describe("buildMetricPrompt", () => {
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
-      shellTool: "terminal",
       ...directDataAccess,
     });
     expect(prompt).toContain("TTM");

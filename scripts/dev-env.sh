@@ -38,13 +38,12 @@ export OPENNEKO_LIBRARY_GRAPHJIN_URL="http://127.0.0.1:${GRAPHJIN_PORT:-8080}/ap
 export OPENNEKO_DEV_UID="${OPENNEKO_DEV_UID:-$(id -u)}"
 export OPENNEKO_DEV_GID="${OPENNEKO_DEV_GID:-$(id -g)}"
 
-# Agent runtime. `pnpm dev` runs `openneko serve` and `openneko sandbox` on
+# Agent runtime. `pnpm dev` runs `openneko serve` on
 # the host (scripts/dev-agent.sh); web and worker start each run's runner from
 # source with tsx, and the runner reaches the broker on loopback. Sockets
 # live under /tmp because a Unix socket path must stay short.
 export OPENNEKO_DEV_RUN="${OPENNEKO_DEV_RUN:-/tmp/openneko-$COMPOSE_PROJECT_NAME}"
 export OPENNEKO_SERVE_SOCKET="$OPENNEKO_DEV_RUN/serve.sock"
-export OPENNEKO_SANDBOX_SOCKET="$OPENNEKO_DEV_RUN/sandbox.sock"
 export OPENNEKO_AGENT_RUNS_DIR="${OPENNEKO_AGENT_RUNS_DIR:-$OPENNEKO_DEV_STATE/agent-runs}"
 export OPENNEKO_AGENT_ENTRY="${OPENNEKO_AGENT_ENTRY:-$PWD/apps/worker/src/agent-sandbox/entry.ts}"
 

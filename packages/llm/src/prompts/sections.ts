@@ -121,15 +121,12 @@ ${application}${usage}
 }
 
 export type DataAccessOptions = {
-  shellTool: string;
   /** Native execute_graphql tool on the brokered GraphJin MCP surface. */
   queryTool?: string;
   /** Identity the trusted broker uses when it executes the query. */
   queryIdentity?: "actor" | "service";
   /** Restrict this agent's use of otherwise caller-visible execution tools. */
   readOnly?: boolean;
-  /** Skill scripts can run the query tool through the run's data socket. */
-  scriptAccess?: boolean;
   /** GraphJin server-agent tool, when the org opted in to GraphJin's agent. */
   agentTool?: string;
   /** Metric cards ask once for a value, a baseline and chart rows. */
@@ -234,7 +231,6 @@ function buildBrokeredDataAccessSection(opts: DataAccessOptions): string {
     knowledge,
     queryIdentity = "service",
     readOnly = false,
-    scriptAccess = false,
   } = opts;
   if (!queryTool) throw new Error("brokered data access requires queryTool");
   const graphjinTool = (name: string) =>
@@ -302,7 +298,7 @@ ${knowledge.syntax}`;
 The configured GraphJin server is the authoritative source for operational data.
 Its complete caller-visible MCP tool catalog is brokered into this run with the
 native tool names and schemas. The source URL and short-lived
-${queryIdentity === "actor" ? "actor credential" : "service credential"} never enter your sandbox.
+${queryIdentity === "actor" ? "actor credential" : "service credential"} never enter this run.
 
 For a goal-driven request, start with \`${catalogTool}\` using the user's natural
 language instruction. When the tool list has no \`${catalogTool}\`, start with
@@ -324,23 +320,7 @@ execute GraphQL by calling \`${queryTool}\` with:
   { "query": "<your GraphQL operation>" }
 
 GraphJin itself applies the caller's role, source capabilities, and tool gates.
-${
-  scriptAccess
-    ? `Treat a refusal or unavailable tool as authoritative. A script receives the
-same refusal, so fix the query instead of changing the transport.
-
-Scripts query GraphJin themselves through the same \`execute_graphql\` tool,
-identity, and policy. In Python, \`from neko_data import query\` and call
-\`query(graphql, variables)\`: it returns the data object and raises
-\`NekoDataError\` on any GraphQL error. In the shell, \`neko-query '<graphql>'\`
-prints the data object as JSON. When a skill bundles a script, run the script
-and let it fetch its own data. When a task needs many queries, chunked
-\`in\` filters, or rows that belong in files, write a script that uses
-\`neko_data\` and run it once. Call \`${queryTool}\` directly for discovery
-and for small answers.`
-    : `Treat a refusal or unavailable tool as authoritative; do not bypass it with the
-shell, raw HTTP, a CLI, or a hand-written MCP request.`
-}
+Treat a refusal or unavailable tool as authoritative.
 
 ${
   readOnly

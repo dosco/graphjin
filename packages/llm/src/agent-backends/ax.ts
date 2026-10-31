@@ -4,7 +4,7 @@ import { axCatalogPricingVersion, estimateTokenCost, hasPriceOverride } from "..
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agentLimits, axLimitEnv, axRunLimits, type AgentReasoningEffort } from "../agent-limits";
+import { agentLimits, axRunLimits, type AgentReasoningEffort } from "../agent-limits";
 import {
   agentTurnTimeoutMs,
   type AgentBackend,
@@ -194,7 +194,7 @@ export class AxBackend implements AgentBackend {
     }
 
     const limits = agentLimits("chat");
-    const env = this.environment(opts, cwd, axLimitEnv(limits));
+    const env = this.environment(opts, cwd);
     const spec = {
       version: 1,
       run_id: runId,
@@ -341,11 +341,10 @@ export class AxBackend implements AgentBackend {
     );
   }
 
-  private environment(opts: AgentRunOptions, cwd: string, limitEnv: Record<string, string>): NodeJS.ProcessEnv {
+  private environment(opts: AgentRunOptions, cwd: string): NodeJS.ProcessEnv {
     const route = this.ax!.route;
     const { workspace } = opts;
     const env: NodeJS.ProcessEnv = { ...process.env };
-    if (workspace) env.PATH = `${workspace.binRoot}:${process.env.PATH || ""}`;
     const key = modelKey(route) || "none";
     for (const name of ["MODEL_API_KEY", route.keyEnv, "HARNESS_MODEL_ROUTES"]) if (name) delete env[name];
     Object.assign(env, {
@@ -355,7 +354,6 @@ export class AxBackend implements AgentBackend {
       HARNESS_MODEL_URL: route.url ?? "",
       HARNESS_MODEL_OPTIONS: route.options ? JSON.stringify(route.options) : "",
     });
-    Object.assign(env, limitEnv);
 
     const names = this.bridgeServers(opts);
     const bridge = Boolean(process.env.OPENNEKO_MCP_BRIDGE && opts.mcpBridgeEnv && names.length > 0);
@@ -369,9 +367,6 @@ export class AxBackend implements AgentBackend {
     env.OPENNEKO_MCP_ORG_ID = opts.mcpBridgeEnv?.OPENNEKO_MCP_ORG_ID ?? opts.orgId ?? "local";
     env.OPENNEKO_MCP_THREAD_ID = opts.mcpBridgeEnv?.OPENNEKO_MCP_THREAD_ID ?? opts.tag ?? "local";
     env.OPENNEKO_HARNESS_WORKSPACE_DIR = cwd;
-    // The terminal is on unless the org turned it off.
-    if (process.env.OPENNEKO_AGENT_TERMINAL === "off") delete env.OPENNEKO_HARNESS_SHELL;
-    else env.OPENNEKO_HARNESS_SHELL = "1";
     if (workspace?.threadUploadsRoot) env.OPENNEKO_HARNESS_UPLOADS_DIR = workspace.threadUploadsRoot;
     else delete env.OPENNEKO_HARNESS_UPLOADS_DIR;
     if (workspace?.skillsRoot) {

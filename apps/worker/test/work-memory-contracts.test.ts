@@ -8,8 +8,6 @@ import { afterAll, describe, expect, it } from "vitest";
 import { pool } from "@neko/db";
 import { createTestOrg, dbReachable, deleteTestOrg, uniqueOrgId } from "@neko/db/test-helpers";
 import {
-  KNOWN_SKILL_DEPS,
-  aggregateSkillDeps,
   archiveWorkMemory,
   findConflictingWorkMemories,
   parseSkillFrontmatter,
@@ -124,9 +122,6 @@ describe("work skill contracts", () => {
       );
       await expect(writeWorkSkill(skillsRoot, { ...draft, files: [{ path: "../escape.txt", content: "must never be written" }] })).rejects.toThrow();
       expect(() => upsertWorkSkill(skillsRoot, { ...draft, name: "!!!" })).toThrow();
-      const deps = aggregateSkillDeps();
-      expect(KNOWN_SKILL_DEPS.pdf!.pip.every((pkg) => deps.pip.includes(pkg))).toBe(true);
-      expect(new Set(deps.pip).size).toBe(deps.pip.length);
     } finally {
       await rm(skillsRoot, { recursive: true, force: true });
     }

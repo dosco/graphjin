@@ -74,8 +74,8 @@ jobs:
             target: neko-db
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-          # Agent sandbox image: Ax Harness, entry/bridge bundles and skills
-          # plus the document toolchain, pulled by the OpenShell runtime.
+          # Agent image: openneko serve, which hosts the customer GraphJin
+          # and runs agent turns.
           - image: agent
             target: agent
             platform: linux/amd64

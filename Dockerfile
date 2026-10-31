@@ -14,7 +14,7 @@
 # The official Node image also carries npm, Corepack, Yarn, C/C++ headers, and
 # documentation. Copy only the executable into the shared runtime lineage;
 # worker and agent add a pruned npm payload below because they genuinely offer
-# runtime package installation. Web and plugin sandboxes do not pay that tax.
+# runtime package installation. Web does not pay that tax.
 # Node 24.22.1 is the first 24.x that distrusts the eight compromised eMudhra
 # intermediate CAs (October 2026); keep the floor explicit.
 FROM node:24.22.1-bookworm-slim AS node-distribution
@@ -70,8 +70,7 @@ RUN test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.36" \
 
 # ─── 2. control-plane runtime ──────────────────────────────────────────
 # Web is a trusted control plane. It runs each agent run's runner as a child
-# process but carries no GraphJin CLI or document toolchain; terminal
-# commands run in the agent image's sandbox. The worker uses the narrower
+# process but carries no GraphJin CLI. The worker uses the narrower
 # shared GraphJin/npm runtime defined below.
 FROM node-runtime AS runtime-base
 # Git supports trusted config VCS and git-backed installs.
@@ -109,36 +108,6 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 FROM npm-runtime AS graphjin-node-runtime
 COPY --from=go-build /out/openneko /usr/local/bin/openneko
 RUN ln -s openneko /usr/local/bin/graphjin && graphjin version
-
-# ─── 2b. agent OS base (serve and sandbox) ────────────────────────────
-# The agent image runs `openneko serve` and `openneko sandbox` (the binary is
-# copied in the `agent` stage). The document toolchain below uses Debian's
-# system Python and pip.
-FROM npm-runtime AS agent-base
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      git python3 python3-pip \
-    && rm -rf /var/lib/apt/lists/*
-
-# ─── 2c. document toolchain (agent image only) ─────────────────────────
-# Bundled skills (xlsx / pptx / docx / pdf / document-extraction) shell out to
-# Python + LibreOffice + Poppler / qpdf / Tesseract via the agent's terminal,
-# which `openneko sandbox` runs — web never runs these, so the ~1GB toolchain stays out
-# of its image.
-# Keep this list in sync with KNOWN_SKILL_DEPS (packages/llm/src/work/skill-deps.ts);
-# `pnpm skills:check` prints the current aggregate.
-FROM agent-base AS cli
-ENV NODE_PATH=/usr/local/lib/node_modules
-RUN npm install --global --omit=dev --no-audit --no-fund \
-      docx@9.7.1 pptxgenjs@4.0.1 react@19.2.8 react-dom@19.2.8 \
-      react-icons@5.7.0 sharp@0.35.3 \
-    && npm cache clean --force
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      libreoffice-core libreoffice-common libreoffice-writer libreoffice-calc \
-      libreoffice-impress libreoffice-draw poppler-utils qpdf tesseract-ocr file \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip3 install --no-cache-dir --break-system-packages \
-       openpyxl python-pptx Pillow python-docx pypdf pdfplumber reportlab PyYAML \
-       defusedxml lxml
 
 # ─── 3. deps: workspace install (cached on lockfile) ───────────────────
 FROM base AS deps
@@ -180,7 +149,7 @@ ARG TARGETARCH
 RUN sh scripts/prune-node-runtime.sh /app/apps/web/.next/standalone "$TARGETARCH" \
     && sh scripts/prune-node-runtime.sh /app "$TARGETARCH"
 
-# DuckDB CLI for data work in the agent terminal, pinned by checksum.
+# DuckDB CLI for GraphJin's SQL over file-source sheets, pinned by checksum.
 FROM debian:bookworm-slim AS duckdb-bin
 ARG TARGETARCH
 ARG DUCKDB_VERSION=v1.5.5
@@ -332,10 +301,9 @@ ENV NODE_ENV=production \
 RUN groupadd --system --gid 1001 neko \
     && useradd --system --create-home --uid 1001 --gid neko neko
 # Shared agent-run folders. Fresh named volumes mounted here take this
-# ownership: runs (setgid, group neko) are shared by the runner, serve and the
-# sandbox's run users, who may pass through it (o+x) but not list it; /run/openneko holds serve's and the sandbox's sockets.
-RUN install -d -o 1001 -g 1001 -m 2771 /var/lib/openneko/agent-runs \
-    && install -d -o root -g root -m 0711 /var/lib/openneko/sandbox-homes \
+# ownership: runs (setgid, group neko) are shared by serve, web and the
+# worker; /run/openneko holds serve's socket.
+RUN install -d -o 1001 -g 1001 -m 2770 /var/lib/openneko/agent-runs \
     && install -d -o 1001 -g 1001 -m 0770 /run/openneko
 RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-tmp \
     && chown -R neko:neko /config /tmp/openneko-home /tmp/openneko-tmp
@@ -377,7 +345,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 # The worker runs from source via tsx (not a build step). It serves /health +
 # admin endpoints on port 4100 for liveness probes. Records config validation
 # and approved schema diff/sync require the shared pinned GraphJin CLI; this
-# parent supplies it without inheriting the document toolchain.
+# parent supplies it.
 FROM graphjin-node-runtime AS worker
 ARG OPENNEKO_VERSION=unknown
 ARG OPENNEKO_COMMIT=unknown
@@ -395,10 +363,9 @@ ENV NODE_ENV=production \
 RUN groupadd --system --gid 1001 neko \
     && useradd --system --create-home --uid 1001 --gid neko neko
 # Shared agent-run folders. Fresh named volumes mounted here take this
-# ownership: runs (setgid, group neko) are shared by the runner, serve and the
-# sandbox's run users, who may pass through it (o+x) but not list it; /run/openneko holds serve's and the sandbox's sockets.
-RUN install -d -o 1001 -g 1001 -m 2771 /var/lib/openneko/agent-runs \
-    && install -d -o root -g root -m 0711 /var/lib/openneko/sandbox-homes \
+# ownership: runs (setgid, group neko) are shared by serve, web and the
+# worker; /run/openneko holds serve's socket.
+RUN install -d -o 1001 -g 1001 -m 2770 /var/lib/openneko/agent-runs \
     && install -d -o 1001 -g 1001 -m 0770 /run/openneko
 # /cache is mounted by the demo-mode adventureworks-init step; pre-creating
 # it here lets the named volume initialize with neko ownership instead of root
@@ -434,30 +401,23 @@ EXPOSE 4100
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "--import", "tsx/esm", "src/index.ts"]
 
-# ─── 5d. agent runtime: openneko serve and openneko sandbox ───────────
-# One image for both services. `openneko serve` runs each agent turn and holds
-# model keys only for that turn; `openneko sandbox` runs the agent's terminal
-# commands as a per-turn user and holds no secrets. The document toolchain from
-# `cli` is here because terminal commands run in this image. The openneko
-# binary carries GraphJin's code but no GraphJin config or credentials.
-FROM cli AS agent
-USER root
-RUN apt-get update && apt-get install -y --no-install-recommends jq ripgrep \
-    && rm -rf /var/lib/apt/lists/*
+# ─── 5d. agent runtime: openneko serve ──────────────────────────────────
+# `openneko serve` hosts the customer GraphJin and runs each agent turn,
+# holding model keys only for that turn. The agent runs no commands, so the
+# image carries no interpreter or document toolchain. The openneko binary
+# carries GraphJin's code but no GraphJin config or credentials; DuckDB serves
+# GraphJin's SQL over file-source sheets.
+FROM npm-runtime AS agent
 COPY --from=go-build /out/openneko /usr/local/bin/openneko
 RUN ln -s openneko /usr/local/bin/ax-harness
 COPY --from=duckdb-bin /usr/local/bin/duckdb /usr/local/bin/duckdb
 RUN groupadd --system --gid 1001 neko \
     && useradd --system --create-home --uid 1001 --gid neko neko
 # Shared agent-run folders. Fresh named volumes mounted here take this
-# ownership: runs (setgid, group neko) are shared by the runner, serve and the
-# sandbox's run users, who may pass through it (o+x) but not list it; /run/openneko holds serve's and the sandbox's sockets.
-RUN install -d -o 1001 -g 1001 -m 2771 /var/lib/openneko/agent-runs \
-    && install -d -o root -g root -m 0711 /var/lib/openneko/sandbox-homes \
+# ownership: runs (setgid, group neko) are shared by serve, web and the
+# worker; /run/openneko holds serve's socket.
+RUN install -d -o 1001 -g 1001 -m 2770 /var/lib/openneko/agent-runs \
     && install -d -o 1001 -g 1001 -m 0770 /run/openneko
-# serve runs as neko by default. Compose runs the sandbox as root (user 0:0)
-# with most capabilities dropped, so it can give each turn's commands their
-# own user.
 USER neko
 CMD ["openneko", "serve"]
 

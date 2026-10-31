@@ -138,12 +138,11 @@ describe("AxBackend", () => {
       OPENNEKO_MCP_ORG_ID: "org-1",
       OPENNEKO_BROKER_TOKEN: "broker-secret",
       OPENNEKO_HARNESS_WORKSPACE_DIR: workspace.orgRoot,
-      OPENNEKO_HARNESS_SHELL: "1",
       OPENNEKO_HARNESS_SKILLS_READ: "1",
       OPENNEKO_HARNESS_UPLOADS_DIR: workspace.threadUploadsRoot,
       OPENNEKO_HARNESS_WEB_HOSTS: "api.example.com",
-      OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS: "180",
     });
+    expect(env.OPENNEKO_HARNESS_SHELL).toBeUndefined();
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.MODEL_API_KEY).toBeUndefined();
     expect(JSON.parse(stdin)).toMatchObject({
@@ -190,15 +189,6 @@ describe("AxBackend", () => {
     script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
     await new AxBackend(config).run({ prompt: "p", workspace, nativeDelegation: "disabled" });
     expect(spawned[1].env.OPENNEKO_HARNESS_CHILD_TOOLS).toBeUndefined();
-  });
-
-  it("gives the harness the terminal unless the org turned it off", async () => {
-    script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
-    await new AxBackend(config).run({ prompt: "p", workspace });
-    vi.stubEnv("OPENNEKO_AGENT_TERMINAL", "off");
-    await new AxBackend(config).run({ prompt: "p", workspace });
-    expect(spawned[0].env.OPENNEKO_HARNESS_SHELL).toBe("1");
-    expect(spawned[1].env.OPENNEKO_HARNESS_SHELL).toBeUndefined();
   });
 
   it("runs again once after a malformed call when nothing was shown or written", async () => {

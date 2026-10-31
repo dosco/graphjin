@@ -581,7 +581,6 @@ function makeSandboxCore(
               triggeredByObservationId:
                 (input as RunWorkflowAgentBackendInput).triggeredByObservationId ?? null,
               steps: (input as RunWorkflowAgentBackendInput).steps ?? [],
-              input: (input as RunWorkflowAgentBackendInput).input ?? {},
               maxContinuations:
                 (input as RunWorkflowAgentBackendInput).maxContinuations ?? 0,
               ...((input as RunWorkflowAgentBackendInput).wantsCards === false ? { wantsCards: false } : {}),
@@ -626,9 +625,6 @@ function makeSandboxCore(
           : {}),
         ...(opts.modelKeys ??
           (await import("../host-provision").then(({ loadAgentModelKeys }) => loadAgentModelKeys(input.orgId)))),
-        OPENNEKO_AGENT_TERMINAL: (await import("../agent-backend-resolver")
-          .then(({ resolveAgentTerminal }) => resolveAgentTerminal(input.orgId))
-          .catch(() => true)) ? "on" : "off",
         ...(opts.env ?? {}),
       };
       const result = await timed("exec", () => execAndStream(
@@ -663,13 +659,9 @@ function makeSandboxCore(
           await cp(staged!.workspace.artifactRoot, input.workspace.artifactRoot, { recursive: true, force: true });
         }).catch((e) => log(`artifact copy-back skipped: ${(e as Error).message}`));
       }
-      const scriptSteps = kind === "workflow" &&
-        ((input as RunWorkflowAgentBackendInput).steps ?? []).some((step) => step.script);
-      const skillDecision = scriptSteps
-        ? { capture: true, reason: "script_step" }
-        : skillCaptureDecision(skillEvidenceComplete && staged
-          ? { toolCalls: skillToolCalls, cwd: staged.orgRoot, skillsRoots: [staged.workspace.skillsRoot] }
-          : null);
+      const skillDecision = skillCaptureDecision(skillEvidenceComplete && staged
+        ? { toolCalls: skillToolCalls, cwd: staged.orgRoot, skillsRoots: [staged.workspace.skillsRoot] }
+        : null);
       if (staged && skillActor && skillBaseline && !skillDecision.capture) {
         startupEvent("sandbox.skill_capture", { outcome: "skipped", reason: skillDecision.reason });
         log(JSON.stringify({
@@ -742,13 +734,10 @@ function killGroup(child: ChildProcess): void {
   }
 }
 
-/** Script steps, then the first turn and every continuation, back to back. */
+/** The first turn and every continuation, back to back. */
 export function workflowExecBudgetMs(input: RunWorkflowAgentBackendInput): number {
   const turnMs = input.timeoutMs ?? agentTurnTimeoutMs();
-  const stepsMs = (input.steps ?? [])
-    .filter((step) => step.script)
-    .reduce((sum, step) => sum + (step.script!.timeoutSeconds ?? 1_200) * 1_000, 0);
-  return stepsMs + turnMs * (1 + (input.maxContinuations ?? 0));
+  return turnMs * (1 + (input.maxContinuations ?? 0));
 }
 
 /**

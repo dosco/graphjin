@@ -77,7 +77,7 @@ Integrations ship as **solution packs** — sources, API specs, actions, workflo
 
 - **Self-hosted via Docker.** One binary, one `start` command. Data lives on your Postgres.
 - **Bring your own LLM.** The Ax agent runs against Anthropic, OpenAI, Google, Ollama, and other compatible providers. Change providers without changing the sandboxed agent runtime.
-- **Agent kept away from your secrets.** Each run's agent loop runs in its own runner process; turns run in `openneko serve`, which holds the model key only for the turn, and the agent's terminal runs in a separate sandbox container as a user of its own, with no secrets and no route to the stack's databases or services. See [AGENT_RUNTIME.md](AGENT_RUNTIME.md).
+- **Agent kept away from your secrets.** Each run's agent loop runs in its own runner process; turns run in `openneko serve`, which holds the model key only for the turn. The agent runs no code of its own: it works through file tools, GraphJin's governed data tools and approved actions. See [AGENT_RUNTIME.md](AGENT_RUNTIME.md).
 - **Apache-2.0.** Read the source, self-host, fork, and build on it. OpenNeko trademarks are separately controlled — see [LICENSING.md](LICENSING.md) and [TRADEMARKS.md](TRADEMARKS.md).
 
 ## Evaluations
@@ -92,7 +92,7 @@ frozen AdventureWorks snapshot, each graded against a GraphQL oracle. See
 CLI deploys. Every mode shares the same core: app Postgres, migrations, web,
 worker, embedding, and `openneko serve`, one process that hosts the
 customer-facing GraphJin in sources (agentic) mode, the agent runtime, and the
-GraphJin that serves workflow subscriptions from the app database. The agent runtime (`openneko serve` and `agent-sandbox`)
+GraphJin that serves workflow subscriptions from the app database. The agent runtime (`openneko serve`)
 is part of the core — it is the only way agents run, in every mode.
 The embedding service is a small listener that loads its model (EmbeddingGemma 2,
 about 2 GB of memory) only when an admin turns on **Admin → Settings → Semantic

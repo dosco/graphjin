@@ -200,10 +200,10 @@ func TestPackagedComposeKeepsRuntimeTrafficOnDockerNetwork(t *testing.T) {
 
 }
 
-// The agent's terminal runs in agent-sandbox. It must stay off the stack's
-// network, hold no secrets, and keep only the capabilities it needs to run
-// commands as per-run users.
-func TestAgentSandboxIsIsolated(t *testing.T) {
+// The agent runs no commands of its own: no service executes code for it,
+// and openneko serve runs as a non-root user that shares sockets and run
+// folders only with web and the worker.
+func TestAgentRuntimeRunsNoCode(t *testing.T) {
 	for _, file := range []string{"core.yml", "repo compose.yml"} {
 		var doc composeFileForTest
 		if file == "core.yml" {
@@ -217,50 +217,15 @@ func TestAgentSandboxIsIsolated(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		sandbox, ok := doc.Services["agent-sandbox"]
-		if !ok {
-			t.Fatalf("%s has no agent-sandbox service", file)
-		}
-		if len(sandbox.Networks) != 1 || sandbox.Networks[0] != "agent-sandbox" {
-			t.Fatalf("%s agent-sandbox networks = %v, want only agent-sandbox", file, sandbox.Networks)
+		if _, ok := doc.Services["agent-sandbox"]; ok {
+			t.Fatalf("%s still runs agent-sandbox", file)
 		}
 		for name, service := range doc.Services {
-			if name == "agent-sandbox" {
-				continue
-			}
-			for _, network := range service.Networks {
-				if network == "agent-sandbox" {
-					t.Fatalf("%s service %s joins the sandbox network", file, name)
+			for key := range service.Environment {
+				if strings.HasPrefix(key, "OPENNEKO_SANDBOX_") {
+					t.Fatalf("%s %s sets %s", file, name, key)
 				}
 			}
-		}
-		for key := range sandbox.Environment {
-			upper := strings.ToUpper(key)
-			for _, secret := range []string{"KEY", "TOKEN", "SECRET", "PASSWORD", "PG_", "DATABASE", "BROKER", "GRAPHJIN"} {
-				if strings.Contains(upper, secret) {
-					t.Fatalf("%s agent-sandbox environment carries %s", file, key)
-				}
-			}
-		}
-		for _, mount := range sandbox.Volumes {
-			if strings.Contains(mount, "config") || strings.Contains(mount, "docker.sock") || strings.Contains(mount, "secrets") {
-				t.Fatalf("%s agent-sandbox mounts %s", file, mount)
-			}
-		}
-		if len(sandbox.CapDrop) != 1 || sandbox.CapDrop[0] != "ALL" {
-			t.Fatalf("%s agent-sandbox cap_drop = %v, want [ALL]", file, sandbox.CapDrop)
-		}
-		allowed := map[string]bool{"CHOWN": true, "DAC_OVERRIDE": true, "FOWNER": true, "KILL": true, "SETGID": true, "SETUID": true}
-		for _, capability := range sandbox.CapAdd {
-			if !allowed[capability] {
-				t.Fatalf("%s agent-sandbox adds capability %s", file, capability)
-			}
-		}
-		if len(sandbox.SecurityOpt) != 1 || sandbox.SecurityOpt[0] != "no-new-privileges:true" {
-			t.Fatalf("%s agent-sandbox security_opt = %v", file, sandbox.SecurityOpt)
-		}
-		if sandbox.Environment["OPENNEKO_SANDBOX_WORKSPACES"] != "/var/lib/openneko/agent-runs" || sandbox.Environment["OPENNEKO_SANDBOX_GID"] != "1001" {
-			t.Fatalf("%s agent-sandbox workspace settings = %v", file, sandbox.Environment)
 		}
 
 		// openneko serve runs in the graphjin service.
@@ -268,7 +233,7 @@ func TestAgentSandboxIsIsolated(t *testing.T) {
 		if serve.User == "" || strings.HasPrefix(serve.User, "0") || strings.HasPrefix(serve.User, "root") {
 			t.Fatalf("%s graphjin (openneko serve) user = %q, want a non-root user", file, serve.User)
 		}
-		if serve.Environment["OPENNEKO_SANDBOX_SOCKET"] != "/run/openneko/sandbox.sock" || serve.Environment["OPENNEKO_SERVE_SOCKET"] != "/run/openneko/serve.sock" {
+		if serve.Environment["OPENNEKO_SERVE_SOCKET"] != "/run/openneko/serve.sock" {
 			t.Fatalf("%s graphjin (openneko serve) socket settings = %v", file, serve.Environment)
 		}
 		for _, name := range []string{"web", "worker"} {

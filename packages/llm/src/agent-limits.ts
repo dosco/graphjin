@@ -22,20 +22,12 @@ export type AgentLimits = {
     /** Steps each delegated child may take. */
     maxIterations: number;
   };
-  toolOutput: {
-    /** Terminal output cap in characters. */
-    maxBytes: number;
-  };
-  terminal: {
-    /** Default command timeout. */
-    timeoutSeconds: number;
-  };
 };
 
-// Every concurrent job runs its own runner and terminal user. Keep the
+// Every concurrent job runs its own runner. Keep the
 // out-of-box ceiling small; operators raise it after sizing their host.
 export const AGENT_DEFAULT_GLOBAL_CAP = 3;
-// Two metric refreshes at a time leaves sandbox room for chat on a small host.
+// Two metric refreshes at a time leave room for chat on a small host.
 export const METRIC_REFRESH_DEFAULT_CAP = 2;
 
 function readInt(name: string, fallback: number, min: number, max?: number): number {
@@ -61,12 +53,6 @@ export function agentLimits(kind: AgentRunKind = "chat"): AgentLimits {
     maxTurns: readInt("OPENNEKO_AGENT_MAX_TURNS", 25, 1, 500),
     delegation: {
       maxIterations: readInt("OPENNEKO_AGENT_DELEGATION_MAX_ITERATIONS", 50, 1),
-    },
-    toolOutput: {
-      maxBytes: readInt("OPENNEKO_AGENT_TOOL_OUTPUT_MAX_BYTES", 50_000, 1_000),
-    },
-    terminal: {
-      timeoutSeconds: readInt("OPENNEKO_AGENT_TERMINAL_TIMEOUT_SECONDS", 180, 1, 600),
     },
   };
   if (kind === "workflow") {
@@ -105,13 +91,5 @@ export function axRunLimits(limits: AgentLimits): AxRunLimits {
     max_child_steps: Math.min(limits.delegation.maxIterations, 500),
     ...(limits.maxToolCalls ? { max_operations: limits.maxToolCalls } : {}),
     ...(limits.reasoningEffort ? { reasoning_effort: limits.reasoningEffort } : {}),
-  };
-}
-
-/** Ax Harness process environment for the limits it reads at start. */
-export function axLimitEnv(limits: AgentLimits): Record<string, string> {
-  return {
-    OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS: String(limits.terminal.timeoutSeconds),
-    OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT: String(limits.toolOutput.maxBytes),
   };
 }

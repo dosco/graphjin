@@ -2,8 +2,9 @@
 
 Ax Harness runs one agent turn per process. The host writes one JSON run
 specification to stdin. The harness writes one JSON event per line to stdout.
-The host owns history, compaction across turns, approvals, the sandbox and
-scheduling.
+The host owns history, compaction across turns, approvals and scheduling.
+The harness runs no commands: its tools read and write files, search, fetch
+allowed hosts and call MCP servers.
 
 Build the binary with `go build -o bin/ax-harness ./cmd/ax-harness`.
 
@@ -51,8 +52,6 @@ The defaults below apply only when the host does not set a value.
 | Saved result preview | 1,500 characters |
 | Inline results per actor step | No limit: results go to actor code, and only printed output reaches the model |
 | Stored tool result | 16 MiB; MCP results 8 MiB, below the MCP SDK frame limit |
-| Terminal timeout | Default 180 s, maximum 600 s |
-| Terminal output | 50,000 characters, head and tail |
 | File read | 100,000 characters, 2,000 lines, 2,000 characters per line |
 | File write and edit | 1 MiB of content; readable files up to 10 MiB |
 | Skills catalog | 256 skills; descriptions up to 1,024 characters; bodies up to 64 KiB |
@@ -215,20 +214,10 @@ registry across processes, and Ax creates it outside the metered model calls.
 | `OPENNEKO_MCP_SERVERS` | Comma list of bridge servers to start. |
 | `OPENNEKO_BROKER_URL`, `OPENNEKO_BROKER_TOKEN` | Passed to the bridge only, then removed from the harness process. |
 | `OPENNEKO_HARNESS_WORKSPACE_DIR` | Adds `file_read`, `file_edit`, `file_write`, `file_search`. |
-| `OPENNEKO_HARNESS_SHELL` | `1` adds `terminal`. Needs the workspace. |
-| `OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS` | Default terminal timeout, 1 to 600. Default 180. |
-| `OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT` | Terminal output cap in characters, 1,000 to 1,000,000. Default 50,000. |
 | `OPENNEKO_HARNESS_WEB_HOSTS` | Comma list of hosts for `web_fetch`. `*.example.com` matches subdomains; `*` matches any public host. Unset means no `web_fetch`. |
 | `OPENNEKO_HARNESS_UPLOADS_DIR` | Adds read-only upload tools. |
 | `OPENNEKO_HARNESS_SKILLS_READ`, `OPENNEKO_MCP_SKILLS_ROOT` | Adds the staged skills to the Ax skills catalog, and `skill_read` and `skill_search` for supporting files. |
 | `OPENNEKO_HARNESS_CHILD_TOOLS` | `*` or a comma list of tools for the child agent. Pause tools stay with the parent. |
-
-`terminal` runs `/bin/sh -c` in the workspace in its own process group. A
-timeout or a cancel kills the whole group. Its environment has no broker
-binding and no model credential: the entry removes `OPENNEKO_BROKER_URL`,
-`OPENNEKO_BROKER_TOKEN`, `HARNESS_MODEL_API_KEY`, `HARNESS_MODEL_ROUTES` and
-every route's key variable. A non-zero exit is a normal result with
-`exit_code` and `output`.
 
 `file_edit` replaces `old_string` with `new_string`. The file must be read in
 this run and unchanged since the last read or edit. `old_string` must match

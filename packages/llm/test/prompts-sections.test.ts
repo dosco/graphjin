@@ -113,7 +113,6 @@ describe("buildMemorySection", () => {
 describe("buildDataAccessSection", () => {
   const native = (overrides: Partial<Parameters<typeof buildDataAccessSection>[0]> = {}) =>
     buildDataAccessSection({
-      shellTool: "terminal",
       queryTool: "mcp_neko_graphjin_execute_graphql",
       queryIdentity: "actor",
       workspace: fakeWorkspace,
@@ -125,7 +124,6 @@ describe("buildDataAccessSection", () => {
   it("requires a native broker tool instead of falling back to the shell", () => {
     expect(() =>
       buildDataAccessSection({
-        shellTool: "terminal",
         workspace: fakeWorkspace,
         knowledge: fakeKnowledge,
         inlineKnowledge: "syntax",
@@ -146,12 +144,11 @@ describe("buildDataAccessSection", () => {
     expect(section).not.toContain("`terminal`");
   });
 
-  it("tells scripts how to query when script access is on", () => {
-    const section = native({ scriptAccess: true });
-    expect(section).toContain("from neko_data import query");
-    expect(section).toContain("neko-query");
-    expect(section).not.toContain("do not bypass it with the");
-    expect(native()).not.toContain("neko_data");
+  it("treats a refusal as final and names no script path", () => {
+    const section = native();
+    expect(section).toContain("Treat a refusal or unavailable tool as authoritative.");
+    expect(section).not.toContain("neko_data");
+    expect(section).not.toContain("neko-query");
   });
 
   it("inlines correctness rules for native queries", () => {

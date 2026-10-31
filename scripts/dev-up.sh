@@ -14,7 +14,7 @@ printf '%s\n' "$COMPOSE_PROJECT_NAME" > "$OPENNEKO_DEV_STATE/compose-project"
 
 # Host processes validate GraphJin configs with the graphjin role of the
 # openneko binary, built from graphjin/ in this checkout; scripts/dev-agent.sh
-# runs its serve and sandbox roles.
+# runs its serve role.
 mkdir -p "$OPENNEKO_DEV_STATE/bin"
 # Static, as release builds are: the dev customer GraphJin container runs it.
 (cd apps/openneko && CGO_ENABLED=0 go build -o "$OPENNEKO_DEV_STATE/bin/openneko" ./cmd/openneko)

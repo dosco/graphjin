@@ -3,17 +3,16 @@
 The web and worker images carry the agent runner at `/opt/openneko-agent`: two
 JavaScript bundles (`entry.js` and `mcp-bridge.js`) and the built-in skills. It
 does not include the worker's Node dependency tree, tsx, database libraries or
-embedding stack. The agent image runs `openneko serve` and `openneko sandbox`
-and carries the document tools that terminal commands use. See
-[AGENT_RUNTIME.md](../../AGENT_RUNTIME.md) for how the three fit together.
+embedding stack. The agent image runs `openneko serve`. See
+[AGENT_RUNTIME.md](../../AGENT_RUNTIME.md) for how the two fit together.
 
 Each run stages its workspace in a fresh folder under `OPENNEKO_AGENT_RUNS_DIR`
 and starts `node /opt/openneko-agent/entry.js` as a child process in its own
 process group. The entry validates its bridge and skills before running the
 job; the worker image build runs the same check (`entry.js --preflight` and
 an import of `mcp-bridge.js`) as a non-root user on both release
-architectures. The runner sends each turn to `openneko serve`, which sends
-terminal commands to `openneko sandbox`. When the run ends, the launcher kills
+architectures. The runner sends each turn to `openneko serve`. When the run
+ends, the launcher kills
 the runner's process group, copies artifacts back and deletes the folder.
 
 Measured image sizes, restart/readiness timings, single-agent and three-session
@@ -25,11 +24,9 @@ containers and warm pool they evaluated were removed.
 
 ## Resource limits
 
-Runs share the agent-sandbox container's resources; there are no per-run CPU
-or memory limits. The sandbox container has a process limit (`pids_limit`)
-and each run's terminal commands run as their own user, so ending a run kills
-everything that user started. Size the host for the document/delegation
-workloads and the maximum number of concurrent turns.
+Runs share the openneko-serve container's resources; there are no per-run
+CPU or memory limits. Size the host for the maximum number of concurrent
+turns and their delegated children.
 
 ## Timings
 

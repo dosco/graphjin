@@ -1,19 +1,19 @@
 /**
  * The agent runtime end to end, with no model provider: the launcher stages a
  * run and starts the bundled runner, the runner sends the turn to a real
- * `openneko serve`, and serve sends the terminal command to a real
- * `openneko sandbox`, which runs it as the run's own user.
+ * `openneko serve`, and the turn writes a file with its file tools. The turn
+ * has no terminal.
  *
- * Opt in: OPENNEKO_RUNTIME_E2E=1, as root (the sandbox switches users), with
- * OPENNEKO_TEST_BINARY naming a built openneko binary and
- * OPENNEKO_AGENT_ENTRY the bundled runner (Dockerfile agent-deploy stage).
- * The runs folder sits under /var/lib so run users can cross into it.
+ * Opt in: OPENNEKO_RUNTIME_E2E=1, with OPENNEKO_TEST_BINARY naming a built
+ * openneko binary and OPENNEKO_AGENT_ENTRY the bundled runner (Dockerfile
+ * agent-deploy stage).
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AgentEvent } from "@neko/llm";
@@ -23,7 +23,7 @@ import { makeSandboxJobRunCore } from "@neko/llm/work/sandbox-launcher";
 const binary = process.env.OPENNEKO_TEST_BINARY;
 const entry = process.env.OPENNEKO_AGENT_ENTRY;
 const runnable =
-  process.env.OPENNEKO_RUNTIME_E2E === "1" && process.getuid?.() === 0 && Boolean(binary && entry && existsSync(binary) && existsSync(entry));
+  process.env.OPENNEKO_RUNTIME_E2E === "1" && Boolean(binary && entry && existsSync(binary) && existsSync(entry));
 
 (runnable ? describe : describe.skip)("agent runtime chain", () => {
   let root: string;
@@ -32,20 +32,18 @@ const runnable =
   const children: ChildProcess[] = [];
 
   beforeAll(async () => {
-    await mkdir("/var/lib/openneko-e2e", { recursive: true });
-    await chmod("/var/lib/openneko-e2e", 0o755);
-    root = await mkdtemp("/var/lib/openneko-e2e/run-");
-    await chmod(root, 0o755);
+    // A short path: a Unix socket path must stay under about 100 bytes.
+    root = await mkdtemp(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "neko-e2e-"));
     const runs = join(root, "runs");
     const sockets = join(root, "sock");
     await mkdir(runs, { recursive: true });
     await mkdir(sockets, { recursive: true });
 
-    // The actor runs one terminal command, then the responder answers. The
-    // responder streams, as it does whenever a run has an event sink.
+    // The actor writes one file, then the responder answers. The responder
+    // streams, as it does whenever a run has an event sink.
     const actor = [
-      `{"javascriptCode":"final('Run the command',{});"}`,
-      `{"javascriptCode":"const r=terminal({command:'id -u; env | grep -c API_KEY; mkdir -p \\"$ARTIFACT_DIR\\" && echo hello > \\"$ARTIFACT_DIR/report.txt\\" && echo wrote'}); console.log(JSON.stringify(r));"}`,
+      `{"javascriptCode":"final('Write the report',{});"}`,
+      `{"javascriptCode":"const w=file_write({path:'runs/run-1/artifacts/report.txt',content:'hello'}); console.log(JSON.stringify(w));"}`,
       `{"javascriptCode":"final('Report',{});"}`,
     ];
     let calls = 0;
@@ -68,17 +66,12 @@ const runnable =
     await new Promise<void>((done) => model.listen(0, "127.0.0.1", done));
     modelUrl = `http://127.0.0.1:${(model.address() as { port: number }).port}`;
 
-    const sandboxSocket = join(sockets, "sandbox.sock");
     const serveSocket = join(sockets, "serve.sock");
-    children.push(spawn(binary!, ["sandbox", "--socket", sandboxSocket], {
-      stdio: "ignore",
-      env: { PATH: process.env.PATH ?? "", OPENNEKO_SANDBOX_WORKSPACES: runs, OPENNEKO_SANDBOX_HOMES: join(root, "homes"), OPENNEKO_SANDBOX_GID: "0" },
-    }));
     children.push(spawn(binary!, ["serve", "--socket", serveSocket], {
       stdio: "ignore",
-      env: { PATH: process.env.PATH ?? "", OPENNEKO_SANDBOX_SOCKET: sandboxSocket },
+      env: { PATH: process.env.PATH ?? "" },
     }));
-    for (let i = 0; i < 200 && !(existsSync(serveSocket) && existsSync(sandboxSocket)); i++) {
+    for (let i = 0; i < 200 && !existsSync(serveSocket); i++) {
       await new Promise((r) => setTimeout(r, 25));
     }
     process.env.OPENNEKO_SERVE_SOCKET = serveSocket;
@@ -93,7 +86,7 @@ const runnable =
     if (root) await rm(root, { recursive: true, force: true });
   });
 
-  it("runs a turn whose terminal command runs as the run's user with no key", async () => {
+  it("runs a turn that writes a file with its file tools and has no terminal", async () => {
     const org = join(root, "host", "org-1");
     const workspace = {
       orgRoot: org,
@@ -127,11 +120,9 @@ const runnable =
     });
 
     expect(result).toMatchObject({ status: "completed", finalText: "done" });
-    const terminal = events.find((event): event is Extract<AgentEvent, { type: "tool_end" }> => event.type === "tool_end");
-    const output = String((terminal?.result as { output?: string } | undefined)?.output ?? "");
-    const [uid, keys, wrote] = output.trim().split("\n");
-    expect(Number(uid)).toBeGreaterThanOrEqual(20000);
-    expect(keys).toBe("0");
-    expect(wrote).toBe("wrote");
+    const started = events.filter((event): event is Extract<AgentEvent, { type: "tool_start" }> => event.type === "tool_start");
+    expect(started.map((event) => event.name)).toEqual(["file_write"]);
+    const ended = events.find((event): event is Extract<AgentEvent, { type: "tool_end" }> => event.type === "tool_end");
+    expect(ended?.error).toBeUndefined();
   }, 120_000);
 });

@@ -22,16 +22,6 @@ import {
 export type WorkflowStep = {
   id: string;
   description: string;
-  /** Present on a deterministic step that runs before the agent turn. */
-  script?: WorkflowScript;
-};
-
-export type WorkflowScript = {
-  /** Skill that bundles the script; its directory is SKILL_DIR. */
-  skill: string;
-  /** Program and arguments, run without a shell from the run directory. */
-  command: string[];
-  timeoutSeconds?: number;
 };
 
 export type WorkflowTriggers = {

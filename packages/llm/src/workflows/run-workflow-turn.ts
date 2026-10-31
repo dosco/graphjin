@@ -329,7 +329,6 @@ async function runWorkflowTurnTraced(
       tag: `workflow ${workflow.name} ${workflowRun.id}`,
       signal,
       steps: workflow.steps,
-      input: workflowRun.triggerPayload,
       timeoutMs: opts.timeoutMs ?? budget.timeoutMs,
       reasoningEffort: budget.reasoningEffort,
       maxToolIterations: opts.maxToolIterations ?? budget.maxToolIterations,

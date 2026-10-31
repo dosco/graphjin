@@ -134,10 +134,10 @@ export function buildReckonSeedMessage(input: {
     "```json",
     JSON.stringify(input.params, null, 2),
     "```",
-    `The same parameters are saved as JSON in $RUN_DIR/${WORKFLOW_API_INPUT_FILE}. Read large inputs from that file.`,
+    `The same parameters are saved as JSON in the run folder as ${WORKFLOW_API_INPUT_FILE}. Read large inputs from that file.`,
     "",
-    `[output] Write your single deliverable to $ARTIFACT_DIR/${artifact}. It is the only file the caller is served.`,
-    "Keep every intermediate and row-level file under $RUN_DIR. Never print row data into the reply.",
+    `[output] Write your single deliverable to ${artifact} in the run's artifact folder. It is the only file the caller is served.`,
+    "Keep every intermediate and row-level file in the run folder. Never print row data into the reply.",
   ];
   if (input.mode === "batch") {
     lines.push(

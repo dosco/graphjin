@@ -161,7 +161,6 @@ type MetricPromptBaseArgs = {
   input: MetricPromptInput;
   knowledge: KnowledgePackContents;
   workspace: AgentWorkspace;
-  shellTool: string;
   memoryContext?: string;
   /** True when the backend supports `mcp_neko_memory_search`. */
   supportsMemorySearch?: boolean;
@@ -178,7 +177,6 @@ export function buildMetricPrompt(
     input,
     knowledge,
     workspace,
-    shellTool,
     queryTool,
     dataAgentTool,
     memoryContext,
@@ -200,7 +198,6 @@ snapshot. No prose around the JSON.
       memoryContext,
     }),
     buildDataAccessSection({
-      shellTool,
       queryTool,
       agentTool: dataAgentTool,
       agentPurpose: "metric",

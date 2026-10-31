@@ -37,23 +37,6 @@ export const WORKFLOW_BATCH_DEFINITION_SCHEMA = z.object({
     .max(64),
 });
 
-export const WORKFLOW_SCRIPT_SCHEMA = z
-  .object({
-    skill: z
-      .string()
-      .trim()
-      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-      .max(64),
-    command: z.array(z.string().max(2000)).min(1).max(64),
-    timeoutSeconds: z.number().int().min(1).max(3600).optional(),
-  })
-  .describe(
-    "Makes this a deterministic script step. It runs before the agent turn, from the run directory, " +
-      "without a shell. Arguments may use ${SKILL_DIR}, ${RUN_DIR}, ${ARTIFACT_DIR}, and " +
-      "${input.<field>} or ${input.<field>:-default} from the trigger payload. The script " +
-      "queries data with neko_data or neko-query.",
-  );
-
 export const WORKFLOW_SAVE_SCHEMA = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().max(2000).optional(),
@@ -64,7 +47,6 @@ export const WORKFLOW_SAVE_SCHEMA = z.object({
       z.object({
         id: z.string().trim().min(1).max(60),
         description: z.string().trim().min(1).max(2000),
-        script: WORKFLOW_SCRIPT_SCHEMA.optional(),
       }),
     )
     .min(1)

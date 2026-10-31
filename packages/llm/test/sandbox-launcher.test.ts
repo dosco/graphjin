@@ -138,8 +138,8 @@ describe("stageSandboxWorkspace", () => {
         mkdir(join(workspace.skillsRoot, "quarterly-review"), { recursive: true }),
       ]);
       await cp(
-        join(process.cwd(), "assets", "builtin-skills", "pdf"),
-        join(workspace.skillsRoot, "pdf"),
+        join(process.cwd(), "assets", "builtin-skills", "internal-comms"),
+        join(workspace.skillsRoot, "internal-comms"),
         { recursive: true },
       );
       await Promise.all([
@@ -155,21 +155,21 @@ describe("stageSandboxWorkspace", () => {
         ),
         // Simulate a durable workspace left behind by an older release.
         writeFile(
-          join(workspace.skillsRoot, "pdf", "SKILL.md"),
-          "---\nname: pdf\ndescription: stale system skill\n---\n",
+          join(workspace.skillsRoot, "internal-comms", "SKILL.md"),
+          "---\nname: internal-comms\ndescription: stale system skill\n---\n",
         ),
       ]);
 
       const staged = await stageSandboxWorkspace(workspace, stage, {
-        requiredSkillNames: ["pdf"],
+        requiredSkillNames: ["internal-comms"],
       });
-      expect(staged.skillOverrides).toEqual(["pdf", "quarterly-review"]);
+      expect(staged.skillOverrides).toEqual(["internal-comms", "quarterly-review"]);
       await expect(
-        access(join(staged.workspace.skillsRoot, "pdf", "SKILL.md")),
+        access(join(staged.workspace.skillsRoot, "internal-comms", "SKILL.md")),
       ).resolves.toBeUndefined();
       expect(
-        await readFile(join(staged.workspace.skillsRoot, "pdf", "SKILL.md"), "utf8"),
-      ).toBe(await readFile(join(process.cwd(), "assets", "builtin-skills", "pdf", "SKILL.md"), "utf8"));
+        await readFile(join(staged.workspace.skillsRoot, "internal-comms", "SKILL.md"), "utf8"),
+      ).toBe(await readFile(join(process.cwd(), "assets", "builtin-skills", "internal-comms", "SKILL.md"), "utf8"));
       expect(await readFile(join(staged.workspace.knowledgeRoot, "schema.json"), "utf8"))
         .toBe("{}");
       expect(await readFile(join(staged.workspace.threadUploadsRoot, "current.csv"), "utf8"))
@@ -237,8 +237,7 @@ describe("makeSandboxRunCore", () => {
       MODEL_API_KEY: "org-key",
     });
     expect(env.NEKO_PG_PASSWORD).toBeUndefined();
-    // The org's terminal setting rides with the run; on by default.
-    expect(env.OPENNEKO_AGENT_TERMINAL).toBe("on");
+    expect(env.OPENNEKO_AGENT_TERMINAL).toBeUndefined();
     // The stage is gone once the run ends.
     await expect(access(job.workspace.orgRoot)).rejects.toThrow();
   });
@@ -260,7 +259,7 @@ describe("makeSandboxRunCore", () => {
       captured = await readFile(capture, "utf8").then((t) => JSON.parse(t) as Capture).catch(() => undefined);
     }
     expect(captured).toBeDefined();
-    // Serve and the sandbox's run user share the stage through the group;
+    // Serve shares the stage through the group;
     // others get nothing.
     const mode = (await stat(captured!.job.workspace.skillsRoot)).mode & 0o077;
     expect(mode).toBe(0o070);
@@ -279,7 +278,6 @@ describe("makeSandboxRunCore", () => {
       networkHosts: ["api.example.com"],
       triggeredByObservationId: "obs-1",
       steps: [{ id: "s1", description: "Step one" }],
-      input: { region: "west" },
       maxContinuations: 2,
       timeoutMs: 60_000,
     };
@@ -291,18 +289,17 @@ describe("makeSandboxRunCore", () => {
       networkHosts: ["api.example.com"],
       triggeredByObservationId: "obs-1",
       steps: [{ id: "s1", description: "Step one" }],
-      input: { region: "west" },
       maxContinuations: 2,
       agentRun: { timeoutMs: 60_000 },
     });
   });
 
-  it("sizes the exec budget for steps and continuations", () => {
+  it("sizes the exec budget for the turn and its continuations", () => {
     expect(workflowExecBudgetMs({
       timeoutMs: 1_000,
       maxContinuations: 2,
-      steps: [{ id: "s", description: "d", script: { path: "x.py", timeoutSeconds: 5 } }],
-    } as unknown as RunWorkflowAgentBackendInput)).toBe(5_000 + 3_000);
+      steps: [{ id: "s", description: "d" }],
+    } as unknown as RunWorkflowAgentBackendInput)).toBe(3_000);
   });
 });
 

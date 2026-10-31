@@ -134,7 +134,6 @@ export {
   scrubJson,
   type Scrubber,
 } from "./secret-scrubber";
-export { KNOWN_SKILL_DEPS, aggregateSkillDeps, type SkillDeps } from "./skill-deps";
 export {
   normalizeSkillName,
   upsertWorkSkill,

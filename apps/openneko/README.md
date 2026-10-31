@@ -151,7 +151,7 @@ The binary manages two things on the operator's host:
   section (for example `channel.slack`, `signin.scalekit`), plus
   `_operators[opId][connector]` slots for per-operator OAuth credentials.
 - `~/.openneko/skills/` — community skill folders the worker loads at
-  agent-turn time. `pnpm skills:check` validates declared deps.
+  agent-turn time.
 
 See the repo-root [README](../../README.md) for the full operator-side
 docs including `/integrations` (per-operator OAuth) and `/settings/security`
