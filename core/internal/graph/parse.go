@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"unsafe"
 )
@@ -187,7 +188,7 @@ func Parse(gql []byte) (op Operation, err error) {
 func (p *Parser) parseFragment() (frag Fragment, err error) {
 	s := p.curr().pos
 
-	if p.peek(itemName) {
+	if p.peek(itemName, itemBoolVal) {
 		frag.Name = p.val(p.next())
 	} else {
 		err = errors.New("fragment: missing name")
@@ -201,7 +202,7 @@ func (p *Parser) parseFragment() (frag Fragment, err error) {
 		return
 	}
 
-	if p.peek(itemName) {
+	if p.peek(itemName, itemOn, itemBoolVal) {
 		frag.On = p.vall(p.next())
 	} else {
 		err = errors.New("fragment: missing table name after 'on' keyword")
@@ -290,7 +291,7 @@ func (p *Parser) parseOpTypeAndArgs(op *Operation) (err error) {
 
 	op.Args = op.argsA[:0]
 
-	if p.peek(itemName) {
+	if p.peek(itemName, itemOn, itemBoolVal) {
 		op.Name = p.val(p.next())
 	}
 
@@ -327,14 +328,21 @@ func ParseArgValue(argVal string, json bool) (*Node, error) {
 		items: l.items,
 		json:  json,
 	}
-	return p.parseValue()
+	node, err := p.parseValue()
+	if err != nil {
+		return nil, err
+	}
+	if !p.peek(itemEOF) {
+		return nil, errors.New("unexpected input after argument value")
+	}
+	return node, nil
 }
 
 func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 	var err error
 	st := NewStack()
 
-	if !p.peek(itemName, itemSpread) {
+	if !p.peek(itemName, itemOn, itemBoolVal, itemSpread) {
 		return nil, p.tokErr(`field name or ...Fragment`)
 	}
 
@@ -380,7 +388,7 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 }
 
 func (p *Parser) parseNormalFields(st *Stack, fields []Field) ([]Field, error) {
-	if !p.peek(itemName) {
+	if !p.peek(itemName, itemOn, itemBoolVal) {
 		return nil, p.tokErr(`expecting an alias or field name`)
 	}
 
@@ -439,7 +447,7 @@ func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error)
 		}
 
 	} else {
-		if !p.peek(itemName) {
+		if !p.peek(itemName, itemOn, itemBoolVal) {
 			return nil, fmt.Errorf("expecting a fragment name, got: %s", p.next())
 		}
 
@@ -503,7 +511,7 @@ func (p *Parser) parseField(f *Field) error {
 	if p.peek(itemColon) {
 		p.ignore()
 
-		if p.peek(itemName) {
+		if p.peek(itemName, itemOn, itemBoolVal) {
 			f.Alias = p.val(v)
 			f.Name = p.val(p.next())
 		} else {
@@ -557,12 +565,21 @@ func (p *Parser) parseOpParams(op *Operation) (err error) {
 func (p *Parser) parseVarDef(op *Operation) (err error) {
 	name := p.val(p.next())
 
+	// Variable type declarations precede defaults in standard GraphQL syntax.
+	if p.peek(itemColon) {
+		p.ignore()
+		for p.peek(itemName, itemListOpen, itemListClose, itemRequired) {
+			p.ignore()
+		}
+	}
+
 	if !p.peek(itemEquals) {
 		return
 	}
 	p.ignore()
 
 	if !p.peek(itemName,
+		itemOn,
 		itemStringVal,
 		itemNumberVal,
 		itemBoolVal,
@@ -586,9 +603,9 @@ func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 
 	var argNameTypes []MType
 	if p.json {
-		argNameTypes = []MType{itemName, itemStringVal}
+		argNameTypes = []MType{itemName, itemOn, itemBoolVal, itemStringVal}
 	} else {
-		argNameTypes = []MType{itemName}
+		argNameTypes = []MType{itemName, itemOn, itemBoolVal}
 	}
 
 	for {
@@ -626,7 +643,7 @@ func (p *Parser) parseDirective(dirs []Directive) ([]Directive, error) {
 	var err error
 	var d Directive
 
-	if p.peek(itemName) {
+	if p.peek(itemName, itemOn, itemBoolVal) {
 		d.Name = p.val(p.next())
 	} else {
 		return nil, fmt.Errorf("expecting directive name after @ symbol got: %s", p.peekNext())
@@ -650,7 +667,10 @@ func (p *Parser) parseList() (*Node, error) {
 
 	var ty ParserType
 	for {
-		if p.peek(itemEOF, itemListClose) {
+		if p.peek(itemEOF) {
+			return nil, errors.New("end reached before list was closed")
+		}
+		if p.peek(itemListClose) {
 			p.ignore()
 			break
 		}
@@ -682,15 +702,18 @@ func (p *Parser) parseObj() (*Node, error) {
 
 	var argNameTypes []MType
 	if p.json {
-		argNameTypes = []MType{itemName, itemStringVal}
+		argNameTypes = []MType{itemName, itemOn, itemBoolVal, itemStringVal}
 	} else {
-		argNameTypes = []MType{itemName}
+		argNameTypes = []MType{itemName, itemOn, itemBoolVal}
 	}
 
 	parent.CMap = make(map[string]*Node)
 
 	for {
-		if p.peek(itemEOF, itemObjClose) {
+		if p.peek(itemEOF) {
+			return nil, errors.New("end reached before object was closed")
+		}
+		if p.peek(itemObjClose) {
 			p.ignore()
 			break
 		}
@@ -747,13 +770,16 @@ func (p *Parser) parseValue() (*Node, error) {
 		node.Type = NodeBool
 	case itemVariable:
 		node.Type = NodeVar
-	case itemName:
+	case itemName, itemOn:
 		node.Type = NodeLabel
 	default:
 		return nil, fmt.Errorf("expecting a number, string, object, list or variable as an argument value (not '%s' of type '%s')", p.val(item), item._type)
 
 	}
 	node.Val = p.val(item)
+	if item._type == itemBoolVal {
+		node.Val = strings.ToLower(node.Val)
+	}
 
 	return node, nil
 }

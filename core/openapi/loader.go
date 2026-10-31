@@ -131,7 +131,15 @@ func Load(opts LoaderOptions, configs map[string]SpecConfig, logger *log.Logger)
 
 		baseURL := cfg.BaseURL
 		if baseURL == "" && len(doc.Servers) > 0 {
-			baseURL = doc.Servers[0].URL
+			server := doc.Servers[0]
+			baseURL = server.URL
+			replacements := make([]string, 0, len(server.Variables)*2)
+			for name, variable := range server.Variables {
+				if variable != nil {
+					replacements = append(replacements, "{"+name+"}", variable.Default)
+				}
+			}
+			baseURL = strings.NewReplacer(replacements...).Replace(baseURL)
 		}
 
 		spec := &Spec{
@@ -193,13 +201,14 @@ func canonicaliseOpKeys(cfg SpecConfig, doc *openapi3.T) SpecConfig {
 		return cfg
 	}
 	canonical := map[string]string{}
-	for _, item := range doc.Paths.Map() {
+	for path, item := range doc.Paths.Map() {
 		if item == nil {
 			continue
 		}
-		for _, op := range item.Operations() {
-			if op != nil && op.OperationID != "" {
-				canonical[strings.ToLower(op.OperationID)] = op.OperationID
+		for method, op := range item.Operations() {
+			if op != nil {
+				id := operationID(op, method, path)
+				canonical[strings.ToLower(id)] = id
 			}
 		}
 	}
@@ -265,11 +274,7 @@ func expandAuthConfig(in AuthConfig) AuthConfig {
 		if len(in.Request.Body) > 0 {
 			req.Body = make(map[string]interface{}, len(in.Request.Body))
 			for k, v := range in.Request.Body {
-				if s, ok := v.(string); ok {
-					req.Body[k] = expandEnv(s)
-				} else {
-					req.Body[k] = v
-				}
+				req.Body[k] = expandAuthValue(v)
 			}
 		}
 		if len(in.Request.Headers) > 0 {
@@ -281,4 +286,39 @@ func expandAuthConfig(in AuthConfig) AuthConfig {
 		out.Request = &req
 	}
 	return out
+}
+
+// expandAuthValue expands credential placeholders throughout JSON request
+// values, copying containers so the caller's configuration remains unchanged.
+func expandAuthValue(value interface{}) interface{} {
+	switch value := value.(type) {
+	case string:
+		return expandEnv(value)
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(value))
+		for name, child := range value {
+			out[name] = expandAuthValue(child)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(value))
+		for i, child := range value {
+			out[i] = expandAuthValue(child)
+		}
+		return out
+	case map[string]string:
+		out := make(map[string]string, len(value))
+		for name, child := range value {
+			out[name] = expandEnv(child)
+		}
+		return out
+	case []string:
+		out := make([]string, len(value))
+		for i, child := range value {
+			out[i] = expandEnv(child)
+		}
+		return out
+	default:
+		return value
+	}
 }

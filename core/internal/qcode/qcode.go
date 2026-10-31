@@ -608,7 +608,7 @@ func (co *Compiler) Compile(
 	var buf bytes.Buffer
 	for i, v := range op.VarDef {
 		graphNodeToJSON(v.Val, &buf)
-		qc.Vars[i] = Var{Name: v.Name, Val: buf.Bytes()}
+		qc.Vars[i] = Var{Name: v.Name, Val: bytes.Clone(buf.Bytes())}
 		buf.Reset()
 	}
 

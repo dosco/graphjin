@@ -94,7 +94,7 @@ func (p *Parser) parseType() (t Type, err error) {
 	}
 	p.ignore()
 
-	if !p.peek(itemName) {
+	if !p.peek(itemName, itemOn, itemBoolVal) {
 		err = p.tokErr(`type name`)
 		return
 	}
@@ -126,7 +126,7 @@ func (p *Parser) parseType() (t Type, err error) {
 
 		var f TField
 
-		if !p.peek(itemName) {
+		if !p.peek(itemName, itemOn, itemBoolVal) {
 			err = p.tokErr(`field name`)
 			return
 		}
@@ -143,7 +143,7 @@ func (p *Parser) parseType() (t Type, err error) {
 			f.List = true
 		}
 
-		if !p.peek(itemName) {
+		if !p.peek(itemName, itemOn, itemBoolVal) {
 			err = p.tokErr(`field type`)
 			return
 		}
