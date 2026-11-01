@@ -3,7 +3,7 @@ module github.com/open-neko/openneko/apps/ax-harness
 go 1.26.10
 
 require (
-	github.com/ax-llm/ax/packages/go v0.0.0-20261013031334-36aa1a5e415d
+	github.com/ax-llm/ax/packages/go v0.0.0-20261029090635-42fceae3d6cd
 	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	golang.org/x/net v0.50.0

@@ -1,5 +1,5 @@
 {
-  "version": "v0.0.0-20261013031334-36aa1a5e415d",
+  "version": "v0.0.0-20261029090635-42fceae3d6cd",
   "providers": {
     "anthropic": {
       "claude-2.1": {
@@ -841,6 +841,17 @@
         "longContextCacheReadTokenCostPer1M": 0.4,
         "longContextCacheWriteTokenCostPer1M": 5
       },
+      "gpt-6.1-sol": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 10,
+        "cacheReadTokenCostPer1M": 0.1,
+        "cacheWriteTokenCostPer1M": 2.5,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 4,
+        "longContextCompletionTokenCostPer1M": 15,
+        "longContextCacheReadTokenCostPer1M": 0.2,
+        "longContextCacheWriteTokenCostPer1M": 5
+      },
       "o1": {
         "promptTokenCostPer1M": 15,
         "completionTokenCostPer1M": 60
@@ -1074,6 +1085,17 @@
         "longContextPromptTokenCostPer1M": 4,
         "longContextCompletionTokenCostPer1M": 15,
         "longContextCacheReadTokenCostPer1M": 0.4,
+        "longContextCacheWriteTokenCostPer1M": 5
+      },
+      "gpt-6.1-sol": {
+        "promptTokenCostPer1M": 2,
+        "completionTokenCostPer1M": 10,
+        "cacheReadTokenCostPer1M": 0.1,
+        "cacheWriteTokenCostPer1M": 2.5,
+        "longContextThreshold": 272000,
+        "longContextPromptTokenCostPer1M": 4,
+        "longContextCompletionTokenCostPer1M": 15,
+        "longContextCacheReadTokenCostPer1M": 0.2,
         "longContextCacheWriteTokenCostPer1M": 5
       },
       "o1": {

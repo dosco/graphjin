@@ -3,7 +3,7 @@ module github.com/open-neko/openneko/packages/graphjin-contract/generate
 go 1.25.5
 
 require (
-	github.com/dosco/graphjin/agent/v3 v3.21.16
+	github.com/dosco/graphjin/agent/v3 v3.21.18
 	github.com/dosco/graphjin/serv/v3 v3.21.16
 )
 
@@ -51,7 +51,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.30.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.17 // indirect
 	github.com/aws/smithy-go v1.22.5 // indirect
-	github.com/ax-llm/ax/packages/go v0.0.0-20261013031334-36aa1a5e415d // indirect
+	github.com/ax-llm/ax/packages/go v0.0.0-20261029090635-42fceae3d6cd // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -62,13 +62,13 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59 // indirect
-	github.com/dosco/graphjin/auth/v3 v3.21.16 // indirect
+	github.com/dosco/graphjin/auth/v3 v3.21.18 // indirect
 	github.com/dosco/graphjin/cassandradriver v0.0.0 // indirect
 	github.com/dosco/graphjin/clickhousedriver v0.0.0 // indirect
 	github.com/dosco/graphjin/codesql v0.0.0 // indirect
-	github.com/dosco/graphjin/core/v3 v3.21.16 // indirect
+	github.com/dosco/graphjin/core/v3 v3.21.18 // indirect
 	github.com/dosco/graphjin/mongodriver v0.0.0 // indirect
-	github.com/dosco/graphjin/plugin/otel/v3 v3.21.16 // indirect
+	github.com/dosco/graphjin/plugin/otel/v3 v3.21.18 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/dvsekhvalnov/jose2go v1.7.0 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.36.0 // indirect
