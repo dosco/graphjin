@@ -16,8 +16,8 @@ revision is needed to decide sandbox reuse.
 
 - Enforce RBAC on each data/tool/action request and filter staged files, retrieved
   memories and library context **before they reach the agent**. Cover sources and
-  row/action restrictions, packs, plugins, personal/team memories, library
-  documents and concepts, role/group membership, ownership and sharing rules.
+  row/action restrictions, packs, personal/team memories, library documents,
+  role/group membership, ownership and sharing rules.
   Existing org-wide knowledge/library staging needs review here.
 - Shared role/group or organisation policy changes must take effect for every
   affected user on their next request, across web and worker hosts.

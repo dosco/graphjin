@@ -1,5 +1,7 @@
 # GraphJin Cursor Rules
 
+> **Note:** the `.mdc` rule files listed below were removed from the repository. This README records the earlier layout. Use [AGENTS.md](../AGENTS.md) for current guidance.
+
 This directory contains the new Cursor rules using the [MDC format](https://docs.cursor.com/context/rules) as recommended by Cursor.
 
 ## Rules Structure

@@ -57,6 +57,9 @@ attention.
   and `delete` access modes.
 - `add_role`: provide the role name and the JWT match expression confirmed by
   the admin.
+- `enable_api_writes`: provide the API source, the spec key, the operation ID,
+  and the allowed roles. One proposal turns on governed writes for that
+  operation. Database sources stay read-only.
 
 Use an unused source name for registration. Source access patches the named
 source, and role changes upsert by role name. A full replacement is a separate

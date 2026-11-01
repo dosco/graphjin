@@ -1244,12 +1244,12 @@ This keeps large bodies out of the GraphQL request/response and gives mutations 
 
 ## Filesystem Tables
 
-Object stores show up as ordinary tables in the GraphQL schema. Declare a filesystem source and attach a table to it; it gets the same query surface as a database table — no per-storage GraphQL plumbing needed.
+Object stores show up as ordinary tables in the GraphQL schema. Declare a file source (`kind: file`) and attach a table to it; it gets the same query surface as a database table — no per-storage GraphQL plumbing needed.
 
 ```yaml
 sources:
   - name: avatars
-    kind: filesystem
+    kind: file
     backend: s3
     bucket: my-bucket
     prefix: avatars/
@@ -1257,13 +1257,13 @@ sources:
     presign_ttl: 15m
 
   - name: invoices
-    kind: filesystem
+    kind: file
     backend: gcs
     bucket: invoices
     prefix: 2026/
 
   - name: uploads_local
-    kind: filesystem
+    kind: file
     backend: local
     root: /var/lib/graphjin/uploads
 
@@ -1291,6 +1291,7 @@ Every filesystem table exposes the same columns regardless of backend:
 | `modified_at` | timestamp | Last-modified timestamp (RFC3339) |
 | `url` | text | Presigned GET URL by default |
 | `data` | text | base64 body — populated when selected |
+| `text` | text | File body as UTF-8 text when valid, else null. With file content indexing, the extracted text of PDF, Word, PowerPoint and Excel files |
 
 **List queries** use the same GraphJin query surface as database tables where it maps cleanly:
 
@@ -1343,6 +1344,7 @@ query Files($cursor: Cursor) {
 | `public_base_url` | When set, replaces presigned URLs with `<base>/<key>` — useful for CDN fronting |
 | `endpoint` | S3 endpoint override (MinIO, localstack, R2, etc.) |
 | `max_list_page_size` | Caps `limit:` for list queries (default 1000) |
+| `user_prefix` | Makes per-user folders private: a key under `<user_prefix><user id>/` is listed, read, searched and written only by that user. For example `users/` |
 
 **Authentication** — uses each platform's standard credential chain, never embedded in GraphJin config:
 - **S3**: env vars / `~/.aws/credentials` / IRSA / EC2 IMDS
@@ -1353,6 +1355,18 @@ query Files($cursor: Cursor) {
 
 **Custom backends** — register through `core.OptionSetFilesystemBackend(name, factory)` to plug in Azure Blob, R2, or anything implementing the `fstable.Backend` interface.
 
+**Content inside files**: with `file_content.enabled`, GraphJin indexes the files of each file source. It reads text and Markdown, CSV and TSV, PDF (text layer), Word, PowerPoint and Excel files. File tables then gain:
+
+- a `search` argument that ranks files by their content, best first;
+- a `passages` column with up to three matching passages per file, each `{location, snippet}`;
+- a `tables` column that lists the SQL tables derived from a sheet or CSV file.
+
+```graphql
+{ docs(search: "laminate price", limit: 5) { key passages tables } }
+```
+
+The `query_file_tables` tool (MCP and the server agent) runs one read-only DuckDB query over those tables. A caller can query a table only when they can read its file through GraphQL. With `catalog_search.semantic.enabled`, search ranks files by passage embeddings. See [File Content Configuration](CONFIG.md#file-content-configuration).
+
 ---
 
 ## CodeSQL Source Indexes
@@ -1362,13 +1376,13 @@ CodeSQL makes a source tree behave like another database in GraphJin. Configure 
 ```yaml
 sources:
   - name: warehouse
-    kind: sql
+    kind: database
     type: snowflake
     connection_string: user@account/warehouse/public?warehouse=compute_wh
     default: true
 
   - name: app_code
-    kind: codesql
+    kind: code
     path: /srv/app
 
 tables:
@@ -1641,7 +1655,7 @@ in the same run.
 
 The OpenNeko admin app exposes the agentic ladder to people at
 `/admin/graphjin/activity`; GraphJin no longer embeds a console.
-Mission Control polls the same governed GraphQL roots used by agents and keeps
+Mission Control reads the same governed GraphQL roots used by agents and keeps
 each feature independent, so disabling tasks, watches, or artifacts degrades
 only that panel.
 
@@ -1655,17 +1669,11 @@ only that panel.
   approval publishes it to the account, displays author/approver attribution,
   and lets admins demote approved notes.
 
-In development mode, use the operator-identity control in the console header to
-set the `X-User-ID`, `X-User-Role`, and `X-Account-ID` request context. The
-browser stores that development identity locally. Without one, Mission Control
-shows an explicit no-identity state instead of silently presenting empty
-owner-scoped lists. Authenticated deployments continue to send their
-same-origin session cookies.
+Tasks and watches are owner-scoped, so the page shows the rows that the
+signed-in admin owns.
 
-Agent chat renders every response notice and links it to the corresponding
-Mission Control view. An open task can be pinned above the composer; subsequent
-requests send its `task_id`, warm-start from the declared goal, and journal the
-run under that task.
+Agent requests can carry a `task_id`. GraphJin then warm-starts the run from
+the declared goal and journals it under that task.
 
 ## MCP Connections for AI Clients
 

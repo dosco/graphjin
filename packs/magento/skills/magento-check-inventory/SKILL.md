@@ -64,4 +64,4 @@ When no change was requested, provide a replenishment/configuration check. When
 a change was requested, provide the governed change-set or its execution
 receipt and approval state.
 
-Boundary: Never change reservations, backorders, global stock configuration, or inventory through SQL, raw GraphQL, raw REST, `curl`, or a terminal; only `magento.manage_inventory` may change approved source items.
+Boundary: Never change reservations, backorders, global stock configuration, or inventory through SQL, raw GraphQL, or raw REST; only `magento.manage_inventory` may change approved source items.

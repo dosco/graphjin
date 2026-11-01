@@ -26,4 +26,4 @@ image. After execution, read the rule back and report only `applied` when the
 requested fields reconcile. Coupon generation is not safely reversible; make
 that explicit before approval and never retry an ambiguous result.
 
-Boundary: Never create a free-cart or uncapped promotion, never bypass `magento.manage_promotions` with SQL, raw GraphQL, raw REST, `curl`, or a terminal, and never execute a promotion automatically.
+Boundary: Never create a free-cart or uncapped promotion, never bypass `magento.manage_promotions` with SQL, raw GraphQL, or raw REST, and never execute a promotion automatically.

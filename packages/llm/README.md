@@ -1,12 +1,14 @@
 # OpenNeko agent MCP runtime
 
-This package owns the runtime contract between the Ax agent, OpenNeko's sandbox
-bridge, the trusted worker control plane, GraphJin, and the A2UI renderer.
+This package owns the runtime contract between the Ax agent, the runner's MCP
+bridge, the trusted control plane (web and the worker), GraphJin, and the A2UI
+renderer. [AGENT_RUNTIME.md](../../AGENT_RUNTIME.md) describes the runner and
+`openneko serve`.
 
 ## GraphJin MCP
 
 OpenNeko does not maintain a GraphJin tool allow-list or duplicate GraphJin's
-tool schemas. At the start of each agent turn, the sandbox bridge asks the
+tool schemas. At the start of each agent turn, the runner's MCP bridge asks the
 trusted control plane for the configured GraphJin server's live `tools/list`
 response. Every returned tool and its native JSON schema is exposed through the
 higher-level `neko_graphjin` MCP. Calls route back as native `tools/call`
@@ -18,7 +20,7 @@ carries GraphJin 3.20's `2026-07-28` protocol header, method header, and
 per-request client metadata so it cannot fall into the legacy session path. The
 client follows list cursors and accepts JSON or SSE responses.
 
-The sandbox receives neither `data_source.mcp_url` nor a GraphJin credential.
+The runner receives neither `data_source.mcp_url` nor a GraphJin credential.
 The broker binds the organization and run, mints the actor or service JWT on the
 trusted host, and treats GraphJin's caller-aware tool list and capability gates
 as authoritative. The physical `neko` multiplexer changes only tool-name
@@ -68,15 +70,9 @@ execution and rejects any write setting on a database source, or on a source
 whose kind GraphJin does not report. Admin > Settings > GraphJin Config has an
 "Enable API writes" launcher.
 
-Known GraphJin 3.20.47 limit: while an `api` source is configured, the first
-`gj_config` update after engine start completes, and the next one blocks
-inside the config pipeline until GraphJin restarts (repro in the PR). One
-combined proposal per API source stays inside that limit; a further change
-needs a GraphJin restart first.
-
 ### Lazy catalogs
 
-The sandbox bridge connects every logical server in memory at startup and
+The runner's MCP bridge connects every logical server in memory at startup and
 resolves tool catalogs on the agent's first `tools/list`. A logical server whose
 catalog fails (for example `neko_graphjin` for an org with no data source) logs
 the failure and drops out of that listing; the other servers keep working, and

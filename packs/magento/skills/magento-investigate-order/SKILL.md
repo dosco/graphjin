@@ -64,7 +64,7 @@ Return:
 - the safest next operational check.
 
 Never cancel, invoice, ship, refund, reorder, or edit an order through SQL,
-raw GraphQL, raw HTTP, `curl`, or a terminal.
+raw GraphQL, or raw HTTP.
 
 ## Optional private note
 

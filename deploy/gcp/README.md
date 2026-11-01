@@ -52,7 +52,7 @@ details like service account emails).
 
 Then follow the `next_steps` output -- DNS, waiting for the startup script,
 running `openneko setup`, and (if applicable) setting the Google Workspace
-plugin's OAuth redirect URI to match this domain.
+pack's OAuth redirect URI to match this domain.
 
 To SSH in, each identity listed in `admin_members` runs:
 
@@ -79,9 +79,9 @@ change: remove the identity from `admin_members` and `terraform apply`.
   whole reason it isn't GKE) -- anyone who compromises a container with
   socket access effectively has root on the VM. Keep the surface area
   (SSH, any other exposed service) as small as this config already does.
-- **Backups.** `openneko backup now` / the backup service noted in
-  INSTALL.md runs inside the stack; this Terraform doesn't add off-VM
-  backup storage (e.g. a GCS bucket) -- add one if you need it.
+- **Backups.** `openneko backup` (see INSTALL.md) writes one encrypted file
+  on the VM. There is no backup service. This Terraform adds no off-VM backup
+  storage (for example, a GCS bucket); add one if you need it.
 - **Multiple customers on one VM.** If you plan to use OpenNeko's named
   multi-instance mode (`openneko --instance <name> setup ...`), this same
   VM/Caddy setup supports it -- just add one more `<domain> { reverse_proxy

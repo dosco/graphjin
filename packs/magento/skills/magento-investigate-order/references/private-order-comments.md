@@ -24,5 +24,5 @@ must never be blindly retried.
 If the action reports `graphjin_version_unsupported`,
 `integration_token_missing`, `integration_token_invalid`, or `acl_missing`,
 explain that the private-note step is unavailable and preserve the completed
-read-only investigation. Never substitute raw REST, GraphQL, SQL, `curl`, or an
-admin credential.
+read-only investigation. Never substitute raw REST, GraphQL, SQL, or an admin
+credential.

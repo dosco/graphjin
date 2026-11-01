@@ -6,7 +6,6 @@ metadata:
   openneko:
     tags: [magento, adobe-commerce, security, cve, patching]
     category: commerce
-    requires_toolsets: [terminal]
     related_skills: [magento-diagnose-platform-health]
 ---
 
@@ -24,19 +23,21 @@ Fetch the Adobe Magento bulletin index:
 Follow the linked APSB bulletin pages for the affected versions, CVE IDs,
 priority, exploitation status, and fixed versions. Use Adobe's security patch
 release notes and released-versions page to confirm the current patch level.
-Use NVD or CISA KEV only as supporting CVE and exploitation context. Do not
-replace Adobe's affected-version or remediation guidance with a third-party
-database.
+Use NVD or CISA KEV only as supporting CVE and exploitation context, and only
+when the run allows those hosts. Do not replace Adobe's affected-version or
+remediation guidance with a third-party database.
 
 ## Procedure
 
 1. Obtain the installed Magento or Adobe Commerce version and patch level from
    the connected pack status or approved Magento health evidence. If it cannot
    be verified, report the result as `unknown`.
-2. Fetch the Adobe bulletin index and inspect new or changed Magento bulletins.
-   Use Python 3's standard-library HTTPS client from the terminal. This is an
-   external read-only request. If the request fails, report that live
-   advisory data was unavailable.
+2. Fetch the Adobe bulletin index with `web_fetch` and inspect new or changed
+   Magento bulletins. `web_fetch` is a read-only GET that reaches only the
+   hosts the run allows. The scheduled security advisory check allows
+   `helpx.adobe.com` and `experienceleague.adobe.com`. If `web_fetch` is not
+   available or the request fails, report that live advisory data was
+   unavailable.
 3. Compare the installed version with every applicable affected-version range.
    Give priority to bulletins marked critical or exploited in the wild.
 4. Report `affected`, `patched`, `unsupported`, or `unknown`. Include the

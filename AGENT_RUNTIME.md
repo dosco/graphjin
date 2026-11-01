@@ -44,7 +44,7 @@ through the per-run broker.
 3. The runner sends each turn to `openneko serve` over the Unix socket
    `OPENNEKO_SERVE_SOCKET`. The turn carries the model key; serve uses it for
    that turn's model calls and keeps it nowhere else. The agent's MCP tools
-   (records, GraphJin, memory, actions) travel back over the same socket to
+   (GraphJin, memory, Library, workflows, actions) travel back over the same socket to
    the runner, which calls the broker on loopback.
    By default the agent writes its own GraphJin queries. They go through the
    broker with the run's GraphJin JWT: queries must be read-only, and tool
@@ -104,7 +104,7 @@ Compose sets all of these; they matter only for custom deployments.
 | `OPENNEKO_SERVE_SOCKET` | web, worker | serve's socket (`/run/openneko/serve.sock`) |
 | `OPENNEKO_AGENT_RUNS_DIR` | web, worker | where runs are staged |
 | `OPENNEKO_AGENT_ENTRY` | web, worker | the runner (`/opt/openneko-agent/entry.js`; a `.ts` path runs with tsx) |
-| `OPENNEKO_SERVE_GRAPHJIN` | web, worker | `1` when serve hosts the customer GraphJin, so runs ask its agent in-process |
+| `OPENNEKO_SERVE_GRAPHJIN` | web, worker | `1` when serve hosts the customer GraphJin, so runs that use GraphJin's data agent ask it in-process |
 
 Web and the worker check that serve answers on its socket before setup
 completes and before onboarding work is queued; when it does not, they report

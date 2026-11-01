@@ -1,7 +1,7 @@
 # Context repository
 
 OpenNeko keeps a version history of what your assistant knows and does: skills,
-skill learnings, workflows, durable memories and approved library concepts. Every
+skill learnings, workflows and durable memories. Every
 change is saved as a new version, with the date and the person or run that made
 it. This is always on. It needs no setup.
 
@@ -34,8 +34,8 @@ Personal changes are never published.
    SSH. See [Get access from your git host](#get-access-from-your-git-host).
 5. Choose how to publish: **Open a pull request** or **Push to the branch**.
 6. Choose what to publish. Skills, skill learnings and workflows are selected by
-   default. Memories and library concepts hold business facts. Publish them only
-   to a private repository.
+   default. Memories hold business facts. Publish them only to a private
+   repository.
 7. Select **Save**, then **Open pull request** or **Push now**.
 
 ### Get access from your git host

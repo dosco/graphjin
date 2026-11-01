@@ -1,8 +1,7 @@
 # Secrets & the vault integration
 
 OpenNeko holds deployment secrets (channel and sign-in credentials, pack
-connector keys, the model-gateway key) and
-per-operator OAuth credentials. By default everything is encrypted at rest with
+connector keys) and per-user pack OAuth credentials. By default everything is encrypted at rest with
 the local `enc:v1` cipher (AES-256-GCM, keyed from
 `~/.config/openneko/secret-key`).
 
@@ -23,14 +22,15 @@ this change.
 
 Deployments can keep deployment-wide secret
 **env bags** in a self-hosted [Infisical](https://infisical.com) instance
-instead of the local file. Per-operator OAuth credentials always stay local
-(`enc:v1`).
+instead of the local file. Per-user pack OAuth credentials always stay in
+OpenNeko's database (`enc:v1`).
 
 Residency split:
 
 - Deployment env bags → Infisical, one folder per secrets section (any `/` in
   the section name is encoded as `__`, e.g. `/channel.slack/SLACK_BOT_TOKEN`).
-- Per-operator OAuth tokens → local secrets file, encrypted at rest.
+- Per-user pack OAuth tokens → OpenNeko's database (table
+  `pack_user_connection`), encrypted at rest.
 
 ### Configure
 

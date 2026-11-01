@@ -64,9 +64,9 @@ only the bundled assets and no inherited runtime overrides. Missing assets
 must fail. Launcher tests cover cancellation, partial output, empty output,
 and cleanup.
 
-Embedding computation now runs in the shared embedding service. Both it and
-Docling use the [lazy processing listener](../lazy-service/README.md), releasing
-model memory after idle time.
+Embedding computation runs in the shared embedding service. It uses the
+[lazy processing listener](../lazy-service/README.md), which releases model
+memory after idle time. OpenNeko calls it only while semantic search is on.
 
 Every run starts a fresh runner in a fresh folder; there is no warm pool and no
 per-user reuse.
@@ -80,7 +80,7 @@ GraphJin request; a missing snapshot is built once on demand. Revision metadata
 is read as admin, while catalog content remains service-scoped. Source identity
 and pack-format changes invalidate the snapshot. A recompile during fetching
 discards the incomplete revision and retries; a refresh failure retains the last
-complete snapshot for that same source. Sandbox staging materializes only the
+complete snapshot for that same source. Run staging materializes only the
 snapshot's six knowledge files, never cache metadata or temporary builds.
 
 An isolated diagnostic against `neko-vm` on 12 September measured a 13,515 ms
@@ -137,7 +137,7 @@ unversioned local images honestly report `unknown`.
 | --- | --- |
 | HTTP | submit, organization, identity, authorization, backend/provisioning, run creation, user-message persistence, acknowledgement ready |
 | Worker | queue wait, run lookup, provisioning, pack actions, broker readiness |
-| Shared turn | mark running, load thread, workspace, knowledge prefetch/read, identity, GraphJin config, compaction, memory, skills, persona, fallback plugin catalog |
+| Shared turn | mark running, load thread, workspace, knowledge prefetch/read, identity, GraphJin config, compaction, memory, skills, persona, action catalogs |
 | Knowledge | snapshot read/age, hit/miss/coalesced wait, revision checks, individual catalog requests, rebuild, atomic publish, refresh failure and stale availability; 60-second background refresh |
 | Agent run | staging, runner execution, artifact copy-back, skill capture |
 | Streaming | SSE subscription, LISTEN setup, initial DB read, hello, first event and first assistant output enqueued |
@@ -165,7 +165,7 @@ and raw configuration are excluded from startup metrics; revisions are hashed.
 
 To compare turns, filter container JSON logs by `type == "startup_timing"`, then
 by `runId` (or `requestId` for a rejected/pre-run request). Compare the same
-version/commit and execution path, grouping sandbox outcomes and cache outcomes
+version/commit and execution path, grouping runner outcomes and cache outcomes
 before calculating median/p95. Use `elapsedMs` for milestone timing and
 `durationMs` for individual phases.
 
@@ -174,7 +174,7 @@ before calculating median/p95. Use `elapsedMs` for milestone timing and
 The same timing helper also covers:
 
 - Manual workflow HTTP setup; scheduled, subscription, watcher and API workflow
-  claims/preparation; backend/workspace/memory/knowledge setup; sandbox phases;
+  claims/preparation; backend/workspace/memory/knowledge setup; runner phases;
   compiled batch execution and result persistence. Preflight spans attach to
   the workflow root, not a fabricated chat run.
 - Metric job loading, DB reads, provisioning, knowledge and isolated workspace

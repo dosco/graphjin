@@ -21,7 +21,7 @@ profile menu.
 | One running chat per bot | A bot keeps one conversation. Desktop shows your bots in a sidebar beside the open chat. Long chats open at the latest message and load older turns as you scroll up. | #449 |
 | Instructions the bot keeps current | The bot writes its own instructions from what you tell it and tunes them as you talk. | #449 |
 | Routines in the chat | Tell a bot when to act: on a schedule, on an event, or when a value changes. Results post to its chat. A watcher stays quiet while the value stays the same. | #449 |
-| Skills found by meaning | The bot finds the right skill among thousands by what the skill does, and you can edit a skill from the chat. | #449 |
+| Skills found by meaning | The bot finds the right skill among thousands by what the skill does, and you can edit a skill from the chat. Search is by keyword until an admin turns on Semantic search. | #449 |
 | Connectors | The profile menu lists the connectors you can use and the ones coming next. | #449 |
 | Existing chats carry over | On upgrade, each earlier chat thread becomes a bot with a random neko, so your history stays in the list. | #449 |
 
@@ -91,7 +91,7 @@ the right workspace.
 |---|---|---|
 | Slack & Telegram | Talk to your assistant from the tools your team already uses — replies are formatted natively for each app. | #68, #96 |
 | Built-in channels | Slack, Telegram and the HUD are built into the core behind one modality-free interface. A solution pack turns a channel on, and an admin adds its credentials in settings. | #68, #70 |
-| Zero-config inbound | Install a channel and it just starts listening — inbound polling auto-enables and the first contact auto-binds to your workspace. No env flags. | #72 |
+| Zero-config inbound | Turn on a channel and it starts listening. Inbound polling turns on by itself, and the first contact binds to your workspace with no environment flags. | #72 |
 | It knows who's asking | Every inbound message is tied to the actual sender, so permissions and personalisation follow the person, not the channel. | #96 |
 | Workspace routing | Messages from a connected Slack workspace or phone number land in the right organisation automatically. | #96 |
 | Identity linking | Chat accounts link to OpenNeko accounts — automatically by matching email, or with an admin's approval. Unlinked strangers get safe, read-only treatment. | #96 |
@@ -168,7 +168,7 @@ truth when something is wrong — in language an operator can act on.
 
 | Feature | What it does for you | Shipped in |
 |---|---|---|
-| The `openneko` binary | One Go binary supervises everything: start/stop/status/logs, migrations, seeding, packs, secrets, doctor. No Node toolchain required to operate. | #26 |
+| The `openneko` binary | One Go binary supervises everything: start/stop/status/logs, migrations, seeding, packs, secrets, encrypted backup and restore, doctor. The same binary runs `openneko serve`, which hosts GraphJin and the agent's turns. No Node toolchain required to operate. | #26 |
 | One-command install | `openneko start` brings up the full stack, agent runtime included, with migrations applied before anything that needs them. | #82, #49, #54 |
 | A demo with living data | The trial workspace ships with simulated sales trickling in and scripted scenarios firing, so briefings move and workflows have something real to find. | #47, #118, #121 |
 | Honest status | `openneko status` probes what's actually serving — failures read as what they are (transient, cosmetic, or real) instead of all looking fatal. | #86 |

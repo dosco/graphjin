@@ -1,7 +1,10 @@
 # Run protocol
 
-Ax Harness runs one agent turn per process. The host writes one JSON run
-specification to stdin. The harness writes one JSON event per line to stdout.
+Ax Harness runs one agent turn per run. The host writes one JSON run
+specification, and the harness writes one JSON event per line. The
+`ax-harness` binary reads the specification on stdin and writes events to
+stdout. `openneko serve` carries the same specification and events in frames
+on its Unix socket, one turn per connection (see `serve/serve.go`).
 The host owns history, compaction across turns, approvals and scheduling.
 The harness runs no commands: its tools read and write files, search, fetch
 allowed hosts and call MCP servers.
@@ -200,17 +203,19 @@ cache mark. Anthropic then puts a `cache_control` breakpoint on it, and OpenAI
 GPT-5.6 and GPT-6 models put an explicit cache breakpoint on it, so a new turn
 of the same org reuses the cached org prompt. Other routes, Gemini included,
 use the provider's implicit prefix cache. The harness does not create Gemini
-cache objects: one process runs one turn, so a cache object would need a
-registry across processes, and Ax creates it outside the metered model calls.
+cache objects: each turn is independent, so a cache object would need a
+registry across turns, and Ax creates it outside the metered model calls.
 
 ## OpenNeko entry
 
-`cmd/ax-harness` reads these environment variables:
+The OpenNeko entry (`harness`, used by `cmd/ax-harness` and `openneko serve`)
+reads these environment variables. Under `openneko serve` they arrive in the
+turn's start frame, and serve supplies the model keys:
 
 | Variable | Use |
 | --- | --- |
 | `OPENNEKO_MCP_ORG_ID`, `OPENNEKO_MCP_THREAD_ID` | Required run scope. |
-| `OPENNEKO_MCP_BRIDGE` | Path of the OpenNeko MCP bridge. Starts `node` with it. |
+| `OPENNEKO_MCP_BRIDGE` | Path of the OpenNeko MCP bridge. Starts `node` with it. Under `openneko serve`, the bridge tools come over the socket instead. |
 | `OPENNEKO_MCP_SERVERS` | Comma list of bridge servers to start. |
 | `OPENNEKO_BROKER_URL`, `OPENNEKO_BROKER_TOKEN` | Passed to the bridge only, then removed from the harness process. |
 | `OPENNEKO_HARNESS_WORKSPACE_DIR` | Adds `file_read`, `file_edit`, `file_write`, `file_search`. |

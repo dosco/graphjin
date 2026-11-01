@@ -13,7 +13,7 @@ File an issue at [github.com/open-neko/openneko/issues](https://github.com/open-
 
 ## Setting up your dev environment
 
-Setup commands — Node deps, migrations, `pnpm dev`, the two GraphJin services (sample-data and metadata), the AdventureWorks dev variant, and the external CLI installer (`./scripts/install-clis.sh`) — live in [INSTALL.md → Developer Setup](INSTALL.md#developer-setup). Update / reset / troubleshooting are in the same file.
+Setup commands — Node deps, migrations, `pnpm dev`, `openneko serve` (the customer GraphJin and the subscriptions GraphJin), the AdventureWorks dev variant, and the external CLI installer (`./scripts/install-clis.sh`) — live in [INSTALL.md → Developer Setup](INSTALL.md#developer-setup). Update / reset / troubleshooting are in the same file.
 
 ## Repository layout
 
@@ -22,11 +22,17 @@ apps/
   web/                 Next.js UI and API routes
   worker/              Background job runner, built-in channels and sign-in, agent runner
   openneko/            `openneko` CLI + stack supervisor (Go), distributed as a single binary
+  ax-harness/          Agent harness (Go): the `serve` role that runs agent turns
+  embedding/           EmbeddingGemma 2 embedding service (Python)
 packages/
   db/                  Drizzle ORM client, schema, migrations, job queue
   llm/                 Providers, agents, classifier, GraphJin work support; Library
                        file storage (src/library), bundled skills (assets/)
   secrets/             Deployment secrets store, at-rest cipher, Infisical resolver (TS — consumed by worker)
+  packs/               Solution pack manifest, bundle loader and validation
+  channels/            Built-in Slack, Telegram and HUD channels
+packs/                 First-party solution packs (Magento, Google Workspace, Slack, …)
+graphjin/              GraphJin source, built into the `openneko` binary
 db/
   migrations/          Metadata database migrations (mirrored into apps/openneko/assets/migrations/ for embedding)
   graphjin/            Sample GraphJin config

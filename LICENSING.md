@@ -27,13 +27,9 @@ Examples include:
 
 - Runtime dependencies and container-layer software listed in
   [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
-- Built-in skills adapted from Nous Research's agent skill catalog, under its
-  upstream MIT license (see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)).
 - Anthropic-authored bundled skills under their declared upstream terms.
 - Built-in skills that carry their own `license:` frontmatter or local
   `LICENSE.txt` files.
-- Third-party plugins that communicate with OpenNeko across the plugin RPC
-  boundary.
 
 If an individual file, package, bundled skill, plugin, or dependency includes a
 different license notice, that notice controls that component.

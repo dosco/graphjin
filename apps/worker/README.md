@@ -20,7 +20,10 @@ An independent 30-second worker loop:
    pg-boss.
 
 pg-boss is the delivery transport, not the schedule clock or source of truth.
-The minute pg-boss queue remains only for behavior and watcher maintenance.
+The minute pg-boss queue remains only for the agent-behavior sweep and watcher
+upkeep. Watchers run as GraphJin watches. The minute sweep keeps those watches
+in step with the watcher rows, and GraphJin sends each event to the worker at
+`/admin/events/watcher`.
 
 ### Delivery and recovery
 

@@ -47,4 +47,4 @@ Undo is a new `magento.undo_changeset` request. Generate it only for an applied,
 reversible change-set and only after the current value still matches the
 recorded reconciled image.
 
-Boundary: Never bypass `magento.manage_catalog` or `magento.undo_changeset` with SQL, raw GraphQL, raw REST, `curl`, or a terminal, and never describe a preview or bulk submission as an applied change.
+Boundary: Never bypass `magento.manage_catalog` or `magento.undo_changeset` with SQL, raw GraphQL, or raw REST, and never describe a preview or bulk submission as an applied change.

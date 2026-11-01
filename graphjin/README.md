@@ -20,7 +20,7 @@ Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL, Snowflake, Redshif
 - **Smart discovery before action** - Agents start with `query_catalog(search: "<user instruction>")`, `graphql_help`, relationship evidence, examples, config recipes, and safety notes before writing or running queries.
 - **Guarded action, not raw access** - Source-mode access, query allow-lists, read-only boundaries, policy-aware MCP tools, local encrypted secrets, and `gj_config` preview/apply keep changes auditable.
 - **Operational awareness** - `gj_security` and `gj_runtime` expose policy and bounded runtime status so agents can check what is safe before they act.
-- **Standing questions, not just answers** - Hand a cursor-paginated subscription to `gj_watch` and GraphJin keeps answering it under the owner's permissions, resumes from persisted cursors across restarts, treats absence as a first-class event, and files what it finds in a durable inbox (`gj_watch_event`), a webhook, or a workflow. Evaluation runs on database polls, not model calls - a model writes the watch once, and nothing calls one again unless you turn on optional per-watch triage. See [Watches](#watches-and-standing-questions).
+- **Standing questions, not just answers** - Hand `gj_watch` a cursor-paginated subscription, or a plain query to poll on an interval, and GraphJin keeps answering it under the owner's permissions, resumes from persisted cursors across restarts, treats absence as a first-class event, and files what it finds in a durable inbox (`gj_watch_event`), a webhook, or a workflow. Evaluation runs on database polls, not model calls - a model writes the watch once, and nothing calls one again unless you turn on optional per-watch triage. See [Watches](#watches-and-standing-questions).
 - **Durable memory** - Saved queries, fragments, and workflows live in the owner-scoped `gj_artifacts` store. Normal watches are durable by default; explicit ephemeral watches use TTL leases.
 
 ## Installation
@@ -452,7 +452,7 @@ Object stores show up as ordinary tables in your GraphQL schema. Declare them in
 ```yaml
 sources:
   - name: avatars
-    kind: filesystem
+    kind: file
     backend: s3
     bucket: my-bucket
     prefix: avatars/
@@ -460,13 +460,13 @@ sources:
     presign_ttl: 15m
 
   - name: invoices
-    kind: filesystem
+    kind: file
     backend: gcs
     bucket: invoices
     prefix: 2026/
 
   - name: uploads_local
-    kind: filesystem
+    kind: file
     backend: local
     root: /var/lib/graphjin/uploads
 
@@ -508,6 +508,8 @@ For cursor pagination, request the standard root cursor field, e.g. `avatars_cur
 
 Slim builds drop SDK weight: `-tags no_s3` or `-tags no_gcs` excludes either backend. Custom backends register through `core.OptionSetFilesystemBackend(name, factory)` — same SDK GraphJin uses for the built-ins.
 
+With `file_content.enabled`, file tables can also search inside files. They gain a `search` argument, `passages` and `tables` columns, and extracted `text` for PDF, Word, PowerPoint and Excel files. The `query_file_tables` tool runs read-only SQL over sheets and CSV files. Set `user_prefix` on a file source to keep each user's folder private. See [File Content Configuration](CONFIG.md#file-content-configuration).
+
 ## File Uploads
 
 The GraphQL endpoint accepts multipart bodies per the [graphql-multipart-request-spec](https://github.com/jaydenseric/graphql-multipart-request-spec). Files can be inlined as base64 (default) or streamed straight to a filesystem table:
@@ -515,7 +517,7 @@ The GraphQL endpoint accepts multipart bodies per the [graphql-multipart-request
 ```yaml
 uploads:
   enabled: true
-  storage: avatars               # name of a filesystems[] entry; omit to inline as base64
+  storage: avatars               # name of a file table; omit to inline as base64
   storage_key_prefix: "{date}/"  # {date} → YYYY/MM/DD
   max_size: 25_000_000
   allowed_mime: ["image/*", "application/pdf"]
@@ -561,7 +563,7 @@ federation:
 | `/api/v1/openapi.json` | `GET` | OpenAPI 3 spec generated from your saved REST queries. |
 | `/api/v1/mcp` | `POST` | MCP (Model Context Protocol) HTTP transport — Streamable HTTP, stateless. |
 | `/api/v1/mcp/message` | `POST` | Legacy MCP message route for older local proxy/client integrations. New clients should use `/api/v1/mcp`. |
-| `/api/v1/agent` | `POST` | Server-side agent: send one instruction, get a typed evidence-backed answer (only when `agent.enabled`). See [Server-Side Agent](#server-side-agent). |
+| `/api/v1/agent` | `POST` | Server-side agent: send one instruction, get a typed evidence-backed answer. The route is always mounted and checks `agent.enabled` on each request. See [Server-Side Agent](#server-side-agent). |
 | `/.well-known/oauth-protected-resource[/api/v1/mcp]` | `GET` | MCP OAuth protected-resource metadata (only when `mcp.oauth.enabled`). |
 | `/.well-known/oauth-authorization-server` | `GET` | Built-in MCP OAuth authorization-server metadata (only when `mcp.oauth.enabled`). |
 | `/api/v1/oauth/register` | `POST` | Built-in MCP OAuth dynamic client registration (only in builtin mode). |
@@ -579,7 +581,6 @@ federation:
 - `mcp.disable: true` — removes `/api/v1/mcp` and `/api/v1/mcp/message`.
 - `mcp.only: true` — keeps only `/health` and `/api/v1/mcp*`. Legacy `/api/v1/workflows/*` and `/api/v1/discovery*` remain only when `mcp.legacy_discovery: true`.
 - Source mode (`sources:` present) disables legacy `/api/v1/workflows/*` and `/api/v1/discovery*` unless `mcp.legacy_discovery: true`.
-- `web_ui: false` — drops `/` even in dev or agentic mode.
 
 ## MCP Tools
 
@@ -604,6 +605,7 @@ Key discovery tools, when listed for the caller:
 - `query_catalog` to search schema, relationship, workflow, language, `config_recipe`, config, policy, capability, and query-pattern items. Use `search` for ranked text discovery and `where` for exact filters.
 - `query_catalog(id: "...")` to inspect evidence, examples, details, safety notes, and graph edges for one row
 - `validate_where_clause` to validate filters before execution
+- `query_file_tables` to run one read-only SQL query over the sheets and CSV files of a file source, when `file_content.enabled` is on
 
 For JS orchestration, use:
 - `query_catalog` with `where: { kind: { eq: "workflow" } }` to discover reusable workflows
@@ -622,7 +624,7 @@ Instead of your client chaining `query_catalog` → `validate_where_clause` → 
 - **Grounded:** Go protocol guards keep every answer backed by real catalog/validation/execution evidence and downgrade to `blocked` (with evidence) when a step is skipped.
 - **Semantic-aware discovery:** when semantic catalog search is ready, the agent uses short business-intent phrases and may make one private two-or-three-phrase coverage batch; one Ax request embeds cache misses, and only real catalog relationship paths count as join evidence. Lexical-only prompts and public MCP stay unchanged.
 - **Machine-actionable refusals:** blocked responses carry a structured `refusal` (code, reasons, unblock steps, `policy_final`/`retryable`) so a calling agent can course-correct in one step instead of guessing.
-- **Server-owned model:** `ask_graphjin_agent` always uses the provider, model, and credential environment variable configured under `agent`. Without server credentials it fails closed with `model_credentials_required`.
+- **Server-owned model:** `ask_graphjin_agent` always uses the provider, model, and credential configured under `agent`. GraphJin reads the key from `agent.api_key_file` when it is set, or else from the variable named by `agent.api_key_env`. Without server credentials it fails closed with `model_credentials_required`.
 
 It is an RLM loop — the model writes JavaScript that calls the discovery tools, and the typed result is parsed from `key: value` output. It needs strong **code generation**, not provider tool-calling. Ax requests structured JSON for typed stages, choosing the mechanism from the named deployment profile (`agent.provider`) and its rules for the selected model; `agent.structured_output_mode: auto` is the default, with `native`, `function`, and `json_object` available as overrides. `agent.service_tier` similarly defaults to provider-delegated `auto`, with portable `standard`, `flex`, and `priority` requests available when the profile/model supports them. See [AGENTIC.md](AGENTIC.md#server-side-agent) and [CONFIG.md](CONFIG.md#agent-configuration).
 
@@ -652,6 +654,9 @@ mutation {
   health.
 - **It survives restarts.** Cursors are persisted, so a watch resumes where it left off
   rather than replaying or skipping.
+- **Aggregates and API sources can be polled.** A watch with
+  `poll_json: { interval_seconds: 300 }` runs a plain query as its owner on that
+  interval (10 seconds to 24 hours) and records an event when the result changes.
 - **It cannot outrun its owner.** A watch only ever sees what its owner could already
   query, and both `gj_watch` and `gj_watch_event` are owner-scoped.
 - **Waking you and acting are different permissions.** Inbox delivery is immediate;
@@ -659,8 +664,8 @@ mutation {
   `action_hash` is approved. Alerts fail open, actions fail closed.
 
 The built-in demo registers four standing questions on a first run (declared in
-`examples/saas-ops/seed/watches.yml`), three of which have already fired by the time the
-console opens. Management, review, cleanup, and MCP resource subscriptions are covered
+`examples/saas-ops/seed/watches.yml`), three of which have already fired by the time you
+first read the inbox. Management, review, cleanup, and MCP resource subscriptions are covered
 under [MCP Tools](#mcp-tools); the full model is in
 [AGENTIC.md](AGENTIC.md#watches-standing-questions-with-a-durable-inbox).
 

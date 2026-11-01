@@ -24,17 +24,15 @@ binary, as the `graphjin` role.
 
 ---
 
-## Modular agents, skills, and plugins
+## Modular agents and skills
 
-OpenNeko can invoke or interoperate with external agents, skills, and plugins.
+OpenNeko can invoke or interoperate with external agents and skills.
 Those components remain under their own licenses.
 
 | Component | License | Notes |
 |---|---|---|
-| Hermes Agent skill catalog (Nous Research) | MIT | Some built-in skills (for example the finance model skills adapted by Nous Research) come from this catalog. Preserve upstream copyright and license notices when distributing them. OpenNeko no longer ships the Hermes Agent runtime. |
 | Anthropic-authored bundled skills | As declared | Preserve the upstream terms and attribution shipped with each skill. |
 | Built-in skills with `license:` frontmatter | As declared in each skill | Some bundled skills are Apache-2.0, MIT, or proprietary to their upstream source. Check each `SKILL.md` and local `LICENSE.txt`. |
-| Third-party plugins | Plugin author's license | Plugins communicate across the OpenNeko plugin RPC boundary and are independent works unless their own license says otherwise. |
 
 ---
 
@@ -46,7 +44,6 @@ OpenNeko's runtime dependencies are listed in the various `package.json` files a
 |---|---|---|
 | `pg`, `pg-boss` | MIT | Postgres client + job queue |
 | `next` | MIT | Web app framework |
-| `@huggingface/transformers` | Apache-2.0 | Embedding model runtime |
 | `zod` | MIT | Schema validation |
 | `drizzle-orm` | Apache-2.0 | DB schema + queries |
 

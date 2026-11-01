@@ -379,7 +379,7 @@ roots fit together architecturally, see the canonical diagram in
 | `gj_catalog` | `public` | Read-only. |
 | `gj_code` | read: `authenticated`; write: role-gated (default `admin`) | Code writes are global source-file edits, not per-row scopable, so write is gated by role rather than filtered. Connecting a code source is an explicit operator choice — see the supply-chain note below. |
 | `gj_artifacts` | `owner` (`user_id`) | Read/write, owner-private. |
-| `gj_watch` / `gj_watch_event` | `owner` (`user_id`) | Read/write, owner-private standing queries and durable inbox events. Watches must reference subscriptions. |
+| `gj_watch` / `gj_watch_event` | `owner` (`user_id`) | Read/write, owner-private standing queries and durable inbox events. A watch references a subscription, or a plain query with `poll_json`. |
 | `gj_task` / `gj_task_entry` | `owner` (`user_id`) | Read/write, owner-private declared goals and immutable provenance trail. A task ID is correlation only and never grants access. |
 | `gj_workflow` / `gj_workflow_execution` | `owner` (`user_id`) | Read/write, owner-private. Workflows execute under the caller's identity. DB-backed workflows are owner/account-private saved artifacts. Filesystem/global workflows are operator-vetted, read-only, and runnable by all callers (each as themselves). "Global" status is filesystem-only and never user-settable. |
 | `gj_config` | `admin` | Read/write. |
@@ -449,6 +449,10 @@ Artifact behavior:
 
 - Auto-init runs before normal schema discovery when artifacts are enabled and
   `auto_init` is true.
+- `graphjin serve db store-sql` prints the same idempotent Postgres statements
+  with no config or connection (`--watches` adds the watch store, `--schema`
+  sets the schema). An application that embeds GraphJin can run them in its own
+  migrations.
 - Files from `globals_path` are surfaced as `source=config`,
   `visibility=global`, and `read_only=true`.
 - Config-folder globals are not copied into the database and cannot be mutated

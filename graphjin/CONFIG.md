@@ -6,7 +6,7 @@ This document provides a comprehensive reference for all GraphJin configuration 
 
 This file is the exhaustive field reference. If you want the mental model first — what the config file is, how values are resolved across layers, and every way to change it without memorizing keys — read [How Configuration Works](https://graphjin.com/configure/how-it-works/). In short:
 
-- **One file, two halves.** The file configures both the query **engine** (`sources`, `tables`, `roles`, …) and the **server** around it (`auth`, `rate_limiter`, `redis`, `caching`, `agent`, …). Engine changes reload in place; most server changes need a restart.
+- **One file, two halves.** The file configures both the query **engine** (`sources`, `tables`, `roles`, …) and the **server** around it (`auth`, `rate_limiter`, `redis`, `caching`, `agent`, …). Engine changes reload in place. Agent and semantic search settings also apply live through `gj_config`; most other server changes need a restart.
 - **Layered overrides** (later wins): built-in defaults → inherited parent (`inherits:`) → your file → `GJ_*`/`SJ_*` environment variables → dev-mode auto-enables.
 - **Many ways to change it**, not just editing YAML:
   - Editor autocomplete via a `# yaml-language-server: $schema=./config.schema.json` modeline (scaffolded automatically).
@@ -33,7 +33,9 @@ Run `graphjin config docs` (or `graphjin serve new`) for the annotated example t
 - [Agent Configuration](#agent-configuration)
 - [Agent Environment Configuration](#agent-environment-configuration)
 - [Task Configuration](#task-configuration)
+- [Watch Configuration](#watch-configuration)
 - [Redis Configuration](#redis-configuration)
+- [Secrets Configuration](#secrets-configuration)
 - [Discovery Cache and Semantic Catalog Search](#discovery-cache-and-semantic-catalog-search)
 - [Caching Configuration](#caching-configuration)
 - [Uploads Configuration](#uploads-configuration)
@@ -84,7 +86,6 @@ inherits: dev
 
 mode: prod
 log_level: "warn"
-web_ui: false
 ```
 
 ### Environment Variable Overrides
@@ -161,7 +162,6 @@ Use `mode: agentic` or `GO_ENV=agentic` for deployments where authenticated comp
 ```yaml
 app_name: "My App Development"
 host_port: 0.0.0.0:8080
-web_ui: true
 production: false
 
 database:
@@ -180,7 +180,6 @@ inherits: dev
 
 app_name: "My App Production"
 mode: prod
-web_ui: false
 log_level: "warn"
 log_format: "json"
 auth_fail_block: true
@@ -429,7 +428,6 @@ workflows:
 app_name: "My GraphQL API"
 host_port: 0.0.0.0:8080
 production: false
-web_ui: true
 log_level: "debug"
 log_format: "auto"
 http_compress: true
@@ -1107,6 +1105,20 @@ An update that adds, changes or removes database or API sources reloads only tho
 
 Apply compares the catalog with the state when the preview started. A schema change in a source that the update does not touch does not block the apply. A change to the config, to saved queries, to workflows or to a touched source makes the apply fail as stale. Run the preview again in that case.
 
+A committed update that changes the engine config also resets the response cache, because cached responses were built under the previous config.
+
+### Server settings, identity and grants through config updates
+
+The `serv` field of a `gj_config` update merge-patches server settings. The writable keys are `agent`, `catalog_search`, `log_level`, `log_format`, `http_compress`, `server_timing`, `rate_limiter` and `web_ui` (a no-op). `agent` and `catalog_search` apply live. The other keys are saved and take effect on the next restart, which is automatic when `reload_on_config_change` is on. The secret-bearing sections `auth`, `redis` and `uploads` are read-only here. The result reports `scope` (`serv` or `mixed`) and `reload_mode` (`hot` or `restart`).
+
+The `identity` field merge-patches request identity: `role_claims`, `group_claims`, `role_mode` (`first` or `union`), `namespace_claim`, `user_id_claim`, `admin_roles` and `query`. Arrays replace. A `source_patches` entry can set `access.grants` for a source; `null` clears them. Source patches run after roles, so one update can add a role and its grants together.
+
+### Reload from disk and whole-file edits
+
+`reload_from_disk: true` replaces the running configuration with the config file and keystore on disk, through the same staged reload as other updates. Use it to roll back after you restore an earlier config file. It cannot be combined with other changes.
+
+GraphQL and MCP requests cannot send a whole config file. GraphJin refuses an update that carries `config_yaml`. A Go program that runs GraphJin in its own process can call `HttpService.EditConfig(ctx, text, apply)` to check, or with `apply` to apply, the edited text of the config file through the same staged update. GraphJin does not write the file; the caller writes it after the apply succeeds.
+
 ---
 
 ## Agent Configuration
@@ -1114,7 +1126,12 @@ Apply compares the catalog with the state when the preview started. A schema cha
 The server-side GraphJin agent runs the catalog-first discovery loop
 inside GraphJin and returns a typed, evidence-backed answer. When enabled it is
 available at `POST /api/v1/agent` and as the MCP tool `ask_graphjin_agent`. The
-Dev and agentic modes enable it automatically. See
+Dev and agentic modes enable it automatically. `gj_config` can change every
+setting in the table below except `show_thoughts`, `temperature` and `top_p`,
+and the change applies to the next run with no restart. The REST
+route checks `agent.enabled` on each request. The MCP tool is registered at
+start, so turning the agent on or off changes the MCP tool list only after a
+restart. See
 [AGENTIC.md](AGENTIC.md#server-side-agent) for behavior.
 
 It is an RLM (reasoning-with-code) loop built on Ax: the model writes JavaScript
@@ -1141,6 +1158,7 @@ they inherit that deployment's capabilities rather than OpenAI's.
 | `agent.provider` | string | `openai` | Named Ax deployment profile. The profile owns the endpoint, authentication, capabilities, and model rules — any profile name Ax ships is valid (`openai`, `openai-compatible`, `google-gemini`, `vertex-ai`, `anthropic`, `groq`, `amazon-bedrock`, …) |
 | `agent.model` | string | - | Model within the selected deployment profile. Profiles carry per-model rules, so the pairing decides capabilities |
 | `agent.api_key_env` | string | `OPENAI_API_KEY` | Env var holding the provider API key; must be non-empty (use a dummy value for keyless local endpoints) |
+| `agent.api_key_file` | string | - | File that holds the provider API key. GraphJin reads it for each run, so a new key applies without a restart. When set, it wins over `agent.api_key_env` |
 | `agent.base_url` | string | - | OpenAI-compatible provider base URL (e.g. a local or self-hosted endpoint) |
 | `agent.structured_output_mode` | string | `auto` | How Ax requests structured output: `auto` lets the profile and model rule pick the verified mechanism; `native` (JSON Schema), `function`, and `json_object` force one. An explicit mode the deployment cannot serve fails before any request is sent |
 | `agent.response_format` | string | - | **Deprecated** alias of `agent.structured_output_mode`: `json_schema` maps to `native`, `json_object` to `json_object`. Set only one; the canonical key wins |
@@ -1179,9 +1197,10 @@ source/table `read_only`, and protocol evidence gates decide what can run. The
 public MCP `execute_graphql` tool is separate and is listed only when
 `mcp.allow_raw_queries: true`.
 
-For each request, GraphJin uses the configured server provider. If the
-environment variable named by `agent.api_key_env` is empty, MCP and REST fail
-closed with `model_credentials_required`. The removed `agent.sampling` and
+For each request, GraphJin uses the configured server provider. If the file
+named by `agent.api_key_file`, or else the environment variable named by
+`agent.api_key_env`, gives no key, MCP and REST fail closed with
+`model_credentials_required`. The removed `agent.sampling` and
 `mcp.http_stateful` settings are rejected with migration guidance; modern
 stateless and legacy stateful MCP routing is automatic.
 
@@ -1302,6 +1321,42 @@ conditions are not accepted.
 
 ---
 
+## Watch Configuration
+
+Watches are owner-scoped standing questions stored in the artifact store and
+exposed as `gj_watch` and `gj_watch_event`. Parsed `dev` and `agentic` configs
+enable watches whenever artifacts are enabled and set `runner: all`; `prod` and
+directly constructed Go configs keep watches off. See
+[AGENTIC.md](AGENTIC.md#watches-standing-questions-with-a-durable-inbox) for
+behavior.
+
+```yaml
+watches:
+  enabled: true
+  runner: all
+  webhook_allow: ["https://hooks.example.com/graphjin", "http://alerts:8080"]
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `watches.enabled` | boolean | dev/agentic: artifact setting; prod: `false` | Enable `gj_watch`, `gj_watch_event` and the watch REST routes |
+| `watches.runner` | string | dev/agentic: `all`; prod: `off` | `all` evaluates watches on this replica; `off` keeps definitions without evaluating them |
+| `watches.max_per_owner` | integer | `20` | Maximum active watches per owner |
+| `watches.event_retention_hours` | integer | `168` | Hours to keep fired events |
+| `watches.max_events_per_watch` | integer | `500` | Maximum stored events per watch; oldest are pruned first |
+| `watches.snapshot_max_bytes` | integer | `32768` | Byte cap for event snapshots and user-supplied watch JSON fields |
+| `watches.webhook_allow` | []string | - | URL prefixes that webhook delivery may call. Empty denies all webhooks. A target that is or resolves to a private or local address is allowed only when an entry names that exact host or IP |
+| `watches.enrichment_daily_cap` | integer | `10` | Maximum read-only agent enrichments per watch per day |
+| `watches.enrichment_workers` | integer | `1` | Concurrent watch enrichment workers |
+| `watches.retry_max_failures` | integer | `5` | Consecutive transient failures before a watch enters `status: "error"` |
+
+A watch follows a cursor-backed subscription, or with `poll_json` it runs a
+plain query on an interval of 10 seconds to 24 hours. Webhook delivery signs
+with the secret in `secret_env`, or with `secret_source: "keystore"` from a
+per-watch secret derived from `secrets.keystore.key`.
+
+---
+
 ## Redis Configuration
 
 `redis.url` is optional for a single GraphJin process. In a horizontal
@@ -1320,6 +1375,32 @@ builder status, dirty counters, and PubSub notifications for those builders.
 redis:
   url: redis://localhost:6379/0
 ```
+
+---
+
+## Secrets Configuration
+
+GraphJin keeps secret config values in a local encrypted keystore. A
+`gj_config` update that sets a secret value seals it into the keystore, and the
+config holds a `gjsecret://` reference in its place.
+
+```yaml
+secrets:
+  keystore:
+    key: "<base64-encoded 32-byte key>"
+    path: secrets.enc.yml
+    previous_keys: []
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `secrets.keystore.key` | string | - | Base64-encoded 32-byte AES-256-GCM key. Required before GraphJin can seal secret values or read `gjsecret://` references |
+| `secrets.keystore.path` | string | `secrets.enc.yml` | Keystore file. A relative path resolves against the config file's directory |
+| `secrets.keystore.previous_keys` | []string | - | Earlier keys. At start GraphJin re-seals under `key` every value that one of them opens and saves the keystore |
+
+To rotate the key, move the current key to `previous_keys` and set a new `key`.
+A watch webhook with `secret_source: "keystore"` also derives its signing
+secret from `key`.
 
 ---
 
@@ -1418,7 +1499,7 @@ When Redis is configured but unavailable:
 | `catalog_search.semantic.embedding_model` | string | - | Embedding model identifier. Required when semantic search is enabled. |
 | `catalog_search.semantic.api_key_env` | string | `OPENAI_API_KEY` | Environment variable containing the embedding provider key. |
 | `catalog_search.semantic.base_url` | string | - | Optional provider-compatible endpoint override. |
-| `catalog_search.semantic.dimensions` | string | `tiny` | `tiny` (768), `small` (1536), `medium` (3072), or `default` (provider-native). |
+| `catalog_search.semantic.dimensions` | string | `small` | `tiny` (768), `small` (1536), `medium` (3072), or `default` (provider-native). A `Config` built directly in Go defaults to `tiny`. |
 | `catalog_search.semantic.query_prefix` | string | - | Prepended to every search query before it is embedded, for models trained with task prefixes. Kept verbatim, trailing space included. |
 | `catalog_search.semantic.document_prefix` | string | - | Prepended to every catalog document before it is embedded. File passages replace `title: none` in it with `title: <file name>`. |
 
@@ -2917,16 +2998,14 @@ environment rather than the server, and are documented under
 ```yaml
 app_name: "My App Development"
 host_port: 0.0.0.0:8080
-web_ui: true
 production: false
 log_level: "debug"
-log_format: "plain"
+log_format: "simple"
 http_compress: true
 server_timing: true
 enable_tracing: true
 auth_fail_block: false
 reload_on_config_change: true
-debug: true
 
 secret_key: dev-secret-key-change-in-prod
 
@@ -2936,9 +3015,6 @@ cors_debug: false
 subs_poll_duration: 2s
 default_limit: 20
 default_block: false
-
-hot_deploy: false
-admin_secret_key: dev-admin-key
 
 auth:
   type: none
@@ -2985,7 +3061,6 @@ inherits: dev
 
 app_name: "My App Production"
 host_port: 0.0.0.0:8080
-web_ui: false
 mode: prod
 log_level: "warn"
 log_format: "json"
@@ -2993,10 +3068,6 @@ http_compress: true
 enable_tracing: false
 auth_fail_block: true
 reload_on_config_change: false
-
-hot_deploy: true
-# Use environment variable for admin secret
-# admin_secret_key: ${GJ_ADMIN_SECRET_KEY}
 
 auth:
   type: jwt
@@ -3090,14 +3161,11 @@ auth:
 | Setting | Development | Production |
 |---------|-------------|------------|
 | `mode` | `dev` | `prod` |
-| `web_ui` | `true` | `false` |
 | `log_level` | `debug` | `warn` or `info` |
-| `log_format` | `plain` | `json` |
+| `log_format` | `simple` | `json` |
 | `enable_tracing` | `true` | `false` |
 | `auth_fail_block` | `false` | `true` |
 | `reload_on_config_change` | `true` | `false` |
-| `debug` | `true` | `false` |
-| `hot_deploy` | `false` | `true` |
 | `auth.development` | `true` | `false` |
 | `cors_allowed_origins` | `["*"]` | Specific origins |
 | `disable_allow_list` | `true` | `false` |

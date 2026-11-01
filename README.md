@@ -24,19 +24,19 @@ openneko setup --mode demo
 
 The installer detects your OS/arch (Homebrew on macOS, a checksum-verified release binary on Linux) and checks for Docker. `openneko setup` then runs preflight checks, brings up the stack, and walks you through configuration **right in the terminal** — admin password, data source, model provider + key. Prefer a browser? Choose **browser** at the first prompt (or pass `--skip-onboarding`) to finish the wizard at [http://localhost:3000](http://localhost:3000).
 
-The demo seeds three watchers against sample data — kick off **Slow-Ship Operations** from `/workflows` and watch an *"orders stuck in pending > 5 days"* finding land on your Briefing.
+The demo seeds three watchers against sample data. Select **Run now** on **Slow-Ship Operations** in `/workflows`, then open the run under `/runs` to see an *"orders stuck in pending > 5 days"* finding.
 
 Full propose-and-approve walkthrough, the live trial (order simulator + scenario injector), and connecting your own data → **[INSTALL.md](INSTALL.md)**.
 
 Hosting several smaller customers on one VM? Named installations isolate each
-customer's Compose project, databases, secrets, sandbox state, backups, ports,
+customer's Compose project, databases, secrets, agent runtime, backups, ports,
 and Docker network. See [Multiple customer instances](INSTALL.md#multiple-customer-instances-on-one-host).
 
 ## What you get
 
 The full feature catalog, in plain language, lives in **[FEATURES.md](FEATURES.md)** — ask-anything answers, chat-first administration, watchers, channels (Slack / Telegram), personal-vs-team knowledge, and the verifiable security model. The highlights:
 
-- **Operational findings on the Briefing.** A SKU below reorder, orders stuck in *pending* for days, payment retries piling up — checked on a schedule and posted as findings.
+- **Operational findings on every run.** OpenNeko checks for a SKU below reorder, orders stuck in *pending* for days and piling payment retries on a schedule, and posts each as a finding.
 - **Watchers you describe in plain English.** *"Alert me when any SKU's on-hand stock drops below its reorder point."* OpenNeko schedules it, runs it, and writes up what it found.
 - **Actions drafted, not auto-fired.** Slack alerts, Gmail follow-ups, Sheets updates, Shopify writes — proposed with the finding that triggered them, queued for your approval. Write a rule when you want a specific class of safe action to auto-fire.
 - **Follow-up questions about your data, in chat.** *"Which territories drove this week's revenue drop?"* — drill in on a finding without leaving the app or writing SQL.
@@ -47,7 +47,8 @@ The full feature catalog, in plain language, lives in **[FEATURES.md](FEATURES.m
 OpenNeko reads through **[GraphJin](https://graphjin.com)**, a GraphQL gateway you point at data you already have:
 
 - **Databases** — Postgres, MySQL, and [more](https://graphjin.com), with an auto-generated query surface.
-- **Files, external APIs, custom code** — first-class GraphQL fields via GraphJin's script layer.
+- **Files.** GraphJin file sources read PDF, Office and spreadsheet files, and the agent can search and query inside them.
+- **External APIs.** An API source turns an OpenAPI spec into GraphQL fields.
 
 One consistent surface no matter where the data lives — you don't write per-connector plumbing.
 
@@ -57,7 +58,7 @@ OpenNeko separates the *intelligence* (the model) from the *memory* (your busine
 
 The memory layer runs on your own Postgres, on your own infrastructure:
 
-- **Findings & briefings** — every watcher run and result, kept against the watcher that produced it.
+- **Findings:** every watcher run and result, kept against the watcher that produced it.
 - **Pinned facts & learned rules** — what the agent figured out and you confirmed, kept separate from what the agent proposed and you haven't decided on yet.
 - **Document library** — documents and spreadsheets you upload, private to you. The assistant searches them, reads them whole, and answers questions over spreadsheet data with SQL, citing the file and page or sheet it used.
 - **Action policies** — your rules for what auto-fires, what queues, what's blocked.
@@ -76,7 +77,7 @@ Integrations ship as **solution packs** — sources, API specs, actions, workflo
 ## Under the hood
 
 - **Self-hosted via Docker.** One binary, one `start` command. Data lives on your Postgres.
-- **Bring your own LLM.** The Ax agent runs against Anthropic, OpenAI, Google, Ollama, and other compatible providers. Change providers without changing the sandboxed agent runtime.
+- **Bring your own LLM.** The Ax agent runs against Anthropic, OpenAI, Google, Ollama, and other compatible providers. Change providers without changing the agent runtime.
 - **Agent kept away from your secrets.** Each run's agent loop runs in its own runner process; turns run in `openneko serve`, which holds the model key only for the turn. The agent runs no code of its own: it works through file tools, GraphJin's governed data tools and approved actions. See [AGENT_RUNTIME.md](AGENT_RUNTIME.md).
 - **Apache-2.0.** Read the source, self-host, fork, and build on it. OpenNeko trademarks are separately controlled — see [LICENSING.md](LICENSING.md) and [TRADEMARKS.md](TRADEMARKS.md).
 
@@ -111,15 +112,15 @@ to the customer GraphJin config at runtime.
 
 ## Docs
 
-- [ROADMAP.md](ROADMAP.md) — implementation follow-ups, including RBAC and warm sandbox access revisions
-- [PACKS.md](PACKS.md) — authoring solution packs, directory layout, connectors, validation, and contributions
-- [CONTEXT_REPOSITORY.md](CONTEXT_REPOSITORY.md) — version history of skills and workflows, and an optional GitHub, GitLab or other git remote
-- [INSTALL.md](INSTALL.md) — install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data, full demo trial
-- [AGENT_RUNTIME.md](AGENT_RUNTIME.md) — how agent runs execute: the runner, `openneko serve` and the terminal sandbox, and what each holds
-- [SECRETS.md](SECRETS.md) — secrets at rest and the optional Infisical vault (enterprise)
-- [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, repo layout, pre-PR checks
-- [evals/adventureworks/README.md](evals/adventureworks/README.md) — the AdventureWorks data eval on GraphJin's eval engine
-- [CHANGELOG.md](CHANGELOG.md) — releases
+- [ROADMAP.md](ROADMAP.md): implementation follow-ups, including RBAC on every agent request
+- [PACKS.md](PACKS.md): authoring solution packs, directory layout, connectors, validation, and contributions
+- [CONTEXT_REPOSITORY.md](CONTEXT_REPOSITORY.md): version history of skills and workflows, and an optional GitHub, GitLab or other git remote
+- [INSTALL.md](INSTALL.md): install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data, full demo trial
+- [AGENT_RUNTIME.md](AGENT_RUNTIME.md): how agent runs execute in the runner and `openneko serve`, and what each holds
+- [SECRETS.md](SECRETS.md): secrets at rest and the optional Infisical vault (enterprise)
+- [CONTRIBUTING.md](CONTRIBUTING.md): dev setup, repo layout, pre-PR checks
+- [evals/adventureworks/README.md](evals/adventureworks/README.md): the AdventureWorks data eval on GraphJin's eval engine
+- [CHANGELOG.md](CHANGELOG.md): releases
 
 ## Issues
 

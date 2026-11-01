@@ -14,7 +14,7 @@ Before editing UI:
 
 1. Read `src/components/ui/README.md`, `src/app/styles/_tokens.css`, and the adjacent rendered surface.
 2. Record a reuse map in the PR: each interaction or visual role, the shared component/token used, and the verification evidence.
-3. Prefer the shared primitives in `src/components/ui`: `Button`, `ActionGroup`, `Field` and its controls, `Checkbox`, `Tabs`, `Pill`, `Disclosure`, `Card`, `EmptyState`, and `OverflowMenu`.
+3. Prefer the shared primitives in `src/components/ui`: `Button`, `ActionGroup`, `Field` and its controls, `Checkbox`, `Tabs`, `Badge`, `Disclosure`, `Card`, `EmptyState`, and `OverflowMenu`.
 
 While editing:
 

@@ -1,8 +1,8 @@
 # Lazy embedding service
 
-The embedding container keeps a small Go HTTP listener running. Its model
-process starts on the first processing request and exits after five idle
-minutes. The container stays up; the model process and its heap do not. This
+The embedding container keeps a small Go HTTP listener running: the
+`openneko` binary in its `lazy-service` role. Its model process starts on the
+first processing request and exits after five idle minutes. The container stays up; the model process and its heap do not. This
 uses no Docker socket, privileged API, or in-host inference fallback.
 
 - `OPENNEKO_EMBEDDING_IDLE_TIMEOUT` overrides the Compose default (a Go
@@ -37,7 +37,7 @@ downloads are disabled and caches live on the `/tmp` tmpfs. One inference
 runs at a time (inputs of a request are batched), with at most 16 queued
 requests (429 beyond that) and a 4 MiB body limit. Torch threads follow
 `OPENNEKO_EMBEDDING_THREADS`, else the container's CPU allowance. Model calls
-never happen in web, worker, or chat sandboxes. Text search and ordinary
+never happen in web, the worker, or `openneko serve`. Text search and ordinary
 database access need no model. The embedding service does not persist text,
 access tenant databases, or log submitted text.
 
@@ -48,24 +48,30 @@ the embedding address from the selected running stack. Missing embedding
 service configuration fails explicitly, with keyword fallback retained for
 interactive memory search. Background indexing retries durably.
 
+Semantic search is off by default. An admin turns it on at Admin → Settings →
+Search. While it is off, OpenNeko searches by keyword, never calls the
+embedding service, and the model never loads.
+
 Memory and skill writes clear their vector in the same database write. The
-null vector is the durable backlog: a pg-boss sweep every minute dispatches up
-to 32 jobs, with at most 128 outstanding jobs. Jobs contain row identifiers,
-not text. Dispatch interleaves organizations, and a PostgreSQL advisory lock
-allows only one background embedding request across worker replicas. Each job
-reads current content and writes its vector only if that content is still
-current and eligible. Deleted, archived, expired, and suppressed memories are
-skipped. Missing vectors remain discoverable after crashes and exhausted
-retries. Keyword search is immediate; semantic indexing is eventual.
-Interactive query embeddings have a 15-second deadline; durable jobs allow 150
-seconds for cold startup and inference.
+null vector is the durable backlog. While semantic search is on, a pg-boss
+sweep every minute queues one backlog job when none is queued or running. The
+job carries no text. It embeds memories and skills in batches of up to 64 for
+at most five minutes; the next sweep queues the rest. A PostgreSQL advisory
+lock allows only one background embedding job across worker replicas. Each
+write stores the vector only if the content is still current and eligible.
+Archived, expired, and suppressed memories are skipped. Missing vectors remain
+discoverable after crashes and exhausted retries. Keyword search is immediate;
+semantic indexing is eventual. Interactive query embeddings wait 4 seconds and
+then fall back to keyword search; background jobs allow 150 seconds for cold
+startup and inference.
 
 Limits are ceilings, not reservations. Embeddings default to two CPUs and
 2.5 GiB (the loaded model uses about 2 GB).
 Idle shutdown saves unused memory; it does not guarantee a host can handle all
 configured ceilings simultaneously.
 
-Library documents are not embedded: GraphJin indexes and reads them itself.
+OpenNeko does not embed Library documents. GraphJin indexes and reads them
+itself, and uses the `/v1/embeddings` route only while semantic search is on.
 
 Verification:
 

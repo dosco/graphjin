@@ -67,4 +67,4 @@ order edits require a human administrator. Hold, unhold, and a
 private internal comment remain reconciled change-sets. Never retry an
 ambiguous result.
 
-Boundary: Never refund, approve a return, alter stock, or call Magento through SQL, raw GraphQL, raw REST, `curl`, or a terminal; fulfillment writes only use an approved `magento.manage_orders` change-set.
+Boundary: Never refund, approve a return, alter stock, or call Magento through SQL, raw GraphQL, or raw REST; fulfillment writes only use an approved `magento.manage_orders` change-set.

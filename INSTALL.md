@@ -35,7 +35,7 @@ Then run `openneko setup` (guided), or `openneko start` to bring the stack up wi
 
 1. Choose an admin database password.
 2. Confirm the pre-filled GraphJin URL (`--mode demo`) or enter your own (`--mode prod`).
-3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). The Ax agent runs with the full tool set, including the chat-first management tools; its terminal runs in the agent sandbox.
+3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). The Ax agent runs with the full tool set, including the chat-first management tools. It has no terminal and runs no code.
 4. Add your provider API key.
 5. Add an industry research provider, or skip.
 
@@ -175,7 +175,7 @@ openneko pack install magento
 openneko install https://github.com/<owner>/<repo>#<path/to/skill>   # community skill (admin opt-in)
 ```
 
-Packs add sources, actions, workflows and skills, and can turn on the built-in Slack, Telegram and HUD channels. See **[PACKS.md](PACKS.md)**. `openneko doctor` checks your host can run the stack and its agent sandbox.
+Packs add sources, actions, workflows and skills, and can turn on the built-in Slack, Telegram and HUD channels. See **[PACKS.md](PACKS.md)**. `openneko doctor` checks the host, Docker, the latest backup and the database.
 
 ---
 
@@ -195,6 +195,8 @@ openneko stop [--volumes]          # --volumes wipes data
 openneko migrate                   # apply pending migrations against running neko-db
 openneko seed adventureworks       # one-shot demo data load (already done by --mode demo)
 openneko [--instance name] graphjin import <customer-config.yml|->
+openneko backup [--to file]        # encrypted backup of the database and config volumes
+openneko restore <file> --confirm RESTORE
 openneko reset [--all]             # tear down + clear local config (--all also wipes secrets)
 openneko doctor                    # host check, docker daemon, stack health
 openneko version
@@ -203,10 +205,10 @@ openneko version
 Modes:
 
 - **`prod`** (default) — the production control, customer-data, and agent
-  runtime services. Seven containers remain running after the five startup
+  runtime services. Five containers remain running after the five startup
   jobs complete.
 - **`dev`** — source-checkout workflow: use `pnpm dev:setup` for Docker-only dependencies plus AdventureWorks demo data, then `pnpm dev` for hot-reloaded web/worker from source.
-- **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
+- **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`, the order simulator (`adventureworks-simulator`) and the scenario injector (`adventureworks-scenario-injector`).
 
 `~/.config/openneko/compose.override.yml` is auto-applied if present (last `-f` to docker compose).
 
@@ -257,11 +259,12 @@ pulled with the rest at install. See [AGENT_RUNTIME.md](AGENT_RUNTIME.md).
 
 `openneko upgrade` is the normal stack upgrade path. It:
 
-1. Pulls the latest OpenNeko service, agent, and sandbox supervisor images.
-2. Detects the mode recorded by your last `setup` or `start` (`prod`, `dev`, or `demo`) and recreates that stack detached.
-3. Re-runs every idempotent initializer against the existing volumes, including runtime-artifact repair and pending migrations.
-4. Waits for every declared service health check; a crash loop or unreachable data plane fails the upgrade instead of being reported as success.
-5. Persists the new version and removes old OpenNeko image tags only after the stack is healthy (unless you pass `--no-prune`).
+1. Updates the `openneko` CLI to the target release and runs the new CLI. Homebrew installs update through Homebrew; other installs use checksum-verified release files. `--stack-only` keeps the current CLI; `--cli-only` stops after this step.
+2. Detects the mode recorded by your last `setup` or `start` (`prod`, `dev`, or `demo`).
+3. Takes an `openneko backup` of the running stack, and stops without changes if the backup fails. `--skip-backup` skips it.
+4. Pulls the release's service images, stops the stack, and recreates it detached. Every idempotent initializer runs again against the existing volumes, including pending migrations.
+5. Waits for every declared service health check; a crash loop or unreachable data plane fails the upgrade instead of being reported as success.
+6. Persists the new version and removes old OpenNeko image tags only after the stack is healthy (unless you pass `--no-prune`).
 
 Run it from the same install directory you use for `openneko start`:
 
@@ -286,8 +289,7 @@ openneko upgrade --mode demo
 ```
 
 The command persists the selected image tag in `.openneko/runtime/.image-version`,
-so later `openneko start` runs the same tag. Upgrading the host binary is still
-recommended when a release includes CLI changes.
+so later `openneko start` runs the same tag.
 
 ### macOS
 
@@ -355,18 +357,18 @@ for a reverse-proxy deployment.
 
 ## Build from source (advanced)
 
-> Needed for developing OpenNeko itself or running the full live trial (continuous order trickle + scenario injector).
+> Needed for developing OpenNeko itself, or to run the live trial from source.
 
 ```bash
 git clone https://github.com/open-neko/openneko.git
-cd neko
+cd openneko
 docker compose -f compose.yml -f compose.adventureworks.yml up -d --build
 docker compose -f compose.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed
 ```
 
 ### Live trial data
 
-The source compose trickles fresh sales orders into the sample DB every 10 minutes. Briefing numbers drift, cron workflows fire, runs accumulate on `/runs`. External actions use their configured adapters and approval policies.
+The source compose trickles fresh sales orders into the sample DB every 10 minutes. Numbers drift, cron workflows fire, runs accumulate on `/runs`. External actions use their configured adapters and approval policies.
 
 ```bash
 AW_SIM_INTERVAL_SEC=300 AW_SIM_ORDERS_MIN=1 AW_SIM_ORDERS_MAX=5 \
@@ -391,7 +393,7 @@ docker compose -f compose.yml -f compose.adventureworks.yml \
   /scripts/scenario-injector.sh fire germany-revenue-drop
 ```
 
-Wait ~15 minutes, then click **+ Run now** on **Revenue Drop Alert** in `/workflows`. A finding lands on the Briefing; a proposed Slack alert queues for approval. Click approve; the receipt lands under **Fired on your behalf**.
+Wait ~15 minutes, then click **Run now** on **Revenue Drop Alert** in `/workflows`. The finding appears on the run's page under `/runs`, and a proposed Slack alert queues in `/approvals`. Approve it; the receipt appears in `/actions`.
 
 Then write your own watcher from `/work`, and swap AdventureWorks for your data — see [Use your own data](#use-your-own-data).
 

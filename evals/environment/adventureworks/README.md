@@ -30,7 +30,7 @@ demo database or GraphJin config volumes.
 
 The first `up` reuses the production-compatible `adventureworks-loader` image
 target and the existing install SQL. Before accepting the result, the freeze
-step verifies all three seed inputs in `source.sha256`:
+step verifies all four seed inputs in `source.sha256`:
 
 - Microsoft's `AdventureWorks-oltp-install-script.zip` release asset;
 - `db/seeds/dev/adventureworks-install.sql`;
@@ -90,17 +90,9 @@ scripts/eval-adventureworks/environment.sh up
 scripts/eval-adventureworks/environment.sh verify-pre
 ```
 
-Point the eval harness at the isolated endpoints:
-
-```sh
-export OPENNEKO_EVAL_ADVENTUREWORKS_GRAPHQL_URL=http://127.0.0.1:18080/api/v1/graphql
-export OPENNEKO_EVAL_ADVENTUREWORKS_MCP_URL=http://127.0.0.1:18080/api/v1/mcp
-export OPENNEKO_EVAL_ADVENTUREWORKS_DATABASE_URL=postgresql://openneko_eval_reader:eval-reader-only@127.0.0.1:15433/adventureworks
-```
-
-These variables are mandatory until every eval dataset/config default uses the
-isolated ports. Do not let a benchmark fall back to the demo's `8080`/`5433`
-endpoints; that would invalidate the run and could query mutable dev data.
+The data eval config (`evals/adventureworks/dev.yml`) reads the snapshot on
+`127.0.0.1:15433`. Keep a benchmark on these isolated ports. The demo's
+`8080`/`5433` endpoints hold mutable dev data and invalidate a run.
 
 Run an explicit preflight immediately before a cohort and a postflight after
 the final attempt. Both commands exit non-zero and print a per-table diff if

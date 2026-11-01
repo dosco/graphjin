@@ -4,6 +4,20 @@ The OpenNeko operator CLI — a single Go binary that supervises the Docker
 stack and installs solution packs. Same binary works on an operator's
 laptop, on a self-hosted server, and inside the worker container.
 
+## Roles
+
+Every Go process in an install runs this binary. It picks its role from its
+first argument, or from the name of a link to it:
+
+| Role | Runs |
+| --- | --- |
+| `openneko serve` | The customer GraphJin (`:8080`), a subscriptions GraphJin on `:8089` (role `neko_subscriptions`, read-only), and agent turns over the Unix socket `/run/openneko/serve.sock`. Compose runs it as `openneko-serve`. It exits at once on SIGTERM. |
+| `openneko graphjin` | The GraphJin CLI. `openneko graphjin import` stays an operator command. |
+| `openneko ax-harness` | One agent turn per process (see [apps/ax-harness](../ax-harness/README.md)). |
+| `openneko lazy-service` | The lazy listener in front of the embedding service (see [apps/lazy-service](../lazy-service/README.md)). |
+
+Any other first argument runs the operator CLI below.
+
 ## Install
 
 One line, any platform:
