@@ -32,7 +32,8 @@ packages/
   packs/               Solution pack manifest, bundle loader and validation
   channels/            Built-in Slack, Telegram and HUD channels
 packs/                 First-party solution packs (Magento, Google Workspace, Slack, …)
-graphjin/              GraphJin source, built into the `openneko` binary
+core/, serv/, agent/,  GraphJin's Go modules at the repository root, built into the
+cmd/, …                `openneko` binary. See CONTRIBUTING.md for GraphJin.
 db/
   migrations/          Metadata database migrations (mirrored into apps/openneko/assets/migrations/ for embedding)
   graphjin/            Sample GraphJin config

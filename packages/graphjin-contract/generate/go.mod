@@ -117,6 +117,7 @@ require (
 	github.com/klauspost/asmfmt v1.3.2 // indirect
 	github.com/klauspost/compress v1.18.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/ledongthuc/pdf v0.0.0-20260907135840-6c8c28e0e8a0 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
@@ -136,6 +137,9 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/oasdiff/yaml v0.0.9 // indirect
 	github.com/oasdiff/yaml3 v0.0.12 // indirect
+	github.com/parquet-go/bitpack v1.0.0 // indirect
+	github.com/parquet-go/jsonlite v1.0.0 // indirect
+	github.com/parquet-go/parquet-go v0.31.0 // indirect
 	github.com/paulmach/orb v0.12.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
@@ -145,6 +149,8 @@ require (
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/redis/go-redis/v9 v9.17.2 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/richardlehane/mscfb v1.0.6 // indirect
+	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/rs/cors v1.11.1 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
@@ -162,6 +168,7 @@ require (
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/thessem/zap-prettyconsole v0.6.0 // indirect
+	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	github.com/tree-sitter/tree-sitter-go v0.25.0 // indirect
 	github.com/tree-sitter/tree-sitter-java v0.23.5 // indirect
@@ -169,11 +176,15 @@ require (
 	github.com/tree-sitter/tree-sitter-python v0.25.0 // indirect
 	github.com/tree-sitter/tree-sitter-rust v0.24.2 // indirect
 	github.com/tree-sitter/tree-sitter-typescript v0.23.2 // indirect
+	github.com/twpayne/go-geom v1.6.1 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/woodsbury/decimal128 v1.3.0 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.2.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
+	github.com/xuri/efp v0.0.1 // indirect
+	github.com/xuri/excelize/v2 v2.10.1 // indirect
+	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
@@ -218,13 +229,13 @@ require (
 )
 
 replace (
-	github.com/dosco/graphjin/agent/v3 => ../../../graphjin/agent
-	github.com/dosco/graphjin/auth/v3 => ../../../graphjin/auth
-	github.com/dosco/graphjin/cassandradriver => ../../../graphjin/cassandradriver
-	github.com/dosco/graphjin/clickhousedriver => ../../../graphjin/clickhousedriver
-	github.com/dosco/graphjin/codesql => ../../../graphjin/codesql
-	github.com/dosco/graphjin/core/v3 => ../../../graphjin/core
-	github.com/dosco/graphjin/mongodriver => ../../../graphjin/mongodriver
-	github.com/dosco/graphjin/plugin/otel/v3 => ../../../graphjin/plugin/otel
-	github.com/dosco/graphjin/serv/v3 => ../../../graphjin/serv
+	github.com/dosco/graphjin/agent/v3 => ../../../agent
+	github.com/dosco/graphjin/auth/v3 => ../../../auth
+	github.com/dosco/graphjin/cassandradriver => ../../../cassandradriver
+	github.com/dosco/graphjin/clickhousedriver => ../../../clickhousedriver
+	github.com/dosco/graphjin/codesql => ../../../codesql
+	github.com/dosco/graphjin/core/v3 => ../../../core
+	github.com/dosco/graphjin/mongodriver => ../../../mongodriver
+	github.com/dosco/graphjin/plugin/otel/v3 => ../../../plugin/otel
+	github.com/dosco/graphjin/serv/v3 => ../../../serv
 )

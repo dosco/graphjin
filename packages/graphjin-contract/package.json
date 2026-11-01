@@ -11,7 +11,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "generate": "cd generate && GOWORK=off go run . ../../../graphjin/serv/config.schema.json ../src/generated.ts",
+    "generate": "cd generate && GOWORK=off go run . ../../../serv/config.schema.json ../src/generated.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

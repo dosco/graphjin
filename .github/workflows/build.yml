@@ -1,9 +1,28 @@
 name: Build
 
 on:
+  # OpenNeko's paths are ignored: a Build on master triggers auto-release,
+  # and an OpenNeko-only change must not release GraphJin.
   pull_request:
     branches: [master]
-    paths-ignore: ["**.md", "docs/**"]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "apps/**"
+      - "packages/**"
+      - "packs/**"
+      - "db/**"
+      - "deploy/**"
+      - "evals/**"
+      - ".impeccable/**"
+      - "Dockerfile"
+      - "compose*.yml"
+      - "entrypoint.sh"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "release-please-config.json"
+      - ".release-please-manifest.json"
   push:
     branches: [master]
     paths-ignore:
@@ -11,6 +30,21 @@ on:
       - "docs/**"
       - ".github/workflows/**"
       - "website/**"
+      - "apps/**"
+      - "packages/**"
+      - "packs/**"
+      - "db/**"
+      - "deploy/**"
+      - "evals/**"
+      - ".impeccable/**"
+      - "Dockerfile"
+      - "compose*.yml"
+      - "entrypoint.sh"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "release-please-config.json"
+      - ".release-please-manifest.json"
 
 jobs:
   lint-and-test:
@@ -23,7 +57,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.23.1"
+          go-version: "1.26.10"
 
       - name: Cache Go modules
         uses: actions/cache@v3

@@ -7,7 +7,7 @@ Packs that need connectors ship their own declarations and specifications.
 OpenNeko has no separate plugin system; channels and sign-in are built in.
 
 For operator commands, see [INSTALL.md](INSTALL.md#solution-packs-and-skills) and `openneko pack --help`.
-For contributing code, see [CONTRIBUTING.md](CONTRIBUTING.md).
+For contributing code, see [OPENNEKO_CONTRIBUTING.md](OPENNEKO_CONTRIBUTING.md).
 
 ## Start from an example
 

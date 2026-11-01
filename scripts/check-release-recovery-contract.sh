@@ -26,11 +26,11 @@ grep -Fq 'for image in neko-db; do' "$smoke_workflow"
 grep -Fq 'org.openneko.storage-owner' "$smoke_workflow"
 grep -Fq 'test "$image_owner" = "999:999"' "$smoke_workflow"
 
-# Release builds compile GraphJin from graphjin/ at the release commit. They
+# Release builds compile GraphJin from its root modules at the release commit. They
 # must not download a GraphJin release, which a network outage or rate limit
 # can break and which can drift from the source.
 if grep -Fq "github.com/dosco/graphjin/releases" Dockerfile; then
-  echo "GraphJin build still downloads a GraphJin release instead of building graphjin/" >&2
+  echo "GraphJin build still downloads a GraphJin release instead of building the root modules" >&2
   exit 1
 fi
 grep -Fq 'sh scripts/build-openneko.sh /out/openneko' Dockerfile

@@ -4,7 +4,7 @@ name: PR checks
 # the changed files and picks the pnpm packages to typecheck, build and test,
 # and the Docker and browser jobs to run. Each package tests in its own job
 # with its own Postgres, in parallel. A manual run with "all" runs everything.
-# graphjin/ has its own workflow, and the Go apps have go.yml and
+# GraphJin's root modules have their own workflow, and the Go apps have go.yml and
 # ax-harness.yml.
 
 on:
@@ -118,7 +118,7 @@ jobs:
       - name: Install
         run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
 
-      - name: Install graphjin CLI from graphjin/
+      - name: Install the graphjin CLI from the GraphJin modules
         run: |
           sh scripts/build-openneko.sh "$RUNNER_TEMP/bin/openneko"
           ln -s openneko "$RUNNER_TEMP/bin/graphjin"
@@ -276,7 +276,7 @@ jobs:
       - name: Install
         run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
 
-      - name: Build the GraphJin runtime from graphjin/
+      - name: Build the GraphJin runtime from the GraphJin modules
         run: |
           docker buildx build \
             --load \

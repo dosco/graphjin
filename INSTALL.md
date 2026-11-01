@@ -1,7 +1,7 @@
 # Install OpenNeko
 
 Sections below **Command reference** are reference — not needed to get started.
-What you're installing, feature by feature, in plain language: **[FEATURES.md](FEATURES.md)**.
+What you're installing, feature by feature, in plain language: **[OPENNEKO_FEATURES.md](OPENNEKO_FEATURES.md)**.
 
 ## Requirements
 

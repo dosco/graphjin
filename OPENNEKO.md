@@ -34,7 +34,7 @@ and Docker network. See [Multiple customer instances](INSTALL.md#multiple-custom
 
 ## What you get
 
-The full feature catalog, in plain language, lives in **[FEATURES.md](FEATURES.md)** — ask-anything answers, chat-first administration, watchers, channels (Slack / Telegram), personal-vs-team knowledge, and the verifiable security model. The highlights:
+The full feature catalog, in plain language, lives in **[OPENNEKO_FEATURES.md](OPENNEKO_FEATURES.md)** — ask-anything answers, chat-first administration, watchers, channels (Slack / Telegram), personal-vs-team knowledge, and the verifiable security model. The highlights:
 
 - **Operational findings on every run.** OpenNeko checks for a SKU below reorder, orders stuck in *pending* for days and piling payment retries on a schedule, and posts each as a finding.
 - **Watchers you describe in plain English.** *"Alert me when any SKU's on-hand stock drops below its reorder point."* OpenNeko schedules it, runs it, and writes up what it found.
@@ -104,7 +104,7 @@ search**, which is off by default; until then search is by keyword. See
 |------|----------------------|------------------|
 | **prod** (default) | none | Core stack only. You connect your own data source; actions run for real. |
 | **demo** | AdventureWorks sample DB, seed job, order simulator, scenario injector | Customer GraphJin points at the sample data. What `openneko setup --mode demo` gives you. |
-| **dev** | none (reserved overlay) | For working on OpenNeko itself: Docker runs only the dependency services while web and worker hot-reload as host processes (`pnpm dev:setup && pnpm dev`, using the repo's root `compose.yml`) — see [CONTRIBUTING.md](CONTRIBUTING.md). |
+| **dev** | none (reserved overlay) | For working on OpenNeko itself: Docker runs only the dependency services while web and worker hot-reload as host processes (`pnpm dev:setup && pnpm dev`, using the repo's root `compose.yml`) — see [OPENNEKO_CONTRIBUTING.md](OPENNEKO_CONTRIBUTING.md). |
 
 **Solution packs** (e.g. `openneko pack install magento`) are not a mode: they
 layer onto a running stack in any mode, adding sources, specs, and saved queries
@@ -118,7 +118,7 @@ to the customer GraphJin config at runtime.
 - [INSTALL.md](INSTALL.md): install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data, full demo trial
 - [AGENT_RUNTIME.md](AGENT_RUNTIME.md): how agent runs execute in the runner and `openneko serve`, and what each holds
 - [SECRETS.md](SECRETS.md): secrets at rest and the optional Infisical vault (enterprise)
-- [CONTRIBUTING.md](CONTRIBUTING.md): dev setup, repo layout, pre-PR checks
+- [OPENNEKO_CONTRIBUTING.md](OPENNEKO_CONTRIBUTING.md): dev setup, repo layout, pre-PR checks
 - [evals/adventureworks/README.md](evals/adventureworks/README.md): the AdventureWorks data eval on GraphJin's eval engine
 - [CHANGELOG.md](CHANGELOG.md): releases
 
@@ -128,7 +128,7 @@ Please file bugs and feature requests at [github.com/open-neko/openneko/issues](
 
 ## Contributing
 
-Pull requests are welcome — on your first PR a bot will ask you to sign a quick [Contributor License Agreement](CLA.md). See [CONTRIBUTING.md](CONTRIBUTING.md) for the developer setup, repository layout, and the checks to run before opening a PR.
+Pull requests are welcome — on your first PR a bot will ask you to sign a quick [Contributor License Agreement](CLA.md). See [OPENNEKO_CONTRIBUTING.md](OPENNEKO_CONTRIBUTING.md) for the developer setup, repository layout, and the checks to run before opening a PR.
 
 ## License
 

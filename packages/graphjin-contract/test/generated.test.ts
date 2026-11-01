@@ -11,7 +11,7 @@ describe("generated contract", () => {
     const out = join(mkdtempSync(join(tmpdir(), "graphjin-contract-")), "generated.ts");
     execFileSync(
       "go",
-      ["run", ".", resolve(root, "../../graphjin/serv/config.schema.json"), out],
+      ["run", ".", resolve(root, "../../serv/config.schema.json"), out],
       { cwd: join(root, "generate"), env: { ...process.env, GOWORK: "off" }, stdio: "pipe" },
     );
     expect(readFileSync(join(root, "src/generated.ts"), "utf8")).toBe(readFileSync(out, "utf8"));

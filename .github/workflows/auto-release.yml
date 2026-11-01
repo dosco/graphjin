@@ -42,7 +42,7 @@ jobs:
           # _authToken=${NODE_AUTH_TOKEN}, and with no token supplied that becomes a
           # literal placeholder. npm then authenticates with garbage instead of
           # falling through to OIDC. Default registry is npmjs.org anyway.
-          node-version: '24'
+          node-version: 24.22.1
 
       - name: Get current version
         id: current_version
@@ -146,7 +146,7 @@ jobs:
         if: steps.release_target.outputs.should_release == 'true'
         uses: actions/setup-go@v4
         with:
-          go-version: "1.23.1"
+          go-version: "1.26.10"
 
       - name: Cache Go modules
         if: steps.release_target.outputs.should_release == 'true'

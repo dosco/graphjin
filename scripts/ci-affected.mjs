@@ -23,9 +23,9 @@
 //   - Lockfile, root config, and CI plumbing run everything.
 //   - With --base, a package.json whose only change is its version (a
 //     release-please bump) runs nothing.
-//   - graphjin/ has its own workflow; here it runs only the GraphJin
-//     integration job, since the openneko binary carries GraphJin. Docs run
-//     nothing.
+//   - GraphJin's modules at the repository root have their own workflow;
+//     here they run only the GraphJin integration job, since the openneko
+//     binary carries GraphJin. Docs run nothing.
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -71,14 +71,21 @@ function withDependents(dir) {
 
 // Docker and browser jobs. Each runs when a path matches one of its prefixes,
 // or when one of its packages is picked.
+// GraphJin's Go modules, at the repository root.
+const GRAPHJIN = [
+  "agent/", "auth/", "cassandradriver/", "clickhousedriver/", "cmd/", "codesql/", "conf/",
+  "core/", "examples/", "hostedemu/", "mongodriver/", "plugin/", "serv/", "tests/",
+  "tests-large/", "wasm/",
+];
+
 const JOBS = {
   design_system: {
     paths: ["packs/", "db/migrations/", "apps/openneko/assets/migrations/", "scripts/check-web-design-system.mjs"],
     packages: ["apps/web"],
   },
   graphjin_integration: {
-    // GraphJin builds from graphjin/ into the openneko binary.
-    paths: ["db/graphjin/", "Dockerfile", "graphjin/", "scripts/build-openneko.sh"],
+    // GraphJin builds from its root modules into the openneko binary.
+    paths: ["db/graphjin/", "Dockerfile", ...GRAPHJIN, "scripts/build-openneko.sh"],
     packages: [],
   },
   embedding_image: {
@@ -105,12 +112,12 @@ const EVERYTHING = [
 
 // Changes here run nothing in this workflow.
 const IGNORED = [
-  "graphjin/website/",
-  "graphjin/docs/",
-  "graphjin/benchmark/",
-  "graphjin/training/",
-  "graphjin/notes/",
+  "website/",
   "docs/",
+  "benchmark/",
+  "training/",
+  "notes/",
+  "npm/",
   ".github/",
   "deploy/",
 ];
@@ -156,8 +163,8 @@ function classify(path) {
   if (path.startsWith("packs/")) {
     for (const d of ["apps/web", "apps/worker", "packages/packs"]) picked.add(d);
   }
-  // The contract package is generated from graphjin/.
-  if (path.startsWith("graphjin/")) {
+  // The contract package is generated from GraphJin's serv module.
+  if (matches(path, GRAPHJIN)) {
     for (const d of withDependents("packages/graphjin-contract")) picked.add(d);
   }
   for (const [job, rule] of Object.entries(JOBS)) {

@@ -1,22 +1,58 @@
 name: graphjin (go)
 
-# GraphJin lives under graphjin/ and is exported to dosco/graphjin.
+# GraphJin's modules sit at the repository root beside OpenNeko's apps.
 #
-# A change runs only the jobs it needs. graphjin/scripts/ci-affected.sh reads
+# A change runs only the jobs it needs. scripts/ci-affected.sh reads
 # the changed files and picks the Go modules to unit-test and the database
 # suites to run. Each module and each database runs as its own job, in
 # parallel. The nightly run and a manual run with "all" run everything.
-# graphjin/.github/workflows stay as they are for the mirror.
+# GraphJin's own build.yml covers pushes to master.
 
 on:
   push:
     branches: [main]
     paths:
-      - "graphjin/**"
+      - "agent/**"
+      - "auth/**"
+      - "cassandradriver/**"
+      - "clickhousedriver/**"
+      - "cmd/**"
+      - "codesql/**"
+      - "conf/**"
+      - "core/**"
+      - "examples/**"
+      - "hostedemu/**"
+      - "mongodriver/**"
+      - "plugin/**"
+      - "serv/**"
+      - "tests/**"
+      - "tests-large/**"
+      - "wasm/**"
+      - "go.work"
+      - "scripts/ci-affected.sh"
+      - "scripts/test-parallel.sh"
       - ".github/workflows/graphjin.yml"
   pull_request:
     paths:
-      - "graphjin/**"
+      - "agent/**"
+      - "auth/**"
+      - "cassandradriver/**"
+      - "clickhousedriver/**"
+      - "cmd/**"
+      - "codesql/**"
+      - "conf/**"
+      - "core/**"
+      - "examples/**"
+      - "hostedemu/**"
+      - "mongodriver/**"
+      - "plugin/**"
+      - "serv/**"
+      - "tests/**"
+      - "tests-large/**"
+      - "wasm/**"
+      - "go.work"
+      - "scripts/ci-affected.sh"
+      - "scripts/test-parallel.sh"
       - ".github/workflows/graphjin.yml"
   schedule:
     - cron: "17 2 * * *"
@@ -58,9 +94,9 @@ jobs:
             push) base="$PUSH_BEFORE" ;;
           esac
           if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-            bash graphjin/scripts/ci-affected.sh --all | tee -a "$GITHUB_OUTPUT"
+            bash scripts/ci-affected.sh --all | tee -a "$GITHUB_OUTPUT"
           else
-            git diff --name-only "$base" HEAD | bash graphjin/scripts/ci-affected.sh | tee -a "$GITHUB_OUTPUT"
+            git diff --name-only "$base" HEAD | bash scripts/ci-affected.sh | tee -a "$GITHUB_OUTPUT"
           fi
 
   unit:
@@ -76,12 +112,12 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version-file: graphjin/go.work
-          cache-dependency-path: graphjin/**/go.sum
+          go-version-file: go.work
+          cache-dependency-path: "**/go.sum"
 
       - name: Locate module
         id: dir
-        run: echo "dir=graphjin/${MODULE/plugin-otel/plugin/otel}" >> "$GITHUB_OUTPUT"
+        run: echo "dir=${MODULE/plugin-otel/plugin/otel}" >> "$GITHUB_OUTPUT"
         env:
           MODULE: ${{ matrix.module }}
 
@@ -98,15 +134,12 @@ jobs:
       fail-fast: false
       matrix:
         dialect: ${{ fromJSON(needs.plan.outputs.dialects) }}
-    defaults:
-      run:
-        working-directory: graphjin
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version-file: graphjin/go.work
-          cache-dependency-path: graphjin/**/go.sum
+          go-version-file: go.work
+          cache-dependency-path: "**/go.sum"
 
       - name: Run the ${{ matrix.dialect }} suite
         run: PARALLEL_DBS="${{ matrix.dialect }}" MAX_PARALLEL=1 bash scripts/test-parallel.sh
@@ -123,14 +156,13 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version-file: graphjin/go.work
-          cache-dependency-path: graphjin/**/go.sum
+          go-version-file: go.work
+          cache-dependency-path: "**/go.sum"
       - uses: github/codeql-action/init@v3
         with:
           languages: go
           build-mode: manual
       - name: Build
-        working-directory: graphjin
         run: go build ./cmd/... ./serv/... ./core/... ./agent/... ./auth/... ./conf/...
       - uses: github/codeql-action/analyze@v3
         with:

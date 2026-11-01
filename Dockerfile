@@ -81,13 +81,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ─── 2a. the openneko binary ───────────────────────────────────────────
 # Every Go process in an install runs this one binary. It picks its role from
 # the name it runs under, so each image links it as graphjin, ax-harness,
-# lazy-service or graphjin-config. GraphJin builds from graphjin/ in this
+# lazy-service or graphjin-config. GraphJin builds from its modules at the root of this
 # repository at the same commit; there is no release tarball and no pin.
 # Go 1.26.10 rejects any chain through the compromised eMudhra intermediate
 # keys (CVE-2026-111943); go.work requires it too.
 FROM golang:1.26.10-bookworm AS go-build
 WORKDIR /src
-COPY graphjin graphjin
+COPY agent agent
+COPY auth auth
+COPY cassandradriver cassandradriver
+COPY clickhousedriver clickhousedriver
+COPY cmd cmd
+COPY codesql codesql
+COPY conf conf
+COPY core core
+COPY examples examples
+COPY hostedemu hostedemu
+COPY mongodriver mongodriver
+COPY plugin plugin
+COPY serv serv
+COPY npm/package.json npm/package.json
 COPY apps/ax-harness apps/ax-harness
 COPY apps/lazy-service apps/lazy-service
 COPY apps/openneko apps/openneko

@@ -51,14 +51,14 @@ if [ "$installs" -gt "$guards" ]; then
   fail=1
 fi
 
-for work in go.work graphjin/go.work apps/openneko/go.mod graphjin/cmd/go.mod; do
+for work in go.work apps/openneko/go.mod cmd/go.mod; do
   version=$(sed -n 's/^go \([0-9.]*\)$/\1/p' "$work")
   one "$work go directive" "$version" && at_least "$work go directive" "$version" 1.26.10
 done
 
 while read -r version; do
   at_least "workflow go-version" "$version" 1.26.10
-done < <(grep -ho 'go-version: "[0-9.]*"' .github/workflows/*.yml | sed 's/.*"\(.*\)"/\1/')
+done < <(grep -hoE '(^|[^a-z])go-version: "[0-9.]*"' .github/workflows/*.yml | sed 's/.*"\(.*\)"/\1/')
 while read -r version; do
   at_least "workflow node-version" "$version" 24.22.1
 done < <(grep -ho 'node-version: [0-9.]*' .github/workflows/*.yml | sed 's/node-version: //')

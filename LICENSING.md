@@ -48,7 +48,7 @@ See [TRADEMARKS.md](TRADEMARKS.md).
 Contributions are welcome under the [Contributor License Agreement](CLA.md).
 The CLA lets contributors keep ownership of their contributions while granting
 the project the rights needed to license OpenNeko under Apache 2.0 and relicense
-if necessary. See [CONTRIBUTING.md](CONTRIBUTING.md).
+if necessary. See [OPENNEKO_CONTRIBUTING.md](OPENNEKO_CONTRIBUTING.md).
 
 ## Services
 

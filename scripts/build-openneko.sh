@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds the openneko binary, which carries GraphJin (from graphjin/),
+# Builds the openneko binary, which carries GraphJin (from the GraphJin modules at the repository root),
 # ax-harness, lazy-service and serve as roles. Used by the image
 # builds. Usage: scripts/build-openneko.sh OUTPUT
 # OPENNEKO_VERSION and OPENNEKO_COMMIT name the build; both default to
@@ -8,7 +8,7 @@ set -eu
 
 out="$1"
 root="$(cd "$(dirname "$0")/.." && pwd)"
-graphjin_version="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' "$root/graphjin/package.json")"
+graphjin_version="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' "$root/npm/package.json")"
 test -n "$graphjin_version"
 version_pkg=github.com/open-neko/neko/apps/openneko/internal/version
 

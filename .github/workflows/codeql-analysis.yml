@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - '**.go'
+      - '!apps/**'
+      - '!packages/**'
 jobs:
   analyse:
     name: Analyse

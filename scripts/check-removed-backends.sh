@@ -4,8 +4,8 @@
 # Ax Harness is the only agent runtime. Immutable migrations, release history
 # and recorded eval/benchmark results remain so existing installations can
 # still upgrade through every schema version and old results stay verifiable.
-# graphjin/ is GraphJin, which supports Claude Code as an MCP client, so the
-# guard skips it.
+# GraphJin, at the repository root, supports Claude Code as an MCP client, so
+# the guard searches only OpenNeko's paths.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,9 +17,10 @@ search() {
     --glob '!node_modules/**' \
     --glob '!.next/**' \
     --glob '!dist/**' \
-    --glob '!graphjin/**' \
     --glob '!.claude/worktrees/**' \
-    "$1" . || true
+    "$1" apps packages packs db deploy evals Dockerfile compose*.yml package.json \
+    pnpm-workspace.yaml OPENNEKO*.md AGENT_RUNTIME.md INSTALL.md CMMC.md PACKS.md \
+    SECRETS.md ROADMAP.md CONTEXT_REPOSITORY.md PLUGINS.md || true
 }
 
 violations=()
@@ -32,7 +33,7 @@ while IFS= read -r match; do
   path="${match%%:*}"
   path="${path#./}"
   case "$path" in
-    CHANGELOG.md|FEATURES.md|.gitignore|.dockerignore|scripts/check-removed-backends.sh)
+    CHANGELOG.md|OPENNEKO_FEATURES.md|.gitignore|.dockerignore|scripts/check-removed-backends.sh)
       continue
       ;;
     db/migrations/0002_agent_backend_and_setup.sql|\
@@ -60,7 +61,7 @@ while IFS= read -r path; do
       ;;
   esac
   violations+=("forbidden path: $path")
-done < <(git ls-files -- . ':!graphjin' | rg -i 'claude[-_ ]?(agent|code)|claude_agent_sdk' || true)
+done < <(git ls-files -- apps packages packs db deploy evals Dockerfile 'compose*.yml' package.json pnpm-workspace.yaml 'OPENNEKO*.md' | rg -i 'claude[-_ ]?(agent|code)|claude_agent_sdk' || true)
 
 # ─── Hermes ACP backend ────────────────────────────────────────────────
 # Any mention of Hermes (hermes-agent, hermes_acp, HERMES_HOME, the Hermes
@@ -70,8 +71,8 @@ hermes_pattern='hermes'
 
 hermes_history_path() {
   case "$1" in
-    # FEATURES.md keeps a dated history table of shipped PRs.
-    CHANGELOG.md|FEATURES.md|scripts/check-removed-backends.sh|THIRD_PARTY_LICENSES.md)
+    # OPENNEKO_FEATURES.md keeps a dated history table of shipped PRs.
+    CHANGELOG.md|OPENNEKO_FEATURES.md|scripts/check-removed-backends.sh|THIRD_PARTY_LICENSES.md)
       return 0
       ;;
     db/migrations/0002_agent_backend_and_setup.sql|\
@@ -120,7 +121,7 @@ while IFS= read -r path; do
   [[ -e "$path" ]] || continue
   hermes_history_path "$path" && continue
   violations+=("forbidden path: $path")
-done < <(git ls-files -- . ':!graphjin' | rg -i "$hermes_pattern" || true)
+done < <(git ls-files -- apps packages packs db deploy evals Dockerfile 'compose*.yml' package.json pnpm-workspace.yaml 'OPENNEKO*.md' | rg -i "$hermes_pattern" || true)
 
 if ((${#violations[@]} > 0)); then
   printf 'Removed agent backend artifacts are forbidden outside immutable migration/history allowlists:\n' >&2

@@ -7,6 +7,11 @@
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=go)](https://pkg.go.dev/github.com/dosco/graphjin/core/v3)
 [![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=for-the-badge)](https://goreportcard.com/report/github.com/dosco/graphjin/core/v3)
 
+This repository also holds OpenNeko, which watches business data through
+GraphJin, flags what needs a look and drafts the next action for a person to
+approve. OpenNeko's code is in `apps/`, `packages/` and `packs/`. Start with
+[OPENNEKO.md](OPENNEKO.md).
+
 GraphJin is a compiler and runtime that gives AI agents one governed graph over the systems a real company already has: databases, warehouses, files, source code, workflows, metadata, and security policy. Instead of handing an agent raw credentials and hoping it guesses correctly, GraphJin exposes that graph through GraphQL + MCP: the agent discovers before acting, validates queries, runs approved work, observes runtime status — and every answer is checked against an execution ledger before it leaves the server.
 
 It is not only for agents. GraphJin is still a high-performance GraphQL-to-database compiler, Go library, standalone API service, REST/OpenAPI gateway, and real-time subscription server. The agent use case is where everything comes together: the same compiler that serves your apps can also give AI a smart, auditable way to work across data, code, and operations.
