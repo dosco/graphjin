@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -191,7 +192,7 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 // password) wins over env vars, which win over hardcoded defaults. This
 // matches the TS reader in packages/db/src/local-config.ts so every consumer
 // — Go migrate, web, worker, graphjin — converges on the rotated password.
-func defaultConn() db.ConnConfig {
+func defaultConn() (db.ConnConfig, error) {
 	conn := db.ConnConfig{
 		Host:     envOr("NEKO_PG_HOST", "127.0.0.1"),
 		Port:     envInt("NEKO_PG_PORT", envInt("OPENNEKO_DB_PORT", 5432)),
@@ -231,7 +232,30 @@ func defaultConn() db.ConnConfig {
 		conn.Database = envOr("NEKO_PG_DATABASE", conn.Database)
 		conn.SSLMode = envOr("NEKO_PG_SSLMODE", conn.SSLMode)
 	}
-	return conn
+	url, err := databaseURL(local)
+	if err != nil {
+		return db.ConnConfig{}, err
+	}
+	conn.URL = url
+	return conn, nil
+}
+
+// databaseURL returns the configured database URL: the file that
+// OPENNEKO_DATABASE_URL_FILE names, else database_url in config.json.
+func databaseURL(local config.Local) (string, error) {
+	file := strings.TrimSpace(os.Getenv("OPENNEKO_DATABASE_URL_FILE"))
+	if file == "" {
+		return strings.TrimSpace(local.DatabaseURL), nil
+	}
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return "", fmt.Errorf("read OPENNEKO_DATABASE_URL_FILE: %w", err)
+	}
+	url := strings.TrimSpace(string(raw))
+	if url == "" {
+		return "", fmt.Errorf("OPENNEKO_DATABASE_URL_FILE (%s) is empty", file)
+	}
+	return url, nil
 }
 
 func envOr(key, fallback string) string {

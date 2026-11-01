@@ -17,6 +17,8 @@ import (
 )
 
 type ConnConfig struct {
+	// URL, when set, is the whole connection and the other fields are unused.
+	URL      string
 	Host     string
 	Port     int
 	User     string
@@ -26,6 +28,9 @@ type ConnConfig struct {
 }
 
 func (c ConnConfig) DSN() string {
+	if c.URL != "" {
+		return c.URL
+	}
 	host := c.Host
 	if host == "" {
 		host = "localhost"

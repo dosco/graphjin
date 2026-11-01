@@ -37,7 +37,11 @@ func newStorageReconcileCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
-			conn, err := pgx.Connect(ctx, defaultConn().DSN())
+			target, err := defaultConn()
+			if err != nil {
+				return err
+			}
+			conn, err := pgx.Connect(ctx, target.DSN())
 			if err != nil {
 				return fmt.Errorf("connect to database: %w", err)
 			}

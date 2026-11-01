@@ -23,7 +23,11 @@ func newMigrateCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 			skip := skipSchema || envTruthy("OPENNEKO_SKIP_MIGRATE")
 			if !skip {
-				conn, err := pgx.Connect(ctx, defaultConn().DSN())
+				target, err := defaultConn()
+				if err != nil {
+					return err
+				}
+				conn, err := pgx.Connect(ctx, target.DSN())
 				if err != nil {
 					return err
 				}

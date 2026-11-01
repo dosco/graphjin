@@ -78,3 +78,29 @@ func TestWriteLocalPgPasswordPreservesFields(t *testing.T) {
 		t.Fatalf("password not written: %q", lc.Pg.Password)
 	}
 }
+
+func TestWriteLocalPgPasswordKeepsOtherKeys(t *testing.T) {
+	dir := t.TempDir()
+	seed := `{"database_url":"postgres://neko@db/neko","secrets":{"backend":"infisical"},"pg":{"sslmode":"verify-full"}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(seed), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := WriteLocalPgPassword(dir, "rotated-pass"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc["secrets"] == nil || doc["database_url"] != "postgres://neko@db/neko" {
+		t.Fatalf("other keys were dropped: %s", raw)
+	}
+	lc, _ := ReadLocal(dir)
+	if lc.Pg == nil || lc.Pg.SSLMode != "verify-full" || lc.Pg.Password != "rotated-pass" {
+		t.Fatalf("pg block not merged: %+v", lc.Pg)
+	}
+}

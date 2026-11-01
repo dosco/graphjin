@@ -23,7 +23,9 @@ type LocalPg struct {
 }
 
 type Local struct {
-	Pg *LocalPg `json:"pg,omitempty"`
+	// DatabaseURL is a postgres:// URL for OpenNeko's database. It replaces Pg.
+	DatabaseURL string   `json:"database_url,omitempty"`
+	Pg          *LocalPg `json:"pg,omitempty"`
 }
 
 // ReadLocal returns the local config, plus the path it was read from (empty
@@ -59,6 +61,11 @@ func ReadLocal(override string) (Local, string) {
 				lc.Pg.Password = plain
 			}
 		}
+		if lc.DatabaseURL != "" {
+			if plain, err := MaybeDecryptValue(override, lc.DatabaseURL); err == nil {
+				lc.DatabaseURL = plain
+			}
+		}
 		return lc, path
 	}
 	return Local{}, ""
@@ -80,18 +87,20 @@ func WriteLocalPgPassword(override, password string) error {
 	dir := Dir(override)
 	path := filepath.Join(dir, "config.json")
 
-	// Merge over whatever is on disk so we only touch pg.password (read the
-	// raw bytes, not ReadLocal, to avoid round-tripping through decryption).
-	var lc Local
+	// Merge over the raw file so only pg.password changes and every other
+	// key, known or not, stays as written.
+	doc := map[string]any{}
 	if data, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(data, &lc)
+		_ = json.Unmarshal(data, &doc)
 	}
-	if lc.Pg == nil {
-		lc.Pg = &LocalPg{}
+	pg, _ := doc["pg"].(map[string]any)
+	if pg == nil {
+		pg = map[string]any{}
 	}
-	lc.Pg.Password = enc
+	pg["password"] = enc
+	doc["pg"] = pg
 
-	out, err := json.MarshalIndent(lc, "", "  ")
+	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return err
 	}

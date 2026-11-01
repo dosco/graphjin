@@ -42,6 +42,7 @@ export type LocalPgConfig = {
   password?: string;
   database?: string;
   sslmode?: string;
+  sslrootcert?: string;
 };
 
 export type LocalSecretsConfig = {
@@ -55,6 +56,8 @@ export type LocalSecretsConfig = {
 };
 
 export type LocalConfig = {
+  /** A postgres:// URL for OpenNeko's database. It replaces `pg`. */
+  database_url?: string;
   pg?: LocalPgConfig;
   secrets?: LocalSecretsConfig;
 };
@@ -96,6 +99,9 @@ export function readLocalConfig(): LocalConfig {
             password: maybeDecryptSecret(cfg.pg.password),
           };
         }
+        if (typeof cfg.database_url === "string" && cfg.database_url) {
+          cfg.database_url = maybeDecryptSecret(cfg.database_url);
+        }
         return cfg;
       }
     } catch {
@@ -115,6 +121,7 @@ export function writeLocalConfig(partial: LocalConfig): void {
   const current = readLocalConfig();
   const next: LocalConfig = {
     ...current,
+    ...partial,
     pg: { ...(current.pg ?? {}), ...(partial.pg ?? {}) },
   };
   if (typeof next.pg?.password === "string" && next.pg.password) {
@@ -122,6 +129,9 @@ export function writeLocalConfig(partial: LocalConfig): void {
       ...next.pg,
       password: maybeEncryptSecret(next.pg.password),
     };
+  }
+  if (typeof next.database_url === "string" && next.database_url) {
+    next.database_url = maybeEncryptSecret(next.database_url);
   }
   mkdirSync(configDir(), { recursive: true });
   const path = localConfigPath();
@@ -135,9 +145,14 @@ export function writeLocalConfig(partial: LocalConfig): void {
   chmodSync(path, 0o600);
 }
 
-/** Convenience: true when the admin has changed the DB password from default. */
+/**
+ * True when the admin has changed the DB password from the default, or when
+ * a database URL is set. With a URL the operator owns the credentials.
+ */
 export function hasCustomPassword(): boolean {
+  if (process.env.OPENNEKO_DATABASE_URL_FILE?.trim()) return true;
   const cfg = readLocalConfig();
+  if (cfg.database_url) return true;
   const password = cfg.pg?.password;
   return (
     typeof password === "string" &&

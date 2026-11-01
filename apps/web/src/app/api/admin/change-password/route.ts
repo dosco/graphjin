@@ -21,6 +21,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import {
+  configuredDatabaseUrl,
   hasCustomPassword,
   pool,
   reconnectPool,
@@ -65,6 +66,12 @@ async function rotateDatabaseRole(password: string): Promise<void> {
 export async function POST(request: NextRequest) {
   const allowed = await requireAdminActor();
   if (isDenied(allowed)) return allowed;
+  if (configuredDatabaseUrl()) {
+    return NextResponse.json(
+      { error: "This install connects with a database URL. Change the password where the database is managed, then update the URL." },
+      { status: 409 },
+    );
+  }
   try {
     const body = (await request.json().catch(() => ({}))) as { password?: unknown };
     const password = typeof body.password === "string" ? body.password.trim() : "";

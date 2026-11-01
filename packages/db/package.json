@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./schema": "./src/schema.ts",
     "./jobs": "./src/jobs.ts",
+    "./connection": "./src/connection.ts",
     "./provider-config": "./src/provider-config.ts",
     "./server-provider-secrets": "./src/server-provider-secrets.ts",
     "./test-helpers": "./test/integration/_helpers.ts"

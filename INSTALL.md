@@ -125,6 +125,31 @@ openneko setup --mode prod
 
 Enter your GraphJin base URL when setup asks for it (terminal or browser). If GraphJin runs on your host, use `http://host.docker.internal:8080` — OpenNeko appends the GraphQL and MCP paths automatically.
 
+## OpenNeko's database
+
+OpenNeko keeps its own data in Postgres 16 with the `vector` extension. To use
+a Postgres server that you run, give OpenNeko one connection URL:
+
+```text
+postgres://neko:PASSWORD@db.example.com:5432/neko?sslmode=verify-full&sslrootcert=/etc/openneko/db-ca.pem
+```
+
+Put the URL in a file that only the OpenNeko account can read, and set
+`OPENNEKO_DATABASE_URL_FILE` to its path. You can also set `database_url` in
+`~/.config/openneko/config.json`. The URL replaces the `NEKO_PG_*` settings.
+
+- `sslmode=verify-full` checks the server certificate and its host name.
+  `verify-ca` checks only the certificate, and `require` encrypts without
+  checking it. Use one of these three. With `prefer` or `allow`, web and the
+  worker connect without TLS.
+- `sslrootcert` names the CA file. Without it, OpenNeko uses its default CA
+  list.
+- The `neko` role must own the database. The migrations create the `vector`
+  extension and the read-only `neko_subscriptions` role. If the `neko` role
+  cannot create them, create both before the first start.
+- With a URL, setup skips its database password step. Change the password
+  where the database is managed, then update the URL.
+
 ## Semantic search
 
 Semantic search is off by default. OpenNeko then finds memories, skills,

@@ -20,12 +20,18 @@
  * or provide `NEKO_PG_*` directly. The local file wins so a password rotated
  * through /setup remains authoritative.
  *
- * `sslmode: "require"` in the config enables TLS with `rejectUnauthorized:
- * false` (matches Cloud SQL public-IP usage with its self-signed CA).
+ * A database URL replaces all of these: `OPENNEKO_DATABASE_URL_FILE` names a
+ * file that holds it, or `database_url` sets it in the config file.
+ *
+ * `sslmode` follows libpq: `require` encrypts without checking the
+ * certificate, `verify-ca` checks it against `sslrootcert`, and
+ * `verify-full` also checks the host name.
  */
 
+import { readFileSync } from "node:fs";
+import { checkServerIdentity } from "node:tls";
 import type { PoolConfig } from "pg";
-import { readLocalConfig } from "./local-config";
+import { readLocalConfig, type LocalPgConfig } from "./local-config";
 
 const DEFAULT_PG = {
   host: "localhost",
@@ -34,6 +40,20 @@ const DEFAULT_PG = {
   password: "secret",
   database: "neko",
 } as const;
+
+const SSL_MODES = new Set(["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]);
+
+export type DatabaseTarget = {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
+  sslmode?: string;
+  sslrootcert?: string;
+  sslcert?: string;
+  sslkey?: string;
+};
 
 function nonEmptyEnv(name: string): string | undefined {
   const value = process.env[name]?.trim();
@@ -49,27 +69,118 @@ function envPort(): number | undefined {
     : undefined;
 }
 
-export function buildPoolConfig(overrides: { database?: string } = {}): PoolConfig {
-  const cfg = readLocalConfig().pg ?? {};
+/** The configured database URL, or undefined when the fields apply. */
+export function configuredDatabaseUrl(
+  cfg: { database_url?: string } = readLocalConfig(),
+): string | undefined {
+  const file = nonEmptyEnv("OPENNEKO_DATABASE_URL_FILE");
+  if (file) {
+    const url = readFileSync(file, "utf8").trim();
+    if (!url) throw new Error(`OPENNEKO_DATABASE_URL_FILE (${file}) is empty`);
+    return url;
+  }
+  const url = cfg.database_url?.trim();
+  return url ? url : undefined;
+}
+
+export function parseDatabaseUrl(url: string): DatabaseTarget {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("The database URL is not a valid URL");
+  }
+  if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") {
+    throw new Error("The database URL must start with postgres:// or postgresql://");
+  }
+  const query = parsed.searchParams;
+  const param = (name: string) => query.get(name)?.trim() || undefined;
+  const host = param("host") ?? parsed.hostname.replace(/^\[(.*)\]$/, "$1");
+  const port = parsed.port ? Number(parsed.port) : Number(param("port") ?? DEFAULT_PG.port);
+  return {
+    host: host || DEFAULT_PG.host,
+    port,
+    user: decodeURIComponent(parsed.username) || DEFAULT_PG.user,
+    password: decodeURIComponent(parsed.password),
+    database: decodeURIComponent(parsed.pathname.replace(/^\//, "")) || DEFAULT_PG.database,
+    sslmode: param("sslmode"),
+    sslrootcert: param("sslrootcert"),
+    sslcert: param("sslcert"),
+    sslkey: param("sslkey"),
+  };
+}
+
+function targetFromFields(cfg: LocalPgConfig): DatabaseTarget {
   const environmentFirst = nonEmptyEnv("OPENNEKO_PG_ENV_OVERRIDE") === "1";
   const choose = <T>(environmentValue: T | undefined, localValue: T | undefined): T | undefined =>
     environmentFirst ? environmentValue ?? localValue : localValue ?? environmentValue;
-  const poolCfg: PoolConfig = {
+  return {
     host: choose(nonEmptyEnv("NEKO_PG_HOST"), cfg.host) ?? DEFAULT_PG.host,
     port: choose(envPort(), cfg.port) ?? DEFAULT_PG.port,
     user: choose(nonEmptyEnv("NEKO_PG_USER"), cfg.user) ?? DEFAULT_PG.user,
     password:
       choose(nonEmptyEnv("NEKO_PG_PASSWORD"), cfg.password) ?? DEFAULT_PG.password,
-    database:
-      overrides.database ??
-      choose(nonEmptyEnv("NEKO_PG_DATABASE"), cfg.database) ??
-      DEFAULT_PG.database,
-    max: 10,
+    database: choose(nonEmptyEnv("NEKO_PG_DATABASE"), cfg.database) ?? DEFAULT_PG.database,
+    sslmode: choose(nonEmptyEnv("NEKO_PG_SSLMODE"), cfg.sslmode),
+    sslrootcert: choose(nonEmptyEnv("NEKO_PG_SSLROOTCERT"), cfg.sslrootcert),
   };
+}
 
-  if (choose(nonEmptyEnv("NEKO_PG_SSLMODE"), cfg.sslmode) === "require") {
-    poolCfg.ssl = { rejectUnauthorized: false };
+/** OpenNeko's database: the URL when one is configured, else the fields. */
+export function resolveDatabaseTarget(): DatabaseTarget {
+  const cfg = readLocalConfig();
+  const url = configuredDatabaseUrl(cfg);
+  return url ? parseDatabaseUrl(url) : targetFromFields(cfg.pg ?? {});
+}
+
+/** The URL form of a target, for a process that takes a connection string. */
+export function formatDatabaseUrl(target: DatabaseTarget): string {
+  const socket = target.host.startsWith("/");
+  const host = socket ? "localhost" : target.host.includes(":") ? `[${target.host}]` : target.host;
+  const params = new URLSearchParams();
+  if (socket) params.set("host", target.host);
+  for (const key of ["sslmode", "sslrootcert", "sslcert", "sslkey"] as const) {
+    const value = target[key];
+    if (value) params.set(key, value);
   }
+  const query = params.size > 0 ? `?${params.toString()}` : "";
+  const auth = `${encodeURIComponent(target.user)}:${encodeURIComponent(target.password)}`;
+  return `postgres://${auth}@${host}:${target.port}/${encodeURIComponent(target.database)}${query}`;
+}
 
-  return poolCfg;
+export function sslConfig(target: DatabaseTarget): PoolConfig["ssl"] {
+  const mode = target.sslmode ?? "disable";
+  if (!SSL_MODES.has(mode)) throw new Error(`Unknown sslmode "${mode}"`);
+  if (mode === "disable" || mode === "allow" || mode === "prefer") return undefined;
+  const files = {
+    ...(target.sslrootcert ? { ca: readFileSync(target.sslrootcert, "utf8") } : {}),
+    ...(target.sslcert ? { cert: readFileSync(target.sslcert, "utf8") } : {}),
+    ...(target.sslkey ? { key: readFileSync(target.sslkey, "utf8") } : {}),
+  };
+  if (mode === "require") return { ...files, rejectUnauthorized: false };
+  if (mode === "verify-ca") {
+    return { ...files, rejectUnauthorized: true, checkServerIdentity: () => undefined };
+  }
+  // node-pg sends no server name for an IP address, and Node then checks the
+  // certificate against "localhost". Check it against the configured host.
+  const host = target.host;
+  return {
+    ...files,
+    rejectUnauthorized: true,
+    checkServerIdentity: (_name: string, cert) => checkServerIdentity(host, cert),
+  };
+}
+
+export function buildPoolConfig(overrides: { database?: string } = {}): PoolConfig {
+  const target = resolveDatabaseTarget();
+  const ssl = sslConfig(target);
+  return {
+    host: target.host,
+    port: target.port,
+    user: target.user,
+    password: target.password,
+    database: overrides.database ?? target.database,
+    max: 10,
+    ...(ssl ? { ssl } : {}),
+  };
 }

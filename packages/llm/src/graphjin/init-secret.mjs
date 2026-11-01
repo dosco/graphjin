@@ -1,7 +1,7 @@
 import pg from "pg";
+import { buildPoolConfig, formatDatabaseUrl, resolveDatabaseTarget } from "@neko/db/connection";
 import { mkdir, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import {
@@ -42,71 +42,30 @@ const CONFIG_PATH =
     ? process.env.GRAPHJIN_SOURCES_CONFIG.trim()
     : "/config/graphjin/agentic.yml";
 
-function configBase() {
-  const xdg = process.env.XDG_CONFIG_HOME?.trim();
-  return xdg && xdg.length > 0
-    ? xdg
-    : join(process.env.HOME || homedir(), ".config");
-}
-
-async function readLocalConfig() {
-  const paths = [
-    join(configBase(), "openneko", "config.json"),
-    join(configBase(), "neko", "config.json"),
-  ];
-  for (const path of paths) {
-    try {
-      const parsed = JSON.parse(await readFile(path, "utf8"));
-      if (parsed && typeof parsed === "object") return parsed;
-    } catch {
-      // Missing or malformed local config; try the next path.
-    }
-  }
-  return {};
-}
-
 // The subscriptions GraphJin in `openneko serve` reads neko-db as the
 // read-only neko_subscriptions role (migration 0128). Its password is derived
-// from the secret key; this sets it on the role and hands it to serve in a
-// file beside the GraphJin config, so serve never holds the secret key or the
-// neko password.
+// from the secret key; this sets it on the role and hands serve the role's
+// URL in a file beside the GraphJin config, so serve never holds the secret
+// key or the neko password. The password file stays for older serve builds.
 const SUBSCRIPTIONS_PASSWORD_FILE =
   process.env.OPENNEKO_SUBSCRIPTIONS_PASSWORD_FILE?.trim() ||
   (CONFIG_PATH ? join(dirname(CONFIG_PATH), "subscriptions.password") : "");
 
-async function reconcileSubscriptionsRole(client) {
+async function reconcileSubscriptionsRole(client, target) {
   if (!SUBSCRIPTIONS_PASSWORD_FILE) return;
   const { subscriptionsRolePassword } = await import("./token.ts");
   const password = subscriptionsRolePassword();
   await client.query(`alter role neko_subscriptions with login password '${password}'`);
-  await mkdir(dirname(SUBSCRIPTIONS_PASSWORD_FILE), { recursive: true, mode: 0o700 });
+  const folder = dirname(SUBSCRIPTIONS_PASSWORD_FILE);
+  await mkdir(folder, { recursive: true, mode: 0o700 });
+  const url = formatDatabaseUrl({ ...target, user: "neko_subscriptions", password });
+  await atomicWriteFile(join(folder, "subscriptions.url"), `${url}\n`, { mode: 0o600 });
   await atomicWriteFile(SUBSCRIPTIONS_PASSWORD_FILE, `${password}\n`, { mode: 0o600 });
   console.log(`[graphjin-secret-init] set the subscriptions role password in ${SUBSCRIPTIONS_PASSWORD_FILE}`);
 }
 
-const localConfig = await readLocalConfig();
-const localPg =
-  localConfig.pg && typeof localConfig.pg === "object" ? localConfig.pg : {};
-if (typeof localPg.password === "string" && localPg.password.startsWith("enc:")) {
-  const { maybeDecryptSecret } = await import("@neko/secret-crypt");
-  localPg.password = maybeDecryptSecret(localPg.password);
-}
-// OPENNEKO_PG_ENV_OVERRIDE=1 puts set environment values ahead of
-// config.json, as @neko/db does for host processes in development.
-const envFirst = process.env.OPENNEKO_PG_ENV_OVERRIDE?.trim() === "1";
-const setting = (fromConfig, envName, fallback) => {
-  const fromEnv = process.env[envName]?.trim() || undefined;
-  return (envFirst ? fromEnv ?? fromConfig : fromConfig ?? fromEnv) ?? fallback;
-};
-const sslmode = setting(localPg.sslmode, "NEKO_PG_SSLMODE", undefined);
-const client = new pg.Client({
-  host: setting(localPg.host, "NEKO_PG_HOST", "localhost"),
-  port: Number(setting(localPg.port, "NEKO_PG_PORT", 5432)),
-  user: setting(localPg.user, "NEKO_PG_USER", "neko"),
-  password: setting(localPg.password, "NEKO_PG_PASSWORD", "secret"),
-  database: setting(localPg.database, "NEKO_PG_DATABASE", "neko"),
-  ssl: sslmode === "require" ? { rejectUnauthorized: false } : undefined,
-});
+const target = resolveDatabaseTarget();
+const client = new pg.Client(buildPoolConfig());
 
 await client.connect();
 
@@ -139,7 +98,7 @@ try {
     "select enabled from llm_provider_config where scope = 'semantic-search' order by updated_at desc limit 1",
   );
   semanticSearch = switchRow.rows[0]?.enabled === true;
-  await reconcileSubscriptionsRole(client);
+  await reconcileSubscriptionsRole(client, target);
 } catch (e) {
   await client.query("rollback").catch(() => {});
   throw e;

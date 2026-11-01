@@ -13,11 +13,13 @@ const mocks = vi.hoisted(() => {
     writeLocalConfig: vi.fn(),
     reconnectPool: vi.fn(async () => undefined),
     hasCustomPassword: vi.fn(() => true),
+    configuredDatabaseUrl: vi.fn((): string | undefined => undefined),
     fetch: vi.fn(async () => new Response("restarting", { status: 202 })),
   };
 });
 
 vi.mock("@neko/db", () => ({
+  configuredDatabaseUrl: mocks.configuredDatabaseUrl,
   hasCustomPassword: mocks.hasCustomPassword,
   pool: () => ({ connect: async () => mocks.metadata }),
   reconnectPool: mocks.reconnectPool,
@@ -66,6 +68,16 @@ describe("admin database password rotation", () => {
       "http://127.0.0.1:4100/admin/reconnect",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("refuses to rotate when the install connects with a database URL", async () => {
+    mocks.configuredDatabaseUrl.mockReturnValueOnce("postgres://neko:pw@db.example/neko");
+
+    const response = await POST(request("A-safe-passphrase-2026") as never);
+
+    expect(response.status).toBe(409);
+    expect(mocks.metadata.query).not.toHaveBeenCalled();
+    expect(mocks.writeLocalConfig).not.toHaveBeenCalled();
   });
 
   it("never persists a password the database rejected", async () => {

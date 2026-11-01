@@ -6,21 +6,25 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	gjserv "github.com/dosco/graphjin/serv/v3"
+	"github.com/jackc/pgx/v5"
 )
 
 // The subscriptions GraphJin serves the worker's workflow subscriptions from
 // neko-db. Core features depend on it, so `openneko serve --path` always runs
 // it beside the customer GraphJin. It connects as neko_subscriptions, a role
-// that may only read workflow_output, with the password graphjin-secret-init
-// writes to subscriptions.password in the GraphJin config folder.
+// that may only read workflow_output, with the URL graphjin-secret-init writes
+// to subscriptions.url in the GraphJin config folder. Without that file it
+// uses subscriptions.password and the neko-db host.
 const (
 	subscriptionsListen   = "0.0.0.0:8089"
 	subscriptionsHost     = "neko-db"
@@ -28,6 +32,7 @@ const (
 	subscriptionsDBName   = "neko"
 	subscriptionsRole     = "neko_subscriptions"
 	subscriptionsPassword = "subscriptions.password"
+	subscriptionsURL      = "subscriptions.url"
 	subscriptionsPoll     = 2 * time.Second
 )
 
@@ -58,28 +63,25 @@ subs_poll_duration: 5s
 databases:
   neko:
     type: postgres
-    host: %s
-    port: %d
+    connection_string: %s
     dbname: %s
-    user: %s
-    password: %s
     pool_size: 5
     max_retries: 3
 `
 
 // subscriptionsServer owns the :8089 listener for the life of serve and
-// routes it to the current GraphJin. When the role password changes it
+// routes it to the current GraphJin. When the role URL changes it
 // builds a new GraphJin, switches requests to it and closes the old one, so
 // nothing restarts. New schema reaches GraphJin through its schema poll.
 type subscriptionsServer struct {
 	dir     string
 	handler atomic.Value // http.Handler
 
-	mu       sync.Mutex
-	current  *gjserv.HttpService
-	cleanup  func()
-	password string
-	lastErr  string
+	mu      sync.Mutex
+	current *gjserv.HttpService
+	cleanup func()
+	url     string
+	lastErr string
 }
 
 // startSubscriptions binds the subscriptions listener and keeps a GraphJin
@@ -117,21 +119,20 @@ func (s *subscriptionsServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	handler.ServeHTTP(w, r)
 }
 
-// refresh starts a GraphJin when there is none or the password changed.
+// refresh starts a GraphJin when there is none or the role URL changed.
 // Failures are logged once each and retried on the next poll.
 func (s *subscriptionsServer) refresh() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	raw, err := os.ReadFile(filepath.Join(s.dir, subscriptionsPassword))
+	url, err := readSubscriptionsURL(s.dir)
 	if err != nil {
 		s.report(err)
 		return
 	}
-	password := strings.TrimSpace(string(raw))
-	if s.current != nil && password == s.password {
+	if s.current != nil && url == s.url {
 		return
 	}
-	next, cleanup, err := newSubscriptionsGraphJin(password)
+	next, cleanup, err := newSubscriptionsGraphJin(url)
 	if err != nil {
 		s.report(err)
 		return
@@ -147,9 +148,9 @@ func (s *subscriptionsServer) refresh() {
 	if s.current != nil {
 		_ = s.current.Close()
 		s.cleanup()
-		fmt.Fprintln(os.Stderr, "openneko serve: subscriptions GraphJin switched to the new role password")
+		fmt.Fprintln(os.Stderr, "openneko serve: subscriptions GraphJin switched to the new role URL")
 	}
-	s.current, s.cleanup, s.password, s.lastErr = next, cleanup, password, ""
+	s.current, s.cleanup, s.url, s.lastErr = next, cleanup, url, ""
 }
 
 func (s *subscriptionsServer) report(err error) {
@@ -159,9 +160,39 @@ func (s *subscriptionsServer) report(err error) {
 	}
 }
 
-// newSubscriptionsGraphJin builds a GraphJin for the role password.
-func newSubscriptionsGraphJin(password string) (*gjserv.HttpService, func(), error) {
-	config, err := renderSubscriptionsConfig(password)
+// readSubscriptionsURL reads subscriptions.url, or builds the URL for the
+// neko-db host from subscriptions.password when secret-init wrote no URL.
+func readSubscriptionsURL(dir string) (string, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, subscriptionsURL))
+	if err == nil {
+		if url := strings.TrimSpace(string(raw)); url != "" {
+			return url, nil
+		}
+		return "", errors.New(subscriptionsURL + " is empty")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	raw, err = os.ReadFile(filepath.Join(dir, subscriptionsPassword))
+	if err != nil {
+		return "", err
+	}
+	password := strings.TrimSpace(string(raw))
+	if password == "" {
+		return "", errors.New(subscriptionsPassword + " is empty")
+	}
+	url := neturl.URL{
+		Scheme: "postgres",
+		User:   neturl.UserPassword(subscriptionsRole, password),
+		Host:   net.JoinHostPort(subscriptionsHost, strconv.Itoa(subscriptionsPort)),
+		Path:   "/" + subscriptionsDBName,
+	}
+	return url.String(), nil
+}
+
+// newSubscriptionsGraphJin builds a GraphJin for the role URL.
+func newSubscriptionsGraphJin(url string) (*gjserv.HttpService, func(), error) {
+	config, err := renderSubscriptionsConfig(url)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -187,15 +218,22 @@ func newSubscriptionsGraphJin(password string) (*gjserv.HttpService, func(), err
 	return gj, cleanup, nil
 }
 
-// renderSubscriptionsConfig fills in the role password. String values are
-// JSON-quoted, which YAML reads as plain strings.
-func renderSubscriptionsConfig(password string) (string, error) {
-	if password == "" {
-		return "", errors.New(subscriptionsPassword + " is empty")
+// renderSubscriptionsConfig fills in the role URL and its database name.
+// String values are JSON-quoted, which YAML reads as plain strings.
+func renderSubscriptionsConfig(url string) (string, error) {
+	parsed, err := pgx.ParseConfig(url)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", subscriptionsURL, err)
+	}
+	if parsed.User != subscriptionsRole {
+		return "", fmt.Errorf("%s must connect as %s", subscriptionsURL, subscriptionsRole)
+	}
+	if parsed.Database == "" {
+		return "", fmt.Errorf("%s names no database", subscriptionsURL)
 	}
 	quote := func(value string) string {
 		raw, _ := json.Marshal(value)
 		return string(raw)
 	}
-	return fmt.Sprintf(subscriptionsConfig, quote(subscriptionsHost), subscriptionsPort, quote(subscriptionsDBName), quote(subscriptionsRole), quote(password)), nil
+	return fmt.Sprintf(subscriptionsConfig, quote(url), quote(parsed.Database)), nil
 }

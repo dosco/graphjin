@@ -12,7 +12,14 @@ import * as schema from "./schema";
 
 export { schema };
 export * from "./schema";
-export { buildPoolConfig } from "./connection";
+export {
+  buildPoolConfig,
+  configuredDatabaseUrl,
+  formatDatabaseUrl,
+  parseDatabaseUrl,
+  resolveDatabaseTarget,
+  type DatabaseTarget,
+} from "./connection";
 export { createNotifyClient, type NotifyClient } from "./notify";
 export {
   guardPoolErrors,
