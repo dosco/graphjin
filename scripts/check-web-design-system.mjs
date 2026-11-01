@@ -125,7 +125,7 @@ function inspect(file) {
       file,
       "bespoke-status-pill",
       match,
-      "Use the shared Pill component for compact status.",
+      "Use the shared Badge component for compact status.",
     );
   }
 

@@ -58,7 +58,7 @@ type Turn struct {
 	// credentials in it are ignored when Secrets is set.
 	Environ []string
 	// Secrets returns the model credential a variable names, from the host.
-	// The run's tools and terminal never see these values in Environ.
+	// The run's tools never see these values in Environ.
 	Secrets func(name string) string
 	// Bridge carries the OpenNeko tools as MCP over a stream, in place of
 	// the bridge process that OPENNEKO_MCP_BRIDGE names.

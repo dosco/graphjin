@@ -6,6 +6,7 @@ node_modules/
 # quantized, >80MB FP32) and reproducible, so we don't track them.
 packages/llm/.cache/
 apps/web/.cache/
+apps/worker/.cache/
 apps/web/test-results/
 apps/web/playwright-report/
 

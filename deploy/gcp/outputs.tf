@@ -30,9 +30,9 @@ output "next_steps" {
        For unattended installs, pass --admin-password/--provider/--provider-key
        instead -- see INSTALL.md's "Command reference".
 
-    4. If you're installing the Google Workspace connector plugin, set its
-       OAuth client's Authorized redirect URI to:
-         https://${var.domain}/api/integrations/connect/%40open-neko%2Fconnector-google-workspace/callback
+    4. If you're installing the Google Workspace pack, set its OAuth
+       client's Authorized redirect URI to:
+         https://${var.domain}/api/pack-accounts/google-workspace/workspace/callback
        OPENNEKO_PUBLIC_URL is already set to https://${var.domain} on the VM
        (see /etc/environment) so OpenNeko's own callback construction matches.
   EOT

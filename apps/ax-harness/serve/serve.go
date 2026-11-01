@@ -16,7 +16,7 @@
 // Closing the connection cancels the turn. Serve holds the model keys for
 // the turn: the worker names the variable and sends the org's key in
 // model_keys, or serve reads it from its own environment. A key never goes
-// into the run's environment, so the run's tools and terminal never see it.
+// into the run's environment, so the run's tools never see it.
 package serve
 
 import (
@@ -157,8 +157,8 @@ func MainWith(args []string, opts Options) {
 	_ = flags.Parse(args)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	// The run's terminal runs as another user in the shared group, so files
-	// the harness writes stay group-writable.
+	// Web and the worker share the run folders through a group, so files
+	// serve writes stay group-writable.
 	syscall.Umask(0o007)
 	listener, err := Listen(*socket)
 	if err != nil {
