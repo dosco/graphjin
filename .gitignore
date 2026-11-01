@@ -11,6 +11,9 @@ apps/web/test-results/
 apps/web/playwright-report/
 
 /docs/
+# Private plans and notes. The combined-root branch uses /private/ because
+# GraphJin tracks docs/ there.
+/private/
 .turbo/
 dist/
 build/
