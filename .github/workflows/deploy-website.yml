@@ -25,6 +25,8 @@ concurrency:
 jobs:
   build:
     name: Build Website
+    # GraphJin's website deploys only from dosco/graphjin.
+    if: github.repository == 'dosco/graphjin'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

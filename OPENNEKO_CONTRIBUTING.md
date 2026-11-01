@@ -60,6 +60,18 @@ go test -tags=integration -count=1 -timeout 10m ./internal/db/...
 
 Keep PRs focused — one change per PR makes review tractable. Include a short description of the user-visible behavior change, and link the issue it closes if there is one.
 
+## Releases
+
+OpenNeko and GraphJin build and release separately from this repository.
+
+- **OpenNeko** releases from `main` through release-please. Its tags are
+  `vX.Y.Z`, and its GitHub releases build the `openneko` binaries and the
+  `neko-*` images. GraphJin's folders are excluded from its changelog.
+- **GraphJin** releases from `dosco/graphjin` for now. Its release and website
+  workflows run only in that repository. When GraphJin releases from here,
+  its GitHub releases will use `graphjin-v` tags, which never trigger an
+  OpenNeko build.
+
 ## Contributor License Agreement
 
 Before your first pull request can be merged, you'll need to sign the OpenNeko [Contributor License Agreement](CLA.md). A bot prompts you automatically on your first PR — it's a single comment to sign.

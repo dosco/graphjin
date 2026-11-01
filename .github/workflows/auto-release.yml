@@ -21,12 +21,15 @@ jobs:
       # id-token: required for npm trusted publishing (OIDC).
       contents: write
       id-token: write
+    # GraphJin releases only from dosco/graphjin until its release secrets and
+    # graphjin-v tags are set up in this repository.
     if: |
+      github.repository == 'dosco/graphjin' && (
       github.event_name == 'workflow_dispatch' || (
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'master' &&
-      !contains(github.event.workflow_run.head_commit.message, '[skip-release]'))
+      !contains(github.event.workflow_run.head_commit.message, '[skip-release]')))
     steps:
       - name: Checkout
         uses: actions/checkout@v4

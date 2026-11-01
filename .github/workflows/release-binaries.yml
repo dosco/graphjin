@@ -2,6 +2,8 @@ name: openneko release binaries
 run-name: openneko release binaries (${{ github.event.inputs.tag || github.event.release.tag_name }})
 
 on:
+  # OpenNeko releases only. GraphJin's releases (graphjin-v tags, when GraphJin
+  # releases from this repository) never build OpenNeko.
   release:
     types: [published]
   workflow_dispatch:
@@ -24,7 +26,7 @@ jobs:
     # and (b) tag :latest from an unreleased preview, clobbering downloads. The
     # manual run builds previews WITHOUT :latest; stable releases (tag has no
     # '-') still build and tag :latest as before.
-    if: ${{ github.event_name != 'release' || !contains(github.event.release.tag_name, '-') }}
+    if: ${{ github.event_name != 'release' || (!contains(github.event.release.tag_name, '-') && !startsWith(github.event.release.tag_name, 'graphjin')) }}
     name: ${{ matrix.image }} (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -169,7 +171,7 @@ jobs:
     # Same guard as build-image (also auto-skips via needs): never merge/tag a
     # pre-release tag on a release event — and crucially never tag :latest from
     # one. Stable releases + manual runs proceed.
-    if: ${{ github.event_name != 'release' || !contains(github.event.release.tag_name, '-') }}
+    if: ${{ github.event_name != 'release' || (!contains(github.event.release.tag_name, '-') && !startsWith(github.event.release.tag_name, 'graphjin')) }}
     name: merge manifest (${{ matrix.image }})
     runs-on: ubuntu-22.04
     needs: build-image
@@ -218,7 +220,7 @@ jobs:
           docker buildx imagetools inspect "$IMAGE:${{ steps.tag.outputs.value }}"
 
   image-size:
-    if: ${{ github.event_name != 'release' || !contains(github.event.release.tag_name, '-') }}
+    if: ${{ github.event_name != 'release' || (!contains(github.event.release.tag_name, '-') && !startsWith(github.event.release.tag_name, 'graphjin')) }}
     name: image pull budget (linux/${{ matrix.arch }})
     runs-on: ubuntu-22.04
     needs: merge-manifests

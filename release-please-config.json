@@ -11,12 +11,81 @@
     ".": {
       "package-name": "openneko",
       "extra-files": [
-        { "type": "json", "path": "apps/web/package.json", "jsonpath": "$.version" },
-        { "type": "json", "path": "apps/worker/package.json", "jsonpath": "$.version" },
-        { "type": "json", "path": "packages/db/package.json", "jsonpath": "$.version" },
-        { "type": "json", "path": "packages/llm/package.json", "jsonpath": "$.version" },
-        { "type": "json", "path": "packages/secrets/package.json", "jsonpath": "$.version" },
-        { "type": "generic", "path": "apps/openneko/internal/version/version.go" }
+        {
+          "type": "json",
+          "path": "apps/web/package.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "apps/worker/package.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "packages/db/package.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "packages/llm/package.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "packages/secrets/package.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "generic",
+          "path": "apps/openneko/internal/version/version.go"
+        }
+      ],
+      "exclude-paths": [
+        "agent",
+        "auth",
+        "cassandradriver",
+        "clickhousedriver",
+        "cmd",
+        "codesql",
+        "conf",
+        "core",
+        "examples",
+        "hostedemu",
+        "mongodriver",
+        "plugin",
+        "serv",
+        "tests",
+        "tests-large",
+        "wasm",
+        "npm",
+        "website",
+        "docs",
+        "benchmark",
+        "training",
+        "notes",
+        "claude-plugins",
+        ".claude-plugin",
+        ".claude",
+        ".codex",
+        ".cursor",
+        ".devcontainer",
+        ".goreleaser.yml",
+        "release.go",
+        "release.sh",
+        "install.sh",
+        "Makefile",
+        "Dockerfile.sqlite-test",
+        "README.md",
+        "FEATURES.md",
+        "CONTRIBUTING.md",
+        "CONFIG.md",
+        "AGENTIC.md",
+        "AGENTS.md",
+        "AUTO_RELEASE.md",
+        "SECURITY.md",
+        "VISION.md",
+        "CODE_OF_CONDUCT.md"
       ]
     }
   }
