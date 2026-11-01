@@ -531,6 +531,23 @@ export type GraphjinConfigFederationConfig = {
   version?: string;
 };
 
+export type GraphjinConfigFileContentConfig = {
+  /** Directory: Directory for the derived index and tables; default .file-content under the config directory. Safe to delete: it is rebuilt. */
+  dir?: string;
+  /** DuckDB CLI: DuckDB CLI for SQL over sheets; default duckdb on PATH */
+  duckdb?: string;
+  /** Enabled: Enable file content indexing */
+  enabled?: boolean;
+  /** Max File Size (MB): Largest file indexed, in MB; default 100 */
+  max_file_mb?: number;
+  /** Max SQL Rows: Most rows a SQL query returns; default 200 */
+  max_rows?: number;
+  /** Refresh Interval (seconds): How long an index stays fresh before a read checks the source for changes, in seconds; default 10 */
+  refresh_seconds?: number;
+  /** SQL Timeout (seconds): SQL query timeout in seconds; default 20 */
+  timeout_seconds?: number;
+};
+
 export type GraphjinConfigFilesystemConfig = {
   /** Backend */
   backend?: "local" | "s3" | "gcs";
@@ -554,6 +571,8 @@ export type GraphjinConfigFilesystemConfig = {
   region?: string;
   /** Local Root Directory */
   root?: string;
+  /** Per-User Folder Prefix */
+  user_prefix?: string;
 };
 
 export type GraphjinConfigFunction = {
@@ -814,12 +833,16 @@ export type GraphjinConfigSemanticCatalogSearchConfig = {
   base_url?: string;
   /** Embedding Dimensions: Dimensions selects tiny (768), small (1536), medium (3072), or the provider-native default. Named sizes are validated strictly. */
   dimensions?: "tiny" | "small" | "medium" | "default";
+  /** Document Embedding Prefix: DocumentPrefix is prepended to every indexed document before it is embedded (EmbeddingGemma uses "title: none | text: "). File passages replace "title: none" with "title: <file name>". Part of the embedding-space fingerprint. */
+  document_prefix?: string;
   /** Embedding Model: EmbeddingModel is required when semantic search is enabled and forms part of the persisted embedding-space fingerprint. */
   embedding_model?: string;
   /** Enable Semantic Catalog Search: Enabled adds Ax-backed semantic recall to the lexical catalog baseline. */
   enabled?: boolean;
   /** Embedding Provider: Provider is the Ax embedding provider name. */
   provider?: string;
+  /** Query Embedding Prefix: QueryPrefix is prepended to every search query before it is embedded, for models trained with task prefixes (EmbeddingGemma uses "task: search result | query: "). Part of the embedding-space fingerprint. */
+  query_prefix?: string;
 };
 
 export type GraphjinConfigSourceAccessConfig = {
@@ -952,6 +975,8 @@ export type GraphjinConfigSourceConfig = {
   type?: string;
   /** User */
   user?: string;
+  /** Per-User Folder Prefix */
+  user_prefix?: string;
 };
 
 export type GraphjinConfigSpecConfig = {
@@ -1155,6 +1180,8 @@ export type GraphjinConfig = {
   eval_state_dir?: string;
   /** Apollo Federation v2 */
   federation?: GraphjinConfigFederationConfig;
+  /** File Content: Reading inside the files of file sources: extracted text, content search, and SQL over sheets and CSV files */
+  file_content?: GraphjinConfigFileContentConfig;
   /** Filesystem Tables */
   filesystems?: GraphjinConfigFilesystemConfig[];
   /** Functions */
