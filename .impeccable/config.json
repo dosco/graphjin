@@ -1,0 +1,44 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "apps/web/src/app/styles/_operations.css"
+        ],
+        "createdAt": "2026-09-10T15:19:28.228Z",
+        "reason": "Agent: remaining source rail is structural timeline provenance, not a card accent"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "apps/web/src/app/styles/_library.css"
+        ],
+        "createdAt": "2026-09-10T15:19:28.315Z",
+        "reason": "Agent: remaining rule is a semantic markdown blockquote, not a card accent"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "apps/web/src/app/styles/_work.css"
+        ],
+        "createdAt": "2026-09-10T15:19:28.398Z",
+        "reason": "Agent: remaining rule is a semantic markdown blockquote, not a card accent"
+      },
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "apps/web/src/a2ui/answer-map.tsx"
+        ],
+        "createdAt": "2026-10-08T19:09:56.488Z",
+        "reason": "Agent: the map print snapshot <img> gets a data-URL src at print time; CSS shows it only as .answer-map-print[src] in @media print, and it must exist before beforeprint so the synchronous capture can fill it"
+      }
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+key: metric.net_invoiced_revenue
+targetRef: magento.metric.net_invoiced_revenue
+title: Net invoiced revenue
+description: Invoiced base-currency value less refunded base-currency value.
+role: executive
+chartHint: metric
+unit: currency
+directionGood: up
+cadence: hourly
+calculationNote: Uses Magento base currency and invoice/refund timestamps in the configured store timezone.
+execution:
+  mode: saved_query
+  source: magento_analytics
+  query: net_invoiced_revenue
+  result:
+    kind: scalar
+    expression: { subtract: [sales_invoice.0.invoiced, sales_creditmemo.0.refunded] }
+  freshnessSeconds: 7200

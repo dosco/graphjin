@@ -1,0 +1,4 @@
+key: relationships.slack
+targetRef: slack
+source: slack
+relationships: []

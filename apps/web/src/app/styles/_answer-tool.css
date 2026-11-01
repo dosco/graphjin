@@ -1,0 +1,119 @@
+.work-tool {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-inner);
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.work-tool-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 12px 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--neutral-soft);
+}
+
+.work-tool-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.work-tool-title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-display), "Archivo", sans-serif;
+  font-size: var(--type-subsection);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: var(--leading-heading);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-tool-note {
+  margin: 0;
+  color: var(--text2);
+  font-size: var(--type-caption);
+  line-height: var(--leading-compact);
+}
+
+.work-tool-body {
+  position: relative;
+  min-width: 0;
+}
+
+.work-tool-frame {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  border: 0;
+  background: var(--card);
+}
+
+.work-tool-loading {
+  position: absolute;
+  inset: 16px;
+  z-index: 1;
+  border-radius: var(--radius-control);
+  background: linear-gradient(90deg, var(--neutral) 0%, var(--neutral-soft) 50%, var(--neutral) 100%);
+  background-size: 200% 100%;
+  animation: work-tool-shimmer 1.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.work-tool[data-state="loading"] .work-tool-frame {
+  opacity: 0;
+}
+
+.work-tool[data-state="ready"] .work-tool-frame,
+.work-tool[data-state="silent"] .work-tool-frame {
+  opacity: 1;
+  transition: opacity 160ms ease;
+}
+
+.work-tool-message {
+  margin: 0;
+  padding: 12px 16px;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+  line-height: var(--leading-compact);
+}
+
+.work-tool[data-state="blocked"] .work-tool-message {
+  color: var(--danger);
+}
+
+.work-tool-body .work-tool-message {
+  border-top: 1px solid var(--border);
+}
+
+@keyframes work-tool-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-tool-loading { animation: none; }
+  .work-tool-frame,
+  .work-tool[data-state="ready"] .work-tool-frame { transition: none; }
+}
+
+@media (max-width: 680px) {
+  .work-tool-head { padding: 10px 8px 10px 14px; }
+}
+
+@media (max-width: 680px), (pointer: coarse) {
+  .work-tool-head [data-size="icon-sm"] {
+    width: var(--control-touch);
+    height: var(--control-touch);
+  }
+}

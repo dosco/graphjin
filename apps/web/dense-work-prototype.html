@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en" data-density="compact">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenNeko · Ask — density study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,500;0,600;0,700;0,800;0,900;1,600&family=Manrope:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* OpenNeko Ask/Work — density study. Comfortable = today's 2-pane
+   (threads + transcript). Compact = adds a right context rail so the
+   answer's data, sources and artifacts stay reachable without scrolling. */
+:root{
+  --bg:#FAFAF7; --card:#FFFFFF; --text:#2D2A24; --text2:#7A756A; --text3:#B0AA9F;
+  --border:#EEEBE4; --neutral:#F2EFE8; --neutral-soft:#F7F4ED;
+  --accent:#6B5CE7; --accent-soft:#EDE9FE;
+  --success:#6CFF7F; --success-ink:#113719; --success-soft:#E2FBE6; --success-mid:#4CAF82;
+  --watch:#E9A23B; --watch-soft:#FFF1D8; --warn-ink:#8A6D00;
+  --danger:#E05656; --danger-soft:#FEECEC;
+  --shadow:0 1px 3px rgba(20,18,12,.04), 0 4px 16px rgba(20,18,12,.03);
+  --shadow-h:0 2px 8px rgba(20,18,12,.06), 0 12px 36px -8px rgba(20,18,12,.07);
+  --display:'Archivo',sans-serif; --body:'Manrope',sans-serif;
+  --mono:'Geist Mono',ui-monospace,monospace;
+}
+html[data-density="comfortable"]{
+  --d-cols:264px minmax(0,1fr);
+  --d-rail:none; --d-canvas:1080px; --d-msg-gap:24px; --d-thread-prev:none; --d-bubble:760px;
+}
+html[data-density="compact"]{
+  --d-cols:248px minmax(0,1fr) 332px;
+  --d-rail:flex; --d-canvas:1320px; --d-msg-gap:16px; --d-thread-prev:block; --d-bubble:none;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--body);background:var(--bg);color:var(--text);line-height:1.5;
+  -webkit-font-smoothing:antialiased;min-height:100vh}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:radial-gradient(circle at 14% 8%,rgba(107,92,231,.05),transparent 42%),
+    radial-gradient(circle at 92% 4%,rgba(108,255,127,.05),transparent 40%)}
+.wrap{position:relative;z-index:1;max-width:var(--d-canvas);margin:0 auto;
+  padding:22px 22px 0;transition:max-width .45s cubic-bezier(.4,0,.2,1)}
+a{color:inherit;text-decoration:none}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.tnum{font-variant-numeric:tabular-nums}
+
+/* top bar */
+.topbar{display:flex;align-items:center;gap:16px;margin-bottom:14px}
+.brand{display:inline-flex;align-items:center;gap:9px;font-family:var(--display);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.brand .mark{width:19px;height:19px;border-radius:50%;
+  background:conic-gradient(from 220deg,var(--text) 0 50%,transparent 50% 100%);border:1.5px solid var(--text)}
+.brand .ver{font-family:var(--body);font-weight:600;font-size:10.5px;color:var(--text2);background:var(--neutral);padding:2px 6px;border-radius:999px}
+.nav{display:flex;gap:2px;margin-left:6px}
+.nav a{font-size:13.5px;font-weight:500;color:var(--text2);padding:7px 12px;border-radius:999px;border:1px solid transparent}
+.nav a:hover{background:rgba(20,18,12,.04);color:var(--text)}
+.nav a.on{border-color:var(--border);color:var(--text);font-weight:600}
+.nav a.on::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent);margin-right:7px;vertical-align:2px}
+.spacer{flex:1}
+.seg{display:inline-flex;background:var(--neutral);border:1px solid var(--border);border-radius:999px;padding:3px;gap:2px}
+.seg button{font-family:var(--body);font-weight:600;font-size:12.5px;color:var(--text2);border:0;background:transparent;
+  padding:6px 14px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:color .18s}
+.seg button .ic{width:13px;height:13px;display:block}
+.seg button[aria-pressed="true"]{background:var(--card);color:var(--text);box-shadow:0 1px 2px rgba(20,18,12,.08),0 2px 8px -2px rgba(20,18,12,.1)}
+
+/* 3-pane */
+.ask{display:grid;grid-template-columns:var(--d-cols);gap:14px;align-items:start;
+  transition:grid-template-columns .1s}
+.pane{background:rgba(255,255,255,.74);border:1px solid var(--border);border-radius:20px;box-shadow:var(--shadow)}
+
+/* ── threads ── */
+.threads{position:sticky;top:18px;display:flex;flex-direction:column;gap:8px;
+  padding:13px 11px 11px;max-height:calc(100vh - 36px)}
+.threads-head{display:flex;align-items:center;justify-content:space-between;padding:2px 5px 0}
+.threads-head .t{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.1em;color:var(--text3)}
+.threads-head .ct{font-family:var(--mono);font-size:10.5px;color:var(--text3);background:rgba(0,0,0,.04);padding:1px 6px;border-radius:999px}
+.threads-head button{width:28px;height:28px;border-radius:8px;background:transparent;border:1px solid transparent;
+  color:var(--text2);cursor:pointer;display:grid;place-items:center;font-size:17px;line-height:1}
+.threads-head button:hover{background:rgba(0,0,0,.04);border-color:var(--border);color:var(--text)}
+.tgroup{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--text3);padding:8px 7px 3px}
+.tlist{display:flex;flex-direction:column;gap:2px;overflow-y:auto;margin:0 -3px;padding:0 3px}
+.trow{position:relative;display:flex;gap:9px;padding:8px 10px;border-radius:11px;cursor:pointer;transition:background .15s}
+.trow:hover{background:rgba(0,0,0,.035)}
+.trow.on{background:color-mix(in srgb,var(--accent-soft) 55%,transparent)}
+.trow.on::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:2px;background:var(--accent);border-radius:0 2px 2px 0}
+.trow .dot{width:6px;height:6px;border-radius:50%;background:transparent;margin-top:5px;flex:0 0 auto}
+.trow.on .dot{background:var(--accent)}
+.trow .dot.run{background:#f5a623;animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(245,166,35,.4)}50%{opacity:.6;box-shadow:0 0 0 5px rgba(245,166,35,0)}}
+.trow .body{min-width:0;flex:1}
+.trow .ti{display:flex;align-items:center;gap:6px}
+.trow .title{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trow.on .title{font-weight:600;color:var(--accent)}
+.trow .time{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--text3);flex:0 0 auto}
+.trow .prev{display:var(--d-thread-prev);font-size:11.5px;line-height:1.4;color:var(--text3);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.threads-foot{margin-top:auto;display:flex;flex-direction:column;gap:1px;padding-top:9px;border-top:1px solid var(--border)}
+.threads-foot a{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;font-size:12.5px;color:var(--text2)}
+.threads-foot a:hover{background:rgba(0,0,0,.04);color:var(--text)}
+.threads-foot a .badge{margin-left:auto;font-size:10.5px;font-weight:600;color:#fff;background:var(--accent);padding:1px 7px;border-radius:999px}
+
+/* ── conversation ── */
+.convo{background:transparent;border:0;box-shadow:none;min-height:60vh;display:flex;flex-direction:column}
+.thread-title{font-family:var(--display);font-size:15px;font-weight:700;letter-spacing:-.01em;color:var(--text);
+  padding:2px 4px 12px;border-bottom:1px solid var(--border);margin-bottom:18px;display:flex;align-items:center;gap:9px}
+.feed{display:flex;flex-direction:column;gap:var(--d-msg-gap);max-width:var(--d-bubble)}
+.umsg{align-self:flex-end;background:var(--neutral);border-radius:16px;padding:10px 14px;font-size:14px;max-width:80%}
+.amsg{display:flex;flex-direction:column;gap:11px}
+.toolpill{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;background:color-mix(in srgb,var(--neutral-soft) 60%,transparent);
+  border:1px solid color-mix(in srgb,var(--border) 70%,transparent);border-radius:999px;padding:4px 12px 4px 9px;font-size:11.5px;color:var(--text3);cursor:pointer}
+.toolpill .tg{font-weight:600;color:var(--text)}
+.toolpill .ok{display:inline-flex;align-items:center;gap:5px;background:var(--accent-soft);color:var(--accent);
+  padding:2px 9px;border-radius:999px;font-size:11px}
+.prose{font-size:14.5px;line-height:1.6;color:var(--text)}
+.prose p+p{margin-top:10px}
+.prose b{font-weight:600}
+.answer{position:relative;background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 4%,var(--card)) 0%,var(--card) 60%);
+  border:1px solid color-mix(in srgb,var(--border) 80%,var(--accent) 4%);border-radius:18px;padding:15px 18px;box-shadow:var(--shadow)}
+.kpi-inline{display:flex;align-items:baseline;gap:12px;margin:12px 0 4px;flex-wrap:wrap}
+.kpi-inline .m{font-family:var(--display);font-weight:800;font-size:30px;line-height:1;letter-spacing:-.025em;font-variant-numeric:tabular-nums}
+.kpi-inline .l{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-weight:600}
+.kpi-inline .d{font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--success-soft);color:var(--success-ink)}
+table.data{border-collapse:collapse;width:100%;font-size:13px;margin-top:12px}
+table.data th{text-align:left;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);padding:6px 12px 6px 0;white-space:nowrap}
+table.data td{padding:7px 12px 7px 0;border-bottom:1px solid var(--border);vertical-align:middle}
+table.data tr:last-child td{border-bottom:0}
+table.data td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;padding-right:0}
+table.data .bar{height:5px;border-radius:3px;background:var(--accent);opacity:.85}
+.confirm{align-self:flex-start;background:linear-gradient(180deg,color-mix(in srgb,var(--success-mid) 7%,var(--card)) 0%,var(--card) 52%);
+  border:1px solid color-mix(in srgb,var(--border) 70%,var(--success-mid) 22%);border-radius:16px;padding:12px 16px;box-shadow:var(--shadow)}
+.confirm .h{display:flex;align-items:center;gap:8px}
+.confirm .chk{width:17px;height:17px;border-radius:50%;background:var(--success-mid);color:#fff;display:grid;place-items:center;font-size:10px}
+.confirm .lab{font-family:var(--display);font-size:10.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--success-mid)}
+.confirm .ti{font-size:15px;font-weight:600;margin-top:5px}
+
+/* composer */
+.composer{position:sticky;bottom:14px;margin-top:18px;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);
+  border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow-h);padding:11px 13px 9px}
+.composer textarea{width:100%;border:0;background:transparent;resize:none;font:inherit;font-size:14.5px;color:var(--text);outline:none}
+.composer .cbar{display:flex;align-items:center;gap:10px;margin-top:6px}
+.composer .attach{width:30px;height:30px;border-radius:9px;border:1px solid var(--border);background:var(--card);color:var(--text2);cursor:pointer;display:grid;place-items:center}
+.composer .hint{font-size:11.5px;color:var(--text3)}
+.composer .hint kbd{font-family:var(--mono);font-size:10.5px;background:var(--neutral);border:1px solid var(--border);border-radius:5px;padding:0 4px}
+.composer .send{margin-left:auto;display:inline-flex;align-items:center;gap:7px;background:var(--text);color:var(--bg);
+  border:0;border-radius:999px;padding:8px 15px;font-weight:600;font-size:13px;cursor:pointer}
+.composer .send:hover{transform:translateY(-1px)}
+
+/* ── context rail (compact only) ── */
+.rail{display:var(--d-rail);position:sticky;top:18px;flex-direction:column;gap:11px;padding:13px 13px 14px;max-height:calc(100vh - 36px);overflow-y:auto}
+.rail h4{font-family:var(--display);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.13em;color:var(--text3);
+  display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.rail h4::after{content:"";flex:1;height:1px;background:var(--border)}
+.rail section+section{margin-top:6px}
+.minigrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mini{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:9px 10px}
+.mini .k{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);margin-bottom:5px}
+.mini .v{font-family:var(--display);font-weight:800;font-size:18px;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.mini .s{font-size:10.5px;color:var(--success-ink);margin-top:4px;font-weight:600}
+.artifact{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--border);border-radius:11px;background:var(--bg);cursor:pointer;transition:border-color .15s,transform .15s}
+.artifact+.artifact{margin-top:6px}
+.artifact:hover{border-color:var(--text3);transform:translateY(-1px)}
+.artifact .ic{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex:0 0 auto}
+.artifact .ic svg{width:16px;height:16px;display:block}
+.artifact .ic.sheet{background:var(--success-soft);color:var(--success-mid)}
+.artifact .ic.image{background:var(--accent-soft);color:var(--accent)}
+.artifact .ic.doc{background:var(--danger-soft);color:var(--danger)}
+.artifact .ic.code{background:var(--watch-soft);color:var(--warn-ink)}
+.artifact .ic.file{background:var(--neutral);color:var(--text2)}
+.artifact .n{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.artifact .meta{font-family:var(--mono);font-size:10.5px;color:var(--text3)}
+.artifact .dl{margin-left:auto;color:var(--text3);font-size:14px}
+.source{display:flex;align-items:center;gap:8px;padding:6px 2px;font-size:12.5px;color:var(--text2)}
+.source .sd{width:6px;height:6px;border-radius:2px;background:var(--accent);opacity:.7}
+.source .cnt{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--text3)}
+.chips{display:flex;flex-direction:column;gap:6px}
+.chip{text-align:left;background:var(--bg);border:1px solid var(--border);border-radius:11px;padding:9px 11px;cursor:pointer;
+  font:inherit;font-size:12.5px;color:var(--text2);transition:border-color .15s,background .15s,transform .15s;display:flex;gap:8px;align-items:center}
+.chip:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);transform:translateY(-1px)}
+.chip .arr{margin-left:auto;color:var(--text3)}
+.chip:hover .arr{color:var(--accent)}
+.memo{background:var(--bg);border:1px solid var(--border);border-left:2px solid var(--accent);border-radius:11px;padding:9px 11px;font-size:12px;line-height:1.45;color:var(--text2)}
+
+@media (max-width:1080px){
+  html[data-density="compact"]{--d-cols:248px minmax(0,1fr);--d-rail:none}
+}
+@media (max-width:680px){
+  html[data-density]{--d-cols:1fr;--d-rail:none;--d-canvas:100%}
+  .threads{position:static;max-height:38vh}.nav{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <span class="brand"><span class="mark"></span>OpenNeko <span class="ver">1.17.2</span></span>
+    <nav class="nav">
+      <a href="#">Dashboard</a>
+      <a href="#" class="on">Ask</a>
+      <a href="#">Actions</a>
+      <a href="#">Workflows</a>
+    </nav>
+    <span class="spacer"></span>
+    <div class="seg" role="group" aria-label="Information density">
+      <button data-set="comfortable" aria-pressed="false">
+        <svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="12" height="3.4" rx="1.2"/><rect x="2" y="9.6" width="12" height="3.4" rx="1.2"/></svg>Comfortable</button>
+      <button data-set="compact" aria-pressed="true">
+        <svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2.5" width="3.2" height="11" rx="1.1"/><rect x="6.4" y="2.5" width="3.2" height="11" rx="1.1"/><rect x="10.8" y="2.5" width="3.2" height="11" rx="1.1"/></svg>Compact</button>
+    </div>
+  </div>
+
+  <div class="ask">
+
+    <!-- THREADS -->
+    <aside class="pane threads">
+      <div class="threads-head">
+        <span class="t">Threads <span class="ct">9</span></span>
+        <button title="New thread">+</button>
+      </div>
+      <div class="tlist">
+        <div class="tgroup">Today</div>
+        <div class="trow on">
+          <span class="dot"></span>
+          <div class="body">
+            <div class="ti"><span class="title">Top customers & concentration</span><span class="time">9:14a</span></div>
+            <div class="prev">Top 10 are 48% of revenue — Acme leads at $1.2M…</div>
+          </div>
+        </div>
+        <div class="trow">
+          <span class="dot run"></span>
+          <div class="body">
+            <div class="ti"><span class="title">Q2 burn vs forecast</span><span class="time">8:51a</span></div>
+            <div class="prev">Running — reconciling AWS + payroll…</div>
+          </div>
+        </div>
+        <div class="trow">
+          <span class="dot"></span>
+          <div class="body">
+            <div class="ti"><span class="title">Reorder-risk SKUs</span><span class="time">8:22a</span></div>
+            <div class="prev">14 products below threshold; 3 critical.</div>
+          </div>
+        </div>
+        <div class="tgroup">Yesterday</div>
+        <div class="trow">
+          <span class="dot"></span>
+          <div class="body">
+            <div class="ti"><span class="title">Churn cohort breakdown</span><span class="time">Mon</span></div>
+            <div class="prev">Mid-market churn up 1.8pt after trial change.</div>
+          </div>
+        </div>
+        <div class="trow">
+          <span class="dot"></span>
+          <div class="body">
+            <div class="ti"><span class="title">Lead source ROI</span><span class="time">Mon</span></div>
+            <div class="prev">Organic docs page is the top converter.</div>
+          </div>
+        </div>
+        <div class="tgroup">Earlier</div>
+        <div class="trow">
+          <span class="dot"></span>
+          <div class="body">
+            <div class="ti"><span class="title">Pricing page experiment</span><span class="time">May 30</span></div>
+            <div class="prev">Usage-based variant lifted intent 9%.</div>
+          </div>
+        </div>
+        <div class="trow">
+          <span class="dot"></span>
+          <div class="body">
+            <div class="ti"><span class="title">Support SLA audit</span><span class="time">May 28</span></div>
+            <div class="prev">First-response median 42m, p90 3.1h.</div>
+          </div>
+        </div>
+      </div>
+      <div class="threads-foot">
+        <a href="#">▢ Workflows</a>
+        <a href="#">✦ Skills</a>
+        <a href="#">◐ Memory <span class="badge">2</span></a>
+      </div>
+    </aside>
+
+    <!-- CONVERSATION -->
+    <main class="convo">
+      <div class="thread-title">
+        <span>Top customers &amp; concentration</span>
+      </div>
+      <div class="feed">
+        <div class="umsg">Who are our top 10 customers by revenue this year, and how concentrated is it?</div>
+
+        <div class="amsg">
+          <button class="toolpill"><span class="mono">▸</span> Queried database <span class="tg">· 3 steps</span> <span class="ok">✓ done</span></button>
+          <div class="answer">
+            <div class="prose">
+              <p>Your top 10 customers account for <b>48% of YTD revenue</b> — moderately concentrated, but no single account is a cliff risk. <b>Acme Corp</b> leads at $1.2M (9.4% of total).</p>
+            </div>
+            <div class="kpi-inline">
+              <span class="m">48%</span><span class="l">top-10 share</span><span class="d">▲ healthy spread</span>
+            </div>
+            <table class="data">
+              <thead><tr><th>Customer</th><th>YTD revenue</th><th style="width:90px"></th><th class="num">Share</th></tr></thead>
+              <tbody>
+                <tr><td>Acme Corp</td><td class="num">$1,204k</td><td><div class="bar" style="width:100%"></div></td><td class="num">9.4%</td></tr>
+                <tr><td>Globex</td><td class="num">$842k</td><td><div class="bar" style="width:70%"></div></td><td class="num">6.6%</td></tr>
+                <tr><td>Initech</td><td class="num">$731k</td><td><div class="bar" style="width:61%"></div></td><td class="num">5.7%</td></tr>
+                <tr><td>Umbrella</td><td class="num">$655k</td><td><div class="bar" style="width:54%"></div></td><td class="num">5.1%</td></tr>
+                <tr><td>Soylent</td><td class="num">$598k</td><td><div class="bar" style="width:50%"></div></td><td class="num">4.7%</td></tr>
+                <tr><td>Hooli</td><td class="num">$540k</td><td><div class="bar" style="width:45%"></div></td><td class="num">4.2%</td></tr>
+              </tbody>
+            </table>
+            <div class="prose" style="margin-top:12px"><p>Concentration is <b>down from 53% last year</b> as mid-market revenue broadened the base. Full table saved to the rail →</p></div>
+          </div>
+          <div class="confirm">
+            <div class="h"><span class="chk">✓</span><span class="lab">Saved to memory</span></div>
+            <div class="ti">Revenue concentration tracked monthly</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <textarea rows="1" placeholder="Ask a follow-up…"></textarea>
+        <div class="cbar">
+          <button class="attach" title="Attach">⎘</button>
+          <span class="hint">Enter <kbd>↵</kbd> to send · Shift <kbd>↵</kbd> for newline</span>
+          <button class="send">Send ↑</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- CONTEXT RAIL (compact only) -->
+    <aside class="pane rail">
+      <section>
+        <h4>Answer vitals</h4>
+        <div class="minigrid">
+          <div class="mini"><div class="k">Top-10 share</div><div class="v">48%</div><div class="s">▼ from 53%</div></div>
+          <div class="mini"><div class="k">#1 account</div><div class="v">$1.2M</div><div class="s">Acme · 9.4%</div></div>
+          <div class="mini"><div class="k">Customers</div><div class="v">1,284</div><div class="s">▲ 31 MoM</div></div>
+          <div class="mini"><div class="k">YoY revenue</div><div class="v">+14%</div><div class="s">$12.8M YTD</div></div>
+        </div>
+      </section>
+      <section>
+        <h4>Artifacts</h4>
+        <div class="artifact"><span class="ic sheet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/></svg></span><div style="min-width:0"><div class="n">top-customers-ytd.csv</div><div class="meta">10 rows · 2 KB</div></div><span class="dl">↓</span></div>
+        <div class="artifact"><span class="ic image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="9" r="1.7"/><path d="M21 16l-4.6-4.6L6 21"/></svg></span><div style="min-width:0"><div class="n">concentration.png</div><div class="meta">chart · 48 KB</div></div><span class="dl">↓</span></div>
+        <div class="artifact"><span class="ic doc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg></span><div style="min-width:0"><div class="n">board-summary.pdf</div><div class="meta">3 pages · 71 KB</div></div><span class="dl">↓</span></div>
+      </section>
+      <section>
+        <h4>Sources touched</h4>
+        <div class="source"><span class="sd"></span>orders<span class="cnt">3.2M rows</span></div>
+        <div class="source"><span class="sd"></span>customers<span class="cnt">1,284</span></div>
+        <div class="source"><span class="sd"></span>invoices<span class="cnt">41k</span></div>
+      </section>
+      <section>
+        <h4>Ask next</h4>
+        <div class="chips">
+          <button class="chip">Break down by region<span class="arr">→</span></button>
+          <button class="chip">Which top accounts are at churn risk?<span class="arr">→</span></button>
+          <button class="chip">Compare to last year by quarter<span class="arr">→</span></button>
+        </div>
+      </section>
+      <section>
+        <h4>Related memory</h4>
+        <div class="memo">Board cares about &lt;50% top-10 concentration as a health metric — flag if it climbs back.</div>
+      </section>
+    </aside>
+
+  </div>
+</div>
+
+<script>
+const root=document.documentElement;
+document.querySelectorAll('.seg button').forEach(btn=>btn.addEventListener('click',()=>{
+  root.setAttribute('data-density',btn.dataset.set);
+  document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(b===btn)));
+}));
+document.querySelectorAll('.trow').forEach(r=>r.addEventListener('click',()=>{
+  document.querySelectorAll('.trow').forEach(x=>x.classList.remove('on'));
+  r.classList.add('on');
+}));
+</script>
+</body>
+</html>

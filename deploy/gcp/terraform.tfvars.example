@@ -1,0 +1,17 @@
+# This file is a template meant to be checked in as-is -- copy it to
+# terraform.tfvars (gitignored) and fill in real values there. Never put
+# real project IDs, domains, or IAM identities in this .example file.
+project_id = "my-gcp-project"
+region     = "us-central1"
+zone       = "us-central1-a"
+domain     = "neko.example.com"
+tls_email  = "ops@example.com"
+
+# Required for SSH access (via IAP tunnel + OS Login -- no open port 22).
+# Format: "user:name@example.com" or "group:name@example.com". Left empty
+# by default; set this in your own terraform.tfvars, not here.
+# admin_members = ["group:your-org-admins@example.com"]
+
+# Optional, only if this domain's zone lives in Cloud DNS in this project:
+# manage_dns       = true
+# dns_managed_zone = "example-com-zone"

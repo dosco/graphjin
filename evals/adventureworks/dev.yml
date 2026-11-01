@@ -1,0 +1,55 @@
+# GraphJin project for the AdventureWorks data eval. GraphJin's eval engine
+# boots GraphJin from this config, resolves each task's oracle, and asks
+# GraphJin's agent the question:
+#
+#   GJ_AGENT_PROVIDER=... GJ_AGENT_MODEL=... GRAPHJIN_AGENT_API_KEY=... \
+#     openneko graphjin --path evals/adventureworks eval run --yes
+#
+# The source is the frozen snapshot that scripts/eval-adventureworks/environment.sh
+# brings up (evals/environment/adventureworks), published on 127.0.0.1:15433.
+# Point host and port at another copy of that snapshot to run elsewhere.
+app_name: OpenNeko AdventureWorks eval
+mode: dev
+host_port: 127.0.0.1:18081
+production: false
+log_level: warn
+auth:
+  type: none
+  development: true
+default_limit: 20
+analytics_mode: true
+
+artifacts:
+  enabled: false
+watches:
+  enabled: false
+tasks:
+  enabled: false
+
+agent:
+  enabled: true
+  read_only: true
+  api_key_env: GRAPHJIN_AGENT_API_KEY
+  max_steps: 12
+  timeout_seconds: 180
+
+blocklist:
+  - secret
+  - password
+  - token
+
+sources:
+  - name: adventureworks
+    kind: database
+    default: true
+    type: postgres
+    host: 127.0.0.1
+    port: 15433
+    dbname: adventureworks
+    user: openneko_eval_reader
+    password: eval-reader-only
+    read_only: true
+    access:
+      read: public
+      write: blocked
+      delete: blocked

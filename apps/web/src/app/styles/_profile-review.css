@@ -1,0 +1,295 @@
+.profile-card {
+  background: var(--card); border-radius: var(--radius); padding: var(--panel-padding);
+  margin-top: 28px; box-shadow: var(--shadow); border: 1px solid var(--border);
+}
+.settings-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--panel-padding);
+  box-shadow: var(--shadow);
+  margin-top: 18px;
+}
+.settings-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.settings-card-title {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-section);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: var(--leading-heading);
+}
+.settings-card-copy {
+  margin-top: 6px;
+  color: var(--text2);
+  line-height: var(--leading-body);
+  font-size: var(--type-body);
+}
+
+/* Grouped settings sections: a Level-2 header that separates distinct
+   concerns (e.g. installed packs vs installing one vs pack settings) so a
+   long screen reads as ordered groups, not one flat stack of cards. */
+.settings-group {
+  margin-top: 44px;
+}
+.settings-group:first-of-type {
+  margin-top: 26px;
+}
+.settings-group-head {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-group-kicker {
+  display: block;
+  margin-bottom: 7px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 800;
+  color: var(--accent);
+}
+.settings-group-title {
+  margin: 0;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--text);
+}
+.settings-group-copy {
+  margin: 6px 0 0;
+  max-width: 70ch;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+  line-height: var(--leading-body);
+}
+.settings-source {
+  color: var(--text3);
+  font-size: var(--type-caption);
+  letter-spacing: 0.01em;
+  font-weight: 750;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  max-width: 100%;
+}
+.settings-source strong {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--neutral-soft);
+  color: var(--text2);
+  font-weight: 750;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.settings-source strong.is-ok {
+  border-color: color-mix(in srgb, var(--success-mid) 20%, var(--border));
+  background: var(--success-soft);
+  color: var(--success-ink);
+}
+.settings-source strong.is-warn {
+  border-color: color-mix(in srgb, var(--watch) 24%, var(--border));
+  background: var(--watch-soft);
+  color: var(--warn-ink);
+}
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.settings-index-group + .settings-index-group {
+  margin-top: 32px;
+}
+
+.settings-index-group-title {
+  margin: 0 0 12px;
+  color: var(--text2);
+  font-family: var(--font-body), "Manrope", sans-serif;
+  font-size: var(--type-body);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.settings-index-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  align-items: stretch;
+  gap: 16px;
+}
+
+.settings-index-grid .settings-card {
+  min-height: 100%;
+  margin-top: 0;
+}
+
+.settings-index-card {
+  min-height: 172px;
+  display: flex;
+  flex-direction: column;
+  padding: var(--panel-padding);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  transition:
+    border-color 0.18s ease;
+}
+
+.settings-index-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+}
+
+.settings-index-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.settings-index-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.settings-index-card .settings-card-title {
+  font-size: var(--type-section);
+  letter-spacing: -0.025em;
+}
+
+.settings-index-card .settings-card-copy {
+  max-width: 38ch;
+  margin-top: 8px;
+  color: var(--text2);
+  font-size: var(--type-body);
+  line-height: 1.52;
+}
+
+.settings-index-card-arrow {
+  width: 19px;
+  height: 19px;
+  flex: none;
+  color: var(--text3);
+  transition:
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.settings-index-card:hover .settings-index-card-arrow {
+  color: var(--accent);
+  transform: translate(2px, -2px);
+}
+
+.settings-index-card-foot {
+  display: flex;
+  align-items: center;
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+.settings-index-status {
+  min-width: 0;
+  min-height: 26px;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--neutral-soft);
+  color: var(--text2);
+  font-size: var(--type-caption);
+  font-weight: 750;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.settings-index-status[data-tone="success"] {
+  border-color: color-mix(in srgb, var(--success-mid) 20%, var(--border));
+  background: var(--success-soft);
+  color: var(--success-ink);
+}
+
+.settings-index-status[data-tone="watch"] {
+  border-color: color-mix(in srgb, var(--watch) 24%, var(--border));
+  background: var(--watch-soft);
+  color: var(--warn-ink);
+}
+.select-panel {
+  box-shadow:
+    0 1px 2px rgba(20,18,12,0.04),
+    0 16px 44px -10px rgba(20,18,12,0.18),
+    0 28px 64px -16px rgba(20,18,12,0.12);
+  animation: select-pop 0.14s ease-out;
+}
+@keyframes select-pop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.pm-ul {
+  list-style: none; padding: 0; margin: 0 0 6px;
+}
+.pm-ul li {
+  font-size: var(--type-body); line-height: var(--leading-body); color: var(--text2);
+  padding: 3px 0 3px 20px; position: relative;
+}
+.pm-ul li::before {
+  content: ""; position: absolute; left: 0; top: 12px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); opacity: 0.5;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.iskel { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.dskel { display: flex; flex-direction: column; gap: 6px; }
+.skel {
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--border) 0%, var(--neutral-soft) 50%, var(--border) 100%);
+  background-size: 200% 100%;
+  animation: skel-shimmer 1.4s ease-in-out infinite;
+}
+.skel-metric { height: 16px; width: 70%; }
+.skel-label  { height: 11px; width: 45%; }
+.skel-line   { height: 11px; width: 100%; }
+.skel-line-short { width: 65%; }
+@keyframes skel-shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@media (max-width: 720px) {
+  .settings-card-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-index-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .settings-index-card {
+    min-height: 0;
+    padding: 20px 18px;
+  }
+}

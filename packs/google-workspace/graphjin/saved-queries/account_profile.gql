@@ -1,0 +1,7 @@
+query GoogleWorkspaceAccountProfile {
+  gmail_get_profile(userId: "me") {
+    emailAddress
+    messagesTotal
+    threadsTotal
+  }
+}

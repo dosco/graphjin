@@ -1,0 +1,249 @@
+openapi: 3.0.3
+info:
+  title: Google Gmail read API
+  version: 1.0.0
+servers:
+  - url: https://gmail.googleapis.com
+security:
+  - oauthBearer: []
+paths:
+  /gmail/v1/users/{userId}/profile:
+    get:
+      operationId: getProfile
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Gmail profile
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [emailAddress]
+                properties:
+                  emailAddress: { type: string }
+                  messagesTotal: { type: integer }
+                  threadsTotal: { type: integer }
+                  historyId: { type: string }
+  /gmail/v1/users/{userId}/messages:
+    get:
+      operationId: listMessages
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: q, in: query, schema: { type: string } }
+        - { name: labelIds, in: query, schema: { type: array, items: { type: string } } }
+        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 500 } }
+        - { name: pageToken, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Message references
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items: { $ref: "#/components/schemas/MessageRef" }
+                  nextPageToken: { type: string }
+                  resultSizeEstimate: { type: integer }
+  /gmail/v1/users/{userId}/messages/{messageId}:
+    get:
+      operationId: getMessage
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: messageId, in: path, required: true, schema: { type: string } }
+        - { name: format, in: query, schema: { type: string, enum: [minimal, full, raw, metadata] } }
+        - { name: metadataHeaders, in: query, schema: { type: array, items: { type: string } } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /gmail/v1/users/{userId}/threads:
+    get:
+      operationId: listThreads
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: q, in: query, schema: { type: string } }
+        - { name: labelIds, in: query, schema: { type: array, items: { type: string } } }
+        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 500 } }
+        - { name: pageToken, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /gmail/v1/users/{userId}/threads/{threadId}:
+    get:
+      operationId: getThread
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: threadId, in: path, required: true, schema: { type: string } }
+        - { name: format, in: query, schema: { type: string, enum: [full, metadata, minimal] } }
+        - { name: metadataHeaders, in: query, schema: { type: array, items: { type: string } } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /gmail/v1/users/{userId}/messages/{messageId}/modify:
+    post:
+      operationId: modifyMessageLabels
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: messageId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModifyMessageRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /gmail/v1/users/{userId}/messages/send:
+    post:
+      operationId: sendMessage
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Message" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /gmail/v1/users/{userId}/drafts:
+    get:
+      operationId: listDrafts
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: q, in: query, schema: { type: string } }
+        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 500 } }
+        - { name: pageToken, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+    post:
+      operationId: createDraft
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Draft" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /gmail/v1/users/{userId}/drafts/{draftId}:
+    get:
+      operationId: getDraft
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: draftId, in: path, required: true, schema: { type: string } }
+        - { name: format, in: query, schema: { type: string, enum: [minimal, full, raw, metadata] } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /gmail/v1/users/{userId}/labels:
+    get:
+      operationId: listLabels
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+    post:
+      operationId: createLabel
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Label" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /gmail/v1/users/{userId}/labels/{labelId}:
+    get:
+      operationId: getLabel
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: labelId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+    patch:
+      operationId: updateLabel
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: labelId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Label" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+    delete:
+      operationId: deleteLabel
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: labelId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Label deleted }
+  /gmail/v1/users/{userId}/history:
+    get:
+      operationId: listHistory
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: startHistoryId, in: query, required: true, schema: { type: string } }
+        - { name: historyTypes, in: query, schema: { type: array, items: { type: string } } }
+        - { name: labelId, in: query, schema: { type: string } }
+        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 500 } }
+        - { name: pageToken, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /gmail/v1/users/{userId}/messages/{messageId}/attachments/{attachmentId}:
+    get:
+      operationId: getAttachment
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: messageId, in: path, required: true, schema: { type: string } }
+        - { name: attachmentId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+components:
+  securitySchemes:
+    oauthBearer: { type: http, scheme: bearer }
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, default: me }
+  schemas:
+    MessageRef:
+      type: object
+      properties:
+        id: { type: string }
+        threadId: { type: string }
+    Message:
+      type: object
+      additionalProperties: false
+      required: [raw]
+      properties:
+        raw: { type: string, description: Base64url-encoded RFC 2822 message }
+        threadId: { type: string }
+    Draft:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message: { $ref: "#/components/schemas/Message" }
+    Label:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string }
+        messageListVisibility: { type: string, enum: [show, hide] }
+        labelListVisibility: { type: string, enum: [labelShow, labelShowIfUnread, labelHide] }
+    ModifyMessageRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        addLabelIds: { type: array, items: { type: string }, maxItems: 100 }
+        removeLabelIds: { type: array, items: { type: string }, maxItems: 100 }
+  responses:
+    Object:
+      description: Google API response
+      content:
+        application/json:
+          schema: { type: object, additionalProperties: true }

@@ -1,0 +1,20 @@
+key: metric.fulfillment_age
+targetRef: magento.metric.fulfillment_age
+title: Fulfillment age
+description: Median and oldest age of paid orders that have not reached a terminal fulfillment state.
+role: operations
+chartHint: distribution
+unit: duration_seconds
+directionGood: down
+cadence: hourly
+calculationNote: Uses paid orders outside canceled, closed, and complete states; age is calculated from order creation in the configured Magento timezone.
+execution:
+  mode: saved_query
+  source: magento_analytics
+  query: fulfillment_age
+  result:
+    kind: timestamp_age_summary
+    rowsPath: sales_order
+    timestampPath: created_at
+    summaries: [median, max]
+  freshnessSeconds: 3600

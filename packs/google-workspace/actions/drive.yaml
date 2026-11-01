@@ -1,0 +1,34 @@
+key: action.google_workspace_drive
+targetRef: google_workspace.drive
+kind: google_workspace.drive
+description: Create, copy, move, update, and manage sharing for Google Drive files.
+readiness:
+  capability: operator
+  unavailableReasons: [oauth_not_connected, graphjin_restart_required]
+inputSchema:
+  type: object
+  additionalProperties: false
+  required: [operation]
+  properties:
+    operation: { type: string, enum: [create_file, copy_file, update_file, create_permission, update_permission, delete_permission] }
+    path: { type: object }
+    query: { type: object }
+    body: { type: object }
+example:
+  operation: update_file
+  path: { fileId: FILE_ID }
+  query: { addParents: DESTINATION_FOLDER_ID, removeParents: CURRENT_FOLDER_ID }
+  body: { name: Updated name }
+adapter:
+  kind: graphjin_api_operation
+  source: google_workspace_drive
+  spec: drive
+  operations:
+    create_file: { operationId: createDriveFile, mutationRoot: gws_drive_create_file, reversible: false }
+    copy_file: { operationId: copyDriveFile, mutationRoot: gws_drive_copy_file, reversible: false }
+    update_file: { operationId: updateDriveFile, mutationRoot: gws_drive_update_file, reversible: false }
+    create_permission: { operationId: createDrivePermission, mutationRoot: gws_drive_create_permission, reversible: false }
+    update_permission: { operationId: updateDrivePermission, mutationRoot: gws_drive_update_permission, reversible: false }
+    delete_permission: { operationId: deleteDrivePermission, mutationRoot: gws_drive_delete_permission, reversible: false }
+  ambiguousOutcome: reconcile_required
+  retry: never

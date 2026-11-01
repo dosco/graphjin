@@ -1,0 +1,9 @@
+# Magento indexer health: Indexers that are invalid, working unexpectedly, or
+# stale. Staleness is evaluated against the configured indexer age threshold.
+query MagentoIndexerHealth($staleBefore: String!) {
+  indexer_state(where: {or: [{status: {neq: "valid"}}, {updated: {lt: $staleBefore}}]}, order_by: {updated: asc}) {
+    indexer_id
+    status
+    updated
+  }
+}

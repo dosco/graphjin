@@ -1,0 +1,138 @@
+
+:root {
+  --bg: #FAFAF7;
+  --card: #FFFFFF;
+  --text: #2D2A24;
+  /* Both muted text roles meet WCAG AA against --bg. Disabled content
+     gets reduced opacity instead of an unreadably pale base color. */
+  --text2: #6F6A60;
+  --text3: #756F65;
+  --border: #EEEBE4;
+  --neutral: #F2EFE8;
+  --neutral-soft: #F7F4ED;
+  --accent: #6B5CE7;
+  --accent-soft: #EDE9FE;
+  --success: #6CFF7F;
+  --success-ink: #113719;
+  --success-soft: #E2FBE6;
+  --success-mid: #357A57;
+  --watch: #E9A23B;
+  --watch-soft: #FFF1D8;
+  --warn: #F0D97A;
+  --warn-soft: #FFF4CC;
+  /* Amber text token. Meets WCAG AA on card, bg, watch-soft, and warn-soft. */
+  --warn-ink: #7E6200;
+  --danger: #A53535;
+  --danger-soft: #FEECEC;
+  /* Danger text for dark surfaces (heroes, inspector head), where the base
+     --danger red drops below AA. Mirrors bright --success and --watch. */
+  --danger-bright: #F58A8A;
+  --accent-hover: #5A4CD1;
+  --danger-hover: #852626;
+  --on-accent: #FFFFFF;
+  /* Warm-paper text tones for the dark hero surfaces. Both meet AA on --text. */
+  --on-dark-2: #CDCCC9;
+  --on-dark-3: #B4B3AF;
+  --hover-wash: rgba(20,18,12,0.04);
+  --backdrop: rgba(20,18,12,0.45);
+  --radius: 20px;
+  --radius-inner: 12px;
+  --radius-control: 10px;
+  --control-sm: 32px;
+  --control-md: 40px;
+  --control-touch: 44px;
+  --page-gutter: 32px;
+  --content-max: 1200px;
+  --form-max: 760px;
+  --panel-padding: 24px;
+  --phone-dock-offset: 86px;
+  --shadow: 0 1px 3px rgba(20,18,12,0.04), 0 4px 16px rgba(20,18,12,0.03);
+  --shadow-h: 0 2px 8px rgba(20,18,12,0.06), 0 12px 36px -8px rgba(20,18,12,0.07);
+  --shadow-lift: 0 1px 2px rgba(20,18,12,0.04), 0 18px 48px -16px rgba(20,18,12,0.16);
+
+  /* Canonical product type scale. Page families may change composition,
+     never the semantic size assigned to a role. Display is reserved for
+     entry/empty-state statements; operational page titles use --type-page. */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --type-display: clamp(32px, 4vw, 48px);
+  --type-page: clamp(22px, 1.8vw, 24px);
+  --type-section: 18px;
+  --type-subsection: 16px;
+  --type-body-lg: 15px;
+  --type-body: 14px;
+  --type-body-sm: 13px;
+  --type-caption: 12px;
+  --type-label: 11px;
+  --leading-display: 1.02;
+  --leading-page: 1.15;
+  --leading-heading: 1.25;
+  --leading-body: 1.55;
+  --leading-compact: 1.4;
+
+  --page-head-height: 68px;
+  --page-head-title-size: var(--type-page);
+  --page-head-z: 45;
+  --page-head-bg: var(--bg);
+  --focus-ring: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+@media (max-width: 720px) {
+  :root {
+    --page-gutter: 16px;
+    --panel-padding: 18px;
+  }
+}
+
+/* Live inside @layer base so Tailwind utilities (which live in @layer
+   utilities) can still override padding/margin — unlayered rules win the
+   cascade over any layered rule regardless of specificity in v4. */
+@layer base {
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { color-scheme: light; }
+
+  body {
+    font-family: var(--font-body), 'Manrope', sans-serif;
+    font-size: var(--type-body);
+    line-height: var(--leading-body);
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Browser surfaces take the palette, not the platform defaults. The shared
+     controls set their own focus ring over outline:none, so the :focus-visible
+     outline here only reaches links and native elements that lack one. */
+  ::selection { background: var(--accent-soft); color: var(--accent-hover); }
+  :root { accent-color: var(--accent); caret-color: var(--accent); scrollbar-color: var(--border) transparent; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  ::-webkit-scrollbar { width: 12px; height: 12px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border: 3px solid transparent; background-clip: padding-box; border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text3); border-width: 2px; }
+
+  :where(h1, h2, h3, h4) {
+    color: var(--text);
+    font-family: var(--font-display), 'Archivo', sans-serif;
+  }
+
+  h1 {
+    font-size: var(--type-page);
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    line-height: var(--leading-page);
+  }
+
+  h2 {
+    font-size: var(--type-section);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: var(--leading-heading);
+  }
+
+  h3 {
+    font-size: var(--type-subsection);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: var(--leading-heading);
+  }
+}

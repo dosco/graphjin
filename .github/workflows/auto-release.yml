@@ -47,7 +47,7 @@ jobs:
       - name: Get current version
         id: current_version
         run: |
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          CURRENT_VERSION=$(node -p "require('./npm/package.json').version")
           echo "current=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           echo "Current version: $CURRENT_VERSION"
 
@@ -118,7 +118,7 @@ jobs:
             exit 0
           fi
 
-          REMOTE_VERSION=$(git show origin/master:package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+          REMOTE_VERSION=$(git show origin/master:npm/package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
           REMOTE_SUBJECT=$(git log -1 --pretty=%s origin/master)
           EXPECTED_SUBJECT="chore: bump version to v$NEW_VERSION [skip-release] [skip ci]"
 
@@ -139,8 +139,8 @@ jobs:
         if: steps.release_target.outputs.mode == 'create'
         run: |
           NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
-          npm version $NEW_VERSION --no-git-tag-version
-          echo "Updated package.json to version $NEW_VERSION"
+          npm --prefix npm version $NEW_VERSION --no-git-tag-version
+          echo "Updated npm/package.json to version $NEW_VERSION"
 
       - name: Set up Go
         if: steps.release_target.outputs.should_release == 'true'
@@ -275,4 +275,4 @@ jobs:
           # credential, so there is no NPM_TOKEN to leak or rotate. Requires npm >= 11.5
           # and the trusted publisher configured for this repo + workflow on npmjs.com.
           npm --version
-          npm publish --access public
+          npm publish ./npm --access public

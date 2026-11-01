@@ -1,0 +1,15 @@
+key: workflow.google_workspace_research
+targetRef: google_workspace.workflow.research
+name: Google Workspace cross-application research
+description: Research one business question across the connected Workspace account and return cited evidence.
+enabled: true
+status: active
+goal: >-
+  Use the google-workspace-cross-app-research skill. Search only the services
+  needed for the request. Preserve Gmail, Drive, Calendar, spreadsheet,
+  document, and presentation resource IDs with each finding. Return proposed
+  changes separately and do not perform writes during this workflow.
+schedule: null
+outputContract:
+  kind: research_report
+  required: [title, body, evidence]

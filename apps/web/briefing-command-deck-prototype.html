@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenNeko · Command Deck briefing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,500;0,600;0,700;0,800;0,900;1,700;1,800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ───────────────────────────────────────────────────────────────
+   OpenNeko — Command Deck briefing (flagship overhaul prototype).
+   Full console shell: left nav rail + briefing + mobile dock.
+   Production tokens verbatim from _tokens.css. Nav from src/lib/nav.tsx.
+   ─────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#FAFAF7; --card:#FFFFFF; --text:#2D2A24; --text2:#6F6A60; --text3:#756F65;
+  --border:#EEEBE4; --neutral:#F2EFE8; --neutral-soft:#F7F4ED;
+  --accent:#6B5CE7; --accent-soft:#EDE9FE; --accent-hover:#5A4CD1;
+  --success:#6CFF7F; --success-ink:#113719; --success-soft:#E2FBE6; --success-mid:#357A57;
+  --watch:#E9A23B; --watch-soft:#FFF1D8; --warn-ink:#7E6200;
+  --danger:#A53535; --danger-soft:#FEECEC; --danger-bright:#F58A8A;
+  --on-accent:#FFFFFF;
+  --on-dark-2:#CDCCC9; --on-dark-3:#B4B3AF;
+  --shadow:0 1px 3px rgba(20,18,12,.04), 0 4px 16px rgba(20,18,12,.03);
+  --shadow-h:0 2px 8px rgba(20,18,12,.06), 0 12px 36px -8px rgba(20,18,12,.07);
+  --shadow-lift:0 1px 2px rgba(20,18,12,.04), 0 18px 48px -16px rgba(20,18,12,.16);
+  --display:'Archivo',sans-serif; --body:'Manrope',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{color-scheme:light;-webkit-text-size-adjust:100%;overflow-x:clip}
+body{background:var(--bg); color:var(--text); font-family:var(--body); font-size:14px; line-height:1.55; -webkit-font-smoothing:antialiased; overflow-x:hidden}
+::selection{background:var(--accent-soft); color:var(--accent-hover)}
+:where(h1,h2,h3){font-family:var(--display); letter-spacing:-.02em; line-height:1.15}
+a{color:inherit; text-decoration:none}
+:focus-visible{outline:none; box-shadow:0 0 0 2px var(--bg), 0 0 0 4px var(--accent)}
+
+/* ── APP SHELL ── */
+.app{display:grid; grid-template-columns:252px minmax(0,1fr); min-height:100vh}
+
+/* ── LEFT NAV RAIL ── */
+.nav{position:sticky; top:0; align-self:start; height:100vh; overflow-y:auto; display:flex; flex-direction:column; gap:2px; padding:16px 12px; border-right:1px solid var(--border); background:color-mix(in srgb, var(--card) 55%, var(--bg))}
+.nav-brand{display:flex; align-items:center; gap:9px; padding:6px 10px 14px; font-family:var(--display); font-weight:800; font-size:17px; letter-spacing:-.02em}
+.nav-brand .glyph{width:24px;height:24px;border-radius:8px;background:var(--text);display:grid;place-items:center;color:var(--bg);flex:none}
+.nav-brand .glyph svg{width:14px;height:14px}
+.nav-brand .ver{margin-left:auto; font-family:var(--body); font-size:11px; font-weight:600; color:var(--text2); background:var(--neutral); border-radius:999px; padding:2px 7px}
+.ngroup{font-size:11px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--text3); padding:14px 11px 6px}
+.nlink{display:flex; align-items:center; gap:11px; padding:9px 11px; border-radius:10px; color:var(--text2); font-weight:600; font-size:13.5px; transition:background .15s, color .15s}
+.nlink .ni{width:18px;height:18px;flex:none;color:var(--text3); transition:color .15s}
+.nlink:hover{background:var(--neutral-soft); color:var(--text)}
+.nlink:hover .ni{color:var(--text2)}
+.nlink.active{background:var(--card); color:var(--text); box-shadow:var(--shadow)}
+.nlink.active .ni{color:var(--accent)}
+.nlink .nbadge{margin-left:auto; background:var(--danger-soft); color:var(--danger); font-size:11px; font-weight:800; line-height:1.5; padding:0 7px; border-radius:999px; border:1px solid color-mix(in srgb,var(--danger) 16%,transparent)}
+.nav-foot{margin-top:auto; display:flex; align-items:center; gap:10px; padding:12px 8px 4px; margin-top:16px; border-top:1px solid var(--border)}
+.nav-foot .av{width:32px;height:32px;border-radius:50%;background:var(--accent-soft);color:var(--accent-hover);display:grid;place-items:center;font-weight:800;font-size:12px;flex:none}
+.nav-foot .who{min-width:0; line-height:1.3}
+.nav-foot .who b{display:block; font-weight:700; font-size:13px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.nav-foot .who span{font-size:12px; color:var(--text3)}
+.nav-foot .out{margin-left:auto; color:var(--text3); background:transparent; border:0; cursor:pointer; width:30px;height:30px;border-radius:8px;display:grid;place-items:center;transition:background .15s,color .15s}
+.nav-foot .out:hover{background:var(--neutral-soft); color:var(--text)}
+.nav-foot .out svg{width:16px;height:16px}
+
+/* ── MAIN COLUMN ── */
+.main{min-width:0; display:flex; flex-direction:column}
+.bhead{position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:14px; height:56px; padding:0 clamp(16px,3vw,28px); background:color-mix(in srgb, var(--bg) 84%, transparent); backdrop-filter:saturate(1.2) blur(10px); border-bottom:1px solid var(--border)}
+.bhead .btitle{font-family:var(--display); font-weight:800; font-size:16px; letter-spacing:-.02em}
+.bhead .spacer{flex:1}
+.roles{display:flex; gap:3px; background:var(--neutral); border:1px solid var(--border); border-radius:999px; padding:3px}
+.role{appearance:none; border:0; background:transparent; cursor:pointer; font-family:var(--body); font-weight:600; font-size:13px; color:var(--text2); padding:6px 13px; border-radius:999px; line-height:1; display:inline-flex; align-items:center; gap:6px; transition:color .15s, background .15s}
+.role:hover{color:var(--text)}
+.role[aria-pressed="true"]{background:var(--card); color:var(--text); box-shadow:0 1px 2px rgba(20,18,12,.08),0 2px 8px -2px rgba(20,18,12,.1)}
+.role .rd{width:6px;height:6px;border-radius:50%;background:var(--success-mid)}
+.ask{display:inline-flex; align-items:center; gap:7px; padding:8px 13px; border-radius:999px; border:1.5px solid var(--border); background:var(--card); color:var(--text2); font-weight:600; font-size:13px; cursor:pointer; transition:border-color .15s,color .15s,background .15s}
+.ask:hover{border-color:var(--accent); color:var(--accent-hover); background:var(--accent-soft)}
+.ask svg{width:15px;height:15px}
+
+.deck{width:100%; max-width:1000px; margin:0 auto; padding:clamp(18px,2.4vw,26px) clamp(16px,3vw,28px) 120px}
+
+/* ── DARK COMMAND STRIP ── */
+.command{position:relative; overflow:hidden; border-radius:20px; padding:24px clamp(20px,3vw,30px); background:var(--text); color:var(--bg); box-shadow:inset 0 1px 0 rgba(255,255,255,.07), var(--shadow-lift); animation:rise .5s cubic-bezier(.2,.72,.2,1) both}
+.sweepline{position:absolute; left:0; right:0; top:0; height:2px; background:linear-gradient(90deg, transparent, var(--success) 20%, var(--accent) 80%, transparent); transform-origin:left; animation:sweep 1.1s cubic-bezier(.4,0,.15,1) both}
+.cmd-status{display:flex; align-items:center; gap:9px; margin-bottom:16px; font-size:13px; color:var(--on-dark-2); flex-wrap:wrap}
+.pulse{position:relative; width:8px; height:8px; border-radius:50%; background:var(--success); flex:none}
+.pulse::after{content:""; position:absolute; inset:-5px; border-radius:50%; border:1.5px solid var(--success); opacity:.5; animation:breathe 1.9s ease-in-out infinite}
+.cmd-status b{color:var(--bg); font-weight:700}
+.cmd-status .dot{width:3px;height:3px;border-radius:50%;background:var(--on-dark-3);flex:none}
+.cmd-status .srcs{color:var(--on-dark-3)}
+.cmd-head{display:flex; align-items:flex-end; justify-content:space-between; gap:24px; flex-wrap:wrap}
+.cmd-lede{max-width:34ch}
+.cmd-lede h1{font-size:clamp(26px,3.4vw,38px); font-weight:800; letter-spacing:-.03em; line-height:1.04; color:var(--bg)}
+.cmd-lede h1 .n{color:var(--success)}
+.cmd-lede p{margin-top:10px; font-size:14px; line-height:1.5; color:var(--on-dark-2)}
+.cmd-lede p .amber{color:var(--watch); font-weight:600}
+.cmd-aside{display:flex; gap:10px}
+.cmd-chip{min-width:96px; padding:12px 14px; border-radius:12px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12)}
+.cmd-chip .k{font-size:11px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:var(--on-dark-3)}
+.cmd-chip .v{margin-top:6px; font-family:var(--display); font-weight:800; font-size:23px; line-height:1; letter-spacing:-.02em}
+.cmd-chip .v.act{color:var(--danger-bright)}
+.cmd-chip .s{margin-top:5px; font-size:11px; color:var(--on-dark-3)}
+
+/* ── section headers ── */
+.sec{margin-top:34px}
+.sec-h{display:flex; align-items:center; gap:10px; margin-bottom:13px}
+.sec-h h2{font-size:15px; font-weight:800; letter-spacing:-.01em}
+.sec-h .count{font-family:var(--body); font-weight:700; font-size:11px; color:var(--text2); background:var(--neutral); border:1px solid var(--border); border-radius:999px; padding:2px 8px; line-height:1.4}
+.sec-h .rule{flex:1; height:1px; background:var(--border)}
+.sec-h .allclear{font-size:12px; color:var(--success-mid); font-weight:600; display:inline-flex; align-items:center; gap:6px}
+.sec-h .allclear svg{width:14px;height:14px}
+.sec-h .stamp{font-size:12px; color:var(--text3); font-variant-numeric:tabular-nums}
+
+/* ── DECISION CARD ── */
+.dcard{position:relative; overflow:hidden; background:var(--card); border:1px solid var(--border); border-radius:20px; box-shadow:var(--shadow); margin-bottom:12px; padding:18px 20px 18px 24px; transition:box-shadow .28s cubic-bezier(.4,0,.2,1), transform .28s cubic-bezier(.4,0,.2,1), border-color .28s; animation:fadeUp .5s cubic-bezier(.2,.72,.2,1) both}
+.dcard::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--m); opacity:.9}
+.dcard::after{content:""; position:absolute; inset:0; pointer-events:none; background:linear-gradient(115deg, var(--mt,transparent), transparent 42%); opacity:.6}
+.dcard:hover{box-shadow:var(--shadow-h); transform:translateY(-1px); border-color:color-mix(in srgb, var(--m) 45%, var(--border))}
+.dcard.act{--m:var(--danger); --mt:var(--danger-soft)}
+.dcard.watch{--m:var(--watch); --mt:var(--watch-soft)}
+.d-top{display:flex; align-items:center; gap:9px; position:relative; z-index:1}
+.tag{display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; padding:3px 9px; border-radius:999px; border:1px solid transparent; line-height:1}
+.tag.act{background:var(--danger-soft); color:var(--danger); border-color:color-mix(in srgb,var(--danger) 18%,transparent)}
+.tag.watch{background:var(--watch-soft); color:var(--warn-ink); border-color:color-mix(in srgb,var(--watch) 34%,transparent)}
+.tag .td{width:5px;height:5px;border-radius:50%;background:currentColor}
+.d-since{font-size:12px; color:var(--text3)}
+.d-since b{color:var(--text2); font-weight:600}
+.d-menu{margin-left:auto; color:var(--text3); background:transparent; border:0; cursor:pointer; width:30px; height:30px; border-radius:10px; display:grid; place-items:center; transition:background .15s,color .15s}
+.d-menu:hover{background:var(--neutral-soft); color:var(--text)}
+.d-menu svg{width:16px;height:16px}
+.d-title{position:relative; z-index:1; margin:11px 0 0; font-size:18px; font-weight:800; letter-spacing:-.015em; line-height:1.25}
+.d-body{position:relative; z-index:1; margin-top:6px; font-size:14px; line-height:1.55; color:var(--text2); max-width:64ch}
+.d-body code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; background:var(--neutral); padding:1px 5px; border-radius:5px; color:var(--text)}
+.d-ev{position:relative; z-index:1; display:flex; flex-wrap:wrap; gap:7px; margin-top:13px}
+.ev{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text2); background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:5px 10px; line-height:1}
+.ev .evk{color:var(--text3); font-weight:600}
+.ev .evv{font-weight:700; font-variant-numeric:tabular-nums}
+.ev .evv.down{color:var(--danger)}
+.d-acts{position:relative; z-index:1; display:flex; align-items:center; gap:8px; margin-top:16px; flex-wrap:wrap}
+.btn{appearance:none; cursor:pointer; font-family:var(--body); font-weight:600; font-size:13px; line-height:1; display:inline-flex; align-items:center; gap:7px; padding:9px 15px; border-radius:10px; border:1.5px solid transparent; transition:color .15s, background .15s, border-color .15s, transform .15s, box-shadow .15s}
+.btn svg{width:15px;height:15px}
+.btn:hover{transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn.primary{background:var(--text); border-color:var(--text); color:var(--bg); box-shadow:0 2px 10px rgba(20,18,12,.16)}
+.btn.primary:hover{background:var(--accent); border-color:var(--accent); color:#fff}
+.btn.secondary{background:var(--card); border-color:var(--border); color:var(--text2)}
+.btn.secondary:hover{border-color:var(--accent); background:var(--accent-soft); color:var(--accent-hover)}
+.btn.ghost{background:transparent; color:var(--text3); padding:9px 11px}
+.btn.ghost:hover{background:var(--neutral-soft); color:var(--text); transform:none}
+.d-acts .push{flex:1}
+
+/* ── CLEARED ── */
+.cleared-list{background:var(--card); border:1px solid var(--border); border-radius:20px; box-shadow:var(--shadow); overflow:hidden}
+.cl{display:flex; align-items:center; gap:12px; padding:12px 16px; border-top:1px solid var(--border)}
+.cl:first-child{border-top:0}
+.cl .ci{width:26px;height:26px;border-radius:8px;background:var(--success-soft);color:var(--success-mid);display:grid;place-items:center;flex:none}
+.cl .ci svg{width:14px;height:14px}
+.cl .ct{flex:1; min-width:0}
+.cl .ct b{font-weight:600; color:var(--text)}
+.cl .ct span{color:var(--text2)}
+.cl .cwhen{font-size:12px; color:var(--text3); white-space:nowrap; font-variant-numeric:tabular-nums}
+
+/* ── VITALS ── */
+.vitals{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:20px; overflow:hidden}
+.vital{background:var(--card); padding:14px 16px}
+.vital .vk{font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--text3); text-transform:uppercase}
+.vital .vv{margin-top:7px; font-family:var(--display); font-weight:800; font-size:22px; letter-spacing:-.02em; line-height:1; font-variant-numeric:tabular-nums}
+.vital .vd{margin-top:6px; font-size:12px; font-weight:600; display:inline-flex; align-items:center; gap:4px; font-variant-numeric:tabular-nums}
+.vital .vd.up{color:var(--success-mid)}
+.vital .vd.down{color:var(--warn-ink)}
+.vital .vd.flat{color:var(--text3)}
+.vital .vd svg{width:12px;height:12px}
+
+/* ── MOBILE DOCK (hidden on desktop) ── */
+.dock{position:fixed; left:0; right:0; bottom:0; z-index:50; display:none; align-items:stretch; justify-content:space-around; gap:2px; padding:8px 10px calc(8px + env(safe-area-inset-bottom,0px)); background:color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter:saturate(1.2) blur(12px); border-top:1px solid var(--border)}
+.dlink{flex:1; min-width:0; position:relative; display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 0; border-radius:12px; color:var(--text3); font-size:11px; font-weight:700}
+.dlink .di{width:22px;height:22px}
+.dlink.active{color:var(--accent)}
+.dlink .dbadge{position:absolute; top:2px; left:calc(50% + 8px); background:var(--danger); color:#fff; font-size:9.5px; font-weight:800; line-height:1.5; min-width:16px; text-align:center; border-radius:999px; padding:0 4px; border:1.5px solid var(--bg)}
+
+@keyframes rise{from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:translateY(0)}}
+@keyframes sweep{from{transform:scaleX(0)} to{transform:scaleX(1)}}
+@keyframes fadeUp{from{opacity:0; transform:translateY(9px)} to{opacity:1; transform:translateY(0)}}
+@keyframes breathe{0%,100%{transform:scale(1); opacity:.5} 50%{transform:scale(1.5); opacity:0}}
+
+@media (max-width:900px){
+  .app{grid-template-columns:1fr}
+  .nav{display:none}
+  .dock{display:flex}
+  .deck{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}
+  .bhead .btitle{display:none}
+}
+@media (max-width:600px){
+  .cmd-head{flex-direction:column; align-items:stretch}
+  .cmd-aside{gap:8px}
+  .cmd-chip{flex:1; min-width:0}
+  .d-acts .push{display:none}
+  .btn{padding:11px 15px}
+  .roles{flex:1}
+  .role{flex:1; justify-content:center}
+}
+@media (prefers-reduced-motion:reduce){
+  .command,.dcard{animation:none}
+  .sweepline{animation:none; transform:scaleX(1)}
+  .pulse::after{animation:none; opacity:0}
+  .btn:hover,.dcard:hover{transform:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- LEFT NAV RAIL -->
+  <aside class="nav" aria-label="Primary">
+    <div class="nav-brand"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7l8 4 8-4M4 7v10l8 4 8-4V7M4 7l8-4 8 4"/></svg></span>OpenNeko<span class="ver">2.41</span></div>
+
+    <a class="nlink active" href="#" aria-current="page"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 4l9 6.5V20a1 1 0 0 1-1 1h-4v-6H8v6H4a1 1 0 0 1-1-1z"/></svg></span>Briefing</a>
+    <a class="nlink" href="#"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H10l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg></span>Ask OpenNeko</a>
+    <a class="nlink" href="#"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="1.6"/><path d="M8 21h8M12 17v4"/><path d="M10.5 8.5 14 10.8l-3.5 2.3z" fill="currentColor" stroke="none"/></svg></span>Agent workflows</a>
+    <a class="nlink" href="#"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.2 2.4 2.3 4.6-4.9"/></svg></span>Review queue<span class="nbadge">2</span></a>
+
+    <div class="ngroup">Knowledge</div>
+    <a class="nlink" href="#"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6c-1.6-1.1-4-1.5-6-1.3v12c2-.2 4.4.2 6 1.3 1.6-1.1 4-1.5 6-1.3v-12c-2-.2-4.4.2-6 1.3z"/><path d="M12 6v12"/></svg></span>Business Profile</a>
+    <a class="nlink" href="#"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10v16l-5-3.4L7 20z"/></svg></span>Memory</a>
+    <a class="nlink" href="#"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="4" width="3.4" height="16" rx="1"/><rect x="10.3" y="4" width="3.4" height="16" rx="1"/><rect x="16" y="5.5" width="3.4" height="14.5" rx="1"/></svg></span>Library</a>
+    <a class="nlink" href="#"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.6"/><rect x="4" y="13" width="7" height="7" rx="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.6"/></svg></span>Skills</a>
+
+    <div class="ngroup">Workspace</div>
+    <a class="nlink" href="#"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v5m6-5v5M7 8h10v3a5 5 0 0 1-10 0z"/><path d="M12 16v5"/></svg></span>Integrations</a>
+    <a class="nlink" href="#"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></span>Admin</a>
+
+    <div class="nav-foot">
+      <span class="av">JL</span>
+      <span class="who"><b>Jordan Lee</b><span>Acme Retail · COO</span></span>
+      <button class="out" aria-label="Sign out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3M10 8l-4 4 4 4M6 12h11"/></svg></button>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <header class="bhead">
+      <span class="btitle">Briefing</span>
+      <span class="spacer"></span>
+      <div class="roles" role="group" aria-label="Briefing role">
+        <button class="role" aria-pressed="true"><span class="rd"></span>COO</button>
+        <button class="role" aria-pressed="false">CFO</button>
+        <button class="role" aria-pressed="false">CEO</button>
+      </div>
+      <button class="ask"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H10l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>Ask</button>
+    </header>
+
+    <main class="deck">
+
+      <!-- DARK COMMAND STRIP -->
+      <section class="command" aria-label="Agent status">
+        <div class="sweepline"></div>
+        <div class="cmd-status">
+          <span class="pulse" aria-hidden="true"></span>
+          <span>OpenNeko swept <b>6 systems</b></span><span class="dot"></span>
+          <span>last check <b>3 min ago</b></span><span class="dot"></span>
+          <span class="srcs">Magento, Stripe, NetSuite, Zendesk, GA4, warehouse</span>
+        </div>
+        <div class="cmd-head">
+          <div class="cmd-lede">
+            <h1><span class="n">Two decisions</span> need you this morning.</h1>
+            <p>One revenue fault and one stock risk crossed a threshold overnight. The <span class="amber">agent drafted a fix for each</span>. Everything else held.</p>
+          </div>
+          <div class="cmd-aside">
+            <div class="cmd-chip"><div class="k">Need you</div><div class="v act">2</div><div class="s">since 2:14am</div></div>
+            <div class="cmd-chip"><div class="k">Handled</div><div class="v">38</div><div class="s">this week</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DECISION QUEUE -->
+      <section class="sec" aria-labelledby="q-h">
+        <div class="sec-h"><h2 id="q-h">Waiting on your decision</h2><span class="count">2</span><span class="rule"></span></div>
+
+        <article class="dcard act" style="animation-delay:.12s">
+          <div class="d-top">
+            <span class="tag act"><span class="td"></span>Act now</span>
+            <span class="d-since">crossed <b>2:14am</b></span>
+            <button class="d-menu" aria-label="More"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
+          </div>
+          <h3 class="d-title">Apple Pay place-order rate fell 94% overnight.</h3>
+          <p class="d-body">Card checkout still completes, so revenue is not fully stopped. OpenNeko traced the drop to a failing wallet handshake after the <code>payment_method</code> deploy at 2:09am, and drafted a config rollback that restores the prior handshake.</p>
+          <div class="d-ev">
+            <span class="ev"><span class="evk">place-order</span><span class="evv down">−94%</span></span>
+            <span class="ev"><span class="evk">since</span><span class="evv">2:14am</span></span>
+            <span class="ev"><span class="evk">orders at risk</span><span class="evv">~28 / hr</span></span>
+            <span class="ev"><span class="evk">source</span><span class="evv">sales_order_payment</span></span>
+          </div>
+          <div class="d-acts">
+            <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Review the fix</button>
+            <button class="btn secondary">See evidence</button>
+            <span class="push"></span>
+            <button class="btn ghost">Dismiss</button>
+          </div>
+        </article>
+
+        <article class="dcard watch" style="animation-delay:.2s">
+          <div class="d-top">
+            <span class="tag watch"><span class="td"></span>Watch</span>
+            <span class="d-since">will miss by <b>04 Sep</b></span>
+            <button class="d-menu" aria-label="More"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
+          </div>
+          <h3 class="d-title">Low stock will short 3 open orders by 04 September.</h3>
+          <p class="d-body">SKU <code>BH-4021</code> holds 12 units. Three open orders reserve 15 through MSI, so one ships short in 4 days. OpenNeko drafted a restock purchase order to the supplier for 40 units, ready to send through the governed OpenAPI action.</p>
+          <div class="d-ev">
+            <span class="ev"><span class="evk">on hand</span><span class="evv">12</span></span>
+            <span class="ev"><span class="evk">reserved</span><span class="evv">15</span></span>
+            <span class="ev"><span class="evk">short by</span><span class="evv down">3</span></span>
+            <span class="ev"><span class="evk">draft PO</span><span class="evv">40 units</span></span>
+          </div>
+          <div class="d-acts">
+            <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Approve draft PO</button>
+            <button class="btn secondary">Review</button>
+            <span class="push"></span>
+            <button class="btn ghost">Dismiss</button>
+          </div>
+        </article>
+      </section>
+
+      <!-- CLEARED -->
+      <section class="sec" aria-labelledby="c-h">
+        <div class="sec-h"><h2 id="c-h">OpenNeko handled these for you</h2><span class="count">3</span><span class="rule"></span><span class="allclear"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>no action needed</span></div>
+        <div class="cleared-list">
+          <div class="cl"><span class="ci"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><div class="ct"><b>Nightly catalog index rebuilt.</b> <span>Product and price data are fresh.</span></div><span class="cwhen">4:02am</span></div>
+          <div class="cl"><span class="ci"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><div class="ct"><b>14 Zendesk tickets triaged and routed.</b> <span>Backlog held inside target.</span></div><span class="cwhen">6:30am</span></div>
+          <div class="cl"><span class="ci"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><div class="ct"><b>Stripe payout reconciled to NetSuite.</b> <span>$184,210 matched, no variance.</span></div><span class="cwhen">7:05am</span></div>
+        </div>
+      </section>
+
+      <!-- VITALS -->
+      <section class="sec" aria-labelledby="v-h">
+        <div class="sec-h"><h2 id="v-h">The numbers held</h2><span class="rule"></span><span class="stamp">as of 9:14am</span></div>
+        <div class="vitals">
+          <div class="vital"><div class="vk">Net revenue</div><div class="vv">$184.2k</div><div class="vd up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>6.2%</div></div>
+          <div class="vital"><div class="vk">Gross margin</div><div class="vv">71.8%</div><div class="vd up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>0.9pt</div></div>
+          <div class="vital"><div class="vk">Monthly burn</div><div class="vv">$96.4k</div><div class="vd flat">held</div></div>
+          <div class="vital"><div class="vk">Support backlog</div><div class="vv">37</div><div class="vd down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M17 7 7 17M15 17H7V9"/></svg>14</div></div>
+          <div class="vital"><div class="vk">NRR</div><div class="vv">108%</div><div class="vd down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M17 7 7 17M15 17H7V9"/></svg>3pt</div></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- MOBILE DOCK -->
+<nav class="dock" aria-label="Primary mobile">
+  <a class="dlink active" href="#"><span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 4l9 6.5V20a1 1 0 0 1-1 1h-4v-6H8v6H4a1 1 0 0 1-1-1z"/></svg></span>Brief</a>
+  <a class="dlink" href="#"><span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H10l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg></span>Ask</a>
+  <a class="dlink" href="#"><span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="1.6"/><path d="M8 21h8M12 17v4"/></svg></span>Flows</a>
+  <a class="dlink" href="#"><span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.2 2.4 2.3 4.6-4.9"/></svg></span>Review<span class="dbadge">2</span></a>
+  <a class="dlink" href="#"><span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span>More</a>
+</nav>
+</body>
+</html>

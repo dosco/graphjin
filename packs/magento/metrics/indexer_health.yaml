@@ -1,0 +1,16 @@
+key: metric.indexer_health
+targetRef: magento.metric.indexer_health
+title: Magento indexer health
+description: Indexers that are invalid, working unexpectedly, or stale.
+role: operations
+chartHint: table
+unit: count
+directionGood: down
+cadence: hourly
+calculationNote: Staleness is evaluated against the configured indexer age threshold.
+execution:
+  mode: saved_query
+  source: magento_analytics
+  query: indexer_health
+  result: { kind: rows, path: indexer_state }
+  freshnessSeconds: 3600

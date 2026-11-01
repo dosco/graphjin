@@ -1,0 +1,423 @@
+import { describe, expect, it } from "vitest";
+import type { AgentWorkspace } from "../src/agent-backend";
+import type { KnowledgePackContents } from "../src/knowledge-pack";
+import { buildBotSection, buildCardsSection, buildWorkPrompt } from "../src/work/prompt";
+import { VALUE_ESTIMATE_INSTRUCTIONS } from "../src/prompts/sections";
+import { splitStablePrompt } from "../src/prompts/stable-prefix";
+
+const workspace: AgentWorkspace = {
+  orgRoot: "/tmp/org",
+  skillsRoot: "/tmp/org/skills",
+  memoryRoot: "/tmp/org/memory",
+  knowledgeRoot: "/tmp/org/knowledge",
+  uploadsRoot: "/tmp/org/uploads",
+  runsRoot: "/tmp/org/runs",
+  threadUploadsRoot: "/tmp/org/uploads/t1",
+  runRoot: "/tmp/org/runs/r1",
+  artifactRoot: "/tmp/org/runs/r1/artifacts",
+  binRoot: "/tmp/org/runs/r1/bin",
+};
+
+const knowledge: KnowledgePackContents = {
+  tables: "{}",
+  namespaces: "{}",
+  insights: "{}",
+  syntax: "{}",
+};
+
+function build(
+  backend: "ax",
+  overrides: {
+    wantsCards?: boolean;
+    includeUxMetadata?: boolean;
+    supportsCardTool?: boolean;
+    supportsSkillTool?: boolean;
+    supportsMemoryTool?: boolean;
+    supportsWorkflowTool?: boolean;
+    supportsPolicyTool?: boolean;
+    supportsSourceConfigTool?: boolean;
+    supportsClarificationTool?: boolean;
+    supportsNativeDelegation?: boolean;
+    installedSkills?: Array<{ name: string; description: string }>;
+    pluginActions?: Array<{
+      kind: string;
+      description: string;
+      scope?: "external" | "internal";
+      default_mode?: "auto" | "ask" | "deny";
+    }>;
+    graphjinDataPath?: "direct" | "agent";
+  } = {},
+): string {
+  return buildWorkPrompt({
+    backend,
+    workspace,
+    knowledge,
+    messages: [],
+    currentUserMessage: "test",
+    wantsCards: overrides.wantsCards ?? true,
+    includeUxMetadata: overrides.includeUxMetadata,
+    supportsCardTool: overrides.supportsCardTool ?? false,
+    supportsSkillTool: overrides.supportsSkillTool ?? false,
+    supportsMemoryTool: overrides.supportsMemoryTool ?? false,
+    supportsWorkflowTool: overrides.supportsWorkflowTool ?? false,
+    supportsPolicyTool: overrides.supportsPolicyTool ?? false,
+    supportsSourceConfigTool: overrides.supportsSourceConfigTool ?? false,
+    supportsClarificationTool: overrides.supportsClarificationTool ?? false,
+    supportsNativeDelegation: overrides.supportsNativeDelegation ?? true,
+    installedSkills: overrides.installedSkills,
+    pluginActions: overrides.pluginActions,
+    ...(overrides.graphjinDataPath ? { graphjinDataPath: overrides.graphjinDataPath } : {}),
+    inlineTranscript: false,
+  });
+}
+
+describe("buildWorkPrompt UX metadata", () => {
+  it("omits only the UX closing instructions for efficacy evals", () => {
+    const production = build("ax");
+    expect(production).toContain(VALUE_ESTIMATE_INSTRUCTIONS);
+    const evaluation = build("ax", { includeUxMetadata: false });
+    for (const block of ["neko_value", "neko_vitals", "neko_followups"]) {
+      expect(production).toContain(block);
+      expect(evaluation).not.toContain(block);
+    }
+    expect(evaluation).toBe(production.replace(/\n\n<closing>[\s\S]*?<\/closing>/, ""));
+  });
+});
+
+describe("buildWorkPrompt GraphJin agent path", () => {
+  it("describes only GraphJin's agent for data, including workflow triggers", () => {
+    const agent = build("ax", { graphjinDataPath: "agent", supportsWorkflowTool: true });
+    expect(agent).toContain("`mcp_neko_graphjin_agent_ask`");
+    expect(agent).not.toMatch(/mcp_neko_graphjin_(execute_graphql|query_catalog|validate_where_clause)/);
+    expect(agent).not.toContain(knowledge.syntax);
+    expect(agent).toContain("- Knowledge:");
+    expect(agent).toContain("Write each instruction as a precise data request.");
+    expect(agent).not.toMatch(/hidden|not available/i);
+  });
+
+  it("keeps the direct path unchanged", () => {
+    const direct = build("ax", { supportsWorkflowTool: true });
+    expect(direct).toBe(build("ax", { graphjinDataPath: "direct", supportsWorkflowTool: true }));
+    expect(direct).toContain("`mcp_neko_graphjin_execute_graphql`");
+    expect(direct).toContain("`mcp_neko_graphjin_query_catalog`");
+    expect(direct).not.toContain("mcp_neko_graphjin_agent_ask");
+  });
+});
+
+describe("buildWorkPrompt attachments guidance", () => {
+  it("tells the agent how to read uploads and which path shape to expect", () => {
+    const prompt = build("ax");
+    expect(prompt).toContain("<attachments>");
+    expect(prompt).toContain("uploads/<threadId>/<filename>");
+    expect(prompt).toContain("a text\nfile with your file tools");
+    // Path is relative to cwd, which is orgRoot.
+    expect(prompt).toContain(workspace.orgRoot);
+  });
+
+  it("reads documents and spreadsheets through the Library", () => {
+    const prompt = build("ax");
+    expect(prompt).toContain("<attachments>");
+    expect(prompt).toContain("`mcp_neko_library_search`");
+    expect(prompt).not.toContain("`terminal`");
+    expect(prompt).not.toContain("Python 3");
+  });
+
+  it("no longer dismisses uploaded files as 'auxiliary'", () => {
+    const prompt = build("ax");
+    // The old wording told the model uploaded files were auxiliary, which it
+    // routinely took as permission to ignore them. The new framing must
+    // explicitly say to read them.
+    expect(prompt).not.toMatch(/Uploaded files are auxiliary/);
+    expect(prompt).toMatch(/read the file/i);
+  });
+});
+
+describe("buildWorkPrompt clarification contract", () => {
+  it("tells an interactive agent to clarify material uncertainty and stop", () => {
+    const prompt = build("ax", { supportsClarificationTool: true });
+    expect(prompt).toContain("<clarification>");
+    expect(prompt).toContain("mcp_neko_interaction_ask_user_question");
+    expect(prompt).toContain("FINAL action of the turn");
+    expect(prompt).toContain("material to correctness, scope, cost");
+    expect(prompt).toMatch(/state\s+the limitation and continue/);
+    expect(prompt).toContain("never permits invented sources");
+    expect(prompt).toContain("clarification-tool call is the end");
+  });
+
+  it("publishes only run artifacts as downloads", () => {
+    const prompt = build("ax", { supportsClarificationTool: true });
+    expect(prompt).toContain("published as downloadable artifacts");
+    expect(prompt).toContain("download boundary rejects every file");
+    expect(prompt).toContain("uploads, skills, memory, knowledge");
+  });
+});
+
+describe("buildWorkPrompt conversation contract", () => {
+  it("keeps prose conversational without prompting the model for progress", () => {
+    const prompt = build("ax", {
+      wantsCards: true,
+      supportsCardTool: true,
+    });
+    expect(prompt).toContain("ongoing working conversation");
+    expect(prompt).toContain("The cards hold the figures; your sentences interpret");
+    expect(prompt).toContain("state the answer itself in\none or two plain sentences");
+    expect(prompt).not.toMatch(/emit (?:an )?(?:interim|progress) update/i);
+    expect(prompt).not.toMatch(/before (?:each|every) tool/i);
+  });
+});
+
+describe("buildWorkPrompt skill catalog", () => {
+  it("uses typed mention metadata to distinguish skills from workflows", () => {
+    const prompt = build("ax", {
+      supportsWorkflowTool: true,
+    });
+
+    expect(prompt).toContain("<selected_mentions>");
+    expect(prompt).toContain("::neko-work-mentions::");
+    expect(prompt).toContain('kind:\"skill\"');
+    expect(prompt).toContain('kind:\"workflow\"');
+    expect(prompt).toContain("explicit kind and id win");
+    expect(prompt).toContain(`${workspace.skillsRoot}/<name>/SKILL.md`);
+    expect(prompt).toContain("::neko-workflow-mentions::");
+    expect(prompt).toContain("Never quote, summarize, or echo");
+  });
+});
+
+describe("buildWorkPrompt action scopes", () => {
+  it("teaches fence-based agents the fixed scope for internal and plugin actions", () => {
+    const prompt = build("ax", {
+      pluginActions: [
+        {
+          kind: "user_admin",
+          description: "Invite or change a user.",
+          scope: "internal",
+          default_mode: "ask",
+        },
+        {
+          kind: "send_slack_dm",
+          description: "Send a Slack direct message.",
+          default_mode: "ask",
+        },
+      ],
+    });
+
+    expect(prompt).toContain("`user_admin` (scope:internal; mode:ask)");
+    expect(prompt).toContain("`send_slack_dm` (scope:external; mode:ask)");
+    expect(prompt).toContain(
+      '"scope": "<the exact scope shown for the selected kind>"',
+    );
+    expect(prompt).toMatch(/Never relabel an internal action as\s+external/);
+  });
+});
+
+describe("per-channel rendering gate", () => {
+  it("renders via the render_cards tool on web turns (wantsCards)", () => {
+    const cardTool = build("ax", { wantsCards: true, supportsCardTool: true });
+    expect(cardTool).toContain("<cards>");
+    expect(cardTool).toContain("mcp__neko__ui_render_cards");
+    expect(cardTool).not.toContain("mcp_neko_ui_render_cards");
+    expect(cardTool).toContain('Three or more time periods: a table of the periods with chart "line"');
+    expect(cardTool).toContain('A breakdown by category: a table with chart "bar"');
+    expect(cardTool).toContain('{"title": "Website sessions by month", "table": "Month | Sessions\\nMarch | 39800');
+    expect(cardTool).toContain("add a watch callout");
+    expect(cardTool).not.toMatch(/A2UI|createSurface|surfaceId|envelope/);
+    expect(cardTool).not.toContain("BriefingCard");
+
+    const cardFallback = build("ax", { wantsCards: true, supportsCardTool: false });
+    expect(cardFallback).toContain("<cards>");
+    expect(cardFallback).toContain("render_cards");
+    // The web-UI-coupled fence is gone from the prompt entirely.
+    expect(cardFallback).not.toContain("neko_a2ui");
+  });
+
+  it("omits all rendering vocabulary on non-web turns", () => {
+    const prompt = build("ax", { wantsCards: false, supportsCardTool: true });
+    expect(prompt).not.toContain("<cards>");
+    expect(prompt).not.toContain("neko_a2ui");
+    expect(prompt).not.toContain("render_cards");
+  });
+});
+
+describe("tool-result grounding", () => {
+  it("forbids unsupported figures and failed sources in prose, cards, and vitals", () => {
+    const prompt = build("ax", {
+      wantsCards: true,
+      supportsCardTool: true,
+    });
+
+    expect(prompt).toContain("A failed source is unavailable");
+    expect(prompt).toContain("Never invent per-day, per-period, or per-entity values");
+    expect(prompt).toContain("Preserve the source's actual granularity");
+    expect(prompt).toContain("Two daily rows plus a five-day aggregate is not a seven-day forecast");
+    expect(prompt).toContain("use an");
+    expect(prompt).toContain("available fetch or detail action");
+    expect(prompt).toContain("state the exact");
+    expect(prompt).toContain("coverage obtained");
+    expect(prompt).toContain("Every claim and figure in the cards comes from a successful tool result");
+    expect(prompt).toContain("Report a failed tool call as an error.");
+    expect(prompt).toContain("Omit unsupported numbers");
+    expect(prompt).toContain("attribute each claim, figure, or row");
+    expect(prompt).toContain("use a shared source label only when every named");
+    expect(prompt).toContain("displayed rows must reconcile");
+    expect(prompt).toContain("explicitly stated multi-day summaries");
+    expect(prompt).toContain("When a brokered integration can perform a live request, use it.");
+    expect(prompt).toContain("A network denial means live data is unavailable.");
+  });
+});
+
+describe("buildWorkPrompt workflow + policy management", () => {
+  it("advertises workflow tools when supportsWorkflowTool is true", () => {
+    const prompt = build("ax", { supportsWorkflowTool: true });
+    expect(prompt).toContain("mcp_neko_workflow_builder_list_workflows");
+    expect(prompt).toContain("mcp_neko_workflow_builder_create_workflow");
+    // Operators are not developers — should warn against showing cron syntax.
+    expect(prompt).toMatch(/never show them cron syntax/i);
+  });
+
+  it("falls back to the workflow save fence when MCP tools unavailable", () => {
+    const prompt = build("ax", { supportsWorkflowTool: false });
+    expect(prompt).toContain("neko_workflow_save");
+    expect(prompt).not.toContain("mcp_neko_workflow_builder_");
+  });
+
+  it("teaches the data-change trigger in both workflow tool modes", () => {
+    const mcp = build("ax", { supportsWorkflowTool: true });
+    expect(mcp).toContain("triggers.when");
+    expect(mcp).not.toContain("create_subscription");
+    expect(mcp).not.toContain("dry_run");
+
+    const fence = build("ax", { supportsWorkflowTool: false });
+    expect(fence).toContain("triggers.when");
+    // The trigger must not surface as a separate "subscription" tool/fence.
+    expect(fence).not.toContain("neko_subscription");
+    expect(fence).not.toContain("create_subscription");
+  });
+
+  it("advertises rule tools when supportsPolicyTool is true", () => {
+    const prompt = build("ax", { supportsPolicyTool: true });
+    expect(prompt).toContain("mcp_neko_rule_builder_list_rules");
+    expect(prompt).toContain("mcp_neko_rule_builder_save_rule");
+  });
+
+  it("falls back to the rule save fence when MCP tools unavailable", () => {
+    const prompt = build("ax", { supportsPolicyTool: false });
+    expect(prompt).toContain("neko_rule_save");
+    expect(prompt).not.toContain("mcp_neko_rule_builder_");
+  });
+
+  it("advertises GraphJin source-config tools only when enabled", () => {
+    const enabled = build("ax", { supportsSourceConfigTool: true });
+    expect(enabled).toContain("graphjin-config");
+    expect(enabled).toContain(`${workspace.skillsRoot}/graphjin-config/SKILL.md`);
+    expect(enabled).toContain("mcp_neko_source_config_manager_describe_source_graph");
+    expect(enabled).toContain("Call `ask_graphjin_config_agent`");
+    expect(enabled).toContain("Success for a view or explanation");
+    expect(enabled).toContain("source_config_admin");
+    expect(enabled).toContain("call `present_source_form` with the values you already know");
+    expect(enabled).toContain("mcp_neko_source_config_manager_present_source_form");
+    expect(enabled).toContain("imported OpenAPI asset ID");
+    expect(enabled).toContain("managed local-file manifest or object-store bucket");
+    expect(enabled).not.toContain("trusted host");
+    expect(enabled).not.toContain("globally read-only");
+    expect(enabled).not.toContain("outside the sandbox");
+
+    const disabled = build("ax", { supportsSourceConfigTool: false });
+    expect(disabled).not.toContain("mcp_neko_source_config_manager_");
+  });
+
+  it("frames /work as the single chat surface for everything", () => {
+    const prompt = build("ax");
+    expect(prompt).toMatch(/only chat surface/i);
+  });
+});
+
+describe("buildWorkPrompt native delegation guidance", () => {
+  it("gives Ax its worker child instead of delegate_task", () => {
+    const prompt = build("ax");
+    expect(prompt).toContain("<delegation>");
+    expect(prompt).toContain("team.worker({task})");
+    expect(prompt).not.toContain("delegate_task");
+  });
+
+  it("omits native delegation guidance when the run disables it", () => {
+    const prompt = build("ax", { supportsNativeDelegation: false });
+    expect(prompt).not.toContain("<delegation>");
+    expect(prompt).not.toContain("team.worker");
+  });
+});
+
+describe("buildBotSection", () => {
+  it("names the bot and follows its job description", () => {
+    const section = buildBotSection({ name: "Stock watcher", instructions: "Watches stock levels." });
+    expect(section).toContain('"Stock watcher"');
+    expect(section).toContain("Watches stock levels.");
+    expect(section).not.toContain("mcp_neko_bot_");
+  });
+
+  it("says when the bot has no job description yet", () => {
+    expect(buildBotSection({ name: "Test", instructions: "" })).toContain("no job description yet");
+  });
+
+  it("leaves the prompt without a bot section for an ordinary chat", () => {
+    expect(build("ax")).not.toContain("<bot>");
+  });
+});
+
+describe("buildWorkPrompt skills catalog", () => {
+  const installedSkills = [
+    { name: "xlsx", description: "Use this skill any time a spreadsheet file is the primary input or output" },
+    { name: "docx", description: "Create and edit Word documents" },
+  ];
+
+  it("sends Ax to skill search instead of listing every skill", () => {
+    const prompt = build("ax");
+    expect(prompt).toContain("discover({ skills:");
+    expect(prompt).not.toContain("- xlsx —");
+    expect(prompt).not.toContain("Create and edit Word documents");
+  });
+});
+
+describe("cards in the final answer", () => {
+  it("tells only the Ax responder to write a neko_cards fence", () => {
+    expect(buildCardsSection(true, true, true)).toContain("```neko_cards");
+    expect(buildCardsSection(true, true)).not.toContain("neko_cards");
+  });
+
+  it("keeps the org-wide prefix identical across users, threads, runs and messages", () => {
+    const turn = (n: number) =>
+      buildWorkPrompt({
+        backend: "ax",
+        workspace: { ...workspace, threadUploadsRoot: `/tmp/org/uploads/t${n}`, runRoot: `/tmp/org/runs/r${n}`, artifactRoot: `/tmp/org/runs/r${n}/artifacts` },
+        knowledge,
+        messages: n === 1 ? [] : [{ id: "m1", role: "user", content: "earlier", runId: "r1" }],
+        currentUserMessage: `question ${n}`,
+        memoryContext: `- memory for question ${n}`,
+        operatorProfile: `<operator-profile>\nYou are working for user ${n}.\n</operator-profile>`,
+        bot: { name: `bot ${n}`, instructions: "Watch stock." },
+        wantsCards: true,
+        supportsCardTool: true,
+        supportsSkillTool: true,
+        supportsMemoryTool: true,
+        supportsWorkflowTool: true,
+        supportsPolicyTool: true,
+        supportsSourceConfigTool: false,
+        supportsClarificationTool: true,
+        supportsNativeDelegation: true,
+        inlineTranscript: true,
+      });
+    const [first, second] = [turn(1), turn(2)];
+    const stable = first.slice(0, first.indexOf("</closing>") + "</closing>".length);
+    expect(second.startsWith(stable)).toBe(true);
+    expect(stable).toContain("<conduct>");
+    for (const volatile of ["<operator-profile>", "<bot>", "<workspace>", "<long_term_memory>", "<conversation_so_far>"]) {
+      expect(stable).not.toContain(volatile);
+      expect(first.indexOf(volatile)).toBeGreaterThan(stable.length);
+    }
+    expect(first.indexOf("<workspace>")).toBeLessThan(first.indexOf("<long_term_memory>"));
+    expect(first.indexOf("<long_term_memory>")).toBeLessThan(first.indexOf("<conversation_so_far>"));
+    expect(splitStablePrompt(first).stable).toBe(stable);
+    expect(splitStablePrompt(second).stable).toBe(stable);
+    expect(splitStablePrompt(second).turn).toMatch(/^<operator-profile>\nYou are working for user 2\./);
+    expect(splitStablePrompt(second).turn).toContain("question 2");
+  });
+});

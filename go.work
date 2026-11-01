@@ -1,7 +1,12 @@
 go 1.26.10
 
+// One Go workspace for GraphJin's modules and the OpenNeko apps, so every
+// shared dependency resolves to one version.
 use (
 	./agent
+	./apps/ax-harness
+	./apps/lazy-service
+	./apps/openneko
 	./auth
 	./cassandradriver
 	./clickhousedriver
@@ -13,6 +18,7 @@ use (
 	./examples/pcb-fab/mockapi
 	./hostedemu
 	./mongodriver
+	./packages/graphjin-contract/generate
 	./plugin/otel
 	./serv
 	./tests

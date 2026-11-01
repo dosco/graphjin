@@ -1,0 +1,9 @@
+{
+  "neko-web": 225,
+  "neko-worker": 270,
+  "neko-cli": 10,
+  "neko-db": 165,
+  "agent": 800,
+  "uniqueStack": 3250,
+  "neko-embedding": 1000
+}

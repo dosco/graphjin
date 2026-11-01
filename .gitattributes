@@ -1,0 +1,2 @@
+# Force text diffs for .ts files that embed NUL bytes (e.g. audit-chain's hash delimiters).
+*.ts diff

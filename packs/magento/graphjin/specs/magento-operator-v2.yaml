@@ -1,0 +1,403 @@
+openapi: 3.0.3
+info:
+  title: Magento governed store-management API
+  version: 2.0.0
+  description: >-
+    Reviewed Magento store-management surface. Money-out, return approval,
+    financial configuration, admin-user, ACL, and integration endpoints are
+    intentionally absent.
+servers:
+  - url: "{{magento.base_url}}"
+security:
+  - integrationToken: []
+paths:
+  /rest/{storeCode}/V1/products:
+    get:
+      operationId: magentoSearchProducts
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+    post:
+      operationId: magentoCreateProduct
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+  /rest/{storeCode}/V1/products/{sku}:
+    get:
+      operationId: magentoGetProduct
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/Sku" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+    put:
+      operationId: magentoUpdateProduct
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/Sku" }
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+    delete:
+      operationId: magentoDeleteProduct
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/Sku" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/async/bulk/V1/products/bySku:
+    put:
+      operationId: magentoBulkUpdateProducts
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 500
+              items: { $ref: "#/components/schemas/FreeForm" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "202": { $ref: "#/components/responses/Object" }
+  /rest/{storeCode}/V1/products/base-prices:
+    post:
+      operationId: magentoSetBasePrices
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/products/special-price:
+    post:
+      operationId: magentoSetSpecialPrices
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/products/special-price-delete:
+    post:
+      operationId: magentoDeleteSpecialPrices
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/products/tier-prices:
+    post:
+      operationId: magentoSetTierPrices
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/products/tier-prices-delete:
+    post:
+      operationId: magentoDeleteTierPrices
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/categories:
+    get:
+      operationId: magentoGetCategoryTree
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+    post:
+      operationId: magentoCreateCategory
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+  /rest/{storeCode}/V1/categories/{id}:
+    get:
+      operationId: magentoGetCategory
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/Id" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+    put:
+      operationId: magentoUpdateCategory
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/Id" }
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+    delete:
+      operationId: magentoDeleteCategory
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/Id" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/categories/{categoryId}/move:
+    put:
+      operationId: magentoMoveCategory
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/CategoryId" }
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/categories/{categoryId}/products:
+    post:
+      operationId: magentoAssignCategoryProduct
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/CategoryId" }
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+    put:
+      operationId: magentoReplaceCategoryProducts
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/CategoryId" }
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/inventory/source-items:
+    get:
+      operationId: magentoSearchSourceItems
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+    post:
+      operationId: magentoSaveSourceItems
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/inventory/source-items-delete:
+    post:
+      operationId: magentoDeleteSourceItems
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/orders/{id}:
+    get:
+      operationId: magentoGetOrderV2
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/Id" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+  /rest/{storeCode}/V1/orders:
+    post:
+      operationId: magentoUpdateOrder
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+  /rest/{storeCode}/V1/orders/{id}/comments:
+    post:
+      operationId: magentoAddOrderComment
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/Id" }
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/orders/{id}/hold:
+    post:
+      operationId: magentoHoldOrder
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/Id" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/orders/{id}/unhold:
+    post:
+      operationId: magentoUnholdOrder
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/Id" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/orders/{id}/cancel:
+    post:
+      operationId: magentoCancelOrder
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/Id" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/order/{orderId}/ship:
+    post:
+      operationId: magentoCreateShipment
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/OrderId" }
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Integer" } }
+  /rest/{storeCode}/V1/order/{orderId}/invoice:
+    post:
+      operationId: magentoCreateInvoice
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/OrderId" }
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Integer" } }
+  /rest/{storeCode}/V1/salesRules:
+    post:
+      operationId: magentoCreateSalesRule
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+  /rest/{storeCode}/V1/salesRules/{ruleId}:
+    get:
+      operationId: magentoGetSalesRule
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/RuleId" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+    put:
+      operationId: magentoUpdateSalesRule
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/RuleId" }
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+    delete:
+      operationId: magentoDeleteSalesRule
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/RuleId" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/coupons/generate:
+    post:
+      operationId: magentoGenerateCoupons
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+  /rest/{storeCode}/V1/cmsPage:
+    post:
+      operationId: magentoCreateCmsPage
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+  /rest/{storeCode}/V1/cmsPage/{pageId}:
+    get:
+      operationId: magentoGetCmsPage
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/PageId" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+    put:
+      operationId: magentoUpdateCmsPage
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/PageId" }
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+    delete:
+      operationId: magentoDeleteCmsPage
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/PageId" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/cmsBlock:
+    post:
+      operationId: magentoCreateCmsBlock
+      parameters: [{ $ref: "#/components/parameters/StoreCode" }]
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+  /rest/{storeCode}/V1/cmsBlock/{blockId}:
+    get:
+      operationId: magentoGetCmsBlock
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/BlockId" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+    put:
+      operationId: magentoUpdateCmsBlock
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/BlockId" }
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+    delete:
+      operationId: magentoDeleteCmsBlock
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/BlockId" }
+      responses: { "200": { $ref: "#/components/responses/Boolean" } }
+  /rest/{storeCode}/V1/customers/{customerId}:
+    get:
+      operationId: magentoGetCustomer
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/CustomerId" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+    put:
+      operationId: magentoUpdateCustomer
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - { $ref: "#/components/parameters/CustomerId" }
+      requestBody: { $ref: "#/components/requestBodies/Object" }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+  /rest/{storeCode}/V1/bulk/{bulkUuid}/status:
+    get:
+      operationId: magentoGetBulkStatus
+      parameters:
+        - { $ref: "#/components/parameters/StoreCode" }
+        - name: bulkUuid
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 100 }
+      responses: { "200": { $ref: "#/components/responses/Object" } }
+components:
+  securitySchemes:
+    integrationToken:
+      type: http
+      scheme: bearer
+      bearerFormat: Magento integration token
+  parameters:
+    StoreCode:
+      name: storeCode
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9_]+$" }
+    Sku:
+      name: sku
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 255 }
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    CategoryId:
+      name: categoryId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    RuleId:
+      name: ruleId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    PageId:
+      name: pageId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    BlockId:
+      name: blockId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    CustomerId:
+      name: customerId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+  schemas:
+    FreeForm:
+      type: object
+      additionalProperties: true
+  requestBodies:
+    Object:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/FreeForm" }
+  responses:
+    Object:
+      description: Magento object response
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/FreeForm" }
+    Boolean:
+      description: Magento boolean response
+      content:
+        application/json:
+          schema: { type: boolean }
+    Integer:
+      description: Magento integer identifier response
+      content:
+        application/json:
+          schema: { type: integer, format: int64 }

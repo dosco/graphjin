@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "/Users/amit/Projects/Open-Neko/OpenNeko/apps/web/briefing-command-deck-prototype.html"
+        ],
+        "createdAt": "2026-09-10T09:47:59.359Z",
+        "reason": "DESIGN.md: the 4px --mood-color severity stripe is the sanctioned briefing signature (Shapes + The Mood Rule)"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "/Users/amit/Projects/Open-Neko/OpenNeko/apps/web/briefing-command-deck-prototype.html"
+        ],
+        "createdAt": "2026-09-10T09:47:59.374Z",
+        "reason": "intentional full-bleed sweep line at the strip's top edge; command content is inset via clamp(20-30px) padding"
+      }
+    ]
+  }
+}

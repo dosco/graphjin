@@ -1,0 +1,15 @@
+key: workflow.cron_indexer_health
+targetRef: magento.workflow.cron_indexer_health
+name: Magento cron and indexer health review
+description: Diagnose failed cron jobs, stuck schedules, and unhealthy indexers.
+enabled: true
+status: active
+goal: >-
+  Use the magento-diagnose-platform-health skill and the cron/indexer health
+  saved queries to summarize failures, oldest stuck work, and affected
+  indexers. Recommend bounded next checks; do not run reindexing, cron,
+  restarts, or process termination.
+schedule: null
+outputContract:
+  kind: recommendation
+  required: [title, body, mood, evidence]

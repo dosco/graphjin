@@ -1,0 +1,45 @@
+key: action.manage_inventory
+targetRef: magento.manage_inventory
+kind: magento.manage_inventory
+description: Correct Magento MSI source quantities and status with reservation-aware previews.
+domain: inventory
+readiness:
+  capability: operator
+  domain: inventory
+  unavailableReasons: [graphjin_version_unsupported, integration_token_missing, integration_token_invalid, acl_missing, bulk_consumers_not_running]
+inputSchema:
+  type: object
+  additionalProperties: false
+  required: [operation, scope, rows, idempotency_key]
+  properties:
+    operation: { type: string, enum: [source_items_save, source_items_delete] }
+    scope: { type: object }
+    rows: { type: array, minItems: 1, maxItems: 500 }
+    idempotency_key: { type: string, minLength: 8, maxLength: 200 }
+adapter:
+  kind: magento_changeset
+  source: magento_operator
+  spec: magento-operator-v2
+  ambiguousOutcome: reconcile_required
+  retry: never
+  operations:
+    source_items_save:
+      operationId: magentoSaveSourceItems
+      mutationRoot: magento_operator_v2_magento_save_source_items
+      readPath: /V1/inventory/source-items
+      defaultClass: 2
+      entityType: source_item
+      reversible: true
+      bodyKey: sourceItems
+      inverseOperation: source_items_save
+      entityIdField: sku
+    source_items_delete:
+      operationId: magentoDeleteSourceItems
+      mutationRoot: magento_operator_v2_magento_delete_source_items
+      readPath: /V1/inventory/source-items
+      defaultClass: 1
+      entityType: source_item
+      reversible: true
+      bodyKey: sourceItems
+      inverseOperation: source_items_save
+      entityIdField: sku

@@ -1,0 +1,17 @@
+key: workflow.customer_service_order_summary
+targetRef: magento.workflow.customer_service_order_summary
+name: Magento customer-service order summary
+description: Produce an order lifecycle summary for a supplied order ID.
+enabled: true
+status: active
+goal: >-
+  Use the magento-investigate-order skill. Given an order ID, reconstruct state,
+  invoices, shipments, credit memos, and status history. Include customer,
+  contact, address, and operational payment fields when the request needs them.
+  Never return credentials, account-recovery tokens, guest-order protect codes,
+  encrypted payment numbers, or raw gateway payloads. Any proposed private
+  comment must use the governed action and require approval.
+schedule: null
+outputContract:
+  kind: note
+  required: [title, body, evidence]

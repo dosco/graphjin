@@ -1,0 +1,22 @@
+{
+  "name": "@neko/secret-crypt",
+  "version": "1.19.1",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "The enc:v1 at-rest cipher (AES-256-GCM keyed from ~/.config/openneko/secret-key). Canonical TS implementation; apps/openneko/internal/secrets/crypt.go is the Go mirror, pinned together by the cross-language fixture test.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5",
+    "vitest": "^2.1.8"
+  }
+}

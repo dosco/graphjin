@@ -1,0 +1,31 @@
+{
+  "name": "@neko/telemetry",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node.ts",
+    "./startup": "./src/startup.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-proto": "^0.221.0",
+    "@opentelemetry/resources": "^2.4.0",
+    "@opentelemetry/sdk-trace-base": "^2.4.0",
+    "@opentelemetry/sdk-trace-node": "^2.4.0",
+    "@opentelemetry/semantic-conventions": "^1.38.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,33 @@
+key: action.google_workspace_gmail
+targetRef: google_workspace.gmail
+kind: google_workspace.gmail
+description: Create Gmail drafts, send messages, and manage labels through Google REST APIs.
+readiness:
+  capability: operator
+  unavailableReasons: [oauth_not_connected, graphjin_restart_required]
+inputSchema:
+  type: object
+  additionalProperties: false
+  required: [operation]
+  properties:
+    operation: { type: string, enum: [create_draft, send_message, modify_message_labels, create_label, update_label, delete_label] }
+    path: { type: object }
+    query: { type: object }
+    body: { type: object }
+example:
+  operation: create_draft
+  path: { userId: me }
+  body: { message: { raw: BASE64URL_RFC2822_MESSAGE } }
+adapter:
+  kind: graphjin_api_operation
+  source: google_workspace_gmail
+  spec: gmail
+  operations:
+    create_draft: { operationId: createDraft, mutationRoot: gws_gmail_create_draft, reversible: false }
+    send_message: { operationId: sendMessage, mutationRoot: gws_gmail_send_message, reversible: false }
+    modify_message_labels: { operationId: modifyMessageLabels, mutationRoot: gws_gmail_modify_message_labels, reversible: false }
+    create_label: { operationId: createLabel, mutationRoot: gws_gmail_create_label, reversible: false }
+    update_label: { operationId: updateLabel, mutationRoot: gws_gmail_update_label, reversible: false }
+    delete_label: { operationId: deleteLabel, mutationRoot: gws_gmail_delete_label, reversible: false }
+  ambiguousOutcome: reconcile_required
+  retry: never

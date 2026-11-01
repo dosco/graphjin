@@ -1,0 +1,23 @@
+key: workflow.security_advisory_check
+targetRef: magento.workflow.security_advisory_check
+name: Magento security advisory check
+description: Check Magento or Adobe Commerce against Adobe security bulletins.
+enabled: true
+status: active
+goal: >-
+  Use the magento-security-advisories skill to fetch Adobe's Magento security
+  bulletin index, compare the verified installed Magento or Adobe Commerce
+  patch level with applicable bulletins, and report critical or otherwise
+  applicable findings with Adobe remediation links. Keep this run read-only.
+  If the installed version or Adobe source cannot be verified, report
+  unknown rather than guessing.
+schedule:
+  cron: "0 6 * * *"
+  timezoneInput: UTC
+  enabled: true
+networkHosts:
+  - helpx.adobe.com
+  - experienceleague.adobe.com
+outputContract:
+  kind: finding
+  required: [title, body, mood, evidence]

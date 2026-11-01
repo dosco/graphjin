@@ -1,0 +1,14 @@
+key: policy.resend_governed_send
+targetRef: resend.policy.governed_send
+name: Resend governed send
+description: Every email needs administrator approval. To refuse some recipients outright, add their domains to denied targets.
+appliesToKinds: [resend.email]
+appliesToScopes: [external]
+mode: ask
+approverRole: admin
+priority: 10
+enabled: true
+allowedTargets: {}
+limits:
+  retry: never
+  requireCompletePayload: true

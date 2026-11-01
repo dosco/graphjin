@@ -1,0 +1,247 @@
+.answer-map {
+  min-width: 0;
+  margin: 0;
+  padding: 14px 0 10px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.work-surface > .answer-map {
+  margin-top: 14px;
+}
+
+.answer-map-canvas {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-inner);
+  background: var(--neutral-soft);
+}
+
+.answer-map-canvas.is-tiles {
+  height: 360px;
+  border: 1px solid var(--border);
+  background: var(--neutral-soft);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--card) 70%, transparent);
+  isolation: isolate;
+}
+
+.answer-map-canvas.is-tiles .answer-map-gl {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.answer-map-canvas.is-tiles[data-ready] .answer-map-gl {
+  opacity: 1;
+}
+
+.answer-map-loading {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--card) 70%, transparent) 50%, transparent 70%) var(--neutral-soft);
+  background-size: 200% 100%;
+  animation: answer-map-shimmer 1.2s linear infinite;
+}
+
+@keyframes answer-map-shimmer {
+  from { background-position: 120% 0; }
+  to { background-position: -80% 0; }
+}
+
+.answer-map-pins {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.answer-map-pin {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: -44px 0 0;
+  padding: 5px 9px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 8%, transparent), 0 6px 18px -8px color-mix(in srgb, var(--text) 25%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--text);
+  font-size: var(--type-caption);
+  line-height: 1.1;
+  white-space: nowrap;
+  translate: -50% 0;
+  animation: answer-map-pin-in 180ms ease both;
+}
+
+.answer-map-pin::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 8px;
+  height: 8px;
+  border-right: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: inherit;
+  backdrop-filter: none;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.answer-map-pin strong {
+  font-weight: 750;
+}
+
+.answer-map-pin > span {
+  color: var(--text2);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.answer-map-pin.is-active {
+  z-index: 1;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--card);
+}
+
+.answer-map-pin.is-active > span {
+  color: var(--accent);
+}
+
+@keyframes answer-map-pin-in {
+  from { opacity: 0; }
+}
+
+.answer-map-canvas.is-tiles .maplibregl-ctrl-group {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  box-shadow: none;
+}
+
+.answer-map-canvas.is-tiles .maplibregl-ctrl-group button {
+  width: 30px;
+  height: 30px;
+}
+
+.answer-map-canvas.is-tiles .maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--card) 80%, transparent);
+  color: var(--text3);
+  font-size: var(--type-label);
+}
+
+.answer-map-canvas.is-tiles .maplibregl-ctrl-attrib a {
+  color: var(--text2);
+}
+
+.answer-map-canvas.is-tiles .maplibregl-cooperative-gesture-screen {
+  font-family: var(--font-body), "Manrope", sans-serif;
+  font-size: var(--type-body-sm);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@media (max-width: 680px) {
+  .answer-map-canvas.is-tiles {
+    height: 280px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .answer-map-gl,
+  .answer-map-loading,
+  .answer-map-pin {
+    transition: none;
+    animation: none;
+  }
+}
+
+.answer-map-unavailable {
+  margin: 4px 0 0;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+  line-height: var(--leading-compact);
+}
+
+.answer-map-rank {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+  column-gap: 24px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.answer-map-rank li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  padding: 7px 0 6px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.answer-map-rank-name {
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  justify-content: flex-start;
+  padding: 0;
+  color: var(--text);
+  font-size: var(--type-body-sm);
+  font-weight: 650;
+  text-align: left;
+  white-space: normal;
+}
+
+.answer-map-rank-value {
+  color: var(--text);
+  font-family: var(--font-display), "Archivo", sans-serif;
+  font-size: var(--type-body-sm);
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
+.answer-map-rank-bar {
+  grid-column: 1 / -1;
+  height: 3px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.answer-map-rank-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--accent) 55%, var(--text3));
+  transform-origin: left center;
+}
+
+.answer-map-rank li.is-active .answer-map-rank-bar > span {
+  background: var(--accent);
+}
+
+@media (max-width: 680px) {
+  .answer-map-rank li {
+    min-height: var(--control-touch);
+  }
+}

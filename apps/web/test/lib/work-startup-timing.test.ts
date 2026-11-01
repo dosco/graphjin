@@ -1,0 +1,24 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { acknowledgeWorkStartup, markWorkStartup } from "@/lib/work-startup-timing";
+afterEach(() => vi.unstubAllGlobals());
+it("reports acknowledgement and first paint opportunity once, ignores resumed runs", () => {
+  const fetch = vi.fn().mockResolvedValue({});
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("fetch", fetch);
+  vi.stubGlobal("document", { visibilityState: "visible" });
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+  markWorkStartup("resumed", "firstEventMs");
+  expect(fetch).not.toHaveBeenCalled();
+  acknowledgeWorkStartup("thread", "run", performance.now());
+  markWorkStartup("run", "streamOpenMs");
+  markWorkStartup("run", "firstEventMs");
+  markWorkStartup("run", "firstOutputMs");
+  markWorkStartup("run", "firstOutputMs");
+  expect(fetch).toHaveBeenCalledTimes(1);
+  frames.shift()!(0); frames.shift()!(0);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  const body = JSON.parse(fetch.mock.calls[1][1].body);
+  expect(body).toMatchObject({ acknowledgementMs: expect.any(Number), streamOpenMs: expect.any(Number), firstEventMs: expect.any(Number), firstOutputMs: expect.any(Number), paintOpportunityMs: expect.any(Number), documentVisible: 1 });
+  markWorkStartup("run", "doneMs");
+  expect(fetch).toHaveBeenCalledTimes(2);
+});

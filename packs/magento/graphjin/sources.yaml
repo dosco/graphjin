@@ -1,0 +1,101 @@
+sources:
+  - key: source.magento_analytics
+    name: magento_analytics
+    kind: database
+    default: true
+    type: "{{database.type}}"
+    host: "{{database.host}}"
+    port: "{{database.port}}"
+    dbname: "{{database.name}}"
+    user: "{{secret.database.analytics_username}}"
+    password: "{{secret.database.analytics_password}}"
+    read_only: true
+    analytics_mode: true
+    capabilities:
+      data.read: true
+      data.write: false
+      schema.read: true
+      schema.write: false
+    access:
+      read: authenticated
+      write: blocked
+      delete: blocked
+    allowlist:
+      tables:
+        - sales_order
+        - sales_order_item
+        - sales_order_address
+        - sales_order_status_history
+        - sales_order_payment
+        - sales_invoice
+        - sales_invoice_item
+        - sales_creditmemo
+        - sales_creditmemo_item
+        - sales_shipment
+        - sales_shipment_item
+        - customer_entity
+        - customer_address_entity
+        - eav_attribute
+        - catalog_product_entity
+        - catalog_product_entity_decimal
+        - catalog_product_entity_int
+        - catalog_product_entity_text
+        - catalog_product_entity_varchar
+        - catalog_category_product
+        - inventory_source_item
+        - inventory_reservation
+        - cataloginventory_stock_item
+        - store
+        - store_group
+        - store_website
+        - cron_schedule
+        - indexer_state
+    blocklist:
+      tables:
+        - admin_user
+        - admin_passwords
+        - authorization_role
+        - authorization_rule
+        - oauth_token
+        - oauth_consumer
+        - password_reset_request_event
+        - quote_payment
+        - vault_payment_token
+      columns:
+        - password_hash
+        - rp_token
+        - rp_token_created_at
+        - confirmation
+        - token
+        - protect_code
+        - cc_number_enc
+        - cc_secure_verify
+        - cc_debug_request_body
+        - cc_debug_response_body
+        - cc_debug_response_serialized
+        - echeck_routing_number
+
+  # This source is installed unconditionally; runtime configuration blocks it
+  # unless pack readiness validates the Integration token and domain ACL.
+  - key: source.magento_operator
+    name: magento_operator
+    kind: api
+    default: false
+    base_url: "{{magento.base_url}}"
+    openapi: graphjin/specs/magento-operator-v2.yaml
+    auth:
+      type: bearer
+      token: "{{secret.magento.integration_token}}"
+    read_only: false
+    capabilities:
+      api.read: true
+      api.write: true
+      api.delete: true
+    access:
+      read: authenticated
+      write: authenticated
+      delete: authenticated
+    readiness:
+      capability: operator
+      enable_when: [graphjin-mutations, magento-api-token, magento-api-acl]
+      write_roles: [magento_ops_executor, magento_sensitive_executor]

@@ -1,0 +1,258 @@
+# Demo overlay: AdventureWorks trial bundle. Spins up a second Postgres for
+# the AdventureWorks dataset, the one-shot CSV loader, the data-source
+# GraphJin over the AdventureWorks data, a config-
+# init step that seeds graphjin's dev.yml from the baked worker image, and
+# the neko-side seed step that wires demo workflows into the operator's
+# neko-db. Image-pinned variants of the services in compose.adventureworks.yml.
+services:
+  adventureworks-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${CUSTOMER_PGUSER:-postgres}
+      POSTGRES_PASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
+      POSTGRES_DB: ${ADVENTUREWORKS_DB:-adventureworks}
+    volumes:
+      - adventureworks-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CUSTOMER_PGUSER:-postgres} -d ${ADVENTUREWORKS_DB:-adventureworks}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  adventureworks-init:
+    # Uses the worker image with the baked AdventureWorks loader
+    # (db/load-adventureworks-baked.sh + apps/worker/scripts/load-adventureworks.ts).
+    # No separate image needed — the worker image already has node, tsx,
+    # pg, curl, unzip, and postgresql-client.
+    image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
+    depends_on:
+      adventureworks-db:
+        condition: service_healthy
+    environment:
+      PGHOST: adventureworks-db
+      PGPORT: 5432
+      PGUSER: ${CUSTOMER_PGUSER:-postgres}
+      PGPASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
+      ADVENTUREWORKS_DB: ${ADVENTUREWORKS_DB:-adventureworks}
+      ADVENTUREWORKS_CACHE_DIR: /cache
+    entrypoint: ["/bin/sh", "/app/db/load-adventureworks-baked.sh"]
+    volumes:
+      - adventureworks-cache:/cache
+    restart: "no"
+
+  graphjin-config-init:
+    # Uses the worker image because it already has db/graphjin/dev.example.yml
+    # baked in. Source compose uses alpine + bind-mount of the repo's yml;
+    # for binary distribution we use the worker image instead so no host
+    # path is needed.
+    image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
+    user: "0:0"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ ! -f /config/agentic.yml ]; then
+          # Sources (agentic) mode is the default. The per-org JWT secret
+          # placeholder is substituted by the graphjin-secret-init one-shot
+          # (which creates the org row if needed) before GraphJin starts;
+          # the worker re-verifies at boot. The keystore key must be real
+          # at boot, so generate it here once.
+          cp /app/db/graphjin/dev.sources.example.yml /config/agentic.yml
+          KEY=$(node -e 'console.log(require("crypto").randomBytes(32).toString("base64"))')
+          sed -i "s|REPLACE_WITH_BASE64_32_BYTE_KEY|$$KEY|" /config/agentic.yml
+        fi
+        # This overlay replaces the core initializer, so it must preserve the
+        # compatibility repair for existing volumes and older released images.
+        chown -R 1001:999 /config 2>/dev/null || true
+        find /config -type d -exec chmod 0700 {} +
+        find /config -type f -exec chmod 0600 {} +
+    volumes:
+      - graphjin-config:/config
+    restart: "no"
+
+  # The demo keeps its GraphJin config on the dedicated graphjin-config
+  # volume; point the secret one-shot's /config/graphjin mount there
+  # (Compose replaces the core mount for the same container path). Running
+  # after the seed keeps the demo's 'adventureworks' org the first (and
+  # only) org row, so the derived secret matches the org the demo uses.
+  graphjin-secret-init:
+    depends_on:
+      neko-adventureworks-seed:
+        condition: service_completed_successfully
+    volumes:
+      - graphjin-config:/config/graphjin
+
+  openneko-serve:
+    # Data-source GraphJin over the AdventureWorks DB. This is what the
+    # setup wizard's "GraphJin URL" defaults to (http://openneko-serve:8080).
+    # The same process serves workflow subscriptions from neko-db on :8089.
+    restart: unless-stopped
+    depends_on:
+      adventureworks-init:
+        condition: service_completed_successfully
+      graphjin-config-init:
+        condition: service_completed_successfully
+    expose:
+      - "8080"
+    environment:
+      GO_ENV: agentic
+      # OpenNeko writes the agent block when the admin turns the agent on.
+      GRAPHJIN_AGENT_API_KEY: ${GRAPHJIN_AGENT_API_KEY:-}
+      # No GJ_DATABASE_* here: in sources mode those are a FATAL boot error
+      # ("database is legacy database-only config") — the connection lives in
+      # the seeded /config/dev.yml. This crash-looped every fresh demo boot.
+      NO_PROXY: localhost,127.0.0.1,::1,adventureworks-db,openneko-serve,graphjin,neko-db,worker,web,host.docker.internal,host.internal
+      no_proxy: localhost,127.0.0.1,::1,adventureworks-db,openneko-serve,graphjin,neko-db,worker,web,host.docker.internal,host.internal
+    volumes:
+      - graphjin-config:/config
+    command: ["serve", "--path", "/config"]
+
+  neko-adventureworks-seed:
+    image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
+    depends_on:
+      # neko-migrate completion guarantees the organization / data_source /
+      # onboarding_wizard / workflow tables this seed writes into exist.
+      neko-migrate:
+        condition: service_completed_successfully
+      adventureworks-init:
+        condition: service_completed_successfully
+      # openneko-config-init repairs the config volume's ownership; reading
+      # config.json / the secret-key before that chown returned EACCES, which
+      # older secret-crypt turned into a destructive key regeneration.
+      openneko-config-init:
+        condition: service_completed_successfully
+    environment:
+      XDG_CONFIG_HOME: /config
+      NEKO_PG_HOST: neko-db
+      NEKO_PG_PORT: "5432"
+      NEKO_PG_USER: neko
+      NEKO_PG_PASSWORD: secret
+      NEKO_PG_DATABASE: neko
+      ADVENTUREWORKS_GRAPHJIN_ROOT: ${ADVENTUREWORKS_GRAPHJIN_ROOT:-http://openneko-serve:8080}
+      # This overlay always starts the JWT-protected sources config below, so
+      # seed the matching mode deterministically instead of relying on a
+      # post-start capability probe to discover it.
+      ADVENTUREWORKS_AUTH_MODE: jwt
+      # Reconcile installs whose demo source was seeded by an older release as
+      # anonymous. This only changes a source labelled AdventureWorks.
+      ADVENTUREWORKS_RECONCILE_AUTH_MODE: "1"
+    volumes:
+      - openneko-config:/config/openneko
+    # --import tsx/esm so the seed's `import("@neko/secret-crypt")` (raw .ts
+    # under node_modules) transpiles; plain node refuses to strip those types.
+    command: ["node", "--import", "tsx/esm", "node_modules/@neko/db/src/seed-adventureworks.mjs"]
+    restart: "no"
+
+  adventureworks-simulator:
+    # Trickles realistic sales orders into the AdventureWorks DB on a
+    # schedule so the workspace reacts during a trial (briefing numbers
+    # drift, cron workflows fire, runs accumulate). Set AW_SIM_ENABLED=0
+    # to disable. Uses the worker image because psql + the tick script
+    # are already baked in at /app/db/seeds/dev/aw-sim-tick.sql; no
+    # bind-mount of repo files needed for the packaged install.
+    image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      adventureworks-init:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: adventureworks-db
+      PGPORT: 5432
+      PGUSER: ${CUSTOMER_PGUSER:-postgres}
+      PGPASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
+      PGDATABASE: ${ADVENTUREWORKS_DB:-adventureworks}
+      AW_SIM_INTERVAL_SEC: ${AW_SIM_INTERVAL_SEC:-600}
+      AW_SIM_ORDERS_MIN: ${AW_SIM_ORDERS_MIN:-3}
+      AW_SIM_ORDERS_MAX: ${AW_SIM_ORDERS_MAX:-10}
+      AW_SIM_ENABLED: ${AW_SIM_ENABLED:-1}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ "$${AW_SIM_ENABLED}" != "1" ]; then
+          echo "[aw-sim] AW_SIM_ENABLED=$${AW_SIM_ENABLED}; sleeping forever"
+          exec tail -f /dev/null
+        fi
+        echo "[aw-sim] starting: interval=$${AW_SIM_INTERVAL_SEC}s, orders=$${AW_SIM_ORDERS_MIN}-$${AW_SIM_ORDERS_MAX} per tick"
+        while true; do
+          ORDERS=$$(awk -v mn=$${AW_SIM_ORDERS_MIN} -v mx=$${AW_SIM_ORDERS_MAX} 'BEGIN{srand(); print int(mn + rand()*(mx-mn+1))}')
+          psql -v ON_ERROR_STOP=1 -c "SET trial_sim.orders_per_tick TO '$$ORDERS'" -f /app/db/seeds/dev/aw-sim-tick.sql \
+            || echo "[aw-sim] tick failed; will retry next interval"
+          sleep "$${AW_SIM_INTERVAL_SEC}"
+        done
+
+  adventureworks-scenario-injector:
+    # L3 scripted-scenario scheduler. On startup: bootstraps trial_sim
+    # schema, then runs advance-dates.sql so demo dates land on or after
+    # CURRENT_DATE (idempotent — gated to once per 12 hours via
+    # trial_sim.state.advance_dates_at). Then loops the scenario
+    # scheduler. Set TRIAL_SIM_ENABLED=0 to disable. Uses the worker
+    # image because all scripts + scenarios + psql are baked at
+    # /app/db/seeds/dev/.
+    image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      adventureworks-init:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: adventureworks-db
+      PGPORT: 5432
+      PGUSER: ${CUSTOMER_PGUSER:-postgres}
+      PGPASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
+      PGDATABASE: ${ADVENTUREWORKS_DB:-adventureworks}
+      TRIAL_SIM_TICK_SEC: ${TRIAL_SIM_TICK_SEC:-300}
+      TRIAL_SIM_ENABLED: ${TRIAL_SIM_ENABLED:-1}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ "$${TRIAL_SIM_ENABLED}" != "1" ]; then
+          echo "[trial-sim] TRIAL_SIM_ENABLED=$${TRIAL_SIM_ENABLED}; sleeping forever"
+          exec tail -f /dev/null
+        fi
+        exec /bin/sh /app/db/seeds/dev/scenario-injector.sh loop
+
+  web:
+    depends_on:
+      openneko-serve:
+        condition: service_started
+      # The worker patches GraphJin's per-org JWT secret during startup. Wait
+      # for its first provisioning pass before serving the demo UI.
+      worker:
+        condition: service_healthy
+    environment:
+      # The packaged demo overrides core's neutral config with its
+      # AdventureWorks source-mode config in a dedicated volume.
+      OPENNEKO_STACK_MODE: demo
+      OPENNEKO_GRAPHJIN_CONFIG: /graphjin-config/agentic.yml
+      # Trial default: route every external action (e.g. send_webhook) to
+      # the mock adapter so bundled workflows can propose Slack alerts
+      # without hitting real endpoints. Flip to "false" once you're past
+      # trial and have wired real webhooks.
+    volumes:
+      - graphjin-config:/graphjin-config
+
+  worker:
+    depends_on:
+      openneko-serve:
+        condition: service_started
+      # Ensure the known JWT mode is present before the worker provisions its
+      # actor-token config. This also repairs anonymous rows from older demos.
+      neko-adventureworks-seed:
+        condition: service_completed_successfully
+    environment:
+      # Sources mode: the worker substitutes the per-org JWT secret into
+      # the seeded GraphJin config at boot (host-provision).
+      OPENNEKO_STACK_MODE: demo
+      OPENNEKO_GRAPHJIN_CONFIG: /graphjin-config/agentic.yml
+    volumes:
+      - graphjin-config:/graphjin-config
+
+volumes:
+  adventureworks-db-data:
+  adventureworks-cache:
+  graphjin-config:

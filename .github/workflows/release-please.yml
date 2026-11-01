@@ -1,0 +1,34 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: Enable auto-merge on release PR
+        if: steps.release.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PRS_JSON: ${{ steps.release.outputs.prs }}
+        run: |
+          PR_NUMBER=$(echo "$PRS_JSON" | jq -r '.[0].number')
+          gh pr merge --auto --squash "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"

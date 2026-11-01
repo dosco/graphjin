@@ -1,0 +1,16 @@
+key: watcher.aged_fulfillment
+targetRef: magento.watcher.aged_fulfillment
+name: Magento aged fulfillment backlog
+description: Fires when paid, unshipped orders exceed the configured SLA.
+workflow: workflow.fulfillment_exceptions
+enabled: false
+activation: admin_confirms_threshold
+query: watch_aged_fulfillment
+valuePath: sales_order.0.count
+operator: gt
+threshold: 0
+cadenceSeconds: 900
+debounceSeconds: 3600
+cooldownSeconds: 14400
+severity: high
+dedupeKey: "aged-fulfillment:{oldest_created_at}"

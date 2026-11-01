@@ -1,0 +1,108 @@
+openapi: 3.0.3
+info:
+  title: Magento governed operator API
+  version: 1.0.0
+  description: Curated Magento operations used by the OpenNeko Magento pack.
+servers:
+  - url: "{{magento.base_url}}"
+security:
+  - integrationToken: []
+paths:
+  /rest/{storeCode}/V1/orders/{id}:
+    get:
+      operationId: magentoGetOrder
+      summary: Read one order for action preconditions and reconciliation
+      x-openneko-purpose: action-precondition
+      parameters:
+        - $ref: "#/components/parameters/StoreCode"
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: Order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /rest/{storeCode}/V1/orders/{id}/comments:
+    post:
+      operationId: magentoAddInternalOrderComment
+      summary: Add a private, non-customer-visible order comment
+      x-graphjin-operation-type: mutation
+      x-graphjin-allowed-roles: [magento_action_executor]
+      x-openneko-action-kind: magento.add_internal_order_comment
+      parameters:
+        - $ref: "#/components/parameters/StoreCode"
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [statusHistory]
+              properties:
+                statusHistory:
+                  $ref: "#/components/schemas/OrderStatusHistory"
+      responses:
+        "200":
+          description: Comment accepted
+          content:
+            application/json:
+              schema: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+components:
+  securitySchemes:
+    integrationToken:
+      type: http
+      scheme: bearer
+      bearerFormat: Magento integration token
+  parameters:
+    StoreCode:
+      name: storeCode
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9_]+$" }
+    OrderId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+  schemas:
+    OrderStatusHistory:
+      type: object
+      additionalProperties: false
+      required: [comment, is_customer_notified, is_visible_on_front]
+      properties:
+        comment: { type: string, minLength: 1, maxLength: 1000 }
+        is_customer_notified: { type: integer, enum: [0] }
+        is_visible_on_front: { type: integer, enum: [0] }
+    OrderStatusHistoryResult:
+      allOf:
+        - $ref: "#/components/schemas/OrderStatusHistory"
+        - type: object
+          properties:
+            entity_id: { type: integer, format: int64 }
+            created_at: { type: string }
+    Order:
+      type: object
+      required: [entity_id, increment_id, status]
+      properties:
+        entity_id: { type: integer, format: int64 }
+        increment_id: { type: string }
+        status: { type: string }
+        state: { type: string }
+        status_histories:
+          type: array
+          items: { $ref: "#/components/schemas/OrderStatusHistoryResult" }
+  responses:
+    BadRequest:
+      description: Invalid request
+    Unauthorized:
+      description: Missing, invalid, or insufficiently privileged integration token
+    NotFound:
+      description: Order not found

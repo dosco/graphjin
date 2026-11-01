@@ -1,0 +1,85 @@
+key: action.manage_orders
+targetRef: magento.manage_orders
+kind: magento.manage_orders
+description: Add private comments, hold or unhold orders, and perform approved order-lifecycle operations.
+domain: orders
+readiness:
+  capability: operator
+  domain: orders
+  unavailableReasons: [graphjin_version_unsupported, integration_token_missing, integration_token_invalid, acl_missing]
+inputSchema:
+  type: object
+  additionalProperties: false
+  required: [operation, scope, rows, idempotency_key]
+  properties:
+    operation: { type: string }
+    scope: { type: object }
+    rows: { type: array, minItems: 1, maxItems: 500 }
+    idempotency_key: { type: string, minLength: 8, maxLength: 200 }
+adapter:
+  kind: magento_changeset
+  source: magento_operator
+  spec: magento-operator-v2
+  ambiguousOutcome: reconcile_required
+  retry: never
+  operations:
+    add_internal_comment:
+      operationId: magentoAddOrderComment
+      mutationRoot: magento_operator_v2_magento_add_order_comment
+      readPath: /V1/orders/{id}
+      defaultClass: 2
+      entityType: order
+      reversible: false
+      numericPathParams: [id]
+    hold:
+      operationId: magentoHoldOrder
+      mutationRoot: magento_operator_v2_magento_hold_order
+      readPath: /V1/orders/{id}
+      defaultClass: 2
+      entityType: order
+      reversible: true
+      inverseOperation: unhold
+      numericPathParams: [id]
+    unhold:
+      operationId: magentoUnholdOrder
+      mutationRoot: magento_operator_v2_magento_unhold_order
+      readPath: /V1/orders/{id}
+      defaultClass: 2
+      entityType: order
+      reversible: true
+      inverseOperation: hold
+      numericPathParams: [id]
+    cancel:
+      operationId: magentoCancelOrder
+      mutationRoot: magento_operator_v2_magento_cancel_order
+      readPath: /V1/orders/{id}
+      defaultClass: 1
+      entityType: order
+      reversible: false
+      numericPathParams: [id]
+    update_order:
+      operationId: magentoUpdateOrder
+      mutationRoot: magento_operator_v2_magento_update_order
+      readPath: /V1/orders/{id}
+      defaultClass: 1
+      entityType: order
+      reversible: true
+      bodyKey: entity
+      inverseOperation: update_order
+      numericPathParams: [id]
+    create_shipment:
+      operationId: magentoCreateShipment
+      mutationRoot: magento_operator_v2_magento_create_shipment
+      readPath: /V1/orders/{orderId}
+      defaultClass: 1
+      entityType: fulfillment
+      reversible: false
+      numericPathParams: [orderId]
+    create_invoice:
+      operationId: magentoCreateInvoice
+      mutationRoot: magento_operator_v2_magento_create_invoice
+      readPath: /V1/orders/{orderId}
+      defaultClass: 1
+      entityType: fulfillment
+      reversible: false
+      numericPathParams: [orderId]

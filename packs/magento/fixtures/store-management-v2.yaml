@@ -1,0 +1,44 @@
+profile: magento-v2-local-acceptance
+description: Non-production scenarios exercised against a running Magento sample store.
+productionSafe: false
+scope:
+  storeCode: default
+scenarios:
+  - id: catalog-single-and-undo
+    action: magento.manage_catalog
+    operation: product_update
+    discover: one-enabled-simple-product
+    change: append-and-remove-a-test-marker-in-short-description
+    expect: [pending_approval, applied, inverse_applied]
+  - id: catalog-bulk-price-and-undo
+    action: magento.manage_catalog
+    operation: product_bulk_update
+    discover: two-enabled-simple-products-with-positive-prices
+    change: increase-price-within-configured-delta-cap
+    expect: [bulk_uuid_recorded, per-row-reconciled, inverse_applied]
+  - id: inventory-correction
+    action: magento.manage_inventory
+    operation: source_items_save
+    discover: one-source-item
+    change: preserve-quantity-and-toggle-through-a-reconciled-change-set
+    expect: [reservation-evidence-recorded, applied]
+  - id: content-and-undo
+    action: magento.manage_content
+    operation: cms_block_update
+    discover: one-active-cms-block
+    change: append-and-remove-a-test-marker
+    expect: [controlled_automation_eligible, applied, inverse_applied]
+  - id: promotion-cap-rejection
+    action: magento.manage_promotions
+    operation: sales_rule_create
+    projectedExposure: 1000000
+    expect: [rejected_before_execution]
+  - id: class-zero-handoff
+    action: magento.financial_handoff
+    handoffKind: online_refund
+    expect: [ready_for_human, no_external_execution]
+  - id: automatic-rule-daily-cap
+    domain: catalog
+    dailyCap: 1
+    cooldownSeconds: 3600
+    expect: [first_applied, second_stopped]

@@ -1,0 +1,323 @@
+name: PR checks
+
+# A pull request runs only the jobs it needs. scripts/ci-affected.mjs reads
+# the changed files and picks the pnpm packages to typecheck, build and test,
+# and the Docker and browser jobs to run. Each package tests in its own job
+# with its own Postgres, in parallel. A manual run with "all" runs everything.
+# graphjin/ has its own workflow, and the Go apps have go.yml and
+# ax-harness.yml.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      all:
+        description: Run every job
+        type: boolean
+        default: true
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.affected.outputs.packages }}
+      design_system: ${{ steps.affected.outputs.design_system }}
+      graphjin_integration: ${{ steps.affected.outputs.graphjin_integration }}
+      embedding_image: ${{ steps.affected.outputs.embedding_image }}
+      lazy_service: ${{ steps.affected.outputs.lazy_service }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Pick jobs from the changed files
+        id: affected
+        env:
+          EVENT: ${{ github.event_name }}
+          RUN_ALL: ${{ inputs.all }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            base="$(git merge-base "$PR_BASE" HEAD)"
+            git diff --name-only "$base" HEAD | node scripts/ci-affected.mjs --base "$base" | tee -a "$GITHUB_OUTPUT"
+          elif [ "$RUN_ALL" = "true" ]; then
+            node scripts/ci-affected.mjs --all | tee -a "$GITHUB_OUTPUT"
+          else
+            base="$(git merge-base origin/main HEAD)"
+            git diff --name-only "$base" HEAD | node scripts/ci-affected.mjs --base "$base" | tee -a "$GITHUB_OUTPUT"
+          fi
+
+  # Fast source checks that run on every pull request.
+  contracts:
+    name: Repository contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify removed agent backends stay removed
+        run: bash scripts/check-removed-backends.sh
+      - name: Verify failed-to-recovered release transitions
+        run: bash scripts/check-release-recovery-contract.sh
+      - name: Verify runtimes and CA bundles carry the eMudhra fixes
+        run: bash scripts/check-trust-floors.sh
+
+  package:
+    name: Package (${{ matrix.package }})
+    needs: plan
+    if: needs.plan.outputs.packages != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.plan.outputs.packages) }}
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: neko
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: neko
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U neko"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NEKO_PG_HOST: localhost
+      NEKO_PG_PORT: "5432"
+      NEKO_PG_USER: neko
+      NEKO_PG_PASSWORD: secret
+      NEKO_PG_DATABASE: neko
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.14.1
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.22.1
+          cache: pnpm
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.work
+          cache-dependency-path: apps/openneko/go.sum
+
+      - name: Install
+        run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
+
+      - name: Install graphjin CLI from graphjin/
+        run: |
+          sh scripts/build-openneko.sh "$RUNNER_TEMP/bin/openneko"
+          ln -s openneko "$RUNNER_TEMP/bin/graphjin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/graphjin" version
+
+      - name: Run migrations
+        working-directory: apps/openneko
+        run: go run ./cmd/openneko migrate
+
+      - name: Verify durable embedding queue
+        if: matrix.package == 'apps/worker'
+        env:
+          PGPASSWORD: secret
+          EMBEDDING_TEST_DATABASE_URL: postgres://neko:secret@127.0.0.1:5432/embedding_jobs_test
+        run: |
+          createdb -h 127.0.0.1 -U neko embedding_jobs_test
+          pnpm --filter @neko/worker exec vitest run test/embedding-jobs.test.ts
+
+      - name: Typecheck
+        run: pnpm --filter "./${{ matrix.package }}" run --if-present typecheck
+
+      - name: Build the package and its workspace dependencies
+        run: pnpm --filter "{./${{ matrix.package }}}..." run --if-present build
+
+      - name: Test
+        env:
+          LIBRARY_BROWSE_REQUIRE_DB: "1"
+          AGENT_AUTO_MEMORY: "off"
+        run: pnpm --filter "./${{ matrix.package }}" test
+
+  lazy-service:
+    name: Lazy service lifecycle
+    needs: plan
+    if: needs.plan.outputs.lazy_service == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.work
+          cache: false
+      - run: go test -race ./...
+        working-directory: apps/lazy-service
+
+  embedding-image:
+    name: Offline embedding service
+    needs: plan
+    if: needs.plan.outputs.embedding_image == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - run: docker build --target embedding -t openneko-embedding:pr .
+      - run: docker run --rm --network none --memory 2560m --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:size=256m -e OPENNEKO_EMBEDDING_TEST_MODEL=1 --entrypoint python3 openneko-embedding:pr -m unittest -v test_embedding_service
+      - run: docker run --rm --network none --memory 2560m --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:size=256m --entrypoint python3 openneko-embedding:pr /app/smoke.py
+
+  design-system:
+    name: Web design system
+    needs: plan
+    if: needs.plan.outputs.design_system == 'true'
+    runs-on: ubuntu-24.04
+
+    # Solo-mode pages resolve a persisted identity, just like installed instances.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: neko
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: neko
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U neko"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      OPENNEKO_PG_ENV_OVERRIDE: "1"
+      NEKO_PG_HOST: 127.0.0.1
+      NEKO_PG_PORT: "5432"
+      NEKO_PG_USER: neko
+      NEKO_PG_PASSWORD: secret
+      NEKO_PG_DATABASE: neko
+      NEKO_PG_SSLMODE: disable
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Enforce shared UI controls and tokens
+        env:
+          UI_SYSTEM_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/check-web-design-system.mjs
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.14.1
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.22.1
+          cache: pnpm
+
+      - name: Install
+        run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.work
+          cache-dependency-path: apps/openneko/go.sum
+
+      - name: Migrate visual-test database
+        working-directory: apps/openneko
+        run: go run ./cmd/openneko migrate
+
+      - name: Install Chromium
+        run: pnpm --filter @neko/web exec playwright install --with-deps chromium
+
+      - name: Verify shared UI layouts, overlays and Magento rendering
+        run: pnpm --filter @neko/web test:visual:design
+
+      - name: Upload design-system browser results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: magento-design-system-${{ github.run_attempt }}
+          path: apps/web/test-results/
+          if-no-files-found: error
+
+  graphjin-integration:
+    name: GraphJin integration
+    needs: plan
+    if: needs.plan.outputs.graphjin_integration == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      GRAPHJIN_IMAGE: openneko/graphjin-integration:pr
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.14.1
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.22.1
+          cache: pnpm
+
+      - name: Install
+        run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
+
+      - name: Build the GraphJin runtime from graphjin/
+        run: |
+          docker buildx build \
+            --load \
+            --platform linux/amd64 \
+            --target graphjin-runtime \
+            --tag "$GRAPHJIN_IMAGE" \
+            .
+          docker run --rm --entrypoint graphjin "$GRAPHJIN_IMAGE" version
+
+      - name: Validate shipped source-mode configs
+        run: |
+          for config in customer.sources.example.yml dev.sources.example.yml; do
+            docker run --rm --entrypoint graphjin \
+              --volume "$PWD/db/graphjin:/config:ro" \
+              "$GRAPHJIN_IMAGE" \
+              config --file "/config/$config" validate
+          done
+
+  # One check to require in branch protection. It passes when every job the
+  # plan picked passed, and when the plan picked none.
+  pr-checks:
+    name: PR checks
+    needs:
+      - plan
+      - contracts
+      - package
+      - lazy-service
+      - embedding-image
+      - design-system
+      - graphjin-integration
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check job results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in
+              success | skipped) ;;
+              *) exit 1 ;;
+            esac
+          done

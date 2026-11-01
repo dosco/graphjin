@@ -1,0 +1,16 @@
+key: metric.orders_placed
+targetRef: magento.metric.orders_placed
+title: Orders placed
+description: Distinct Magento orders created during the selected period.
+role: executive
+chartHint: metric
+unit: count
+directionGood: up
+cadence: hourly
+calculationNote: Cancellations are included in orders placed and reported separately.
+execution:
+  mode: saved_query
+  source: magento_analytics
+  query: orders_placed
+  result: { kind: scalar, path: sales_order.0.orders }
+  freshnessSeconds: 7200

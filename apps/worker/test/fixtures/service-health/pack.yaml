@@ -1,0 +1,53 @@
+apiVersion: openneko.app/v1
+kind: SolutionPack
+metadata:
+  id: service-health
+  name: Service health
+  version: 0.1.0
+  publisher: fixture
+  category: operations
+compatibility:
+  openneko: ">=2.27.0"
+  graphjin:
+    analytics: ">=3.20.77"
+    operator: unused
+  applications:
+    - id: service-health
+      editions:
+        - custom
+      versions: "*"
+  databases: []
+inputs:
+  - key: service.base_url
+    type: url
+    required: true
+  - key: service.timezone
+    type: timezone
+    default: UTC
+secrets:
+  - key: service.api_token
+    purpose: graphjin_api_auth
+    required: true
+artifacts:
+  graphjin:
+    sources: graphjin/sources.yaml
+    relationships: graphjin/relationships.yaml
+    specs:
+      - graphjin/specs/service-health.yaml
+    savedQueries: graphjin/queries
+  metrics: metrics
+  workflows: workflows
+  watchers: watchers
+  actions: actions
+  policies: policies
+  skills:
+    - skills/service-health-review
+health:
+  requiredPreflight:
+    - queries
+  readiness:
+    reporting:
+      - queries
+  postInstall:
+    - graphjin-reload
+  postWriteCanary: []

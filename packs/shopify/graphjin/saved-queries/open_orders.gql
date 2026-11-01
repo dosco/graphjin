@@ -1,0 +1,16 @@
+query ShopifyOpenOrders {
+  shopify_list_orders(status: "open") {
+    orders {
+      id
+      name
+      email
+      financial_status
+      fulfillment_status
+      total_price
+      currency
+      created_at
+      tags
+      note
+    }
+  }
+}

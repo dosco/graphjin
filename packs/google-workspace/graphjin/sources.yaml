@@ -1,0 +1,85 @@
+sources:
+  - key: source.google_workspace_gmail
+    name: google_workspace_gmail
+    kind: api
+    base_url: https://gmail.googleapis.com
+    openapi: graphjin/specs/gmail.yaml
+    operations:
+      getProfile: { expose_top_level: true }
+      listMessages: { expose_top_level: true }
+      getMessage: { expose_top_level: true }
+      listThreads: { expose_top_level: true }
+      getThread: { expose_top_level: true }
+      listDrafts: { expose_top_level: true }
+      getDraft: { expose_top_level: true }
+      listLabels: { expose_top_level: true }
+      getLabel: { expose_top_level: true }
+      listHistory: { expose_top_level: true }
+      getAttachment: { expose_top_level: true }
+    auth:
+      type: bearer
+      token: "{{secret.google-workspace.access_token}}"
+    read_only: false
+    capabilities: { api.read: true, api.write: true, api.delete: true }
+
+  - key: source.google_workspace_drive
+    name: google_workspace_drive
+    kind: api
+    base_url: https://www.googleapis.com
+    openapi: graphjin/specs/drive.yaml
+    operations:
+      listDrivePermissions: { expose_top_level: true }
+      getDrivePermission: { expose_top_level: true }
+    auth:
+      type: bearer
+      token: "{{secret.google-workspace.access_token}}"
+    read_only: false
+    capabilities: { api.read: true, api.write: true, api.delete: true }
+
+  - key: source.google_workspace_calendar
+    name: google_workspace_calendar
+    kind: api
+    base_url: https://www.googleapis.com
+    openapi: graphjin/specs/calendar.yaml
+    operations:
+      listCalendarEvents: { expose_top_level: true }
+      getCalendarEvent: { expose_top_level: true }
+    auth:
+      type: bearer
+      token: "{{secret.google-workspace.access_token}}"
+    read_only: false
+    capabilities: { api.read: true, api.write: true, api.delete: true }
+
+  - key: source.google_workspace_sheets
+    name: google_workspace_sheets
+    kind: api
+    base_url: https://sheets.googleapis.com
+    openapi: graphjin/specs/sheets.yaml
+    operations:
+      getSpreadsheetValues: { expose_top_level: true }
+      batchGetSpreadsheetValues: { expose_top_level: true }
+    auth:
+      type: bearer
+      token: "{{secret.google-workspace.access_token}}"
+    read_only: false
+    capabilities: { api.read: true, api.write: true, api.delete: false }
+
+  - key: source.google_workspace_docs
+    name: google_workspace_docs
+    kind: api
+    base_url: https://docs.googleapis.com
+    openapi: graphjin/specs/docs.yaml
+    auth:
+      type: bearer
+      token: "{{secret.google-workspace.access_token}}"
+    read_only: true
+
+  - key: source.google_workspace_slides
+    name: google_workspace_slides
+    kind: api
+    base_url: https://slides.googleapis.com
+    openapi: graphjin/specs/slides.yaml
+    auth:
+      type: bearer
+      token: "{{secret.google-workspace.access_token}}"
+    read_only: true

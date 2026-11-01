@@ -1,0 +1,1 @@
+query ServiceHealth { service_health_get_health_summary { healthy checked_at } }

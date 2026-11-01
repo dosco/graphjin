@@ -1,0 +1,227 @@
+# GJ4 — source/agentic-mode template for the CUSTOMER-data GraphJin
+# (compare dev.example.yml, the legacy anonymous config). Copy to agentic.yml,
+# fill the secret, and set data_source.auth_mode='jwt' in neko-db to
+# activate per-run actor tokens.
+#
+# The JWT secret is per-org, derived from the deployment secret-key:
+#   graphjinSigningSecretB64(orgId)   (packages/llm/src/graphjin/token.ts)
+# Claims OpenNeko mints: { sub, role (admin|member|service), org_id,
+# iat, exp } — 5-minute TTL, re-minted per run.
+#
+# NOTE (3.18.32+): in sources mode, GJ_DATABASE_* env vars are a hard
+# boot error — connection details live HERE, not in compose env.
+#
+# OL5 — chat-first config: this CUSTOMER GraphJin enables config updates
+# (mcp.allow_config_updates) so an OpenNeko admin can register/shape
+# sources, roles, and access from chat. The agent only PROPOSES (its CLI
+# guard blocks mutations); the worker applies the approved gj_config
+# preview→apply with a minted admin token.
+#
+# THE ADMIN-ONLY GUARANTEE IS LAYERED: OpenNeko rechecks the live app_user role
+# for every config-agent/proposal call and again before apply; GraphJin verifies
+# the short-lived JWT and independently enforces its admin system roots.
+#
+# TWO PRECONDITIONS for a durable apply:
+#   1. roles: must explicitly define every token role (admin, user).
+#      gj_config role/source updates re-normalize roles; without explicit
+#      entries the implicit admin role is dropped and all tokens break
+#      ("roles 'admin' not defined").
+#   2. secrets.keystore.key (base64 → 32 bytes) is REQUIRED to register a
+#      DB source with a password — GraphJin seals it to a gjsecret:// ref.
+# GraphJin 3.18.42 includes the upstream saveConfigToDisk persistence fix, so
+# gj_config apply can safely persist and reload this sources-mode config.
+#
+# The OpenNeko INTERNAL neko-graphjin MUST NOT enable any of this:
+# keep allow_config_updates:false and no gj_config root there — it is
+# never reconfigurable from chat.
+
+app_name: ./Graphjin/Neko-AdventureWorks (source mode)
+mode: agentic
+host_port: 0.0.0.0:8080
+production: true
+# OpenNeko and the GraphJin server agent both compile ad-hoc, role-scoped
+# GraphQL from chat. Production mode otherwise accepts only named queries from
+# the queries directory. This flag disables that query allow-list gate; it does
+# not bypass JWT authentication, source access, read_only, or admin-only roots.
+disable_production_security: true
+debug: false
+log_format: plain
+log_level: info
+http_compress: true
+reload_on_config_change: true
+server_timing: true
+
+auth:
+  type: jwt
+  jwt:
+    # base64 of graphjinSigningSecretB64(orgId)
+    secret: "REPLACE_WITH_PER_ORG_SECRET_B64"
+    audience: ""
+    issuer: ""
+
+# Role shaping (verified live on 3.18.37): JWT roles only take effect
+# when they match a configured role or admin_roles; everything else
+# falls back to the built-in authenticated role "user".
+roles_query: ""
+identity:
+  user_id_claim: sub
+  role_claims:
+    - role
+  # K3 — multi-tenant isolation: the JWT's org_id claim becomes the
+  # namespace ($account_id). Required for `read: account` sources.
+  namespace_claim: org_id
+  admin_roles:
+    - admin
+
+auth_fail_block: true
+
+cors_allowed_origins:
+  - '*'
+
+default_limit: 20
+enable_tracing: true
+subs_poll_duration: 5s
+
+mcp:
+  disable: false
+  # OpenNeko's approved worker uses gj_config preview/apply directly. The
+  # server agent itself remains globally read-only.
+  allow_config_updates: true
+  # The OpenNeko CLI still drives the low-level data/config tools directly.
+  # Without this, enabling the server agent collapses MCP to only
+  # ask_graphjin_agent and breaks existing query/discovery paths.
+  include_tools_with_agent: true
+  # Mutations pass the MCP layer so API sources can take governed writes.
+  # Every database source stays read_only: true; GraphJin core blocks its
+  # mutations and pins the flag at startup.
+  allow_mutations: true
+  allow_raw_queries: true
+  workflow_timeout: 300
+  allow_dev_tools: false
+  # The legacy /api/v1/discovery/* bridge is OFF: it serves broad schema
+  # dumps anonymously. Agentic deployments discover via gj_catalog under
+  # the caller's token; the knowledge prefetch does the same.
+  legacy_discovery: false
+
+# GraphJin's built-in agent is an evidence-backed configuration specialist for
+# OpenNeko admin chat. This global read-only switch is verified through
+# /api/v1/agent/status before OpenNeko forwards every instruction.
+agent:
+  enabled: true
+  provider: openai
+  model: gpt-4.1-mini
+  api_key_env: GRAPHJIN_AGENT_API_KEY
+  max_steps: 8
+  timeout_seconds: 50
+  read_only: true
+  return_trace: false
+
+analytics_mode: true
+
+# Semantic catalog and Library file search through OpenNeko's embedding
+# service (EmbeddingGemma 2). Off until an admin turns on Settings > Semantic
+# search; graphjin-secret-init writes `enabled` from that switch at startup and
+# OpenNeko applies later flips live through gj_config.
+catalog_search:
+  semantic:
+    enabled: false
+    provider: openai
+    embedding_model: google/embeddinggemma-2
+    base_url: http://embedding:5003/v1
+    api_key_env: OPENNEKO_EMBEDDING_API_KEY
+    dimensions: default
+    query_prefix: "task: search result | query: "
+    document_prefix: "title: none | text: "
+
+# The AdventureWorks source is read-only. OpenNeko watchers run as GraphJin
+# watches, stored in GraphJin's managed SQLite file in this config directory.
+# artifacts is left unset: GraphJin then uses its managed store.
+watches:
+  enabled: true
+  runner: all
+  max_per_owner: 1000
+  webhook_allow:
+    - http://worker:4100/admin/events/watcher
+tasks:
+  enabled: false
+
+# OL5 precondition 1: define every token role explicitly. gj_config
+# role/source updates re-normalize roles; without these the implicit admin
+# role is dropped on the first apply and all tokens break.
+roles:
+  - name: user
+    comment: Authenticated user
+  - name: member
+    comment: OpenNeko organization member (JWT role minted by the worker)
+  - name: service
+    comment: OpenNeko worker service identity (JWT role minted by the worker)
+  - name: admin
+    comment: Org admin
+
+# OL5 precondition 2: required to register a DB source with a password —
+# GraphJin seals the value to a gjsecret:// ref at apply (plaintext never
+# lands on disk). base64 that decodes to 32 bytes; provide via
+# GJ_SECRETS_KEYSTORE_KEY in deployment, never commit a real key.
+secrets:
+  keystore:
+    key: "REPLACE_WITH_BASE64_32_BYTE_KEY"
+
+blocklist:
+  - ar_internal_metadata
+  - schema_migrations
+  - secret
+  - password
+  - encrypted
+  - token
+
+system:
+  # Makes gj_config structurally mutable for the approved OpenNeko worker.
+  # root_access below still limits both reads and writes to admin JWTs, and
+  # agent.read_only keeps the server-side LLM itself unable to mutate it.
+  capabilities:
+    catalog.read: true
+    security.read: true
+    config.read: true
+    config.write: true
+    runtime.read: true
+    raw_graphql.query: true
+    raw_graphql.mutate: true
+    schema.reload: false
+    schema.write: false
+    dev_tools.read: false
+    legacy_discovery.read: false
+  root_access:
+    # authenticated, NOT public — verified live: public leaks the
+    # whole schema catalog to anonymous callers.
+    gj_catalog: authenticated
+    # Native GraphJin admin roots are the second boundary behind
+    # OpenNeko's live role checks and approval workflow.
+    gj_config: admin
+    gj_security: admin
+    gj_runtime: admin
+    gj_watch: authenticated
+
+sources:
+  - name: adventureworks
+    kind: database
+    default: true
+    read_only: true
+    type: postgres
+    host: adventureworks-db
+    port: 5432
+    dbname: adventureworks
+    user: postgres
+    password: postgres
+    access:
+      # `authenticated` = any valid token, no row scoping — right for a
+      # single-tenant customer DB like the demo. `account` (K3) is the
+      # multi-tenant mode: it auto-filters every query to the JWT's
+      # org_id namespace AND blocks tables missing namespace_column
+      # (verified live: account mode on a column-less table blocks).
+      read: authenticated
+      write: blocked
+      delete: blocked
+      # K3 — switch to multi-tenant isolation:
+      # read: account
+      # namespace_column: org_id
+      # missing_namespace_column: block

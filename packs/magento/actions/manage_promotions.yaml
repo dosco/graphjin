@@ -1,0 +1,62 @@
+key: action.manage_promotions
+targetRef: magento.manage_promotions
+kind: magento.manage_promotions
+description: Create and edit capped Magento promotions and coupon batches with an exposure preview.
+domain: promotions
+readiness:
+  capability: operator
+  domain: promotions
+  unavailableReasons: [graphjin_version_unsupported, integration_token_missing, integration_token_invalid, acl_missing, promotion_exposure_unavailable]
+inputSchema:
+  type: object
+  additionalProperties: false
+  required: [operation, scope, rows, projected_exposure, idempotency_key]
+  properties:
+    operation: { type: string }
+    scope: { type: object }
+    rows: { type: array, minItems: 1, maxItems: 500 }
+    projected_exposure: { type: number, minimum: 0 }
+    idempotency_key: { type: string, minLength: 8, maxLength: 200 }
+adapter:
+  kind: magento_changeset
+  source: magento_operator
+  spec: magento-operator-v2
+  ambiguousOutcome: reconcile_required
+  retry: never
+  operations:
+    sales_rule_create:
+      operationId: magentoCreateSalesRule
+      mutationRoot: magento_operator_v2_magento_create_sales_rule
+      readPath: /V1/salesRules/{ruleId}
+      defaultClass: 1
+      entityType: sales_rule
+      reversible: true
+      bodyKey: rule
+      inverseOperation: sales_rule_delete
+      entityIdField: rule_id
+    sales_rule_update:
+      operationId: magentoUpdateSalesRule
+      mutationRoot: magento_operator_v2_magento_update_sales_rule
+      readPath: /V1/salesRules/{ruleId}
+      defaultClass: 1
+      entityType: sales_rule
+      reversible: true
+      bodyKey: rule
+      inverseOperation: sales_rule_update
+      numericPathParams: [ruleId]
+    sales_rule_delete:
+      operationId: magentoDeleteSalesRule
+      mutationRoot: magento_operator_v2_magento_delete_sales_rule
+      readPath: /V1/salesRules/{ruleId}
+      defaultClass: 1
+      entityType: sales_rule
+      reversible: true
+      bodyKey: rule
+      inverseOperation: sales_rule_create
+      numericPathParams: [ruleId]
+    coupons_generate:
+      operationId: magentoGenerateCoupons
+      mutationRoot: magento_operator_v2_magento_generate_coupons
+      defaultClass: 1
+      entityType: sales_rule
+      reversible: false

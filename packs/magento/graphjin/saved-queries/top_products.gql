@@ -1,0 +1,16 @@
+# Top products and SKUs: Highest invoiced order-item revenue and invoiced
+# quantity by SKU. Based on Magento order-item base_row_invoiced; refunds are
+# represented in the separate refund metrics.
+query MagentoTopProducts($from: String!, $to: String!, $storeIds: [Int!]) {
+  sales_order_item(
+    distinct: [sku]
+    where: {and: [{created_at: {gte: $from}}, {created_at: {lt: $to}}], store_id: {in: $storeIds}, parent_item_id: {is_null: true}, qty_invoiced: {gt: 0}}
+    order_by: {sum_base_row_invoiced: desc}
+    limit: 20
+  ) {
+    sku
+    name
+    sum_qty_invoiced
+    sum_base_row_invoiced
+  }
+}

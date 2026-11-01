@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "node",
+  "include-component-in-tag": false,
+  "include-v-in-tag": true,
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": false,
+  "draft": false,
+  "prerelease": false,
+  "packages": {
+    ".": {
+      "package-name": "openneko",
+      "extra-files": [
+        { "type": "json", "path": "apps/web/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "apps/worker/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/db/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/llm/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/secrets/package.json", "jsonpath": "$.version" },
+        { "type": "generic", "path": "apps/openneko/internal/version/version.go" }
+      ]
+    }
+  }
+}

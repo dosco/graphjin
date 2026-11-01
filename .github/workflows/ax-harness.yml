@@ -1,0 +1,42 @@
+name: ax-harness (go)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/ax-harness/**"
+      - "go.work"
+      - ".github/workflows/ax-harness.yml"
+  pull_request:
+    paths:
+      - "apps/ax-harness/**"
+      - "go.work"
+      - ".github/workflows/ax-harness.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: apps/ax-harness
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.work
+          cache-dependency-path: apps/ax-harness/go.sum
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean; run 'gofmt -w .':"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -race -count=1 -timeout 10m ./...

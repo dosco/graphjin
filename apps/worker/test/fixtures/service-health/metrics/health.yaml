@@ -1,0 +1,19 @@
+key: metric.health
+targetRef: service-health.healthy
+title: Service health
+description: Provider reported health
+role: executive
+chartHint: metric
+unit: count
+directionGood: up
+cadence: hourly
+calculationNote: Reported by the health endpoint
+execution:
+  mode: saved_query
+  source: service_health
+  query: health
+  result:
+    kind: scalar
+    path: service_health_get_health_summary.healthy
+  freshnessSeconds: 3600
+  variables: {}

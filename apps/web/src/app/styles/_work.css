@@ -1,0 +1,1420 @@
+/* ─── WORK ─── */
+.work-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  /* Viewport-anchored (not 100%) — parent .root caps at 740px; translateX escapes it. */
+  width: min(1180px, calc(100vw - 40px));
+  margin-left: 50%;
+  transform: translateX(-50%);
+}
+.work-bubble-row {
+  display: flex;
+  justify-content: flex-start;
+}
+.work-bubble-row.is-user {
+  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.work-bubble-actions {
+  display: inline-flex;
+  gap: 4px;
+  padding-right: 4px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.work-bubble-row.is-user:hover .work-bubble-actions,
+.work-bubble-row.is-user:focus-within .work-bubble-actions {
+  opacity: 1;
+}
+.work-bubble-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text3);
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 0;
+}
+.work-bubble-actions button:hover {
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.04);
+}
+.work-bubble.is-editing {
+  width: min(780px, 86%);
+  padding: 10px 14px;
+}
+.work-bubble-edit {
+  display: block;
+  width: 100%;
+  resize: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  outline: none;
+}
+.work-bubble-edit-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--type-caption);
+  color: var(--text3);
+}
+.work-bubble-edit-hint button {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--text2);
+  font: inherit;
+  cursor: pointer;
+}
+.work-bubble-edit-hint button:hover:not(:disabled) {
+  color: var(--text);
+}
+.work-bubble-edit-hint button.is-primary {
+  color: var(--accent);
+  font-weight: 600;
+}
+.work-bubble-edit-hint button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* Assistant prose is editorial — sits directly on the page background
+   with no card chrome, so the cards it contains (briefings, tables) do
+   the structural lifting. User messages keep a subtle neutral tint to
+   distinguish role at a glance, but lose the border + shadow that made
+   them look like another card stacked on the page. */
+.work-bubble {
+  max-width: min(780px, 86%);
+  background: transparent;
+  border: 0;
+  border-radius: 16px;
+  padding: 2px 0;
+  box-shadow: none;
+}
+.work-bubble.is-user {
+  background: var(--neutral);
+  border: 0;
+  color: var(--text);
+  padding: 10px 14px;
+  border-radius: 16px;
+}
+.work-markdown {
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+}
+.work-markdown > * + * {
+  margin-top: 10px;
+}
+.work-markdown a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--text3);
+  text-underline-offset: 2px;
+}
+.work-markdown a:hover {
+  text-decoration-color: var(--text);
+}
+.work-markdown h1,
+.work-markdown h2,
+.work-markdown h3,
+.work-markdown h4 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 18px;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+.work-markdown h1 { font-size: 1.25em; }
+.work-markdown h2 { font-size: 1.15em; }
+.work-markdown h3 { font-size: 1.05em; }
+.work-markdown h4 { font-size: 1em; }
+.work-markdown ul,
+.work-markdown ol {
+  padding-left: 22px;
+}
+/* Tailwind's preflight resets ul/ol to list-style:none; restore real markers
+   so lists read as lists, with disc → circle → square cueing the nesting. */
+.work-markdown ul {
+  list-style: disc outside;
+}
+.work-markdown ol {
+  list-style: decimal outside;
+}
+.work-markdown ul ul {
+  list-style-type: circle;
+}
+.work-markdown ul ul ul {
+  list-style-type: square;
+}
+.work-markdown li + li {
+  margin-top: 4px;
+}
+.work-markdown li > p {
+  margin: 0;
+}
+.work-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background: var(--border);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+.work-markdown pre {
+  background: var(--border);
+  padding: 12px 14px;
+  border-radius: 10px;
+  overflow-x: auto;
+  font-size: 0.88em;
+  line-height: 1.5;
+}
+.work-markdown pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+.work-markdown blockquote {
+  border-left: 3px solid var(--border);
+  padding: 2px 0 2px 12px;
+  color: var(--text2);
+  margin: 0;
+}
+.work-markdown table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+.work-markdown thead th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text2);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 12px 6px 0;
+  white-space: nowrap;
+}
+.work-markdown tbody td {
+  padding: 8px 12px 8px 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  transition: background 0.12s ease;
+}
+.work-markdown tbody tr:last-child td {
+  border-bottom: none;
+}
+.work-markdown tbody tr:hover td {
+  background: color-mix(in srgb, var(--neutral-soft) 55%, transparent);
+}
+.work-markdown hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
+}
+.user-copy {
+  white-space: pre-wrap;
+}
+.work-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text3);
+  font-size: var(--type-body-sm);
+  padding-left: 4px;
+}
+.work-status-row > span:not(.work-status-elapsed) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.work-status-row::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text3);
+  flex-shrink: 0;
+}
+.work-status-spin {
+  animation: spin 1s linear infinite;
+  color: var(--accent);
+}
+.work-progress-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(780px, 86%);
+  padding: 5px 4px;
+  color: var(--text2);
+  text-align: left;
+}
+.work-progress-summary-mark {
+  width: 7px;
+  height: 7px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  flex-shrink: 0;
+}
+.work-progress-summary-copy {
+  min-width: 0;
+}
+.work-progress-summary-label {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text3);
+  font-size: var(--type-caption);
+  font-weight: 600;
+}
+.work-progress-summary .work-markdown {
+  font-size: var(--type-body-sm);
+  line-height: var(--leading-body);
+}
+.work-progress-summary .work-markdown > * + * {
+  margin-top: 5px;
+}
+
+/* Host-authored capability denial. This is deliberately architectural rather
+   than alarm-card chrome: a hard rule, the exact blocked endpoint, and a
+   permission-aware recovery column. */
+.work-capability-denied {
+  border-top: 3px solid var(--watch);
+  border-bottom: 1px solid var(--text);
+  background: color-mix(in srgb, var(--watch-soft) 48%, var(--card));
+}
+.work-capability-kicker {
+  padding: 10px 14px 8px;
+  color: var(--warn-ink);
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 800;
+}
+.work-capability-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(230px, 0.75fr);
+  border-top: 1px solid color-mix(in srgb, var(--watch) 34%, var(--border));
+}
+.work-capability-grid > div {
+  min-width: 0;
+  padding: 17px 18px 18px;
+}
+.work-capability-grid > div + div {
+  border-left: 1px solid color-mix(in srgb, var(--watch) 34%, var(--border));
+}
+.work-capability-denied h3 {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-section);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+.work-capability-denied p {
+  margin: 8px 0 0;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+  line-height: var(--leading-body);
+}
+.work-capability-denied code {
+  display: block;
+  margin-top: 13px;
+  color: var(--warn-ink);
+  font-family: var(--font-mono);
+  font-size: var(--type-caption);
+  overflow-wrap: anywhere;
+}
+.work-capability-recovery > span {
+  color: var(--text3);
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 800;
+}
+.work-capability-recovery button,
+.work-capability-recovery a {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 12px;
+  padding: 8px 11px;
+  color: var(--text);
+  font-size: var(--type-caption);
+  font-weight: 700;
+  text-decoration: none;
+}
+.work-capability-recovery button {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-inner);
+  background: var(--success);
+  cursor: pointer;
+}
+.work-capability-recovery button:hover {
+  border-color: var(--text3);
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+.work-capability-recovery a {
+  padding-inline: 0;
+  color: var(--text2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.work-capability-recovery button:focus-visible,
+.work-capability-recovery a:focus-visible,
+.work-answer-evidence a:focus-visible,
+.work-answer-followups button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+/* Evidence and next questions belong to the answer that produced them. */
+.work-answer-footer {
+  margin-top: 7px;
+  border-top: 1px solid var(--text);
+}
+.work-answer-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+.work-answer-evidence > * {
+  min-width: 150px;
+  flex: 1 1 180px;
+  padding: 10px 14px 11px 0;
+  color: inherit;
+  text-decoration: none;
+}
+.work-answer-evidence > * + * {
+  padding-left: 14px;
+  border-left: 1px solid var(--border);
+}
+.work-answer-files {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+.work-answer-files > summary {
+  min-height: 40px;
+  padding: 8px 0;
+  color: var(--text3);
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 800;
+}
+.work-answer-files > div {
+  padding: 0 0 6px;
+  border-top: 0;
+}
+.work-answer-files ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.work-answer-files a {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+  font-weight: 600;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.work-answer-files a svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--text3);
+}
+.work-answer-files a:hover,
+.work-answer-files a:hover svg {
+  color: var(--accent);
+}
+.work-answer-files a:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+.work-answer-evidence span,
+.work-answer-followups > span {
+  display: block;
+  color: var(--text3);
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 800;
+}
+.work-answer-evidence strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+  font-weight: 600;
+  line-height: var(--leading-compact);
+  overflow-wrap: anywhere;
+}
+.work-answer-evidence a:hover strong {
+  color: var(--accent);
+}
+.work-answer-followups {
+  padding-top: 12px;
+}
+.work-answer-followups > div {
+  display: grid;
+  margin-top: 5px;
+}
+.work-answer-followups button {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 9px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text2);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--type-body-sm);
+  text-align: left;
+}
+.work-answer-followups button:hover {
+  color: var(--accent);
+}
+.work-answer-followups button span {
+  color: var(--accent);
+}
+/* Tool cluster: the closed header is a compact inline pill that recedes
+   into the transcript flow. When expanded the body becomes a bordered
+   card containing the individual tool rows. */
+.work-tool-group {
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+  overflow: hidden;
+}
+.work-tool-group:has(.work-tool-group-body) {
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.work-tool-group-head {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: auto;
+  align-self: flex-start;
+  background: color-mix(in srgb, var(--neutral-soft) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 999px;
+  cursor: pointer;
+  padding: 4px 12px 4px 9px;
+  font-size: var(--type-caption);
+  line-height: var(--leading-compact);
+  color: var(--text3);
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.work-tool-group:has(.work-tool-group-body) .work-tool-group-head {
+  background: transparent;
+  border: 0;
+  border-radius: 12px 12px 0 0;
+  width: 100%;
+  padding: 9px 14px;
+  align-self: stretch;
+  font-size: var(--type-body-sm);
+}
+.work-tool-group-head:hover {
+  border-color: color-mix(in srgb, var(--text3) 35%, var(--border));
+  color: var(--text2);
+}
+.work-tool-group:has(.work-tool-group-body) .work-tool-group-head:hover {
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+.work-tool-group-toggle {
+  color: var(--text3);
+  font-size: var(--type-label);
+  width: 10px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.work-tool-group-count {
+  font-weight: 600;
+  color: var(--text);
+}
+.work-tool-group-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: var(--type-label);
+  font-weight: 500;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.work-tool-group-badge.failed {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.work-tool-group-body {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+.work-tool-row {
+  border-bottom: 1px solid var(--border);
+}
+.work-tool-row:last-child {
+  border-bottom: 0;
+}
+.work-tool-group-single {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+  overflow: visible;
+}
+.work-tool-group-single .work-tool-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+.work-tool-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 10px 16px;
+  text-align: left;
+  min-width: 0;
+  color: var(--text);
+  font: inherit;
+}
+.work-tool-row-head:disabled {
+  cursor: default;
+}
+.work-tool-row-head:hover:not(:disabled) {
+  background: rgba(107,92,231,0.04);
+}
+.work-tool-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.work-tool-row-icon-running {
+  color: var(--accent);
+}
+.work-tool-row-icon-done {
+  color: var(--success-mid);
+  background: var(--success-soft);
+}
+.work-tool-row-icon-failed {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.work-tool-row-name {
+  font-weight: 600;
+  font-size: var(--type-body-sm);
+  color: var(--text);
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.work-tool-row-subtitle {
+  color: var(--text3);
+  font-family: var(--font-mono);
+  font-size: var(--type-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+.work-tool-row-failed .work-tool-row-name {
+  color: var(--danger);
+}
+.work-tool-row-detail {
+  padding: 4px 16px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+.work-tool-row-section-label {
+  font-size: var(--type-caption);
+  font-weight: 600;
+  color: var(--text3);
+  margin-top: 6px;
+}
+.work-tool-row-section-label:first-child {
+  margin-top: 4px;
+}
+.work-tool-delta {
+  font-size: var(--type-caption);
+  color: var(--text2);
+  font-style: italic;
+}
+.work-tool-row-pre {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: var(--type-caption);
+  line-height: var(--leading-body);
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  max-height: 320px;
+  overflow: auto;
+}
+.work-tool-row-pre-error {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 18%, var(--border));
+}
+.work-surface-frame {
+  background: rgba(255,255,255,0.7);
+  border-radius: 18px;
+}
+/* The prominent answer card. Applies both to a synthetic Markdown surface
+   (assistant prose wrapped in a fallback Markdown surface) and to a Briefing
+   root — neither carries its own chrome, so the frame supplies it and the two
+   read as one cohesive answer instead of an unpadded translucent slab. */
+.work-timeline .work-surface-frame:has(> .work-markdown),
+.work-timeline .work-surface-frame:has(> .work-surface) {
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 4%, var(--card)) 0%,
+    var(--card) 60%
+  );
+  border: 1px solid color-mix(in srgb, var(--border) 80%, var(--accent) 4%);
+  border-radius: 18px;
+  padding: 14px 18px;
+  box-shadow: var(--shadow);
+}
+
+/* ─── Confirmation card ─── */
+/* Emitted when the agent saves a workflow, trigger, or rule. Chat-scaled
+   chrome — deliberately NOT the dashboard .greet display heading. */
+.work-confirm {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--success-mid) 7%, var(--card)) 0%,
+    var(--card) 52%
+  );
+  border: 1px solid color-mix(in srgb, var(--border) 70%, var(--success-mid) 22%);
+  border-radius: 16px;
+  padding: 13px 16px 14px;
+  box-shadow: var(--shadow);
+}
+.work-confirm-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.work-confirm-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--success-mid);
+  color: var(--on-accent);
+  flex-shrink: 0;
+}
+.work-confirm-check svg {
+  width: 10px;
+  height: 10px;
+}
+.work-confirm-label {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 700;
+  color: var(--success-mid);
+}
+.work-confirm-title {
+  font-size: var(--type-subsection);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+  color: var(--text);
+  margin-top: 5px;
+}
+.work-confirm-body {
+  margin-top: 9px;
+}
+
+/* ── In-thread surface header (a2ui Briefing) ──
+   Conversation-scale sibling of the dashboard's greet-eyebrow + greet:
+   same display face and eyebrow grammar, sized to sit inside an answer
+   instead of opening a page. */
+.work-surface-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 700;
+  color: var(--text3);
+  margin: 4px 0 8px;
+}
+.work-surface-eyebrow-rule {
+  width: 22px;
+  height: 1px;
+  background: var(--accent);
+  opacity: 0.55;
+}
+.work-surface-title {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-section);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.18;
+  color: var(--text);
+}
+.work-surface-sub {
+  font-size: var(--type-body-sm);
+  line-height: var(--leading-compact);
+  color: var(--text2);
+  margin-top: 4px;
+}
+.work-surface-title + :not(.work-surface-sub),
+.work-surface-sub + * {
+  margin-top: 14px;
+}
+/* Even rhythm between a briefing's prose and any inline KPI callouts. */
+.work-surface > .work-markdown + .work-markdown,
+.work-surface > .work-markdown + .icard,
+.work-surface > .icard + .work-markdown,
+.work-surface > .icard + .icard {
+  margin-top: 14px;
+}
+
+/* Key figures are evidence, not dashboard cards. One rule binds the figures
+   to their answer; column rules make comparison fast without introducing a
+   detached tile grid. */
+.work-key-figures {
+  margin-top: 20px;
+  border-top: 1px solid var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.work-key-figures-label {
+  padding: 9px 0 8px;
+  color: var(--text3);
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 750;
+}
+.work-key-figures-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  margin: 0;
+  border-top: 1px solid var(--border);
+}
+.work-key-figure {
+  min-width: 0;
+  padding: 15px 18px 16px 0;
+}
+.work-key-figure + .work-key-figure {
+  padding-left: 18px;
+  border-left: 1px solid var(--border);
+}
+.work-key-figure dt {
+  color: var(--text3);
+  font-size: var(--type-caption);
+  font-weight: 700;
+  line-height: 1.35;
+}
+.work-key-figure dd {
+  margin: 7px 0 0;
+  color: var(--text);
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: clamp(24px, 3vw, 36px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 850;
+  letter-spacing: -0.055em;
+  line-height: 0.95;
+  overflow-wrap: anywhere;
+}
+.work-key-figure-sub {
+  margin-top: 7px;
+  color: var(--text2);
+  font-size: var(--type-caption);
+  line-height: var(--leading-compact);
+}
+.work-key-figure-proof {
+  margin-top: 8px;
+  color: var(--text3);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--type-caption);
+  line-height: 1.4;
+}
+
+/* The answer chart shares the Briefing plot but sits in the answer's ruled
+   evidence language, with no second card or invented status color. */
+.work-chart {
+  min-width: 0;
+  margin: 0;
+  padding: 14px 0 10px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.work-chart-title {
+  margin-bottom: 10px;
+  color: var(--text);
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-body);
+  font-weight: 700;
+  line-height: var(--leading-heading);
+}
+.work-chart-source {
+  margin-top: 8px;
+  color: var(--text3);
+  font-size: var(--type-caption);
+  line-height: var(--leading-compact);
+}
+
+/* In-thread KPI card. The dashboard's .icard is a standalone grid tile —
+   heavy border, shadow, hover-lift, big "01" ordinal — which reads as a
+   box-in-a-box once it sits inside an answer card. Re-skin it as a flat
+   mood-tinted callout that belongs to the briefing around it. */
+.work-timeline .icard {
+  margin: 0;
+  cursor: default;
+  padding: 18px 20px 18px 24px;
+  background: color-mix(in srgb, var(--mood-tint, var(--card)) 45%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--mood-color, var(--border)) 16%, transparent);
+  box-shadow: none;
+}
+.work-timeline .icard:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: color-mix(in srgb, var(--mood-color, var(--border)) 16%, transparent);
+}
+.work-timeline .icard .inum {
+  display: none;
+}
+/* ─── Table (a2ui Table) ─── */
+.work-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+.work-table-caption {
+  font-size: var(--type-caption);
+  color: var(--text3);
+  margin-bottom: 6px;
+}
+.work-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--type-body-sm);
+}
+.work-table thead th {
+  text-align: left;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 700;
+  color: var(--text3);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 14px 6px 0;
+  white-space: nowrap;
+}
+.work-table tbody td {
+  padding: 8px 14px 8px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  color: var(--text2);
+  vertical-align: top;
+  transition: background 0.12s ease;
+}
+.work-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.work-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--neutral-soft) 55%, transparent);
+}
+
+/* ─── Section (a2ui Section) ─── */
+.work-section-title,
+.work-section-summary {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 700;
+  color: var(--text3);
+}
+.work-section-summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.work-section-summary::-webkit-details-marker {
+  display: none;
+}
+.work-section-summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+  opacity: 0.7;
+}
+.work-section.is-collapsible[open] > .work-section-summary::before {
+  transform: rotate(45deg);
+}
+.work-section-body {
+  margin-top: 9px;
+}
+.work-section-body > * + * {
+  margin-top: 12px;
+}
+
+/* ─── Callout (a2ui Callout) — a mood-tinted argument, not a KPI tile ─── */
+.work-callout {
+  border-left: 2.5px solid var(--mood-color, var(--accent));
+  background: color-mix(in srgb, var(--mood-tint, var(--accent-soft)) 40%, var(--card));
+  border-radius: 0 12px 12px 0;
+  padding: 12px 16px;
+}
+.work-callout-good {
+  --mood-color: var(--success-mid);
+  --mood-tint: var(--success-soft);
+}
+.work-callout-watch {
+  --mood-color: var(--watch);
+  --mood-tint: var(--watch-soft);
+}
+.work-callout-act {
+  --mood-color: var(--danger);
+  --mood-tint: var(--danger-soft);
+}
+.work-callout-title {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 700;
+  color: var(--mood-color, var(--accent));
+  margin-bottom: 5px;
+}
+.work-callout-body {
+  color: var(--text2);
+}
+
+/* ─── Choice (a2ui Choice) — interactive follow-up buttons ─── */
+.work-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.work-choice-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 13px;
+  font-size: var(--type-body-sm);
+  font-weight: 500;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.1s ease;
+}
+.work-choice-btn:hover {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+.work-choice-btn:active {
+  transform: translateY(0.5px);
+}
+.work-choice-arrow {
+  color: var(--accent);
+  opacity: 0.7;
+  font-size: var(--type-body-sm);
+}
+.work-choice-btn[data-mood="good"] {
+  border-color: color-mix(in srgb, var(--success-mid) 40%, var(--border));
+}
+.work-choice-btn[data-mood="watch"] {
+  border-color: color-mix(in srgb, var(--watch) 45%, var(--border));
+}
+.work-choice-btn[data-mood="act"] {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+/* ─── Divider (a2ui Divider) ─── */
+.work-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+.work-divider.is-labeled {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: none;
+  color: var(--text3);
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 700;
+}
+.work-divider.is-labeled::before,
+.work-divider.is-labeled::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Rhythm: new body components sit on the same 14px grid as prose/cards. */
+.work-surface > .work-table-wrap,
+.work-surface > .work-chart,
+.work-surface > .work-section,
+.work-surface > .work-callout,
+.work-surface > .work-choice,
+.work-surface > .work-divider,
+.work-surface > .work-key-figures {
+  margin-top: 14px;
+}
+
+@media (max-width: 620px) {
+  .work-key-figures-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .work-key-figure {
+    padding: 13px 0;
+  }
+  .work-key-figure + .work-key-figure {
+    padding-left: 0;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+  .work-capability-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .work-capability-grid > div + div {
+    border-top: 1px solid color-mix(in srgb, var(--watch) 34%, var(--border));
+    border-left: 0;
+  }
+  .work-answer-evidence {
+    display: grid;
+  }
+  .work-answer-evidence > * {
+    min-width: 0;
+    padding: 10px 0;
+  }
+  .work-answer-evidence > * + * {
+    padding-left: 0;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+}
+
+/* ─── A2UI v1 form + layout primitives ─── */
+.work-a2ui-layout {
+  display: flex;
+  justify-content: var(--a2ui-justify, flex-start);
+  align-items: var(--a2ui-align, stretch);
+  gap: 12px;
+  min-width: 0;
+}
+.work-a2ui-layout.is-column { flex-direction: column; }
+.work-a2ui-layout.is-row { flex-direction: row; flex-wrap: wrap; }
+.work-a2ui-layout.is-row > * { flex: 1 1 180px; }
+.work-surface > .work-a2ui-layout,
+.work-surface > .work-a2ui-tabs,
+.work-surface > .work-a2ui-field,
+.work-surface > .work-a2ui-button { margin-top: 14px; }
+.work-a2ui-text {
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+  line-height: var(--leading-body);
+}
+.work-a2ui-text > * { margin: 0; }
+.work-a2ui-text.is-caption {
+  color: var(--text3);
+  font-size: var(--type-caption);
+}
+.work-a2ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.work-a2ui-label {
+  color: var(--text3);
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 700;
+}
+.work-a2ui-input {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--card) 88%, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  outline: none;
+  font: inherit;
+  font-size: var(--type-body);
+  line-height: 1.35;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+textarea.work-a2ui-input { resize: vertical; }
+.work-a2ui-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.work-a2ui-checkbox,
+.work-a2ui-check-option {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+  cursor: pointer;
+}
+.work-a2ui-checkbox input,
+.work-a2ui-check-option input { accent-color: var(--accent); }
+.work-a2ui-picker { margin: 0; padding: 0; border: 0; min-width: 0; }
+.work-a2ui-picker .work-a2ui-label { display: block; margin-bottom: 7px; }
+.work-a2ui-check-list { display: flex; flex-direction: column; gap: 7px; }
+.work-a2ui-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.work-a2ui-chips .work-a2ui-check-option {
+  padding: 6px 9px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.work-a2ui-chips .work-a2ui-check-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.work-a2ui-tabs { min-width: 0; }
+.work-a2ui-tab-list {
+  display: flex;
+  gap: 18px;
+  border-bottom: 1px solid var(--border);
+}
+.work-a2ui-tab {
+  position: relative;
+  padding: 0 0 8px;
+  color: var(--text3);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: var(--type-caption);
+  font-weight: 600;
+}
+.work-a2ui-tab[aria-selected="true"] { color: var(--text); }
+.work-a2ui-tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+}
+.work-a2ui-tab-panel { padding-top: 14px; }
+.work-a2ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 8px 13px;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: var(--type-body-sm);
+  font-weight: 600;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+.work-a2ui-button .work-a2ui-text { color: inherit; font: inherit; }
+.work-a2ui-button:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.work-a2ui-button.is-primary {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.work-a2ui-button.is-borderless { padding-inline: 0; background: transparent; border-color: transparent; }
+.work-a2ui-button:disabled { opacity: 0.52; cursor: not-allowed; }
+.work-openapi-import {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--card) 72%, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.work-openapi-mode { display: flex; gap: 6px; }
+.work-openapi-mode button {
+  padding: 6px 10px;
+  color: var(--text3);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--type-caption);
+}
+.work-openapi-mode button[aria-selected="true"] {
+  color: var(--text);
+  background: var(--card);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.work-openapi-file { padding-block: 6px; }
+.work-openapi-error { color: var(--danger); font-size: var(--type-caption); }
+.work-openapi-summary {
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.work-openapi-summary-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.work-openapi-summary-head > div { min-width: 0; }
+.work-openapi-summary-head strong { display: block; color: var(--text); font-size: var(--type-body-sm); overflow-wrap: anywhere; }
+.work-openapi-summary-head span { color: var(--text3); font-size: var(--type-label); }
+.work-openapi-summary-head .work-openapi-ready { color: var(--success-mid); font-weight: 700; }
+.work-openapi-summary dl { display: grid; gap: 7px; margin: 12px 0 0; }
+.work-openapi-summary dl > div { display: grid; grid-template-columns: minmax(90px, 0.3fr) 1fr; gap: 10px; }
+.work-openapi-summary dt { color: var(--text3); font-size: var(--type-label); }
+.work-openapi-summary dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--text2); font-size: var(--type-caption); }
+.work-openapi-checksum { font-family: var(--font-mono); }
+.work-openapi-summary ul { margin: 10px 0 0; padding-left: 18px; color: var(--text3); font-size: var(--type-caption); }
+.work-managed-files-note {
+  color: var(--text3);
+  font-size: var(--type-caption);
+  line-height: 1.55;
+}
+.work-managed-files-list { display: grid; gap: 5px; }
+.work-managed-files-list li { display: flex; min-width: 0; justify-content: space-between; gap: 12px; }
+.work-managed-files-list code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text3);
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+}
+
+@media (max-width: 520px) {
+  .work-openapi-summary-head,
+  .work-managed-files-list li {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+
+  .work-openapi-summary dl > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+/* Times beside a question and an answer, and a running turn's elapsed time. */
+.work-bubble-time,
+.work-answer-time,
+.work-status-elapsed {
+  font-size: var(--type-caption);
+  color: var(--text3);
+  font-variant-numeric: tabular-nums;
+}
+.work-bubble-time { margin-right: 4px; align-self: center; }
+.work-answer-evidence .work-answer-time {
+  display: inline;
+  margin-left: 6px;
+  font-family: inherit;
+  font-weight: 400;
+}
+.work-answer-evidence .work-answer-time::before { content: "· "; }
+.work-status-elapsed { margin-left: auto; flex-shrink: 0; white-space: nowrap; }
+
+/* A finished run's working trail, folded above the answer. */
+.work-trail summary { font-weight: 600; }
+
+.work-run-stopped {
+  margin: 8px 0 0;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+}
+
+.work-markdown .work-user-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.work-user-attachments li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  font-size: var(--type-body-sm);
+}
+
+.work-user-attachments a {
+  color: inherit;
+  font-weight: 600;
+}
+
+.work-user-attachments span {
+  opacity: 0.7;
+}

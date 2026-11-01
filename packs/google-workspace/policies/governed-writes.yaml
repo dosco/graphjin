@@ -1,0 +1,18 @@
+key: policy.google_workspace_governed_writes
+targetRef: google_workspace.policy.governed_writes
+name: Google Workspace governed writes
+description: Google Workspace changes require administrator approval.
+appliesToKinds:
+  - google_workspace.gmail
+  - google_workspace.calendar
+  - google_workspace.drive
+  - google_workspace.sheets
+appliesToScopes: [external]
+mode: ask
+approverRole: admin
+priority: 10
+enabled: true
+allowedTargets: {}
+limits:
+  retry: never
+  requireCompletePayload: true

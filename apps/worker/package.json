@@ -1,0 +1,42 @@
+{
+  "name": "@neko/worker",
+  "version": "5.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts 2>&1 | tee /tmp/neko-worker.log",
+    "start": "tsx src/index.ts",
+    "demo:channels": "tsx scripts/multi-channel-demo.ts",
+    "demo:telegram": "tsx scripts/web-telegram-live.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "eval:cards": "tsx scripts/eval-render-cards.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@neko/channels": "workspace:*",
+    "@neko/db": "workspace:*",
+    "@neko/graphjin-contract": "workspace:*",
+    "@neko/interaction": "workspace:*",
+    "@neko/llm": "workspace:*",
+    "@neko/packs": "workspace:*",
+    "@neko/secrets": "workspace:*",
+    "@neko/telemetry": "workspace:*",
+    "dotenv": "^17.4.1",
+    "graphql": "^16",
+    "mysql2": "^3.15.3",
+    "pg": "^8.20.0",
+    "pg-boss": "^10.1.5",
+    "tsx": "^4.19.2",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/pg": "^8.20.0",
+    "esbuild": "0.27.7",
+    "typescript": "^5",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,8 @@
+profile: us-sample
+description: Development defaults for Magento's US sample catalog.
+storeCode: default
+baseCurrency: USD
+timezone: America/Los_Angeles
+locale: en_US
+catalog: sample-data
+productionSafe: false

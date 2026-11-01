@@ -1,0 +1,20 @@
+key: workflow.daily_commerce_briefing
+targetRef: magento.workflow.daily_commerce_briefing
+name: Magento daily commerce briefing
+description: Summarize revenue, orders, refunds, cancellations, fulfillment, stock, and platform health.
+enabled: false
+status: active
+goal: >-
+  Use the magento-review-performance skill and only the installed Magento
+  saved-query metrics. Produce a concise daily commerce briefing with scope,
+  calculation notes, and freshness. Do not infer conversion rate, margin,
+  customer identity, or payment details. Separate observed facts from
+  recommendations and route a detailed incident to its focused Magento skill.
+schedule:
+  cron: "0 9 * * *"
+  timezoneInput: magento.timezone
+  enabled: false
+activation: admin_confirms_schedule_and_channel
+outputContract:
+  kind: finding
+  required: [title, body, mood, evidence]

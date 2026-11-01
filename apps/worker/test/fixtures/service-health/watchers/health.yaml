@@ -1,0 +1,19 @@
+key: watcher.health
+targetRef: service-health.watch
+name: Watch service health
+description: Watch for provider failures
+workflow: workflow.health
+enabled: true
+activation: always
+query: health
+valuePath: service_health_get_health_summary.healthy
+operator: lt
+threshold: 1
+cadenceSeconds: 60
+debounceSeconds: 0
+cooldownSeconds: 0
+severity: high
+dedupeKey: service-health
+readinessSignals:
+  - reporting
+variables: {}

@@ -1,0 +1,53 @@
+apiVersion: openneko.app/v1
+kind: SolutionPack
+metadata:
+  id: resend
+  name: Resend
+  version: 0.1.0
+  publisher: openneko
+  category: communication
+
+compatibility:
+  openneko: ">=4.9.0 <5.0.0"
+  graphjin:
+    analytics: ">=3.21.0 <4.0.0"
+    operator: ">=3.21.0 <4.0.0"
+  applications:
+    - id: resend
+      editions: [cloud]
+      versions: ">=1.0.0"
+  databases: []
+
+inputs:
+  - key: resend.from
+    type: string
+    required: true
+    description: Sender for every email, for example "Acme Ops <ops@mail.acme.com>". The domain must be verified in Resend. The agent cannot change it.
+
+secrets:
+  - key: resend.api_key
+    purpose: graphjin_api_auth
+    required: true
+
+permissions:
+  network:
+    - api.resend.com
+
+artifacts:
+  graphjin:
+    sources: graphjin/sources.yaml
+    relationships: graphjin/relationships.yaml
+    specs:
+      - graphjin/specs/resend.yaml
+    savedQueries: graphjin/saved-queries
+  actions: actions
+  policies: policies
+  skills:
+    - skills/resend-email
+
+health:
+  requiredPreflight: []
+  readiness:
+    email: []
+  postInstall: []
+  postWriteCanary: []

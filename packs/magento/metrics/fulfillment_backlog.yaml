@@ -1,0 +1,21 @@
+key: metric.fulfillment_backlog
+targetRef: magento.metric.fulfillment_backlog
+title: Fulfillment backlog
+description: Invoiced item quantity that has not been shipped or refunded.
+role: operations
+chartHint: metric
+unit: count
+directionGood: down
+cadence: hourly
+calculationNote: Parent order items only; quantity is invoiced less shipped and refunded. Terminal-state order filtering is intentionally omitted because it is not reliable through MariaDB relationship filters.
+execution:
+  mode: saved_query
+  source: magento_analytics
+  query: fulfillment_backlog
+  result:
+    kind: scalar
+    expression:
+      subtract:
+        - sales_order_item.0.invoiced_quantity
+        - { add: [sales_order_item.0.shipped_quantity, sales_order_item.0.refunded_quantity] }
+  freshnessSeconds: 3600

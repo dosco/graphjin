@@ -1,0 +1,16 @@
+key: metric.top_products
+targetRef: magento.metric.top_products
+title: Top products and SKUs
+description: Highest invoiced order-item revenue and invoiced quantity by SKU.
+role: merchandising
+chartHint: table
+unit: currency
+directionGood: up
+cadence: hourly
+calculationNote: Based on Magento order-item base_row_invoiced; refunds are represented in the separate refund metrics.
+execution:
+  mode: saved_query
+  source: magento_analytics
+  query: top_products
+  result: { kind: rows, path: sales_order_item }
+  freshnessSeconds: 7200

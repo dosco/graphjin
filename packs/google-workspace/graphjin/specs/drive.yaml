@@ -1,0 +1,166 @@
+openapi: 3.0.3
+info: { title: Google Drive read API, version: 1.0.0 }
+servers: [{ url: https://www.googleapis.com }]
+security: [{ oauthBearer: [] }]
+paths:
+  /drive/v3/files:
+    get:
+      operationId: listDriveFiles
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 1000 } }
+        - { name: pageToken, in: query, schema: { type: string } }
+        - { name: orderBy, in: query, schema: { type: string } }
+        - { name: fields, in: query, schema: { type: string } }
+        - { name: spaces, in: query, schema: { type: string } }
+        - { name: corpora, in: query, schema: { type: string } }
+        - { name: driveId, in: query, schema: { type: string } }
+        - { name: includeItemsFromAllDrives, in: query, schema: { type: boolean } }
+        - { name: supportsAllDrives, in: query, schema: { type: boolean } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+    post:
+      operationId: createDriveFile
+      parameters:
+        - { name: fields, in: query, schema: { type: string } }
+        - { name: supportsAllDrives, in: query, schema: { type: boolean } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/File" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /drive/v3/files/{fileId}:
+    get:
+      operationId: getDriveFile
+      parameters:
+        - { name: fileId, in: path, required: true, schema: { type: string } }
+        - { name: fields, in: query, schema: { type: string } }
+        - { name: supportsAllDrives, in: query, schema: { type: boolean } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+    patch:
+      operationId: updateDriveFile
+      parameters:
+        - { name: fileId, in: path, required: true, schema: { type: string } }
+        - { name: addParents, in: query, schema: { type: string } }
+        - { name: removeParents, in: query, schema: { type: string } }
+        - { name: fields, in: query, schema: { type: string } }
+        - { name: supportsAllDrives, in: query, schema: { type: boolean } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/File" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /drive/v3/files/{fileId}/copy:
+    post:
+      operationId: copyDriveFile
+      parameters:
+        - { name: fileId, in: path, required: true, schema: { type: string } }
+        - { name: fields, in: query, schema: { type: string } }
+        - { name: supportsAllDrives, in: query, schema: { type: boolean } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/File" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /drive/v3/files/{fileId}/permissions:
+    get:
+      operationId: listDrivePermissions
+      parameters:
+        - { name: fileId, in: path, required: true, schema: { type: string } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: pageToken, in: query, schema: { type: string } }
+        - { name: supportsAllDrives, in: query, schema: { type: boolean } }
+        - { name: fields, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+    post:
+      operationId: createDrivePermission
+      parameters:
+        - { name: fileId, in: path, required: true, schema: { type: string } }
+        - { name: emailMessage, in: query, schema: { type: string } }
+        - { name: sendNotificationEmail, in: query, schema: { type: boolean } }
+        - { name: supportsAllDrives, in: query, schema: { type: boolean } }
+        - { name: fields, in: query, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Permission" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /drive/v3/files/{fileId}/permissions/{permissionId}:
+    get:
+      operationId: getDrivePermission
+      parameters:
+        - { name: fileId, in: path, required: true, schema: { type: string } }
+        - { name: permissionId, in: path, required: true, schema: { type: string } }
+        - { name: supportsAllDrives, in: query, schema: { type: boolean } }
+        - { name: fields, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+    patch:
+      operationId: updateDrivePermission
+      parameters:
+        - { name: fileId, in: path, required: true, schema: { type: string } }
+        - { name: permissionId, in: path, required: true, schema: { type: string } }
+        - { name: removeExpiration, in: query, schema: { type: boolean } }
+        - { name: supportsAllDrives, in: query, schema: { type: boolean } }
+        - { name: fields, in: query, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Permission" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+    delete:
+      operationId: deleteDrivePermission
+      parameters:
+        - { name: fileId, in: path, required: true, schema: { type: string } }
+        - { name: permissionId, in: path, required: true, schema: { type: string } }
+        - { name: supportsAllDrives, in: query, schema: { type: boolean } }
+      responses:
+        "204": { description: Permission deleted }
+  /drive/v3/about:
+    get:
+      operationId: getDriveAbout
+      parameters:
+        - { name: fields, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+components:
+  securitySchemes:
+    oauthBearer: { type: http, scheme: bearer }
+  responses:
+    Object:
+      description: Google API response
+      content:
+        application/json:
+          schema: { type: object, additionalProperties: true }
+  schemas:
+    File:
+      type: object
+      additionalProperties: true
+      properties:
+        name: { type: string }
+        mimeType: { type: string }
+        description: { type: string }
+        parents: { type: array, items: { type: string }, maxItems: 1 }
+        starred: { type: boolean }
+        trashed: { type: boolean }
+    Permission:
+      type: object
+      additionalProperties: true
+      properties:
+        type: { type: string, enum: [user, group, domain, anyone] }
+        role: { type: string, enum: [owner, organizer, fileOrganizer, writer, commenter, reader] }
+        emailAddress: { type: string }
+        domain: { type: string }
+        expirationTime: { type: string, format: date-time }

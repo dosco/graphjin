@@ -1,0 +1,49 @@
+apiVersion: openneko.app/v1
+kind: SolutionPack
+metadata:
+  id: slack
+  name: Slack
+  version: 0.1.0
+  publisher: openneko
+  category: communication
+
+compatibility:
+  openneko: ">=4.9.0 <5.0.0"
+  graphjin:
+    analytics: ">=3.21.0 <4.0.0"
+    operator: ">=3.21.0 <4.0.0"
+  applications:
+    - id: slack
+      editions: [cloud]
+      versions: ">=1.0.0"
+  databases: []
+
+inputs: []
+
+secrets:
+  - key: slack.bot_token
+    purpose: graphjin_api_auth
+    required: true
+
+permissions:
+  network:
+    - slack.com
+
+artifacts:
+  graphjin:
+    sources: graphjin/sources.yaml
+    relationships: graphjin/relationships.yaml
+    specs:
+      - graphjin/specs/slack.yaml
+    savedQueries: graphjin/saved-queries
+  actions: actions
+  policies: policies
+  skills:
+    - skills/slack-messages
+
+health:
+  requiredPreflight: []
+  readiness:
+    messaging: []
+  postInstall: []
+  postWriteCanary: []

@@ -1,0 +1,32 @@
+key: action.google_workspace_sheets
+targetRef: google_workspace.sheets
+kind: google_workspace.sheets
+description: Update, append, clear, and batch-update values in Google Sheets.
+readiness:
+  capability: operator
+  unavailableReasons: [oauth_not_connected, graphjin_restart_required]
+inputSchema:
+  type: object
+  additionalProperties: false
+  required: [operation, path]
+  properties:
+    operation: { type: string, enum: [update_values, append_values, clear_values, batch_update_values] }
+    path: { type: object }
+    query: { type: object }
+    body: { type: object }
+example:
+  operation: update_values
+  path: { spreadsheetId: SPREADSHEET_ID, range: "Prices!A2:B3" }
+  query: { valueInputOption: USER_ENTERED }
+  body: { range: "Prices!A2:B3", majorDimension: ROWS, values: [[SKU-1, 19.99], [SKU-2, 24.99]] }
+adapter:
+  kind: graphjin_api_operation
+  source: google_workspace_sheets
+  spec: sheets
+  operations:
+    update_values: { operationId: updateSpreadsheetValues, mutationRoot: gws_sheets_update_values, reversible: false }
+    append_values: { operationId: appendSpreadsheetValues, mutationRoot: gws_sheets_append_values, reversible: false }
+    clear_values: { operationId: clearSpreadsheetValues, mutationRoot: gws_sheets_clear_values, reversible: false }
+    batch_update_values: { operationId: batchUpdateSpreadsheetValues, mutationRoot: gws_sheets_batch_update_values, reversible: false }
+  ambiguousOutcome: reconcile_required
+  retry: never

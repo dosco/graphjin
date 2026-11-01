@@ -1,0 +1,17 @@
+sources:
+  - key: source.shopify
+    name: shopify
+    kind: api
+    base_url: "{{shopify.store_url}}"
+    openapi: graphjin/specs/shopify.yaml
+    operations:
+      listOrders: { expose_top_level: true }
+      countOrders: { expose_top_level: true }
+      getOrder: { expose_top_level: true }
+    auth:
+      type: api_key
+      key_name: X-Shopify-Access-Token
+      key_in: header
+      key_value: "{{secret.shopify.access_token}}"
+    read_only: false
+    capabilities: { api.read: true, api.write: true, api.delete: false }

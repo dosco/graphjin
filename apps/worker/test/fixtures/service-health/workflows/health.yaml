@@ -1,0 +1,15 @@
+key: workflow.health
+targetRef: service-health.review
+name: Review service health
+description: Review the current provider health
+enabled: true
+status: active
+goal: Review service health and report failures
+schedule:
+  cron: 0 9 * * *
+  timezoneInput: service.timezone
+  enabled: true
+outputContract:
+  kind: brief
+  required:
+    - summary

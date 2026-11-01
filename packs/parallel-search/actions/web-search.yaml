@@ -1,0 +1,28 @@
+key: action.parallel_web_search
+targetRef: parallel_search.web_search
+kind: parallel_search.web_search
+description: Search the open web with Parallel and return ranked results with excerpts. It reads only and changes nothing.
+readiness:
+  capability: operator
+  unavailableReasons: [secret_not_configured, graphjin_restart_required]
+inputSchema:
+  type: object
+  additionalProperties: false
+  required: [operation, body]
+  properties:
+    operation: { type: string, enum: [search] }
+    body: { type: object }
+example:
+  operation: search
+  body:
+    objective: "Find competitor pricing changes announced in October 2026."
+    search_queries: ["competitor pricing change October 2026"]
+    max_results: 5
+adapter:
+  kind: graphjin_api_operation
+  source: parallel
+  spec: parallel
+  operations:
+    search: { operationId: webSearch, mutationRoot: parallel_web_search, reversible: false }
+  ambiguousOutcome: reconcile_required
+  retry: never

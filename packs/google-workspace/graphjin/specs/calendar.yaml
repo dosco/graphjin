@@ -1,0 +1,105 @@
+openapi: 3.0.3
+info: { title: Google Calendar read API, version: 1.0.0 }
+servers: [{ url: https://www.googleapis.com }]
+security: [{ oauthBearer: [] }]
+paths:
+  /calendar/v3/users/me/calendarList:
+    get:
+      operationId: listCalendars
+      parameters:
+        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 250 } }
+        - { name: pageToken, in: query, schema: { type: string } }
+        - { name: showDeleted, in: query, schema: { type: boolean } }
+        - { name: showHidden, in: query, schema: { type: boolean } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /calendar/v3/calendars/{calendarId}/events:
+    get:
+      operationId: listCalendarEvents
+      parameters:
+        - { name: calendarId, in: path, required: true, schema: { type: string } }
+        - { name: timeMin, in: query, schema: { type: string, format: date-time } }
+        - { name: timeMax, in: query, schema: { type: string, format: date-time } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: singleEvents, in: query, schema: { type: boolean } }
+        - { name: orderBy, in: query, schema: { type: string, enum: [startTime, updated] } }
+        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 2500 } }
+        - { name: pageToken, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+    post:
+      operationId: createCalendarEvent
+      parameters:
+        - { name: calendarId, in: path, required: true, schema: { type: string } }
+        - { name: sendUpdates, in: query, schema: { type: string, enum: [all, externalOnly, none] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Event" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /calendar/v3/calendars/{calendarId}/events/{eventId}:
+    get:
+      operationId: getCalendarEvent
+      parameters:
+        - { name: calendarId, in: path, required: true, schema: { type: string } }
+        - { name: eventId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+    put:
+      operationId: updateCalendarEvent
+      parameters:
+        - { name: calendarId, in: path, required: true, schema: { type: string } }
+        - { name: eventId, in: path, required: true, schema: { type: string } }
+        - { name: sendUpdates, in: query, schema: { type: string, enum: [all, externalOnly, none] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Event" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+    delete:
+      operationId: deleteCalendarEvent
+      parameters:
+        - { name: calendarId, in: path, required: true, schema: { type: string } }
+        - { name: eventId, in: path, required: true, schema: { type: string } }
+        - { name: sendUpdates, in: query, schema: { type: string, enum: [all, externalOnly, none] } }
+      responses:
+        "204": { description: Event deleted }
+components:
+  securitySchemes:
+    oauthBearer: { type: http, scheme: bearer }
+  responses:
+    Object:
+      description: Google API response
+      content:
+        application/json:
+          schema: { type: object, additionalProperties: true }
+  schemas:
+    EventDateTime:
+      type: object
+      additionalProperties: false
+      properties:
+        date: { type: string, format: date }
+        dateTime: { type: string, format: date-time }
+        timeZone: { type: string }
+    Event:
+      type: object
+      additionalProperties: true
+      required: [start, end]
+      properties:
+        summary: { type: string }
+        description: { type: string }
+        location: { type: string }
+        start: { $ref: "#/components/schemas/EventDateTime" }
+        end: { $ref: "#/components/schemas/EventDateTime" }
+        attendees:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              email: { type: string }
+        recurrence: { type: array, items: { type: string } }

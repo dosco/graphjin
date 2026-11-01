@@ -1,0 +1,106 @@
+.answer-diagram {
+  min-width: 0;
+  margin: 0;
+  padding: 14px 0 10px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.work-surface > .answer-diagram {
+  margin-top: 14px;
+}
+
+.answer-diagram-canvas {
+  display: flex;
+  width: 100%;
+  overflow-x: auto;
+  padding: 6px 0;
+  overscroll-behavior-x: contain;
+}
+
+.answer-diagram-canvas svg {
+  display: block;
+  flex: 0 0 auto;
+  margin-inline: auto;
+}
+
+.answer-diagram-edge {
+  fill: none;
+  stroke: var(--text3);
+  stroke-width: 1.4;
+}
+
+.answer-diagram-arrowhead {
+  fill: var(--text3);
+}
+
+.answer-diagram-edge-label {
+  fill: var(--text2);
+  font-family: var(--font-body), "Manrope", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: var(--card);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.answer-diagram-node {
+  outline: none;
+  animation: answer-diagram-in 180ms ease both;
+}
+
+.answer-diagram-box {
+  fill: var(--card);
+  stroke: var(--border);
+  stroke-width: 1.2;
+  transition: opacity 150ms ease;
+}
+
+.answer-diagram-text {
+  fill: var(--text);
+  font-family: var(--font-display), "Archivo", sans-serif;
+  font-size: 12.5px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.answer-diagram-node.is-interactive {
+  cursor: pointer;
+}
+
+.answer-diagram-node.is-interactive .answer-diagram-box {
+  stroke: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.answer-diagram-node.is-interactive:hover .answer-diagram-box {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+}
+
+.answer-diagram-node.is-picked .answer-diagram-box {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.answer-diagram-node.is-interactive:focus-visible .answer-diagram-box {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+@keyframes answer-diagram-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .answer-diagram-node {
+    animation: none;
+  }
+
+  .answer-diagram-box {
+    transition: none;
+  }
+}

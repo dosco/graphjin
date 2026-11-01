@@ -1,0 +1,959 @@
+{
+  "source_commit": "186383e",
+  "date": "2026-09-12",
+  "platform": {
+    "host": "Mac14,2 MacBook Air M2",
+    "host_ram_bytes": 8589934592,
+    "docker_arch": "aarch64",
+    "docker_cpus": 8,
+    "docker_memory_bytes": 5229015040,
+    "docker_version": "29.4.0",
+    "requested_test_budget_gib": 4
+  },
+  "images": {
+    "neko-web": {
+      "id": "sha256:d955f8a82f0eae919b99f1de39375116f710720c78f54df5c573bf0dca601aa3",
+      "bytes": 565187805,
+      "architecture": "arm64"
+    },
+    "neko-worker": {
+      "id": "sha256:d2ba3a5c5e092306689069506b636849442ea0ce9a9a9c02ed5b20f3e780a458",
+      "bytes": 695422328,
+      "architecture": "arm64"
+    },
+    "agent": {
+      "id": "sha256:617c3cb3b2b20aff56bbce691003086585d21aebbe2434242dfcb2e03345dfb9",
+      "bytes": 1352359404,
+      "architecture": "arm64"
+    },
+    "plugin-base": {
+      "id": "sha256:6e182726b2698a31b4613148b8365651c69e1914ca59b8ba8b8742c72fc833c9",
+      "bytes": 236619021,
+      "architecture": "arm64"
+    },
+    "neko-embedding": {
+      "id": "sha256:3447ee37b6d782ebaa88ffa0c17b87071a6f4b8d31d289e0b2fb450ba4b3fb8b",
+      "bytes": 321427021,
+      "architecture": "arm64"
+    },
+    "neko-librarian": {
+      "id": "sha256:0772ba556df3f3544f4ec4f55a822ca2035f5488c920f23f0e5f75f76571169e",
+      "bytes": 1438985655,
+      "architecture": "arm64"
+    },
+    "neko-db": {
+      "id": "sha256:58bb5582bfa44911e6c245428fa093dc51033c0b534e715f4f295e5a377fa7de",
+      "bytes": 461954414,
+      "architecture": "arm64"
+    },
+    "records-db": {
+      "id": "sha256:58bb5582bfa44911e6c245428fa093dc51033c0b534e715f4f295e5a377fa7de",
+      "bytes": 461954414,
+      "architecture": "arm64"
+    },
+    "neko-graphjin": {
+      "id": "sha256:66996e11c51014cf284dacfbc78d1acc852fbfcf627f343a41708287109a612a",
+      "bytes": 166737613,
+      "architecture": "arm64"
+    },
+    "records-graphjin": {
+      "id": "sha256:562773e1cf204b6bf122c2f302c372640635c2b1439e77a4a56d87a1f9e61252",
+      "bytes": 166742135,
+      "architecture": "arm64"
+    },
+    "neko-cli": {
+      "id": "sha256:015e6cba1a41ef7a7108a8e54a171cf518b64e548a19284c9d687fd3e557f481",
+      "bytes": 16401010,
+      "architecture": "arm64"
+    },
+    "neko-backup": {
+      "id": "sha256:443f7a389cc4178d10b91a504309caa0dc8fa5de79163d24850da0df47766e76",
+      "bytes": 500272341,
+      "architecture": "arm64"
+    }
+  },
+  "services": {
+    "web": {
+      "memory_limit_bytes": 536870912,
+      "memory_reservation_bytes": 0,
+      "cpus": 0.0,
+      "pids_limit": null,
+      "restarts": 0,
+      "oom_killed": false,
+      "cgroup_current_bytes": 126427136,
+      "cgroup_peak_bytes": 170590208,
+      "memory_events": [
+        "low 0",
+        "high 0",
+        "max 0",
+        "oom 0",
+        "oom_kill 0",
+        "oom_group_kill 0",
+        "sock_throttled 0"
+      ]
+    },
+    "worker": {
+      "memory_limit_bytes": 671088640,
+      "memory_reservation_bytes": 0,
+      "cpus": 0.0,
+      "pids_limit": null,
+      "restarts": 0,
+      "oom_killed": false,
+      "cgroup_current_bytes": 178966528,
+      "cgroup_peak_bytes": 413810688,
+      "memory_events": [
+        "low 0",
+        "high 0",
+        "max 0",
+        "oom 0",
+        "oom_kill 0",
+        "oom_group_kill 0",
+        "sock_throttled 0"
+      ]
+    },
+    "graphjin": {
+      "memory_limit_bytes": 134217728,
+      "memory_reservation_bytes": 0,
+      "cpus": 0.0,
+      "pids_limit": null,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "openshell-gateway": {
+      "memory_limit_bytes": 201326592,
+      "memory_reservation_bytes": 0,
+      "cpus": 0.0,
+      "pids_limit": null,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "adventureworks-simulator": {
+      "memory_limit_bytes": 0,
+      "memory_reservation_bytes": 0,
+      "cpus": 0.0,
+      "pids_limit": null,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "adventureworks-scenario-injector": {
+      "memory_limit_bytes": 0,
+      "memory_reservation_bytes": 0,
+      "cpus": 0.0,
+      "pids_limit": null,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "neko-graphjin": {
+      "memory_limit_bytes": 134217728,
+      "memory_reservation_bytes": 0,
+      "cpus": 0.0,
+      "pids_limit": null,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "records-watch-graphjin": {
+      "memory_limit_bytes": 134217728,
+      "memory_reservation_bytes": 0,
+      "cpus": 0.0,
+      "pids_limit": null,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "records-graphjin": {
+      "memory_limit_bytes": 134217728,
+      "memory_reservation_bytes": 0,
+      "cpus": 0.0,
+      "pids_limit": null,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "neko-backup": {
+      "memory_limit_bytes": 134217728,
+      "memory_reservation_bytes": 0,
+      "cpus": 0.0,
+      "pids_limit": null,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "embedding": {
+      "memory_limit_bytes": 536870912,
+      "memory_reservation_bytes": 0,
+      "cpus": 1.0,
+      "pids_limit": 64,
+      "restarts": 0,
+      "oom_killed": false,
+      "cgroup_current_bytes": 13778944,
+      "cgroup_peak_bytes": 210456576,
+      "memory_events": [
+        "low 0",
+        "high 0",
+        "max 0",
+        "oom 0",
+        "oom_kill 0",
+        "oom_group_kill 0",
+        "sock_throttled 0"
+      ]
+    },
+    "adventureworks-db": {
+      "memory_limit_bytes": 268435456,
+      "memory_reservation_bytes": 0,
+      "cpus": 0.0,
+      "pids_limit": null,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "librarian": {
+      "memory_limit_bytes": 2147483648,
+      "memory_reservation_bytes": 0,
+      "cpus": 1.0,
+      "pids_limit": 256,
+      "restarts": 0,
+      "oom_killed": false,
+      "cgroup_current_bytes": 26267648,
+      "cgroup_peak_bytes": 1856786432,
+      "memory_events": [
+        "low 0",
+        "high 0",
+        "max 0",
+        "oom 0",
+        "oom_kill 0",
+        "oom_group_kill 0",
+        "sock_throttled 0"
+      ]
+    },
+    "records-db": {
+      "memory_limit_bytes": 201326592,
+      "memory_reservation_bytes": 0,
+      "cpus": 0.0,
+      "pids_limit": null,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "neko-db": {
+      "memory_limit_bytes": 268435456,
+      "memory_reservation_bytes": 0,
+      "cpus": 0.0,
+      "pids_limit": null,
+      "restarts": 0,
+      "oom_killed": false
+    }
+  },
+  "single_run_telemetry": {
+    "io": {
+      "inputBytes": 52823,
+      "outputBytes": 4127
+    },
+    "runId": "deb0f562-fb00-4101-95c0-f9a80e41273e",
+    "usage": {
+      "coverage": "complete",
+      "inputTokens": 106320,
+      "totalTokens": 106567,
+      "outputTokens": 247,
+      "missingReasons": [],
+      "cacheReadTokens": 48897,
+      "reasoningTokens": 0
+    },
+    "counts": {
+      "tools": 3,
+      "retries": 0,
+      "inference": 1,
+      "delegations": 0,
+      "validations": 0
+    },
+    "status": "completed",
+    "backend": "hermes",
+    "provider": "gemini",
+    "durations": {
+      "wallMs": 24333,
+      "firstOutputMs": 22312
+    },
+    "startedAt": "2026-09-12T08:39:15.340Z",
+    "finishedAt": "2026-09-12T08:39:39.673Z",
+    "productPath": "work",
+    "firstOutputAt": "2026-09-12T08:39:38.928Z",
+    "resolvedModel": "gemini-3.5-flash-lite",
+    "schemaVersion": "openneko.harness-run-summary/v1",
+    "requestedModel": "gemini-3.5-flash-lite",
+    "telemetryComplete": true
+  },
+  "concurrent_sessions": [
+    {
+      "session": 1,
+      "run_id": "4a1fb032-bce9-4b41-b504-b7cf6d1a79b6",
+      "client_seconds": 30.606,
+      "verified_sales_orders": 31465,
+      "telemetry": {
+        "io": {
+          "inputBytes": 52801,
+          "outputBytes": 4837
+        },
+        "runId": "4a1fb032-bce9-4b41-b504-b7cf6d1a79b6",
+        "usage": {
+          "coverage": "complete",
+          "inputTokens": 106731,
+          "totalTokens": 106954,
+          "outputTokens": 223,
+          "missingReasons": [],
+          "cacheReadTokens": 32594,
+          "reasoningTokens": 0
+        },
+        "counts": {
+          "tools": 3,
+          "retries": 0,
+          "inference": 1,
+          "delegations": 0,
+          "validations": 0
+        },
+        "status": "completed",
+        "backend": "hermes",
+        "provider": "gemini",
+        "durations": {
+          "wallMs": 30491,
+          "firstOutputMs": 28220
+        },
+        "startedAt": "2026-09-12T08:46:04.664Z",
+        "finishedAt": "2026-09-12T08:46:35.155Z",
+        "productPath": "work",
+        "firstOutputAt": "2026-09-12T08:46:34.322Z",
+        "resolvedModel": "gemini-3.5-flash-lite",
+        "schemaVersion": "openneko.harness-run-summary/v1",
+        "requestedModel": "gemini-3.5-flash-lite",
+        "telemetryComplete": true
+      }
+    },
+    {
+      "session": 2,
+      "run_id": "938ee81f-1773-4304-b786-7b936a9bd81c",
+      "client_seconds": 29.962,
+      "verified_sales_orders": 31465,
+      "telemetry": {
+        "io": {
+          "inputBytes": 52835,
+          "outputBytes": 6047
+        },
+        "runId": "938ee81f-1773-4304-b786-7b936a9bd81c",
+        "usage": {
+          "coverage": "complete",
+          "inputTokens": 107563,
+          "totalTokens": 107815,
+          "outputTokens": 252,
+          "missingReasons": [],
+          "cacheReadTokens": 48901,
+          "reasoningTokens": 0
+        },
+        "counts": {
+          "tools": 3,
+          "retries": 0,
+          "inference": 1,
+          "delegations": 0,
+          "validations": 0
+        },
+        "status": "completed",
+        "backend": "hermes",
+        "provider": "gemini",
+        "durations": {
+          "wallMs": 30001,
+          "firstOutputMs": 27762
+        },
+        "startedAt": "2026-09-12T08:46:04.609Z",
+        "finishedAt": "2026-09-12T08:46:34.610Z",
+        "productPath": "work",
+        "firstOutputAt": "2026-09-12T08:46:33.871Z",
+        "resolvedModel": "gemini-3.5-flash-lite",
+        "schemaVersion": "openneko.harness-run-summary/v1",
+        "requestedModel": "gemini-3.5-flash-lite",
+        "telemetryComplete": true
+      }
+    },
+    {
+      "session": 3,
+      "run_id": "28706762-18df-4f35-afb9-bab117aed097",
+      "client_seconds": 31.328,
+      "verified_sales_orders": 31465,
+      "telemetry": {
+        "io": {
+          "inputBytes": 52836,
+          "outputBytes": 4710
+        },
+        "runId": "28706762-18df-4f35-afb9-bab117aed097",
+        "usage": {
+          "coverage": "complete",
+          "inputTokens": 106293,
+          "totalTokens": 106525,
+          "outputTokens": 232,
+          "missingReasons": [],
+          "cacheReadTokens": 16303,
+          "reasoningTokens": 0
+        },
+        "counts": {
+          "tools": 3,
+          "retries": 0,
+          "inference": 1,
+          "delegations": 0,
+          "validations": 0
+        },
+        "status": "completed",
+        "backend": "hermes",
+        "provider": "gemini",
+        "durations": {
+          "wallMs": 31232,
+          "firstOutputMs": 28668
+        },
+        "startedAt": "2026-09-12T08:46:04.588Z",
+        "finishedAt": "2026-09-12T08:46:35.820Z",
+        "productPath": "work",
+        "firstOutputAt": "2026-09-12T08:46:34.772Z",
+        "resolvedModel": "gemini-3.5-flash-lite",
+        "schemaVersion": "openneko.harness-run-summary/v1",
+        "requestedModel": "gemini-3.5-flash-lite",
+        "telemetryComplete": true
+      }
+    }
+  ],
+  "concurrent_memory_samples": [
+    {
+      "seconds": 2.723,
+      "containers": {
+        "openneko-branch-demo-demo-web-1": 184339661,
+        "openneko-branch-demo-demo-worker-1": 180040499,
+        "openneko-branch-demo-demo-graphjin-1": 119223091,
+        "openneko-branch-demo-demo-openshell-gateway-1": 59349402,
+        "openneko-branch-demo-demo-adventureworks-simulator-1": 139264,
+        "openneko-branch-demo-demo-adventureworks-scenario-injector-1": 126976,
+        "openneko-branch-demo-demo-neko-graphjin-1": 97748255,
+        "openneko-branch-demo-demo-records-watch-graphjin-1": 19597885,
+        "openneko-branch-demo-demo-records-graphjin-1": 18182308,
+        "openneko-branch-demo-demo-neko-backup-1": 16536044,
+        "openneko-branch-demo-demo-embedding-1": 161166131,
+        "openneko-branch-demo-demo-adventureworks-db-1": 133483725,
+        "openneko-branch-demo-demo-librarian-1": 20457718,
+        "openneko-branch-demo-demo-records-db-1": 46441431,
+        "openneko-branch-demo-demo-neko-db-1": 147324928
+      },
+      "total_bytes": 1204157318
+    },
+    {
+      "seconds": 4.911,
+      "containers": {
+        "openneko-branch-demo-demo-web-1": 185388237,
+        "openneko-branch-demo-demo-worker-1": 179935642,
+        "openneko-branch-demo-demo-graphjin-1": 126877696,
+        "openneko-branch-demo-demo-openshell-gateway-1": 75109499,
+        "openneko-branch-demo-demo-adventureworks-simulator-1": 139264,
+        "openneko-branch-demo-demo-adventureworks-scenario-injector-1": 126976,
+        "openneko-branch-demo-demo-neko-graphjin-1": 103829996,
+        "openneko-branch-demo-demo-records-watch-graphjin-1": 27095204,
+        "openneko-branch-demo-demo-records-graphjin-1": 21799895,
+        "openneko-branch-demo-demo-neko-backup-1": 16536044,
+        "openneko-branch-demo-demo-embedding-1": 160641843,
+        "openneko-branch-demo-demo-adventureworks-db-1": 133064294,
+        "openneko-branch-demo-demo-librarian-1": 20457718,
+        "openneko-branch-demo-demo-records-db-1": 46829404,
+        "openneko-branch-demo-demo-neko-db-1": 152987238,
+        "openshell-work-28706762-18df-4f35-afb9-bab117aed097-836396ea-a2de-48ea-8d43-1dd4ba484eab": 15403581,
+        "openshell-work-4a1fb032-bce9-4b41-b504-b7cf6d1a79b6-bae5c24c-d614-4519-a78d-9ca89ffb05bb": 16315843,
+        "openshell-work-938ee81f-1773-4304-b786-7b936a9bd81c-6cee377b-cd33-4c84-80eb-2d6d1f18264e": 18171822
+      },
+      "total_bytes": 1300710196
+    },
+    {
+      "seconds": 7.054,
+      "containers": {
+        "openshell-work-4a1fb032-bce9-4b41-b504-b7cf6d1a79b6-bae5c24c-d614-4519-a78d-9ca89ffb05bb": 119118234,
+        "openshell-work-938ee81f-1773-4304-b786-7b936a9bd81c-6cee377b-cd33-4c84-80eb-2d6d1f18264e": 127926272,
+        "openshell-work-28706762-18df-4f35-afb9-bab117aed097-836396ea-a2de-48ea-8d43-1dd4ba484eab": 117230797,
+        "openneko-branch-demo-demo-web-1": 184759091,
+        "openneko-branch-demo-demo-worker-1": 179935642,
+        "openneko-branch-demo-demo-graphjin-1": 127297126,
+        "openneko-branch-demo-demo-openshell-gateway-1": 74742497,
+        "openneko-branch-demo-demo-adventureworks-simulator-1": 139264,
+        "openneko-branch-demo-demo-adventureworks-scenario-injector-1": 126976,
+        "openneko-branch-demo-demo-neko-graphjin-1": 112197632,
+        "openneko-branch-demo-demo-records-watch-graphjin-1": 27787264,
+        "openneko-branch-demo-demo-records-graphjin-1": 22208840,
+        "openneko-branch-demo-demo-neko-backup-1": 16536044,
+        "openneko-branch-demo-demo-embedding-1": 160641843,
+        "openneko-branch-demo-demo-adventureworks-db-1": 133693440,
+        "openneko-branch-demo-demo-librarian-1": 20478689,
+        "openneko-branch-demo-demo-records-db-1": 46661632,
+        "openneko-branch-demo-demo-neko-db-1": 152882381
+      },
+      "total_bytes": 1624363664
+    },
+    {
+      "seconds": 9.185,
+      "containers": {
+        "openshell-work-4a1fb032-bce9-4b41-b504-b7cf6d1a79b6-bae5c24c-d614-4519-a78d-9ca89ffb05bb": 163682714,
+        "openshell-work-938ee81f-1773-4304-b786-7b936a9bd81c-6cee377b-cd33-4c84-80eb-2d6d1f18264e": 171861606,
+        "openshell-work-28706762-18df-4f35-afb9-bab117aed097-836396ea-a2de-48ea-8d43-1dd4ba484eab": 158439834,
+        "openneko-branch-demo-demo-web-1": 184654234,
+        "openneko-branch-demo-demo-worker-1": 180250214,
+        "openneko-branch-demo-demo-graphjin-1": 127297126,
+        "openneko-branch-demo-demo-openshell-gateway-1": 75015127,
+        "openneko-branch-demo-demo-adventureworks-simulator-1": 139264,
+        "openneko-branch-demo-demo-adventureworks-scenario-injector-1": 126976,
+        "openneko-branch-demo-demo-neko-graphjin-1": 111883059,
+        "openneko-branch-demo-demo-records-watch-graphjin-1": 28070380,
+        "openneko-branch-demo-demo-records-graphjin-1": 22177382,
+        "openneko-branch-demo-demo-neko-backup-1": 16536044,
+        "openneko-branch-demo-demo-embedding-1": 160641843,
+        "openneko-branch-demo-demo-adventureworks-db-1": 133064294,
+        "openneko-branch-demo-demo-librarian-1": 20478689,
+        "openneko-branch-demo-demo-records-db-1": 46441431,
+        "openneko-branch-demo-demo-neko-db-1": 153196954
+      },
+      "total_bytes": 1753957171
+    },
+    {
+      "seconds": 11.34,
+      "containers": {
+        "openshell-work-4a1fb032-bce9-4b41-b504-b7cf6d1a79b6-bae5c24c-d614-4519-a78d-9ca89ffb05bb": 207198618,
+        "openshell-work-938ee81f-1773-4304-b786-7b936a9bd81c-6cee377b-cd33-4c84-80eb-2d6d1f18264e": 212756070,
+        "openshell-work-28706762-18df-4f35-afb9-bab117aed097-836396ea-a2de-48ea-8d43-1dd4ba484eab": 202899456,
+        "openneko-branch-demo-demo-web-1": 184654234,
+        "openneko-branch-demo-demo-worker-1": 179935642,
+        "openneko-branch-demo-demo-graphjin-1": 127297126,
+        "openneko-branch-demo-demo-openshell-gateway-1": 74249667,
+        "openneko-branch-demo-demo-adventureworks-simulator-1": 139264,
+        "openneko-branch-demo-demo-adventureworks-scenario-injector-1": 126976,
+        "openneko-branch-demo-demo-neko-graphjin-1": 112302490,
+        "openneko-branch-demo-demo-records-watch-graphjin-1": 27766292,
+        "openneko-branch-demo-demo-records-graphjin-1": 22764585,
+        "openneko-branch-demo-demo-neko-backup-1": 16536044,
+        "openneko-branch-demo-demo-embedding-1": 160641843,
+        "openneko-branch-demo-demo-adventureworks-db-1": 133064294,
+        "openneko-branch-demo-demo-librarian-1": 20478689,
+        "openneko-branch-demo-demo-records-db-1": 46871347,
+        "openneko-branch-demo-demo-neko-db-1": 146590925
+      },
+      "total_bytes": 1876273562
+    },
+    {
+      "seconds": 13.575,
+      "containers": {
+        "openshell-work-4a1fb032-bce9-4b41-b504-b7cf6d1a79b6-bae5c24c-d614-4519-a78d-9ca89ffb05bb": 202689741,
+        "openshell-work-938ee81f-1773-4304-b786-7b936a9bd81c-6cee377b-cd33-4c84-80eb-2d6d1f18264e": 202375168,
+        "openshell-work-28706762-18df-4f35-afb9-bab117aed097-836396ea-a2de-48ea-8d43-1dd4ba484eab": 202270310,
+        "openneko-branch-demo-demo-web-1": 136105165,
+        "openneko-branch-demo-demo-worker-1": 161270989,
+        "openneko-branch-demo-demo-graphjin-1": 113141350,
+        "openneko-branch-demo-demo-openshell-gateway-1": 50373591,
+        "openneko-branch-demo-demo-adventureworks-simulator-1": 139264,
+        "openneko-branch-demo-demo-adventureworks-scenario-injector-1": 126976,
+        "openneko-branch-demo-demo-neko-graphjin-1": 73777807,
+        "openneko-branch-demo-demo-records-watch-graphjin-1": 17249075,
+        "openneko-branch-demo-demo-records-graphjin-1": 18045993,
+        "openneko-branch-demo-demo-neko-backup-1": 13096714,
+        "openneko-branch-demo-demo-embedding-1": 95923732,
+        "openneko-branch-demo-demo-adventureworks-db-1": 128345702,
+        "openneko-branch-demo-demo-librarian-1": 13463716,
+        "openneko-branch-demo-demo-records-db-1": 46357545,
+        "openneko-branch-demo-demo-neko-db-1": 109576192
+      },
+      "total_bytes": 1584329030
+    },
+    {
+      "seconds": 16.072,
+      "containers": {
+        "openshell-work-4a1fb032-bce9-4b41-b504-b7cf6d1a79b6-bae5c24c-d614-4519-a78d-9ca89ffb05bb": 223241830,
+        "openshell-work-938ee81f-1773-4304-b786-7b936a9bd81c-6cee377b-cd33-4c84-80eb-2d6d1f18264e": 217474662,
+        "openshell-work-28706762-18df-4f35-afb9-bab117aed097-836396ea-a2de-48ea-8d43-1dd4ba484eab": 219362099,
+        "openneko-branch-demo-demo-web-1": 141138330,
+        "openneko-branch-demo-demo-worker-1": 162109850,
+        "openneko-branch-demo-demo-graphjin-1": 114085069,
+        "openneko-branch-demo-demo-openshell-gateway-1": 50457477,
+        "openneko-branch-demo-demo-adventureworks-simulator-1": 139264,
+        "openneko-branch-demo-demo-adventureworks-scenario-injector-1": 126976,
+        "openneko-branch-demo-demo-neko-graphjin-1": 73714893,
+        "openneko-branch-demo-demo-records-watch-graphjin-1": 17542676,
+        "openneko-branch-demo-demo-records-graphjin-1": 17385390,
+        "openneko-branch-demo-demo-neko-backup-1": 15162409,
+        "openneko-branch-demo-demo-embedding-1": 98209628,
+        "openneko-branch-demo-demo-adventureworks-db-1": 128031130,
+        "openneko-branch-demo-demo-librarian-1": 15403581,
+        "openneko-branch-demo-demo-records-db-1": 54882468,
+        "openneko-branch-demo-demo-neko-db-1": 111149056
+      },
+      "total_bytes": 1659616788
+    },
+    {
+      "seconds": 19.533,
+      "containers": {
+        "openshell-work-4a1fb032-bce9-4b41-b504-b7cf6d1a79b6-bae5c24c-d614-4519-a78d-9ca89ffb05bb": 350434099,
+        "openshell-work-938ee81f-1773-4304-b786-7b936a9bd81c-6cee377b-cd33-4c84-80eb-2d6d1f18264e": 343303782,
+        "openshell-work-28706762-18df-4f35-afb9-bab117aed097-836396ea-a2de-48ea-8d43-1dd4ba484eab": 345400934,
+        "openneko-branch-demo-demo-web-1": 141138330,
+        "openneko-branch-demo-demo-worker-1": 162529280,
+        "openneko-branch-demo-demo-graphjin-1": 134008013,
+        "openneko-branch-demo-demo-openshell-gateway-1": 50981765,
+        "openneko-branch-demo-demo-adventureworks-simulator-1": 139264,
+        "openneko-branch-demo-demo-adventureworks-scenario-injector-1": 126976,
+        "openneko-branch-demo-demo-neko-graphjin-1": 87346381,
+        "openneko-branch-demo-demo-records-watch-graphjin-1": 17909678,
+        "openneko-branch-demo-demo-records-graphjin-1": 17521705,
+        "openneko-branch-demo-demo-neko-backup-1": 15162409,
+        "openneko-branch-demo-demo-embedding-1": 98188657,
+        "openneko-branch-demo-demo-adventureworks-db-1": 128135987,
+        "openneko-branch-demo-demo-librarian-1": 26120028,
+        "openneko-branch-demo-demo-records-db-1": 54190408,
+        "openneko-branch-demo-demo-neko-db-1": 111463629
+      },
+      "total_bytes": 2084101325
+    },
+    {
+      "seconds": 21.889,
+      "containers": {
+        "openshell-work-4a1fb032-bce9-4b41-b504-b7cf6d1a79b6-bae5c24c-d614-4519-a78d-9ca89ffb05bb": 417123533,
+        "openshell-work-938ee81f-1773-4304-b786-7b936a9bd81c-6cee377b-cd33-4c84-80eb-2d6d1f18264e": 418591539,
+        "openshell-work-28706762-18df-4f35-afb9-bab117aed097-836396ea-a2de-48ea-8d43-1dd4ba484eab": 414816666,
+        "openneko-branch-demo-demo-web-1": 141138330,
+        "openneko-branch-demo-demo-worker-1": 162004992,
+        "openneko-branch-demo-demo-graphjin-1": 134112870,
+        "openneko-branch-demo-demo-openshell-gateway-1": 50730107,
+        "openneko-branch-demo-demo-adventureworks-simulator-1": 139264,
+        "openneko-branch-demo-demo-adventureworks-scenario-injector-1": 126976,
+        "openneko-branch-demo-demo-neko-graphjin-1": 96468992,
+        "openneko-branch-demo-demo-records-watch-graphjin-1": 17311990,
+        "openneko-branch-demo-demo-records-graphjin-1": 17762877,
+        "openneko-branch-demo-demo-neko-backup-1": 15162409,
+        "openneko-branch-demo-demo-embedding-1": 98188657,
+        "openneko-branch-demo-demo-adventureworks-db-1": 128555418,
+        "openneko-branch-demo-demo-librarian-1": 16441672,
+        "openneko-branch-demo-demo-records-db-1": 55238984,
+        "openneko-branch-demo-demo-neko-db-1": 117545370
+      },
+      "total_bytes": 2301460646
+    },
+    {
+      "seconds": 24.031,
+      "containers": {
+        "openshell-work-4a1fb032-bce9-4b41-b504-b7cf6d1a79b6-bae5c24c-d614-4519-a78d-9ca89ffb05bb": 417962394,
+        "openshell-work-938ee81f-1773-4304-b786-7b936a9bd81c-6cee377b-cd33-4c84-80eb-2d6d1f18264e": 419744973,
+        "openshell-work-28706762-18df-4f35-afb9-bab117aed097-836396ea-a2de-48ea-8d43-1dd4ba484eab": 415865242,
+        "openneko-branch-demo-demo-web-1": 141662618,
+        "openneko-branch-demo-demo-worker-1": 162319565,
+        "openneko-branch-demo-demo-graphjin-1": 133274010,
+        "openneko-branch-demo-demo-openshell-gateway-1": 51065651,
+        "openneko-branch-demo-demo-adventureworks-simulator-1": 139264,
+        "openneko-branch-demo-demo-adventureworks-scenario-injector-1": 126976,
+        "openneko-branch-demo-demo-neko-graphjin-1": 97307853,
+        "openneko-branch-demo-demo-records-watch-graphjin-1": 18570281,
+        "openneko-branch-demo-demo-records-graphjin-1": 21191721,
+        "openneko-branch-demo-demo-neko-backup-1": 16462643,
+        "openneko-branch-demo-demo-embedding-1": 6491734,
+        "openneko-branch-demo-demo-adventureworks-db-1": 128450560,
+        "openneko-branch-demo-demo-librarian-1": 16252928,
+        "openneko-branch-demo-demo-records-db-1": 54190408,
+        "openneko-branch-demo-demo-neko-db-1": 118069658
+      },
+      "total_bytes": 2219148479
+    },
+    {
+      "seconds": 26.129,
+      "containers": {
+        "openshell-work-4a1fb032-bce9-4b41-b504-b7cf6d1a79b6-bae5c24c-d614-4519-a78d-9ca89ffb05bb": 418801254,
+        "openshell-work-938ee81f-1773-4304-b786-7b936a9bd81c-6cee377b-cd33-4c84-80eb-2d6d1f18264e": 420269261,
+        "openshell-work-28706762-18df-4f35-afb9-bab117aed097-836396ea-a2de-48ea-8d43-1dd4ba484eab": 416179814,
+        "openneko-branch-demo-demo-web-1": 141243187,
+        "openneko-branch-demo-demo-worker-1": 162004992,
+        "openneko-branch-demo-demo-graphjin-1": 133693440,
+        "openneko-branch-demo-demo-openshell-gateway-1": 120691098,
+        "openneko-branch-demo-demo-adventureworks-simulator-1": 139264,
+        "openneko-branch-demo-demo-adventureworks-scenario-injector-1": 126976,
+        "openneko-branch-demo-demo-neko-graphjin-1": 97391739,
+        "openneko-branch-demo-demo-records-watch-graphjin-1": 18444452,
+        "openneko-branch-demo-demo-records-graphjin-1": 21349007,
+        "openneko-branch-demo-demo-neko-backup-1": 15833498,
+        "openneko-branch-demo-demo-embedding-1": 6491734,
+        "openneko-branch-demo-demo-adventureworks-db-1": 128135987,
+        "openneko-branch-demo-demo-librarian-1": 16252928,
+        "openneko-branch-demo-demo-records-db-1": 54620324,
+        "openneko-branch-demo-demo-neko-db-1": 116601651
+      },
+      "total_bytes": 2288270606
+    },
+    {
+      "seconds": 28.263,
+      "containers": {
+        "openshell-work-4a1fb032-bce9-4b41-b504-b7cf6d1a79b6-bae5c24c-d614-4519-a78d-9ca89ffb05bb": 419220685,
+        "openshell-work-938ee81f-1773-4304-b786-7b936a9bd81c-6cee377b-cd33-4c84-80eb-2d6d1f18264e": 420374118,
+        "openshell-work-28706762-18df-4f35-afb9-bab117aed097-836396ea-a2de-48ea-8d43-1dd4ba484eab": 416389530,
+        "openneko-branch-demo-demo-web-1": 141452902,
+        "openneko-branch-demo-demo-worker-1": 162004992,
+        "openneko-branch-demo-demo-graphjin-1": 134217728,
+        "openneko-branch-demo-demo-openshell-gateway-1": 120271667,
+        "openneko-branch-demo-demo-adventureworks-simulator-1": 139264,
+        "openneko-branch-demo-demo-adventureworks-scenario-injector-1": 126976,
+        "openneko-branch-demo-demo-neko-graphjin-1": 97182024,
+        "openneko-branch-demo-demo-records-watch-graphjin-1": 18759025,
+        "openneko-branch-demo-demo-records-graphjin-1": 21191721,
+        "openneko-branch-demo-demo-neko-backup-1": 15833498,
+        "openneko-branch-demo-demo-embedding-1": 6491734,
+        "openneko-branch-demo-demo-adventureworks-db-1": 131491430,
+        "openneko-branch-demo-demo-librarian-1": 16252928,
+        "openneko-branch-demo-demo-records-db-1": 54326723,
+        "openneko-branch-demo-demo-neko-db-1": 116706509
+      },
+      "total_bytes": 2292433454
+    },
+    {
+      "seconds": 30.486,
+      "containers": {
+        "openshell-work-4a1fb032-bce9-4b41-b504-b7cf6d1a79b6-bae5c24c-d614-4519-a78d-9ca89ffb05bb": 29265756,
+        "openshell-work-28706762-18df-4f35-afb9-bab117aed097-836396ea-a2de-48ea-8d43-1dd4ba484eab": 416389530,
+        "openneko-branch-demo-demo-web-1": 142396621,
+        "openneko-branch-demo-demo-worker-1": 162319565,
+        "openneko-branch-demo-demo-graphjin-1": 130442854,
+        "openneko-branch-demo-demo-openshell-gateway-1": 121634816,
+        "openneko-branch-demo-demo-adventureworks-simulator-1": 139264,
+        "openneko-branch-demo-demo-adventureworks-scenario-injector-1": 126976,
+        "openneko-branch-demo-demo-neko-graphjin-1": 96374620,
+        "openneko-branch-demo-demo-records-watch-graphjin-1": 18538824,
+        "openneko-branch-demo-demo-records-graphjin-1": 20279460,
+        "openneko-branch-demo-demo-neko-backup-1": 15833498,
+        "openneko-branch-demo-demo-embedding-1": 7032799,
+        "openneko-branch-demo-demo-adventureworks-db-1": 130652570,
+        "openneko-branch-demo-demo-librarian-1": 16252928,
+        "openneko-branch-demo-demo-records-db-1": 54735667,
+        "openneko-branch-demo-demo-neko-db-1": 111883059
+      },
+      "total_bytes": 1474298807
+    },
+    {
+      "seconds": 32.801,
+      "containers": {
+        "openneko-branch-demo-demo-web-1": 140404326,
+        "openneko-branch-demo-demo-worker-1": 162004992,
+        "openneko-branch-demo-demo-graphjin-1": 131596288,
+        "openneko-branch-demo-demo-openshell-gateway-1": 121425101,
+        "openneko-branch-demo-demo-adventureworks-simulator-1": 139264,
+        "openneko-branch-demo-demo-adventureworks-scenario-injector-1": 126976,
+        "openneko-branch-demo-demo-neko-graphjin-1": 97192509,
+        "openneko-branch-demo-demo-records-watch-graphjin-1": 18423480,
+        "openneko-branch-demo-demo-records-graphjin-1": 21317550,
+        "openneko-branch-demo-demo-neko-backup-1": 15833498,
+        "openneko-branch-demo-demo-embedding-1": 6491734,
+        "openneko-branch-demo-demo-adventureworks-db-1": 131281715,
+        "openneko-branch-demo-demo-librarian-1": 16252928,
+        "openneko-branch-demo-demo-records-db-1": 54190408,
+        "openneko-branch-demo-demo-neko-db-1": 110519910
+      },
+      "total_bytes": 1027200679
+    }
+  ],
+  "agent_cgroup_peaks_bytes": {
+    "openshell-work-28706762-18df-4f35-afb9-bab117aed097-836396ea-a2de-48ea-8d43-1dd4ba484eab": 438251520,
+    "openshell-work-4a1fb032-bce9-4b41-b504-b7cf6d1a79b6-bae5c24c-d614-4519-a78d-9ca89ffb05bb": 447926272,
+    "openshell-work-938ee81f-1773-4304-b786-7b936a9bd81c-6cee377b-cd33-4c84-80eb-2d6d1f18264e": 454172672
+  },
+  "sandbox_phases": [
+    {
+      "type": "sandbox_phase",
+      "runId": "deb0f562-fb00-4101-95c0-f9a80e41273e",
+      "phase": "stage",
+      "durationMs": 371,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "deb0f562-fb00-4101-95c0-f9a80e41273e",
+      "phase": "create_upload",
+      "durationMs": 1369,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "deb0f562-fb00-4101-95c0-f9a80e41273e",
+      "phase": "exec",
+      "durationMs": 20574,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "deb0f562-fb00-4101-95c0-f9a80e41273e",
+      "phase": "delete",
+      "durationMs": 450,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "deb0f562-fb00-4101-95c0-f9a80e41273e",
+      "phase": "total",
+      "durationMs": 22832
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "28706762-18df-4f35-afb9-bab117aed097",
+      "phase": "stage",
+      "durationMs": 199,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "4a1fb032-bce9-4b41-b504-b7cf6d1a79b6",
+      "phase": "stage",
+      "durationMs": 202,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "938ee81f-1773-4304-b786-7b936a9bd81c",
+      "phase": "stage",
+      "durationMs": 194,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "938ee81f-1773-4304-b786-7b936a9bd81c",
+      "phase": "create_upload",
+      "durationMs": 2542,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "28706762-18df-4f35-afb9-bab117aed097",
+      "phase": "create_upload",
+      "durationMs": 2573,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "4a1fb032-bce9-4b41-b504-b7cf6d1a79b6",
+      "phase": "create_upload",
+      "durationMs": 2586,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "938ee81f-1773-4304-b786-7b936a9bd81c",
+      "phase": "exec",
+      "durationMs": 25064,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "938ee81f-1773-4304-b786-7b936a9bd81c",
+      "phase": "delete",
+      "durationMs": 309,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "938ee81f-1773-4304-b786-7b936a9bd81c",
+      "phase": "total",
+      "durationMs": 28204
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "4a1fb032-bce9-4b41-b504-b7cf6d1a79b6",
+      "phase": "exec",
+      "durationMs": 25454,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "28706762-18df-4f35-afb9-bab117aed097",
+      "phase": "exec",
+      "durationMs": 25886,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "4a1fb032-bce9-4b41-b504-b7cf6d1a79b6",
+      "phase": "delete",
+      "durationMs": 596,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "4a1fb032-bce9-4b41-b504-b7cf6d1a79b6",
+      "phase": "total",
+      "durationMs": 28901
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "28706762-18df-4f35-afb9-bab117aed097",
+      "phase": "delete",
+      "durationMs": 734,
+      "ok": true
+    },
+    {
+      "type": "sandbox_phase",
+      "runId": "28706762-18df-4f35-afb9-bab117aed097",
+      "phase": "total",
+      "durationMs": 29465
+    }
+  ],
+  "restart_to_readiness_seconds": {
+    "worker": 8.32,
+    "web": 2.602
+  },
+  "document_timing": [
+    {
+      "phase": "submit",
+      "ms": 1630.657428
+    },
+    {
+      "phase": "extraction_result",
+      "ms": 36602.687521
+    }
+  ],
+  "embedding_timing": [
+    {
+      "before": {
+        "ok": true,
+        "starts": 3,
+        "state": "sleeping"
+      }
+    },
+    {
+      "request": 1,
+      "ms": 1215.294846,
+      "dimensions": 384
+    },
+    {
+      "request": 2,
+      "ms": 11.544656999999916,
+      "dimensions": 384
+    },
+    {
+      "after": {
+        "ok": true,
+        "starts": 4,
+        "state": "running"
+      }
+    }
+  ],
+  "final_idle_working_set_bytes": {
+    "web": 81977672,
+    "worker": 167562445,
+    "graphjin": 80708895,
+    "openshell-gateway": 101848187,
+    "adventureworks-simulator": 139264,
+    "adventureworks-scenario-injector": 126976,
+    "neko-graphjin": 101502157,
+    "records-watch-graphjin": 22020096,
+    "records-graphjin": 17364419,
+    "neko-backup": 13621002,
+    "embedding": 9035579,
+    "adventureworks-db": 132854579,
+    "librarian": 7892632,
+    "records-db": 51789169,
+    "neko-db": 123731968
+  },
+  "final_lazy_states": [
+    {
+      "service": "embedding",
+      "ok": true,
+      "starts": 4,
+      "state": "sleeping"
+    },
+    {
+      "service": "librarian",
+      "ok": true,
+      "starts": 2,
+      "state": "sleeping"
+    }
+  ],
+  "cancelled": false
+}

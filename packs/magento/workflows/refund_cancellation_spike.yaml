@@ -1,0 +1,15 @@
+key: workflow.refund_cancellation_spike
+targetRef: magento.workflow.refund_cancellation_spike
+name: Magento refund and cancellation spike
+description: Investigate a material increase in refund value or cancelled-order rate.
+enabled: true
+status: active
+goal: >-
+  Use the magento-investigate-refunds skill. Compare the current refund value
+  rate and cancellation count rate with the configured baseline. Break down by
+  store, order, and SKU only when evidence is sufficient. Do not expose customer
+  or payment data and do not issue refunds.
+schedule: null
+outputContract:
+  kind: finding
+  required: [title, body, mood, evidence]

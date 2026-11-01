@@ -1,0 +1,16 @@
+key: metric.data_freshness
+targetRef: magento.metric.data_freshness
+title: Magento data freshness
+description: Age of the newest order and most recent successful cron observation.
+role: operations
+chartHint: status
+unit: duration_seconds
+directionGood: down
+cadence: hourly
+calculationNote: Helps distinguish a quiet store from a stale analytics connection.
+execution:
+  mode: saved_query
+  source: magento_analytics
+  query: data_freshness
+  result: { kind: timestamps, paths: [sales_order.0.newest_order_at, cron_schedule.0.newest_successful_cron_at] }
+  freshnessSeconds: 3600

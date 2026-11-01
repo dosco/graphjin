@@ -1,40 +1,38 @@
 {
-  "name": "graphjin",
-  "version": "3.21.18",
-  "description": "GraphJin — one governed graph for AI agents: GraphQL + MCP over your databases, files, APIs, and code",
-  "bin": {
-    "graphjin": "bin/graphjin.js"
-  },
-  "files": [
-    "./bin"
-  ],
-  "scripts": {
-    "postinstall": "node ./bin/install.js",
-    "website:dev": "npm --prefix website run dev",
-    "website:build": "npm --prefix website run build",
-    "website:index": "npm --prefix website run index"
-  },
+  "name": "neko",
+  "version": "5.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "author": "Amit Deshmukh (https://github.com/amitdeshmukh)",
+  "homepage": "https://openneko.app",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dosco/graphjin.git"
+    "url": "git+https://github.com/open-neko/openneko.git"
   },
-  "keywords": [
-    "graphql",
-    "sql",
-    "database",
-    "api",
-    "cli",
-    "postgres",
-    "mysql",
-    "mcp"
-  ],
-  "author": "Vikram <https://twitter.com/dosco>",
-  "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/dosco/graphjin/issues"
+    "url": "https://github.com/open-neko/openneko/issues"
   },
-  "homepage": "https://graphjin.com",
-  "dependencies": {
-    "tar": "^7.0.0"
-  }
+  "scripts": {
+    "bootstrap": "AX_SKIP_SKILL_INSTALL=1 pnpm install && [ -f db/graphjin/dev.example.yml ] && [ ! -f db/graphjin/dev.yml ] && cp db/graphjin/dev.example.yml db/graphjin/dev.yml || true",
+    "dev": "concurrently -n agent,web,worker -c green,blue,magenta \"pnpm dev:agent\" \"pnpm dev:web\" \"pnpm dev:worker\"",
+    "dev:agent": "sh scripts/dev-agent.sh",
+    "dev:web": ". scripts/dev-env.sh && OPENNEKO_BROKER_PORT=\"${OPENNEKO_WEB_BROKER_PORT:-4198}\" pnpm --filter @neko/web exec next dev --port \"${OPENNEKO_PORT:-3000}\"",
+    "dev:web:stack": "sh scripts/dev-web-stack.sh",
+    "dev:worker": ". scripts/dev-env.sh && OPENNEKO_BROKER_PORT=\"${OPENNEKO_WORKER_BROKER_PORT:-4199}\" pnpm --filter @neko/worker dev",
+    "dev:up": "sh scripts/dev-up.sh",
+    "dev:seed": ". scripts/dev-env.sh && ADVENTUREWORKS_GRAPHJIN_ROOT=\"http://localhost:${GRAPHJIN_PORT:-8080}\" ADVENTUREWORKS_UPDATE_DATA_SOURCE=1 pnpm --filter @neko/worker exec tsx ../../packages/db/src/seed-adventureworks.mjs",
+    "dev:setup": "pnpm dev:up && pnpm dev:seed",
+    "dev:down": "docker compose -f compose.yml -f compose.adventureworks.yml -f compose.graphjin-agent.yml -f compose.dev.yml down",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @neko/worker test:e2e",
+    "ui:check": "node scripts/check-web-design-system.mjs",
+    "skills:install": "node --experimental-strip-types scripts/skill-doctor.ts --install",
+    "openneko": "OPENNEKO_WORKSPACE_ROOT=\"$PWD\" sh -c 'cd apps/openneko && exec go run ./cmd/openneko \"$@\"' --"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "packageManager": "pnpm@9.14.1"
 }

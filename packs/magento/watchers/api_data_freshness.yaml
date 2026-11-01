@@ -1,0 +1,17 @@
+key: watcher.api_data_freshness
+targetRef: magento.watcher.api_data_freshness
+name: Magento recent-order data freshness
+description: Fires when no order has appeared during the configured freshness window; quiet stores can legitimately meet this condition.
+workflow: workflow.cron_indexer_health
+enabled: false
+activation: analytics_ready_and_admin_confirms_threshold
+query: watch_api_data_freshness
+valuePath: sales_order.0.count
+operator: eq
+threshold: 0
+cadenceSeconds: 900
+debounceSeconds: 3600
+cooldownSeconds: 14400
+severity: medium
+dedupeKey: "data-freshness:{window_start}"
+readinessSignals: [analytics]

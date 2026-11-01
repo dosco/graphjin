@@ -1,0 +1,15 @@
+key: workflow.google_workspace_inbox_agenda
+targetRef: google_workspace.workflow.inbox_agenda
+name: Gmail and Calendar briefing
+description: Summarize relevant unread mail and upcoming calendar events for a stated period.
+enabled: true
+status: active
+goal: >-
+  Use the google-workspace-read skill. Search unread Gmail messages and Google
+  Calendar events within the period supplied by the user. State the calendar
+  timezone, keep message and event IDs, and separate confirmed facts from
+  suggested follow-up work. Do not send mail or change events.
+schedule: null
+outputContract:
+  kind: briefing
+  required: [title, body, evidence]

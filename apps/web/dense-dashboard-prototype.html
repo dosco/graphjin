@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en" data-density="compact">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenNeko · density study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,500;0,600;0,700;0,800;0,900;1,500;1,600&family=Manrope:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ───────────────────────────────────────────────────────────────
+   OpenNeko — Apple-Health-density study (standalone prototype)
+   Reuses the production tokens verbatim so this reads as "your app,
+   denser" rather than a different app. The whole point of interest
+   lives in [data-density="comfortable"] vs ["compact"]: one set of
+   --d-* variables flips canvas width, grid columns, padding, type
+   scale, and whether card detail is inlined. Toggle, top-right.
+   ─────────────────────────────────────────────────────────────── */
+
+:root{
+  /* ── production palette (globals.css) ── */
+  --bg:#FAFAF7; --card:#FFFFFF; --text:#2D2A24; --text2:#7A756A; --text3:#B0AA9F;
+  --border:#EEEBE4; --neutral:#F2EFE8; --neutral-soft:#F7F4ED;
+  --accent:#6B5CE7; --accent-soft:#EDE9FE;
+  --success:#6CFF7F; --success-ink:#113719; --success-soft:#E2FBE6; --success-mid:#4CAF82;
+  --watch:#E9A23B; --watch-soft:#FFF1D8;
+  --warn:#F0D97A; --warn-soft:#FFF4CC; --warn-ink:#8A6D00;
+  --danger:#E05656; --danger-soft:#FEECEC;
+
+  --shadow:0 1px 3px rgba(20,18,12,.04), 0 4px 16px rgba(20,18,12,.03);
+  --shadow-h:0 2px 8px rgba(20,18,12,.06), 0 12px 36px -8px rgba(20,18,12,.07);
+  --shadow-lift:0 1px 2px rgba(20,18,12,.04), 0 18px 48px -16px rgba(20,18,12,.16);
+
+  --display:'Archivo',sans-serif;
+  --body:'Manrope',sans-serif;
+  --mono:'Geist Mono',ui-monospace,monospace;
+}
+
+/* ── COMFORTABLE — today's feel: narrow reading column, roomy ── */
+html[data-density="comfortable"]{
+  --d-page:760px;
+  --d-grid:1fr;              /* one card per row            */
+  --d-gap:14px;
+  --d-pad:22px 24px 22px 28px;
+  --d-radius:20px;
+  --d-greet:46px;
+  --d-tile-metric:30px;
+  --d-itext:16.5px;
+  --d-vitals-min:210px;
+  --d-section-gap:34px;
+  --d-detail:block;         /* card detail always shown    */
+  --d-rail-spark:42px;
+}
+/* ── COMPACT — Apple-Health grid: wide canvas, tiled, scannable ── */
+html[data-density="compact"]{
+  --d-page:1180px;
+  --d-grid:repeat(auto-fill,minmax(296px,1fr));
+  --d-gap:12px;
+  --d-pad:15px 16px 15px 18px;
+  --d-radius:17px;
+  --d-greet:30px;
+  --d-tile-metric:23px;
+  --d-itext:14.5px;
+  --d-vitals-min:158px;
+  --d-section-gap:22px;
+  --d-detail:none;          /* detail tucked behind expand */
+  --d-rail-spark:30px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:var(--body); background:var(--bg); color:var(--text);
+  line-height:1.5; -webkit-font-smoothing:antialiased;
+  padding-bottom:80px; min-height:100vh;
+}
+/* faint editorial paper texture (chrome.css) */
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:
+    radial-gradient(circle at 16% 10%, rgba(107,92,231,.05), transparent 42%),
+    radial-gradient(circle at 90% 4%,  rgba(108,255,127,.055), transparent 40%);
+}
+.wrap{position:relative;z-index:1;max-width:var(--d-page);margin:0 auto;
+  padding:26px 24px 0; transition:max-width .45s cubic-bezier(.4,0,.2,1)}
+
+a{color:inherit;text-decoration:none}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.tnum{font-variant-numeric:tabular-nums}
+
+/* ─── TOP BAR ─── */
+.topbar{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.brand{display:inline-flex;align-items:center;gap:9px;font-family:var(--display);
+  font-weight:800;font-size:17px;letter-spacing:-.02em}
+.brand .mark{width:19px;height:19px;border-radius:50%;
+  background:conic-gradient(from 220deg, var(--text) 0 50%, transparent 50% 100%);
+  border:1.5px solid var(--text)}
+.brand .ver{font-family:var(--body);font-weight:600;font-size:10.5px;color:var(--text2);
+  background:var(--neutral);padding:2px 6px;border-radius:999px;letter-spacing:0}
+.spacer{flex:1}
+
+/* density segmented control — the headline of this study */
+.seg{display:inline-flex;background:var(--neutral);border:1px solid var(--border);
+  border-radius:999px;padding:3px;gap:2px}
+.seg button{font-family:var(--body);font-weight:600;font-size:12.5px;color:var(--text2);
+  border:0;background:transparent;padding:6px 14px;border-radius:999px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:6px;transition:color .18s}
+.seg button .ic{width:13px;height:13px;display:block}
+.seg button[aria-pressed="true"]{background:var(--card);color:var(--text);
+  box-shadow:0 1px 2px rgba(20,18,12,.08), 0 2px 8px -2px rgba(20,18,12,.10)}
+
+/* ─── ROLE PILLS ─── */
+.roles{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:20px}
+.role{font-family:var(--body);font-size:13.5px;font-weight:500;color:var(--text2);
+  background:rgba(255,255,255,.6);border:1.5px solid var(--border);
+  padding:8px 16px;border-radius:999px;cursor:pointer;
+  transition:color .2s,background .2s,border-color .2s,transform .2s,box-shadow .2s}
+.role:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);transform:translateY(-1px)}
+.role[aria-pressed="true"]{background:var(--text);border-color:var(--text);color:var(--bg);
+  box-shadow:0 2px 10px rgba(20,18,12,.18)}
+.role[aria-pressed="true"]::before{content:"";display:inline-block;width:6px;height:6px;
+  border-radius:50%;background:var(--success);margin-right:8px;vertical-align:1px;
+  box-shadow:0 0 0 3px rgba(108,255,127,.18)}
+
+/* ─── GREETING / SUMMARY ─── */
+.eyebrow{display:inline-flex;align-items:center;gap:10px;font-family:var(--display);
+  font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.16em;
+  color:var(--text3);margin-bottom:11px}
+.eyebrow .rule{width:26px;height:1px;background:currentColor;opacity:.45}
+.eyebrow .accent{color:var(--accent)}
+.greet{font-family:var(--display);font-weight:800;line-height:1.03;letter-spacing:-.035em;
+  font-size:var(--d-greet);margin-bottom:10px;transition:font-size .4s cubic-bezier(.4,0,.2,1)}
+.greet em{font-style:italic;font-weight:700;color:var(--accent)}
+.summary{font-size:15px;line-height:1.5;color:var(--text2);max-width:62ch;margin-bottom:6px}
+.summary b{color:var(--text);font-weight:600}
+.asof{font-family:var(--mono);font-size:11px;color:var(--text3);font-style:italic;margin-bottom:14px}
+
+/* hours-saved value-prop hero — the cumulative "look what we did" number */
+.valueprop{display:inline-flex;align-items:center;gap:13px;margin-bottom:var(--d-section-gap);
+  background:linear-gradient(135deg,var(--accent-soft),color-mix(in srgb,var(--success-soft) 55%,var(--accent-soft)));
+  border:1px solid color-mix(in srgb,var(--accent) 22%,var(--border));border-radius:14px;
+  padding:10px 16px 10px 13px;text-decoration:none;color:var(--text);
+  transition:transform .18s,box-shadow .18s,border-color .18s}
+.valueprop:hover{transform:translateY(-1px);box-shadow:var(--shadow-h);border-color:color-mix(in srgb,var(--accent) 42%,var(--border))}
+.vp-ic{width:32px;height:32px;border-radius:9px;background:var(--card);display:grid;place-items:center;font-size:16px;flex:0 0 auto;box-shadow:var(--shadow)}
+.vp-num{font-family:var(--display);font-weight:800;font-size:25px;letter-spacing:-.03em;line-height:1;color:var(--accent);font-variant-numeric:tabular-nums}
+.vp-num .vp-u{font-size:13px;margin-left:2px;opacity:.7}
+.vp-txt{font-size:12.5px;color:var(--text2);line-height:1.38}
+.vp-txt b{color:var(--success-ink);font-weight:700}
+.vp-how{margin-left:4px;font-size:11px;font-weight:600;color:var(--accent);opacity:.75;white-space:nowrap;font-family:var(--mono)}
+.valueprop:hover .vp-how{opacity:1}
+
+/* ─── SECTION LABEL ─── */
+.label{display:flex;align-items:center;gap:10px;font-family:var(--display);
+  font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.16em;
+  color:var(--text3);margin:0 0 13px}
+.label::after{content:"";flex:1;height:1px;background:var(--border)}
+.label .ct{color:var(--text2);background:var(--neutral);border-radius:999px;
+  padding:1px 8px;font-size:10.5px;letter-spacing:.04em}
+section{margin-bottom:var(--d-section-gap)}
+
+/* ─── VITALS RAIL — compact KPI tiles w/ sparkline (Health "Summary") ─── */
+.vitals{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--d-vitals-min),1fr));gap:var(--d-gap)}
+.vital{background:var(--card);border:1px solid var(--border);border-radius:var(--d-radius);
+  padding:14px 15px 12px;box-shadow:var(--shadow);position:relative;overflow:hidden;
+  transition:box-shadow .25s,transform .25s,border-color .25s}
+.vital:hover{box-shadow:var(--shadow-h);transform:translateY(-1px)}
+.vital::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+  background:var(--m,var(--accent));opacity:.85}
+.vital .vk{font-family:var(--display);font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;color:var(--text3);display:flex;align-items:center;gap:6px;margin-bottom:9px}
+.vital .vk i{width:6px;height:6px;border-radius:50%;background:var(--m,var(--accent));
+  box-shadow:0 0 0 3px var(--mt,transparent)}
+.vital .vrow{display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
+.vital .vnum{font-family:var(--display);font-weight:800;font-size:var(--d-tile-metric);
+  line-height:1;letter-spacing:-.025em;font-variant-numeric:tabular-nums;transition:font-size .35s}
+.vital .vdelta{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.up{background:var(--success-soft);color:var(--success-ink)}
+.down{background:var(--watch-soft);color:var(--warn-ink)}
+.crash{background:var(--danger-soft);color:var(--danger)}
+.vital svg.spark{display:block;margin-top:10px;width:100%;height:var(--d-rail-spark);transition:height .35s}
+
+/* mood tints */
+.good{--m:var(--success-mid);--mt:var(--success-soft)}
+.watch{--m:var(--watch);--mt:var(--watch-soft)}
+.act{--m:var(--danger);--mt:var(--danger-soft)}
+.cool{--m:var(--accent);--mt:var(--accent-soft)}
+
+/* ─── "NEEDS YOUR CALL" — amber panel, compact rows ─── */
+.call{border:1px solid rgba(233,162,59,.32);border-left:3px solid var(--watch);
+  border-radius:14px;padding:15px 16px 13px;
+  background:linear-gradient(180deg,rgba(233,162,59,.07),rgba(233,162,59,.02));
+  box-shadow:0 1px 0 rgba(233,162,59,.06), 0 12px 28px -16px rgba(233,162,59,.18)}
+.call-head{display:flex;align-items:center;gap:10px;margin-bottom:11px;font-family:var(--display);
+  font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--warn-ink)}
+.call-head .dot{width:8px;height:8px;border-radius:50%;background:var(--watch);
+  box-shadow:0 0 0 4px rgba(233,162,59,.18);animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 4px rgba(233,162,59,.18)}50%{box-shadow:0 0 0 7px rgba(233,162,59,.08)}}
+.call-head .ct{margin-left:1px;padding:1px 8px;border-radius:999px;background:var(--watch);
+  color:#fff;font-size:11px;font-weight:700;letter-spacing:0}
+.call-head .skim{margin-left:auto;font-family:var(--body);font-size:12px;font-weight:600;
+  letter-spacing:0;text-transform:none;color:var(--warn-ink);opacity:.75}
+.call-head .skim:hover{opacity:1;text-decoration:underline;text-underline-offset:3px}
+.call-rows{display:grid;gap:8px}
+.crow{display:flex;align-items:flex-start;gap:11px;background:var(--card);
+  border:1px solid rgba(233,162,59,.22);border-radius:12px;padding:11px 13px}
+.crow .tone{width:9px;height:9px;border-radius:50%;margin-top:5px;flex:0 0 auto;background:var(--m)}
+.crow .body{flex:1;min-width:0}
+.crow .hl{font-size:14px;font-weight:600;letter-spacing:-.005em}
+.crow .tgt{font-family:var(--mono);font-size:11.5px;color:var(--text2);margin-top:2px}
+.crow .meta{font-size:11.5px;color:var(--text3);margin-top:3px}
+.crow .acts{display:flex;align-items:center;gap:7px;margin-top:9px}
+.btn{font-family:var(--body);font-size:12.5px;font-weight:600;border-radius:9px;
+  padding:6px 12px;cursor:pointer;border:1px solid transparent;transition:transform .15s,box-shadow .15s,background .15s}
+.btn:hover{transform:translateY(-1px)}
+.btn.ok{background:var(--success-ink);color:#fff}
+.btn.ok:hover{box-shadow:0 4px 12px rgba(17,55,25,.18)}
+.btn.no{background:var(--card);border-color:var(--border);color:var(--text2)}
+.btn.no:hover{border-color:var(--text3);color:var(--text)}
+.crow .why{margin-left:auto;font-size:11.5px;color:var(--text2);align-self:center}
+.crow .why:hover{color:var(--text);text-decoration:underline;text-underline-offset:2px}
+
+/* ─── BRIEFING — tiles in a grid (compact) / stacked (comfortable) ─── */
+.grid{display:grid;grid-template-columns:var(--d-grid);gap:var(--d-gap);
+  transition:grid-template-columns .1s}
+.icard{background:var(--card);border:1px solid var(--border);border-radius:var(--d-radius);
+  padding:var(--d-pad);box-shadow:var(--shadow);position:relative;overflow:hidden;cursor:pointer;
+  transition:box-shadow .3s cubic-bezier(.4,0,.2,1),transform .3s cubic-bezier(.4,0,.2,1),border-color .3s;
+  display:flex;flex-direction:column}
+.icard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--m,var(--accent));opacity:.85}
+.icard::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(135deg,var(--mt,transparent) 0%,transparent 45%);opacity:.5}
+.icard:hover{box-shadow:var(--shadow-h);transform:translateY(-1px);border-color:var(--m,var(--accent))}
+.itop{display:flex;align-items:flex-start;gap:13px;position:relative;z-index:1}
+.inum{font-family:var(--display);font-size:23px;font-weight:800;color:var(--m,var(--accent));
+  font-variant-numeric:tabular-nums;letter-spacing:-.025em;line-height:1;margin-top:-2px;
+  flex:0 0 auto;min-width:34px;opacity:.85}
+.icard:hover .inum{opacity:1}
+.icontent{flex:1;min-width:0}
+.imood{display:inline-flex;align-items:center;gap:6px;font-family:var(--display);font-size:10px;
+  font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:var(--m,var(--text3));margin-bottom:7px}
+.imood i{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 0 3px var(--mt,transparent)}
+.itext{font-size:var(--d-itext);font-weight:500;line-height:1.4;letter-spacing:-.005em;transition:font-size .35s}
+.kpi{display:flex;align-items:baseline;gap:12px;margin-top:9px;flex-wrap:wrap}
+.kpi .m{font-family:var(--display);font-weight:800;font-size:var(--d-tile-metric);line-height:1;
+  letter-spacing:-.025em;font-variant-numeric:tabular-nums;transition:font-size .35s}
+.kpi .l{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-weight:600}
+.kpi .vdelta{font-size:12px}
+/* inline sparkline lives in the tile header row in compact, full chart in detail */
+.icard .miniwrap{margin-top:11px;position:relative;z-index:1}
+.icard svg.spark{display:block;width:100%;height:46px}
+
+/* detail — shown inline in comfortable, on .open in compact */
+.idetail{display:var(--d-detail);margin-top:13px;padding-top:13px;border-top:1px dashed var(--border);position:relative;z-index:1}
+.icard.open .idetail{display:block;animation:reveal .3s ease}
+@keyframes reveal{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.idetail .dtext{font-size:13.5px;line-height:1.55;color:var(--text2)}
+.idetail svg.spark{margin-top:12px;height:74px}
+/* Card actions — retained from today's .iactions: deep-dive, retry, copy,
+   dismiss. Hover-revealed (always-on for touch in the real app). */
+.iacts{position:absolute;top:10px;right:11px;z-index:3;display:flex;gap:3px;
+  opacity:0;transition:opacity .18s}
+.icard:hover .iacts,.icard:focus-within .iacts{opacity:1}
+.iacts button{width:26px;height:26px;border-radius:8px;border:1px solid transparent;background:transparent;
+  color:var(--text3);display:grid;place-items:center;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+.iacts button:hover{background:var(--neutral);border-color:var(--border);color:var(--text)}
+.iacts button svg{width:13px;height:13px}
+.iacts button.deep:hover{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 30%,var(--border));background:var(--accent-soft)}
+.iacts button.kill:hover{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 30%,var(--border));background:var(--danger-soft)}
+
+/* ─── FINDINGS — dense rows ─── */
+.finds{display:grid;gap:9px}
+.find{background:var(--card);border:1px solid var(--border);border-radius:14px;
+  padding:12px 15px;cursor:pointer;transition:border-color .2s,transform .2s,box-shadow .2s}
+.find:hover{border-color:var(--text3);transform:translateY(-1px);box-shadow:var(--shadow)}
+.find-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px}
+.find h3{font-family:var(--display);font-size:15px;font-weight:700;letter-spacing:-.01em;line-height:1.3}
+.find p{font-size:13px;line-height:1.5;color:var(--text2);margin-bottom:6px}
+.find .fmeta{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text3)}
+.find .fmeta b{color:var(--text2);font-weight:600}
+.find .fmeta .go{margin-left:auto;color:var(--accent)}
+.find:hover .fmeta .go{text-decoration:underline;text-underline-offset:2px}
+
+/* status pill */
+.pill{font-family:var(--display);font-size:10px;font-weight:800;letter-spacing:.08em;
+  text-transform:uppercase;padding:3px 9px;border-radius:999px;border:1px solid;white-space:nowrap;flex:0 0 auto}
+.pill.good{background:var(--success-soft);color:var(--success-ink);border-color:rgba(76,175,130,.3)}
+.pill.watch{background:var(--watch-soft);color:var(--warn-ink);border-color:rgba(233,162,59,.3)}
+.pill.act{background:var(--danger-soft);color:var(--danger);border-color:rgba(224,86,86,.3)}
+.pill.cool{background:var(--accent-soft);color:var(--accent);border-color:rgba(107,92,231,.25)}
+
+/* ─── PROOF (fired on your behalf) ─── */
+.proof{border-top:1px dashed var(--border);padding-top:14px}
+.proof summary{display:flex;align-items:center;gap:11px;cursor:pointer;list-style:none;
+  font-size:14.5px;color:var(--text2);padding:6px 2px}
+.proof summary::-webkit-details-marker{display:none}
+.proof summary:hover{color:var(--text)}
+.proof .tick{color:var(--success-mid);font-size:18px;font-family:var(--mono)}
+.proof .ct{font-family:var(--display);font-size:17px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums}
+.proof .caret{margin-left:auto;color:var(--text3);font-size:12px;transition:transform .18s}
+.proof[open] .caret{transform:rotate(90deg)}
+.proof-body{margin-top:11px;display:grid;gap:8px}
+
+.note{font-size:13px;color:var(--text3);font-style:italic;margin-top:-6px}
+
+/* staggered load */
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.fu{animation:fadeUp .5s ease both}
+
+@media (max-width:680px){
+  html[data-density]{--d-page:100%;--d-grid:1fr;--d-greet:30px}
+  .wrap{padding:20px 16px 0}
+  .topbar{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <span class="brand"><span class="mark"></span>OpenNeko <span class="ver">1.17.2</span></span>
+    <span class="spacer"></span>
+    <div class="seg" role="group" aria-label="Information density">
+      <button data-set="comfortable" aria-pressed="false" title="Roomy single column">
+        <svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="12" height="3.4" rx="1.2"/><rect x="2" y="9.6" width="12" height="3.4" rx="1.2"/></svg>
+        Comfortable
+      </button>
+      <button data-set="compact" aria-pressed="true" title="Dense tile grid">
+        <svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2.5" width="5" height="5" rx="1.2"/><rect x="9" y="2.5" width="5" height="5" rx="1.2"/><rect x="2" y="8.5" width="5" height="5" rx="1.2"/><rect x="9" y="8.5" width="5" height="5" rx="1.2"/></svg>
+        Compact
+      </button>
+    </div>
+  </div>
+
+  <!-- ROLES -->
+  <div class="roles">
+    <button class="role" aria-pressed="true">COO</button>
+    <button class="role" aria-pressed="false">CFO</button>
+    <button class="role" aria-pressed="false">Head of Sales</button>
+    <button class="role" aria-pressed="false">Support Lead</button>
+  </div>
+
+  <!-- GREETING -->
+  <div class="eyebrow fu"><span class="rule"></span><span class="accent">COO Briefing</span><span>·</span><span>Tue, June 3</span></div>
+  <h1 class="greet fu" style="animation-delay:.04s">Steady week, <em>two calls</em> waiting on you.</h1>
+  <p class="summary fu" style="animation-delay:.08s">Revenue is <b>up 6.2%</b> on the prior period and burn held flat. Support backlog crept past its threshold overnight — worth a glance. Everything else ran clean.</p>
+  <div class="asof fu" style="animation-delay:.1s">as of 9:14 AM</div>
+
+  <a class="valueprop fu" style="animation-delay:.11s" href="#" title="How hours saved is estimated">
+    <span class="vp-ic">⏱</span>
+    <span class="vp-num">142<span class="vp-u">hrs</span></span>
+    <span class="vp-txt">saved since you installed OpenNeko<br><b>+9.2h this week</b> · 38 tasks handled for you</span>
+    <span class="vp-how">how?&nbsp;→</span>
+  </a>
+
+  <!-- VITALS RAIL -->
+  <section class="fu" style="animation-delay:.12s">
+    <div class="label">Vitals <span class="ct">7</span></div>
+    <div class="vitals" id="vitals"></div>
+  </section>
+
+  <!-- NEEDS YOUR CALL -->
+  <section class="fu" style="animation-delay:.16s">
+    <div class="call">
+      <div class="call-head">
+        <span class="dot"></span><span>Needs your call</span><span class="ct">2</span>
+        <a class="skim" href="#">open all →</a>
+      </div>
+      <div class="call-rows">
+        <div class="crow act">
+          <span class="tone"></span>
+          <div class="body">
+            <div class="hl">Refund $4,200 to Acme Corp — disputed annual charge</div>
+            <div class="tgt">stripe · ch_3PQ…91 · high risk</div>
+            <div class="acts">
+              <button class="btn ok">Approve</button>
+              <button class="btn no">Reject</button>
+              <a class="why" href="#">why →</a>
+            </div>
+          </div>
+        </div>
+        <div class="crow watch">
+          <span class="tone"></span>
+          <div class="body">
+            <div class="hl">Send churn-risk note to 3 enterprise accounts</div>
+            <div class="tgt">gmail · 3 recipients · medium risk</div>
+            <div class="acts">
+              <button class="btn ok">Approve</button>
+              <button class="btn no">Reject</button>
+              <a class="why" href="#">why →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BRIEFING GRID -->
+  <section class="fu" style="animation-delay:.2s">
+    <div class="label">Today's Briefing <span class="ct">6</span></div>
+    <div class="grid" id="briefing"></div>
+  </section>
+
+  <!-- FINDINGS -->
+  <section class="fu" style="animation-delay:.24s">
+    <div class="label">Worth your read <span class="ct">3</span></div>
+    <div class="finds" id="finds"></div>
+  </section>
+
+  <!-- PROOF -->
+  <section class="fu" style="animation-delay:.28s">
+    <details class="proof">
+      <summary><span class="tick">↳</span><span class="ct">14</span><span>fired on your behalf in the last 24h · saved you ~3.2h</span><span class="caret">▸</span></summary>
+      <div class="proof-body">
+        <div class="crow good"><span class="tone"></span><div class="body"><div class="hl">Renewed 9 expiring API keys</div><div class="meta">auto · billing-watch · 2:02 AM</div></div></div>
+        <div class="crow good"><span class="tone"></span><div class="body"><div class="hl">Tagged 41 inbound leads by ICP fit</div><div class="meta">rule "lead-triage" · 6:30 AM</div></div></div>
+        <div class="crow good"><span class="tone"></span><div class="body"><div class="hl">Posted weekly metrics to #leadership</div><div class="meta">you · Mon 5:00 PM · 8:00 AM</div></div></div>
+      </div>
+    </details>
+    <p class="note">12 healthy runs in the last 24h.</p>
+  </section>
+
+</div>
+
+<script>
+/* ── sparkline generator: smooth-ish area + line + end dot ──────────── */
+function spark(points,{w=120,h=46,stroke='var(--accent)',fill=true}={}){
+  const min=Math.min(...points),max=Math.max(...points),span=(max-min)||1;
+  const step=w/(points.length-1);
+  const xy=points.map((p,i)=>[i*step,h-((p-min)/span)*(h-7)-4]);
+  const line=xy.map((c,i)=>(i?'L':'M')+c[0].toFixed(1)+' '+c[1].toFixed(1)).join(' ');
+  const area=`${line} L ${w} ${h} L 0 ${h} Z`;
+  const [ex,ey]=xy[xy.length-1];
+  const id='g'+Math.round(min*97+max*13+points.length);
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${stroke}" stop-opacity=".18"/>
+      <stop offset="1" stop-color="${stroke}" stop-opacity="0"/></linearGradient></defs>
+    ${fill?`<path d="${area}" fill="url(#${id})"/>`:''}
+    <path d="${line}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+    <circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="2.6" fill="${stroke}"/>
+  </svg>`;
+}
+const C={good:'var(--success-mid)',watch:'var(--watch)',act:'var(--danger)',cool:'var(--accent)'};
+
+/* ── vitals data ── */
+const vitals=[
+  {k:'Hours saved · wk',mood:'cool',num:'37h',delta:'▲ 9.2h',dc:'up',pts:[18,22,20,26,28,31,37]},
+  {k:'Net revenue',mood:'good',num:'$184.2k',delta:'▲ 6.2%',dc:'up',pts:[140,150,148,162,170,168,184]},
+  {k:'Monthly burn',mood:'good',num:'$96.4k',delta:'▼ 0.4%',dc:'up',pts:[101,99,100,98,97,97,96]},
+  {k:'Active orgs',mood:'good',num:'1,284',delta:'▲ 31',dc:'up',pts:[1180,1205,1220,1238,1251,1267,1284]},
+  {k:'Gross margin',mood:'cool',num:'71.8%',delta:'▲ 0.9pt',dc:'up',pts:[68,69,70,70,71,71,72]},
+  {k:'Support backlog',mood:'act',num:'37',delta:'▲ 14',dc:'crash',pts:[18,20,19,23,22,30,37]},
+  {k:'NRR',mood:'watch',num:'108%',delta:'▼ 3pt',dc:'down',pts:[114,113,112,111,110,109,108]},
+];
+document.getElementById('vitals').innerHTML=vitals.map(v=>`
+  <div class="vital ${v.mood}">
+    <div class="vk"><i></i>${v.k}</div>
+    <div class="vrow"><span class="vnum">${v.num}</span><span class="vdelta ${v.dc}">${v.delta}</span></div>
+    ${spark(v.pts,{stroke:C[v.mood]})}
+  </div>`).join('');
+
+/* ── briefing tiles ── */
+const briefing=[
+  {mood:'good',label:'On track',text:'Self-serve signups are pacing 18% ahead of last month, led by the API plan.',m:'+18%',l:'vs last mo',delta:'▲ strong',dc:'up',pts:[40,44,46,52,55,58,64],chart:[40,44,46,52,55,58,64],
+   detail:'API-plan signups (62% of new) are driving the lift; the new docs landing page is the top referrer. No paid spend change — this is organic.'},
+  {mood:'act',label:'Act now',text:'Support backlog crossed 35 tickets — first-response SLA is now at risk for 6 enterprise accounts.',m:'37',l:'open tickets',delta:'▲ +14',dc:'crash',pts:[18,20,19,23,22,30,37],
+   detail:'Spike began ~2 AM after the v3 rollout. 6 of 37 are enterprise (SLA: 1h). Suggest pulling one engineer onto triage and pausing non-critical deploys.'},
+  {mood:'good',label:'On track',text:'Cash runway holds at 19 months; burn flat despite the new hires.',m:'19 mo',l:'runway',delta:'▼ flat',dc:'up',pts:[20,20,19,19,19,19,19],
+   detail:'Two engineering hires offset by churned infra spend after the Graviton migration. No change to the raise timeline.'},
+  {mood:'watch',label:'Watch',text:'Net revenue retention slipped to 108% — third straight week of soft expansion.',m:'108%',l:'NRR',delta:'▼ −3pt',dc:'down',pts:[114,113,112,111,110,109,108],
+   detail:'Expansion MRR is the soft spot, not churn. Mid-market seats aren\'t upgrading post-trial. Worth a pricing-page experiment.'},
+  {mood:'good',label:'On track',text:'Lead-to-meeting rate up to 12.4% after the new ICP triage rule went live.',m:'12.4%',l:'lead→mtg',delta:'▲ +2.1pt',dc:'up',pts:[9,9.5,10,10.8,11.2,11.9,12.4],
+   detail:'The auto-triage rule is routing high-fit leads to AEs within 4 min on average (was 3.5h). Conversion lift concentrated in the >50-employee segment.'},
+  {mood:'cool',label:'Steady',text:'Infra cost per active org dropped 7% this month on the Graviton move.',m:'$0.74',l:'cost / org',delta:'▼ −7%',dc:'up',pts:[0.83,0.82,0.80,0.79,0.77,0.76,0.74],
+   detail:'Graviton migration completed for 80% of fleet. Remaining 20% (legacy x86 workers) scheduled for next sprint — projected to reach $0.69/org.'},
+];
+document.getElementById('briefing').innerHTML=briefing.map((b,i)=>`
+  <article class="icard ${b.mood}" data-i="${i}" style="animation:fadeUp .5s ease ${(.2+i*0.05).toFixed(2)}s both">
+    <div class="iacts">
+      <button class="deep" title="Deep dive in Work" aria-label="Deep dive"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="7" cy="7" r="4.2"/><line x1="10.3" y1="10.3" x2="14" y2="14" stroke-linecap="round"/></svg></button>
+      <button title="Re-run this metric" aria-label="Retry"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12.8 8a4.8 4.8 0 1 1-1.5-3.5"/><path d="M12.9 2.8v2.4h-2.4"/></svg></button>
+      <button title="Copy card text" aria-label="Copy"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.55"><rect x="5.4" y="5.4" width="7.6" height="7.6" rx="1.7"/><path d="M10.4 5.4V4A1.5 1.5 0 0 0 8.9 2.5H4A1.5 1.5 0 0 0 2.5 4v4.9A1.5 1.5 0 0 0 4 10.4h1.4"/></svg></button>
+      <button class="kill" title="Dismiss" aria-label="Dismiss"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4.2" y1="4.2" x2="11.8" y2="11.8"/><line x1="11.8" y1="4.2" x2="4.2" y2="11.8"/></svg></button>
+    </div>
+    <div class="itop">
+      <span class="inum">${String(i+1).padStart(2,'0')}</span>
+      <div class="icontent">
+        <span class="imood"><i></i>${b.label}</span>
+        <div class="itext">${b.text}</div>
+        <div class="kpi"><span class="m">${b.m}</span><span class="l">${b.l}</span><span class="vdelta ${b.dc}">${b.delta}</span></div>
+        <div class="miniwrap">${spark(b.pts,{stroke:C[b.mood]})}</div>
+      </div>
+    </div>
+    <div class="idetail">
+      <div class="dtext">${b.detail}</div>
+    </div>
+  </article>`).join('');
+document.querySelectorAll('.icard').forEach(c=>c.addEventListener('click',()=>c.classList.toggle('open')));
+document.querySelectorAll('.iacts button').forEach(b=>b.addEventListener('click',e=>e.stopPropagation()));
+
+/* ── findings ── */
+const finds=[
+  {mood:'watch',pill:'watch',title:'Churn signal: 3 enterprise accounts went quiet',body:'Logins dropped >60% week-over-week for Northwind, Globex, and Initech. No support tickets — silent disengagement.',from:'churn-watch',ago:'22m ago',go:'drill in →'},
+  {mood:'cool',pill:'cool',title:'Competitor shipped usage-based pricing',body:'Tracked from their changelog this morning. Mirrors the model your mid-market prospects keep asking about.',from:'market-radar',ago:'1h ago',go:'drill in →'},
+  {mood:'good',pill:'good',title:'Docs revamp lifted activation 9 points',body:'Cohort that hit the new quickstart activated at 47% vs 38% baseline. Worth promoting it earlier in onboarding.',from:'activation-lab',ago:'3h ago',go:'drill in →'},
+];
+document.getElementById('finds').innerHTML=finds.map((f,i)=>`
+  <article class="find" style="animation:fadeUp .4s ease ${(.24+i*0.04).toFixed(2)}s both">
+    <div class="find-top"><h3>${f.title}</h3><span class="pill ${f.pill}">${f.pill==='cool'?'signal':f.pill}</span></div>
+    <p>${f.body}</p>
+    <div class="fmeta">from <b>${f.from}</b><span style="opacity:.5">·</span><span class="mono">${f.ago}</span><span class="go">${f.go}</span></div>
+  </article>`).join('');
+
+/* ── density toggle ── */
+const root=document.documentElement;
+document.querySelectorAll('.seg button').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const mode=btn.dataset.set;
+    root.setAttribute('data-density',mode);
+    document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(b===btn)));
+  });
+});
+/* role toggle (visual) */
+document.querySelectorAll('.role').forEach(r=>r.addEventListener('click',()=>{
+  document.querySelectorAll('.role').forEach(x=>x.setAttribute('aria-pressed','false'));
+  r.setAttribute('aria-pressed','true');
+}));
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+key: action.financial_handoff
+targetRef: magento.financial_handoff
+kind: magento.financial_handoff
+description: Prepare evidence and a Magento-admin handoff for money-out, return approval, or financial configuration; it never executes the change.
+domain: orders
+readiness:
+  capability: operator
+  domain: orders
+  unavailableReasons: [integration_token_missing, integration_token_invalid, acl_missing]
+inputSchema:
+  type: object
+  additionalProperties: false
+  required: [handoff_kind, entity_ref, draft, evidence]
+  properties:
+    handoff_kind: { type: string, enum: [online_refund, return_approval, financial_configuration, store_credit_over_cap] }
+    entity_ref: { type: string, minLength: 1, maxLength: 255 }
+    draft: { type: object }
+    evidence: { type: object }
+adapter:
+  kind: magento_financial_handoff
+  handoffKinds: [online_refund, return_approval, financial_configuration, store_credit_over_cap]

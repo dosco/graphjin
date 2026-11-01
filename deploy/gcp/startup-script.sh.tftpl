@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Rendered by Terraform's templatefile(): the DOMAIN and TLS_EMAIL
+# assignments below are Terraform-variable interpolations, substituted
+# before this ever reaches the VM. Everything else in this file is plain
+# bash using bareword $VAR (never dollar-brace form) on purpose: Terraform's
+# templatefile() scans the whole file for dollar-brace sequences, including
+# inside comments, and would try (and fail) to interpolate any it finds here.
+set -euxo pipefail
+
+DOMAIN="${domain}"
+TLS_EMAIL="${tls_email}"
+
+# --- Docker Engine + Compose plugin (OpenNeko's only supported runtime) ---
+apt-get update
+apt-get install -y ca-certificates curl gnupg
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+ARCH=$(dpkg --print-architecture)
+CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
+echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $CODENAME stable" \
+  > /etc/apt/sources.list.d/docker.list
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# --- Caddy: reverse proxy + automatic Let's Encrypt TLS on 443 ---
+apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+  | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+  | tee /etc/apt/sources.list.d/caddy-stable.list
+apt-get update
+apt-get install -y caddy
+
+cat > /etc/caddy/Caddyfile <<EOF
+$DOMAIN {
+  reverse_proxy 127.0.0.1:3000
+  tls $TLS_EMAIL
+}
+EOF
+systemctl enable caddy
+systemctl restart caddy
+
+# --- OpenNeko CLI ---
+mkdir -p /opt/openneko
+cd /opt/openneko
+curl -fsSL https://openneko.app/install.sh | sh
+
+# So OpenNeko's own callback/URL construction (OAuth redirect URIs, links in
+# emails, etc.) matches the public domain Caddy is terminating TLS for.
+echo "OPENNEKO_PUBLIC_URL=https://$DOMAIN" >> /etc/environment
+
+echo "startup-script complete: Docker, Caddy, and the openneko CLI are installed."
+echo "Next: sudo -i; cd /opt/openneko; openneko setup --mode prod --port 3000 --bind-address 127.0.0.1"

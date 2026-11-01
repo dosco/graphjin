@@ -1,0 +1,23 @@
+openapi: 3.0.3
+info: { title: Google Docs read API, version: 1.0.0 }
+servers: [{ url: https://docs.googleapis.com }]
+security: [{ oauthBearer: [] }]
+paths:
+  /v1/documents/{documentId}:
+    get:
+      operationId: getDocument
+      parameters:
+        - { name: documentId, in: path, required: true, schema: { type: string } }
+        - { name: suggestionsViewMode, in: query, schema: { type: string } }
+        - { name: includeTabsContent, in: query, schema: { type: boolean } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+components:
+  securitySchemes:
+    oauthBearer: { type: http, scheme: bearer }
+  responses:
+    Object:
+      description: Google API response
+      content:
+        application/json:
+          schema: { type: object, additionalProperties: true }

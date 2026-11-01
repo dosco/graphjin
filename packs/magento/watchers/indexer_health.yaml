@@ -1,0 +1,16 @@
+key: watcher.indexer_health
+targetRef: magento.watcher.indexer_health
+name: Magento invalid or stale indexer
+description: Fires when an indexer is non-valid or older than the configured threshold.
+workflow: workflow.cron_indexer_health
+enabled: false
+activation: admin_confirms_threshold
+query: watch_indexer_health
+valuePath: indexer_state.0.count
+operator: gt
+threshold: 0
+cadenceSeconds: 1800
+debounceSeconds: 3600
+cooldownSeconds: 14400
+severity: high
+dedupeKey: "indexer-health:{count}"

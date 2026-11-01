@@ -1,0 +1,8 @@
+sources:
+  - name: service_health
+    kind: api
+    base_url: "{{service.base_url}}"
+    openapi: graphjin/specs/service-health.yaml
+    auth:
+      type: bearer
+      token: "{{secret.service.api_token}}"

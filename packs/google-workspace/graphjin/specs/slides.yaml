@@ -1,0 +1,21 @@
+openapi: 3.0.3
+info: { title: Google Slides read API, version: 1.0.0 }
+servers: [{ url: https://slides.googleapis.com }]
+security: [{ oauthBearer: [] }]
+paths:
+  /v1/presentations/{presentationId}:
+    get:
+      operationId: getPresentation
+      parameters:
+        - { name: presentationId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+components:
+  securitySchemes:
+    oauthBearer: { type: http, scheme: bearer }
+  responses:
+    Object:
+      description: Google API response
+      content:
+        application/json:
+          schema: { type: object, additionalProperties: true }

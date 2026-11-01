@@ -1,0 +1,310 @@
+name: openneko release binaries
+run-name: openneko release binaries (${{ github.event.inputs.tag || github.event.release.tag_name }})
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build (must already exist; e.g. v0.0.0-rc1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-image:
+    # Build on manual workflow_dispatch (preview/branch builds) OR on a real
+    # STABLE release. Skip release events for pre-release tags (e.g.
+    # v1.18.0-openshell.N): release-please auto-publishes a Release for every tag
+    # we push, which would otherwise (a) double-build alongside the manual run
+    # and (b) tag :latest from an unreleased preview, clobbering downloads. The
+    # manual run builds previews WITHOUT :latest; stable releases (tag has no
+    # '-') still build and tag :latest as before.
+    if: ${{ github.event_name != 'release' || !contains(github.event.release.tag_name, '-') }}
+    name: ${{ matrix.image }} (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      # Four concurrent builders keeps release throughput reasonable while
+      # bounding pressure on GHCR and the Actions cache service.
+      max-parallel: 4
+      matrix:
+        include:
+          - image: neko-web
+            target: web
+            platform: linux/amd64
+            runner: ubuntu-22.04
+          - image: neko-web
+            target: web
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image: neko-worker
+            target: worker
+            platform: linux/amd64
+            runner: ubuntu-22.04
+          - image: neko-worker
+            target: worker
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image: neko-embedding
+            target: embedding
+            platform: linux/amd64
+            runner: ubuntu-22.04
+          - image: neko-embedding
+            target: embedding
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image: neko-cli
+            target: neko-cli
+            platform: linux/amd64
+            runner: ubuntu-22.04
+          - image: neko-cli
+            target: neko-cli
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image: neko-db
+            target: neko-db
+            platform: linux/amd64
+            runner: ubuntu-22.04
+          - image: neko-db
+            target: neko-db
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          # Agent image: openneko serve, which hosts the customer GraphJin
+          # and runs agent turns.
+          - image: agent
+            target: agent
+            platform: linux/amd64
+            runner: ubuntu-22.04
+          - image: agent
+            target: agent
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image: openshell-supervisor
+            file: docker/openshell-supervisor.Dockerfile
+            platform: linux/amd64
+            runner: ubuntu-22.04
+          - image: openshell-supervisor
+            file: docker/openshell-supervisor.Dockerfile
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Manual recovery runs may contain CI hardening newer than the tag;
+          # release events continue to build the immutable tagged source.
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.event.release.tag_name }}
+
+      - name: Resolve release tag
+        id: tag
+        run: echo "value=${{ github.event.inputs.tag || github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve built source commit
+        id: source-commit
+        run: echo "value=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Compute arch-safe platform key (amd64 / arm64)
+        id: archkey
+        run: echo "value=${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build & push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.file || './Dockerfile' }}
+          build-args: |
+            OPENNEKO_VERSION=${{ steps.tag.outputs.value }}
+            OPENNEKO_COMMIT=${{ steps.source-commit.outputs.value }}
+          target: ${{ matrix.target }}
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=ghcr.io/open-neko/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ steps.archkey.outputs.value }}
+          # Cache service outages must not invalidate an image already pushed
+          # successfully to GHCR.
+          cache-to: type=gha,scope=${{ matrix.image }}-${{ steps.archkey.outputs.value }},mode=max,ignore-error=true
+
+      - name: Enforce compressed image-size budget
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          # The restored workspace agent measured 764.3 MiB on linux/amd64 in
+          # v2.30.4. Keep a narrow ceiling rather than the obsolete 575 MiB
+          # bundled-runtime limit so architecture changes remain intentional.
+          MAX_MIB=$(jq -er --arg image "${{ matrix.image }}" '.[$image]' scripts/image-size-budgets.json)
+          bash scripts/check-image-size.sh \
+            "ghcr.io/open-neko/${{ matrix.image }}@${IMAGE_DIGEST}" \
+            "$MAX_MIB" \
+            "${{ steps.archkey.outputs.value }}"
+
+      - name: Stash digest for the merge step
+        run: |
+          mkdir -p /tmp/digests
+          echo "${{ steps.build.outputs.digest }}" > /tmp/digests/${{ matrix.image }}-${{ steps.archkey.outputs.value }}
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.image }}-${{ steps.archkey.outputs.value }}
+          path: /tmp/digests/${{ matrix.image }}-${{ steps.archkey.outputs.value }}
+          if-no-files-found: error
+          retention-days: 1
+
+  merge-manifests:
+    # Same guard as build-image (also auto-skips via needs): never merge/tag a
+    # pre-release tag on a release event — and crucially never tag :latest from
+    # one. Stable releases + manual runs proceed.
+    if: ${{ github.event_name != 'release' || !contains(github.event.release.tag_name, '-') }}
+    name: merge manifest (${{ matrix.image }})
+    runs-on: ubuntu-22.04
+    needs: build-image
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [neko-web, neko-worker, neko-embedding, neko-cli, neko-db, agent, openshell-supervisor]
+    steps:
+      - name: Resolve release tag
+        id: tag
+        run: echo "value=${{ github.event.inputs.tag || github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Download per-arch digest artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digest-${{ matrix.image }}-*
+          merge-multiple: true
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Create multi-arch manifest
+        run: |
+          set -euo pipefail
+          IMAGE=ghcr.io/open-neko/${{ matrix.image }}
+          AMD64=$(cat /tmp/digests/${{ matrix.image }}-amd64)
+          ARM64=$(cat /tmp/digests/${{ matrix.image }}-arm64)
+          # `:latest` only on real releases. A manual workflow_dispatch (e.g. a
+          # branch preview build) publishes ONLY its specific tag, so it can
+          # never clobber the `:latest` that live downloads pull.
+          LATEST=""
+          if [ "${{ github.event_name }}" = "release" ]; then LATEST="-t $IMAGE:latest"; fi
+          docker buildx imagetools create \
+            -t "$IMAGE:${{ steps.tag.outputs.value }}" \
+            $LATEST \
+            "$IMAGE@$AMD64" \
+            "$IMAGE@$ARM64"
+          docker buildx imagetools inspect "$IMAGE:${{ steps.tag.outputs.value }}"
+
+  image-size:
+    if: ${{ github.event_name != 'release' || !contains(github.event.release.tag_name, '-') }}
+    name: image pull budget (linux/${{ matrix.arch }})
+    runs-on: ubuntu-22.04
+    needs: merge-manifests
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Read the budgets and guard scripts from the same immutable source
+          # revision whose images were built above.
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.event.release.tag_name }}
+
+      - name: Resolve release tag
+        id: tag
+        run: echo "value=${{ github.event.inputs.tag || github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Enforce aggregate unique-layer budget
+        run: |
+          set -euo pipefail
+          # v2.30.4 measured 1459.5 MiB on linux/amd64 after deduplicating
+          # shared layers (1235.7 MiB on arm64). The enforced Bookworm/glibc
+          # database ABI adds about 148 MiB once (in neko-db; the demo still
+          # retains Alpine), leaving a narrow ceiling that
+          # still catches accidental growth.
+          MAX_MIB=$(jq -er '.uniqueStack' scripts/image-size-budgets.json)
+          bash scripts/check-image-stack-size.sh \
+            "${{ steps.tag.outputs.value }}" \
+            "${{ matrix.arch }}" \
+            "$MAX_MIB" \
+            neko-web neko-worker neko-embedding neko-cli \
+            neko-db agent openshell-supervisor \
+            postgres:16-alpine busybox:latest \
+            "ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.1.2}"
+
+  goreleaser:
+    name: goreleaser
+    runs-on: ubuntu-22.04
+    needs: [merge-manifests, image-size]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.10"
+          cache-dependency-path: apps/openneko/go.sum
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: open-neko
+          repositories: |
+            openneko
+            homebrew-tap
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+          workdir: apps/openneko
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}

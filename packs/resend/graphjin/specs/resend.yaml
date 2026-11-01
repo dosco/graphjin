@@ -1,0 +1,164 @@
+openapi: 3.0.3
+info:
+  title: Resend email API
+  version: 1.0.0
+  description: The Resend operations this pack uses. Sending is a reviewed action; the rest are reads.
+servers:
+  - url: https://api.resend.com
+security:
+  - bearer: []
+paths:
+  /emails:
+    post:
+      operationId: sendEmail
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 256 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SendEmailRequest" }
+      responses:
+        "200":
+          description: Email accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string }
+  /emails/{email_id}:
+    get:
+      operationId: getEmail
+      parameters:
+        - { name: email_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: A sent email and its latest delivery event
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Email" }
+  /templates:
+    get:
+      operationId: listTemplates
+      parameters:
+        - { name: after, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object: { type: string }
+                  has_more: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/TemplateSummary" }
+  /templates/{template_id}:
+    get:
+      operationId: getTemplate
+      parameters:
+        - { name: template_id, in: path, required: true, schema: { type: string }, description: Template id or alias }
+      responses:
+        "200":
+          description: A template, its subject, and its variables
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Template" }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer }
+  schemas:
+    # One address, bare or with a display name. Commas are refused, so each
+    # list item is one recipient and the policy engine sees every domain.
+    Address:
+      type: string
+      maxLength: 320
+      pattern: '^(?:[^<>,@]*<[^@\s<>,]+@[^@\s<>,]+\.[^@\s<>,]+>|[^@\s<>,]+@[^@\s<>,]+\.[^@\s<>,]+)$'
+    AddressList:
+      type: array
+      minItems: 1
+      maxItems: 50
+      items: { $ref: "#/components/schemas/Address" }
+    SendEmailRequest:
+      type: object
+      additionalProperties: false
+      required: [from, to]
+      properties:
+        from: { $ref: "#/components/schemas/Address" }
+        to: { $ref: "#/components/schemas/AddressList" }
+        cc: { $ref: "#/components/schemas/AddressList" }
+        bcc: { $ref: "#/components/schemas/AddressList" }
+        reply_to: { $ref: "#/components/schemas/AddressList" }
+        subject: { type: string, minLength: 1, maxLength: 998 }
+        html: { type: string, minLength: 1 }
+        text: { type: string, minLength: 1 }
+        template:
+          type: object
+          additionalProperties: false
+          required: [id]
+          properties:
+            id: { type: string, minLength: 1, description: Template id or alias }
+            variables:
+              type: object
+              additionalProperties:
+                oneOf:
+                  - { type: string }
+                  - { type: number }
+        tags:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, value]
+            properties:
+              name: { type: string, pattern: '^[A-Za-z0-9_-]{1,256}$' }
+              value: { type: string, pattern: '^[A-Za-z0-9_-]{1,256}$' }
+      # One body: a template, or a subject with html and/or text.
+      anyOf:
+        - required: [template]
+        - required: [subject, html]
+        - required: [subject, text]
+      not:
+        anyOf:
+          - required: [template, html]
+          - required: [template, text]
+    Email:
+      type: object
+      properties:
+        id: { type: string }
+        to: { type: array, items: { type: string } }
+        from: { type: string }
+        subject: { type: string }
+        created_at: { type: string }
+        last_event: { type: string }
+    TemplateSummary:
+      type: object
+      properties:
+        id: { type: string }
+        alias: { type: string, nullable: true }
+        name: { type: string }
+        status: { type: string }
+    Template:
+      type: object
+      properties:
+        id: { type: string }
+        alias: { type: string, nullable: true }
+        name: { type: string }
+        status: { type: string }
+        subject: { type: string, nullable: true }
+        variables:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              type: { type: string }
+              fallback_value: { nullable: true }

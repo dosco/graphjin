@@ -1,0 +1,326 @@
+name: post-release smoke
+run-name: post-release smoke (${{ github.event.workflow_run.head_branch || inputs.version }})
+
+# Gate, not spectator. After a release builds, this actually installs the just-
+# published artifacts and asks `openneko status` whether the stack serves. If
+# the build FAILED, or the smoke fails, it demotes that release off "Latest"
+# (gh release edit --prerelease) so `releases/latest` falls back to the last
+# good version. A successful recovery promotes the stable release again before
+# Deploy-to-VM resolves `releases/latest`.
+
+on:
+  workflow_run:
+    workflows: ["openneko release binaries"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image tag to smoke-test (e.g. v1.11.4). Defaults to :latest."
+        required: false
+        default: "latest"
+
+permissions:
+  contents: write # needed to demote a bad release off "Latest"
+
+jobs:
+  smoke:
+    name: post-release supervisor smoke
+    runs-on: ubuntu-22.04
+    # Runs on BOTH success and failure of the release build: on failure we must
+    # still demote the half-published release.
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Resolve release tag + build outcome
+        id: ctx
+        env:
+          UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+          UPSTREAM_TITLE: ${{ github.event.workflow_run.display_title }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            {
+              echo "tag=${{ inputs.version }}"
+              echo "stable=false"
+              echo "build_ok=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Manual release recoveries run from a fix branch, so head_branch is
+          # not the image tag. The release workflow carries its requested tag
+          # in run-name for this downstream workflow to recover explicitly.
+          if [ "$UPSTREAM_EVENT" = "workflow_dispatch" ]; then
+            run_title_pattern='^openneko release binaries \(([^)]+)\)$'
+            if [[ "$UPSTREAM_TITLE" =~ $run_title_pattern ]]; then
+              tag="${BASH_REMATCH[1]}"
+            else
+              echo "::error::unable to resolve release tag from upstream run title: $UPSTREAM_TITLE"
+              exit 1
+            fi
+          else
+            # Tag-triggered release runs expose their tag as head_branch.
+            tag="${{ github.event.workflow_run.head_branch }}"
+          fi
+          # Release-triggered binary runs expose the tag as head_branch. Don't
+          # resolve via the releases API: release-please pins
+          # target_commitish to a SHA, so filtering on "main" matches only
+          # stale hand-made prereleases (this froze the smoke on v1.18.0-openshell.4).
+          {
+            echo "tag=${tag:-}"
+            # Only gate stable releases — a '-' marks a prerelease, which is never "Latest".
+            case "${tag:-}" in *-* | "") echo "stable=false" ;; *) echo "stable=true" ;; esac
+            if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
+              echo "build_ok=true"
+            else
+              echo "build_ok=false"
+            fi
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Fail fast if the release build did not succeed
+        if: ${{ steps.ctx.outputs.build_ok != 'true' }}
+        run: |
+          echo "::error::release build did not succeed for ${{ steps.ctx.outputs.tag }} — its artifacts are incomplete"
+          exit 1
+
+      - uses: actions/setup-go@v6
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        with:
+          go-version: "1.26.10"
+          cache-dependency-path: apps/openneko/go.sum
+
+      - name: Build openneko binary
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        working-directory: apps/openneko
+        run: go build -o /usr/local/bin/openneko ./cmd/openneko
+
+      - name: Pre-pull images with retry
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        run: |
+          set -euxo pipefail
+          tag="${{ steps.ctx.outputs.tag }}"
+          # With --pull never, any image the stack references but this list
+          # misses fails the boot — so derive the list from the full demo
+          # stack instead of hand-maintaining it. Demo includes every core
+          # service plus the upgrade-sensitive datasource overlay.
+          # (busybox:latest for openshell-reg was the second one missed).
+          # OPENSHELL_VERSION is intentionally literal in the second sed expression.
+          # The final expression unwraps ANY other ${VAR:-default} to its
+          # default (e.g. ${OPENNEKO_GRAPHJIN_IMAGE:-dosco/graphjin:X}) — an
+          # uninterpolated ref reaches `docker pull` as a literal and fails
+          # smoke with "invalid reference format", demoting a good release.
+          # shellcheck disable=SC2016
+          mapfile -t refs < <(
+            sed -n 's/^[[:space:]]*image:[[:space:]]*//p' \
+              apps/openneko/assets/compose/core.yml \
+              apps/openneko/assets/compose/demo.yml \
+              apps/openneko/assets/compose/openshell.yml \
+            | sed -e "s/\${OPENNEKO_VERSION:-latest}/${tag}/" \
+                  -e 's/\${OPENSHELL_VERSION:-\([0-9.][0-9.]*\)}/\1/' \
+                  -e 's/\${[A-Za-z_][A-Za-z_0-9]*:-\([^}]*\)}/\1/g' \
+            | sort -u
+          )
+          echo "pre-pulling: ${refs[*]}"
+          for ref in "${refs[@]}"; do
+            for attempt in 1 2 3 4 5; do
+              if docker pull "${ref}"; then
+                break
+              fi
+              if [ "${attempt}" = "5" ]; then
+                echo "pull of ${ref} failed after 5 attempts" >&2
+                exit 1
+              fi
+              echo "pull attempt ${attempt} for ${ref} failed; sleeping 10s"
+              sleep 10
+            done
+          done
+
+      - name: Verify enforced database storage contract
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        env:
+          OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
+        run: |
+          set -euo pipefail
+          contract=$(docker run --rm \
+            "ghcr.io/open-neko/neko-cli:$OPENNEKO_VERSION" \
+            storage contract)
+          echo "OpenNeko storage contract: $contract"
+          test "$contract" = "1"
+          for image in neko-db; do
+            ref="ghcr.io/open-neko/${image}:$OPENNEKO_VERSION"
+            image_contract=$(docker image inspect \
+              --format '{{ index .Config.Labels "org.openneko.storage-contract" }}' \
+              "$ref")
+            image_owner=$(docker image inspect \
+              --format '{{ index .Config.Labels "org.openneko.storage-owner" }}' \
+              "$ref")
+            runtime=$(docker run --rm --entrypoint sh "$ref" -ceu \
+              'printf "%s / %s / %s:%s\n" "$(getconf GNU_LIBC_VERSION)" "$(pg_config --version)" "$(id -u postgres)" "$(id -g postgres)"')
+            echo "$image: contract=$image_contract owner=$image_owner runtime=$runtime"
+            test "$image_contract" = "$contract"
+            test "$image_owner" = "999:999"
+            test "$runtime" = "glibc 2.36 / PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) / $image_owner"
+          done
+
+      - name: openneko demo start (detached) against pre-pulled images
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        env:
+          OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
+        run: |
+          set -euxo pipefail
+          openneko start --mode demo --detach --pull never
+
+      - name: openneko status (poll until serving)
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        env:
+          OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 90); do
+            if openneko status; then
+              echo "stack is serving after ${i} polls"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "stack did not reach 'serving' within 180s — final state:"
+          openneko status -v || true
+          openneko logs || true
+          exit 1
+
+      - name: Retained-volume upgrade repairs and serves GraphJin
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        env:
+          OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
+        run: |
+          set -euo pipefail
+          worker_image="ghcr.io/open-neko/neko-worker:$OPENNEKO_VERSION"
+          config_volume="openneko-demo_graphjin-config"
+
+          # Keep a sentinel proving the upgrade reused rather than replaced the
+          # persisted config volume.
+          docker run --rm --user 0:0 \
+            --entrypoint /bin/sh \
+            -v "$config_volume:/config" \
+            "$worker_image" -ceu '
+              test -s /config/agentic.yml
+              printf "%s\n" retained-state > /config/.upgrade-smoke-sentinel
+            '
+
+          openneko upgrade --stack-only --mode demo \
+            --version "$OPENNEKO_VERSION" --no-prune
+
+          docker run --rm --user 0:0 \
+            --entrypoint /bin/sh \
+            -v "$config_volume:/config" \
+            "$worker_image" -ceu '
+              test "$(cat /config/.upgrade-smoke-sentinel)" = retained-state
+            '
+
+          graphjin=$(docker ps -q \
+            --filter label=com.docker.compose.project=openneko-demo \
+            --filter label=com.docker.compose.service=openneko-serve | head -1)
+          test -n "$graphjin"
+          test "$(docker inspect --format '{{.State.Health.Status}}' "$graphjin")" = healthy
+
+          worker=$(docker ps -q \
+            --filter label=com.docker.compose.project=openneko-demo \
+            --filter label=com.docker.compose.service=worker | head -1)
+          test -n "$worker"
+          docker exec "$worker" node --import tsx/esm --input-type=module --eval '
+            import { mintGraphjinToken, callGraphjinMcpTool } from "@neko/llm";
+            const token = mintGraphjinToken({
+              orgId: "adventureworks",
+              userId: null,
+              role: "service",
+            });
+            const response = await callGraphjinMcpTool({
+              baseUrl: "http://openneko-serve:8080/api/v1/mcp",
+              headers: { authorization: "Bearer " + token },
+              signal: AbortSignal.timeout(10_000),
+            }, {
+              name: "execute_graphql",
+              arguments: {
+                query: "query { soh(limit: 1, order_by: { id: desc }) { id } }",
+              },
+            });
+            const text = response.content
+              .map((item) => item.type === "text" ? item.text : "")
+              .join("");
+            const payload = JSON.parse(text);
+            if (response.isError ||
+                !Array.isArray(payload.data?.soh) ||
+                payload.data.soh.length !== 1) {
+              throw new Error("authenticated datasource query failed");
+            }
+            console.log("authenticated_datasource_query=ok");
+          '
+          openneko status
+
+      - name: Verify reconciled database volumes and pg-boss equality
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        run: |
+          set -euo pipefail
+          container_for() {
+            docker ps -q \
+              --filter label=com.docker.compose.project=openneko-demo \
+              --filter "label=com.docker.compose.service=$1" | head -1
+          }
+          neko_db=$(container_for neko-db)
+          worker=$(container_for worker)
+          test -n "$neko_db"
+          test -n "$worker"
+
+          verify_contract() {
+            container=$1
+            user=$2
+            database=$3
+            marker=$(docker exec "$container" psql -v ON_ERROR_STOP=1 -U "$user" -d "$database" -Atc \
+              "select contract_version = 1 from openneko_internal.storage_contract where singleton = 1;")
+            collation=$(docker exec "$container" psql -v ON_ERROR_STOP=1 -U "$user" -d "$database" -Atc \
+              "select datcollversion = pg_database_collation_actual_version(oid) and datcollversion = '2.36' from pg_database where datname = current_database();")
+            test "$marker" = "t"
+            test "$collation" = "t"
+          }
+          verify_contract "$neko_db" neko neko
+
+          # Match the production failure exactly: the parent row must be found
+          # through indexed equality, or pg-boss's send-it FK insert fails.
+          test "$(docker exec "$neko_db" psql -v ON_ERROR_STOP=1 -U neko -d neko -Atc \
+            "select exists(select 1 from pgboss.queue where name = '__pgboss__send-it');")" = "t"
+          if docker logs --since 5m "$worker" 2>&1 | grep -F \
+            'violates foreign key constraint "q_fkey"'; then
+            echo "::error::pg-boss send-it FK failure survived storage reconciliation"
+            exit 1
+          fi
+
+      # Failed releases are demoted to prerelease by the failure path below.
+      # A manual recovery must reverse that state before this workflow ends:
+      # Deploy-to-VM is triggered by our completion and resolves releases/latest.
+      - name: Promote recovered stable release to "Latest" after smoke
+        if: ${{ success() && steps.ctx.outputs.stable == 'true' && steps.ctx.outputs.tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ steps.ctx.outputs.tag }}" \
+            --prerelease=false --latest \
+            --repo "${{ github.repository }}"
+
+      # Any failure above — build incomplete OR the stack never served — demotes
+      # the release so installers fall back to the last good version.
+      - name: Demote release off "Latest" on failure
+        if: ${{ failure() && steps.ctx.outputs.stable == 'true' && steps.ctx.outputs.tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "::error::${{ steps.ctx.outputs.tag }} failed post-release smoke — demoting off 'Latest' so installs fall back to the last good release"
+          gh release edit "${{ steps.ctx.outputs.tag }}" \
+            --prerelease --latest=false \
+            --repo "${{ github.repository }}" || true
+
+      - name: openneko stop --volumes
+        if: ${{ always() && steps.ctx.outputs.build_ok == 'true' }}
+        env:
+          OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
+        run: openneko stop --volumes || true

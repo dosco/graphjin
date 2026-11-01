@@ -1,0 +1,16 @@
+key: metric.cron_health
+targetRef: magento.metric.cron_health
+title: Magento cron health
+description: Failed and long-running Magento cron jobs in the configured window.
+role: operations
+chartHint: status
+unit: count
+directionGood: down
+cadence: hourly
+calculationNote: Running jobs become stuck only after the configured age threshold.
+execution:
+  mode: saved_query
+  source: magento_analytics
+  query: cron_health
+  result: { kind: object, paths: [failed.0.count, stuck.0.count, stuck.0.oldest_started_at] }
+  freshnessSeconds: 3600

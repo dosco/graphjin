@@ -1,0 +1,19 @@
+key: metric.refund_rate
+targetRef: magento.metric.refund_rate
+title: Refund rate
+description: Refunded base-currency value divided by invoiced base-currency value.
+role: executive
+chartHint: metric
+unit: percent
+directionGood: down
+cadence: hourly
+calculationNote: This is a value rate, not a count of refunded orders.
+execution:
+  mode: saved_query
+  source: magento_analytics
+  query: refund_rate
+  result:
+    kind: scalar
+    expression: { divide: [sales_creditmemo.0.refunded, sales_invoice.0.invoiced] }
+    zeroDenominator: null
+  freshnessSeconds: 7200

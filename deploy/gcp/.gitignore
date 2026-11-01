@@ -1,0 +1,19 @@
+# Real values -- project IDs, domains, IAM identities -- live here locally.
+# Never commit this; commit terraform.tfvars.example instead.
+terraform.tfvars
+*.auto.tfvars
+
+# State can contain resource attributes in plaintext (e.g. service account
+# emails, IPs) and is environment-specific -- use a remote backend, don't
+# check state in. (.terraform.lock.hcl is NOT ignored -- that's the provider
+# version lock and should be committed, like a package-lock.json.)
+*.tfstate
+*.tfstate.*
+.terraform/
+
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

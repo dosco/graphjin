@@ -1,0 +1,15 @@
+key: workflow.fulfillment_exceptions
+targetRef: magento.workflow.fulfillment_exceptions
+name: Magento fulfillment exceptions
+description: Investigate paid orders that remain unshipped beyond the configured SLA.
+enabled: true
+status: active
+goal: >-
+  Use the magento-triage-fulfillment skill with fulfillment backlog and age
+  evidence to identify operational exceptions. Report order IDs only, exclude
+  customer information, and recommend the next check. Never cancel, ship,
+  refund, or edit an order.
+schedule: null
+outputContract:
+  kind: recommendation
+  required: [title, body, mood, evidence]

@@ -1,0 +1,14 @@
+key: policy.shopify_governed_orders
+targetRef: shopify.policy.governed_orders
+name: Shopify governed order changes
+description: Every change to a Shopify order note or tags needs administrator approval.
+appliesToKinds: [shopify.order]
+appliesToScopes: [external]
+mode: ask
+approverRole: admin
+priority: 10
+enabled: true
+allowedTargets: {}
+limits:
+  retry: never
+  requireCompletePayload: true

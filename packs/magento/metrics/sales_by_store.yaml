@@ -1,0 +1,19 @@
+key: metric.sales_by_store
+targetRef: magento.metric.sales_by_store
+title: Sales by store
+description: Net invoiced base-currency revenue grouped by Magento store.
+role: executive
+chartHint: bar
+unit: currency
+directionGood: up
+cadence: hourly
+calculationNote: Values remain in base currency; display-currency totals are not mixed.
+execution:
+  mode: saved_query
+  source: magento_analytics
+  query: sales_by_store
+  result:
+    kind: keyed_subtract
+    left: { rowsPath: sales_invoice, keyPath: store_id, valuePath: invoiced }
+    right: { rowsPath: sales_creditmemo, keyPath: store_id, valuePath: refunded }
+  freshnessSeconds: 7200

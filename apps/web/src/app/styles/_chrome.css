@@ -1,0 +1,193 @@
+/* ─── LAYOUT ─── */
+.root { --page-width: var(--content-max); max-width: var(--page-width); margin: 0 auto; padding: 0 var(--page-gutter) 130px; min-height: 100vh; padding-bottom: calc(130px + env(safe-area-inset-bottom, 0px)); }
+
+/* Forms and reading pages keep the shared left edge but a narrower column. */
+.root.is-narrow > :not(.app-header) { max-width: var(--form-max); }
+
+/* ─── APP HEADER ─── */
+/* AppHeader escapes its parent's max-width (each page's .root variant) by
+   spanning the viewport. Its inner content centers to a fixed band so the
+   nav row sits at the same x-position regardless of which page you're on.
+   Without this, the nav appears to "bounce" between pages with different
+   .root widths (Briefing 740, Workflows 1000, Builder etc). */
+/* The page scrolls behind a sticky header (top) and a sticky composer
+   (bottom). scroll-padding keeps scrollIntoView (auto-follow during a run,
+   followup-chip jumps) clear of both, so the asked question and the live
+   "running" indicator never tuck behind the composer. */
+html {
+  scroll-padding-top: 78px;
+  scroll-padding-bottom: 152px;
+  /* Kill the elastic rubber-band past the top/bottom edge — it dragged the
+     sticky header down and made the page feel unanchored. */
+  overscroll-behavior-y: none;
+}
+
+.app-header {
+  position: relative;
+  z-index: 50;
+  margin-left: calc(-50vw + 50%);
+  margin-right: calc(-50vw + 50%);
+  width: 100vw;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
+  padding-block: 10px;
+  background: transparent;
+}
+
+/* Context navigation shares the title's content edge, including narrow forms. */
+body:has(> .app-rail-wrap) .app-header.has-context {
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 20px 0 0;
+}
+
+.app-header.has-context .topbar-inner {
+  padding: 0;
+}
+
+/* ─── CREATOR CREDIT ─── */
+/* Acid-green attribution chip fixed bottom-right; positioning gets
+   responsive-aware in /work via body.work-shell. The math (work-shell
+   gutter alignment, mobile-vs-desktop placement) doesn't compress to
+   utilities. */
+.creator-credit {
+  position: fixed;
+  bottom: 100px;
+  right: 16px;
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: var(--type-label);
+  font-weight: 600;
+  color: var(--success-ink);
+  background: var(--success);
+  border: 1px solid color-mix(in srgb, var(--success) 80%, var(--success-mid));
+  text-decoration: none;
+  letter-spacing: 0.1px;
+  line-height: 1;
+  padding: 6px 10px;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(17, 55, 25, 0.08);
+  z-index: 110;
+  transition: background 0.18s, box-shadow 0.18s, transform 0.18s;
+}
+.creator-credit:hover {
+  background: color-mix(in srgb, var(--success) 88%, var(--success-mid));
+  box-shadow: 0 4px 14px rgba(17, 55, 25, 0.16);
+  transform: translateY(-1px);
+}
+@media (min-width: 1200px) {
+  .creator-credit {
+    bottom: 32px;
+    right: 24px;
+  }
+}
+@media (min-width: 960px) {
+  body.work-shell .creator-credit {
+    left: calc(50% - min(450px, 50vw - 160px));
+    right: auto;
+    bottom: 24px;
+    transform: translateX(-50%);
+  }
+  body.work-shell .creator-credit:hover {
+    transform: translateX(-50%) translateY(-1px);
+  }
+}
+
+/* ─── SECTION NAV (Dashboard / Ask / Actions / etc.) ─── */
+.settings-link,
+.settings-backlink {
+  text-decoration: none;
+  color: var(--text2);
+  font-size: var(--type-body);
+  font-weight: 500;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 7px 12px;
+  transition: color 0.18s, background 0.18s, border-color 0.18s;
+  background: transparent;
+  white-space: nowrap;
+  letter-spacing: -0.005em;
+}
+.settings-link:hover,
+.settings-backlink:hover {
+  color: var(--text);
+  background: rgba(20,18,12,0.04);
+}
+.settings-link.is-active,
+.nav-link.is-active {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: none;
+}
+.settings-link.is-active::before,
+.nav-link.is-active::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 7px;
+  vertical-align: 2px;
+}
+.settings-link.is-disabled {
+  color: var(--text3);
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.settings-backlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--control-md);
+  padding: 7px 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  white-space: nowrap;
+}
+.settings-backlink:hover {
+  border-color: var(--text3);
+  background: var(--neutral-soft);
+}
+.settings-backlink-arrow {
+  display: inline-block;
+  line-height: 0;
+  transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.settings-backlink:hover .settings-backlink-arrow {
+  transform: translateX(-3px);
+}
+
+/* ─── PILLS (segmented tab/selector — e.g. business-profile, role views) ─── */
+.pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 38px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: var(--type-body);
+  font-weight: 600;
+  color: var(--text2);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.18s, background 0.18s, border-color 0.18s, transform 0.18s;
+}
+.pill:hover { border-color: var(--text3); color: var(--text); }
+.pill.on {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}

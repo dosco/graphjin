@@ -1,0 +1,16 @@
+# Low and out-of-stock SKUs: Source-level Magento MSI items at or below the
+# configured quantity threshold. Source quantity is an approximation, not
+# Magento salable quantity; reservations may change availability. Status 0
+# means the item is disabled or out of stock at that source.
+query MagentoStockStatus($threshold: Float = 5) {
+  inventory_source_item(
+    where: {or: [{status: {eq: 0}}, {quantity: {lte: $threshold}}]}
+    order_by: {quantity: asc}
+    limit: 100
+  ) {
+    sku
+    source_code
+    quantity
+    status
+  }
+}

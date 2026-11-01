@@ -1,0 +1,16 @@
+key: watcher.refund_cancellation_spike
+targetRef: magento.watcher.refund_cancellation_spike
+name: Magento cancellation threshold
+description: Fires when cancellations in the configured window exceed the administrator-confirmed threshold; the workflow also reviews refunds.
+workflow: workflow.refund_cancellation_spike
+enabled: false
+activation: admin_confirms_threshold
+query: watch_refund_cancellation
+valuePath: cancelled_orders.0.count
+operator: gt
+threshold: 0
+cadenceSeconds: 1800
+debounceSeconds: 7200
+cooldownSeconds: 21600
+severity: high
+dedupeKey: "cancellation-threshold:{window_start}"

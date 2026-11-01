@@ -1,0 +1,122 @@
+app_name: OpenNeko Backend Eval - Frozen AdventureWorks
+mode: dev
+host_port: 0.0.0.0:8080
+production: false
+debug: false
+log_format: plain
+log_level: info
+http_compress: true
+reload_on_config_change: false
+server_timing: false
+
+auth:
+  type: none
+  development: true
+auth_fail_block: false
+
+identity:
+  user_id_claim: sub
+  role_claims: [ role, roles ]
+  namespace_claim: account_id
+  admin_roles: [ admin ]
+
+roles:
+  - name: member
+  - name: service
+
+cors_allowed_origins:
+  - http://127.0.0.1:18080
+  - http://localhost:18080
+
+default_limit: 20
+enable_tracing: false
+subs_poll_duration: 30s
+
+artifacts:
+  enabled: false
+watches:
+  enabled: false
+tasks:
+  enabled: false
+
+mcp:
+  disable: false
+  allow_config_updates: false
+  # Raw mutation execution is available so GraphJin can make the source-aware
+  # decision. The AdventureWorks database source remains read-only, while the
+  # one explicitly exposed API operation below is allowed.
+  allow_mutations: true
+  allow_raw_queries: true
+  allow_workflow_execution: false
+  allow_workflow_updates: false
+  allow_schema_reload: false
+  allow_schema_updates: false
+  legacy_discovery: false
+  workflow_timeout: 300
+  allow_dev_tools: true
+
+# The candidate backend must drive primitive GraphJin tools itself. GraphJin's
+# built-in Ax agent and its ask_graphjin_agent MCP tool are out of track.
+agent:
+  enabled: false
+  read_only: false
+
+analytics_mode: true
+
+blocklist:
+  - ar_internal_metadata
+  - schema_migrations
+  - secret
+  - password
+  - encrypted
+  - token
+
+# This source block is the sole database definition. Legacy GJ_DATABASE_*
+# overrides must stay absent because they synthesize a conflicting top-level
+# database and defeat mixed database/API source routing. The role has
+# SELECT-only grants and default_transaction_read_only.
+sources:
+  - name: adventureworks
+    kind: database
+    default: true
+    type: postgres
+    host: adventureworks-db
+    port: 5432
+    dbname: adventureworks
+    user: openneko_eval_reader
+    password: eval-reader-only
+    read_only: true
+    access:
+      read: public
+      write: blocked
+      delete: blocked
+      missing_namespace_column: allow
+    capabilities:
+      data.read: true
+      data.write: false
+      schema.read: true
+      schema.write: false
+
+  - name: selection_api
+    kind: api
+    specs_dir: /config/specs
+    read_only: false
+    access:
+      read: public
+      write: authenticated
+      delete: blocked
+    capabilities:
+      api.read: true
+      api.write: true
+      api.delete: false
+    specs:
+      selection-api:
+        base_url: http://eval-api-fixture:8090
+        operations:
+          selectFulfillmentRoute:
+            expose_as: select_fulfillment_route
+            expose_mutation: true
+            allowed_roles: [ member ]
+system:
+  capabilities:
+    raw_graphql.mutate: true

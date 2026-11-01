@@ -1,0 +1,19 @@
+key: metric.cancellation_rate
+targetRef: magento.metric.cancellation_rate
+title: Cancellation rate
+description: Cancelled orders divided by orders placed in the selected period.
+role: executive
+chartHint: metric
+unit: percent
+directionGood: down
+cadence: hourly
+calculationNote: Uses the Magento order state `canceled` and order created timestamp.
+execution:
+  mode: saved_query
+  source: magento_analytics
+  query: cancellation_rate
+  result:
+    kind: scalar
+    expression: { divide: [cancelled_orders.0.count, all_orders.0.count] }
+    zeroDenominator: null
+  freshnessSeconds: 7200

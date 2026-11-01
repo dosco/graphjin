@@ -1,0 +1,20 @@
+# Sales by store: Net invoiced base-currency revenue grouped by Magento store.
+# Values remain in base currency; display-currency totals are not mixed.
+query MagentoSalesByStore($from: String!, $to: String!, $storeIds: [Int!]) {
+  sales_invoice(
+    distinct: [store_id]
+    where: {and: [{created_at: {gte: $from}}, {created_at: {lt: $to}}], store_id: {in: $storeIds}}
+    order_by: {store_id: asc}
+  ) {
+    store_id
+    invoiced: sum_base_grand_total
+  }
+  sales_creditmemo(
+    distinct: [store_id]
+    where: {and: [{created_at: {gte: $from}}, {created_at: {lt: $to}}], store_id: {in: $storeIds}}
+    order_by: {store_id: asc}
+  ) {
+    store_id
+    refunded: sum_base_grand_total
+  }
+}

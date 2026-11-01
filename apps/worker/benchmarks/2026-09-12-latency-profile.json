@@ -1,0 +1,3274 @@
+{
+  "source_commit": "186383e",
+  "date": "2026-09-12",
+  "original_image_id": "sha256:617c3cb3b2b20aff56bbce691003086585d21aebbe2434242dfcb2e03345dfb9",
+  "method": {
+    "model": "gemini-3.5-flash-lite",
+    "sandbox_memory_limit_mib": 768,
+    "sandbox_cpus": 2,
+    "post_result_collection_hold_ms": 5000,
+    "intended_warm_hold_ms": 20000,
+    "production_prompt_changed": false,
+    "production_tool_definitions_changed": false,
+    "browser_paint_measured": false,
+    "client": "Python urllib SSE on host",
+    "notes": [
+      "Provider first chunk is the first SDK chunk accepted by Hermes, not a wire-level packet or necessarily user-visible text.",
+      "memory.current includes charged file cache.",
+      "The additional query had no warm hold because the test environment flag did not reach sandbox exec; it is retained as another cold run.",
+      "Profiling wrappers append timestamps and metadata only; the extra 5 seconds occur after answer/result emission and must not be interpreted as production completion time.",
+      "Original image restored; no warm pool implemented."
+    ]
+  },
+  "derived": [
+    {
+      "label": "no_tools",
+      "run_id": "9c01315c-0b23-4525-8b2d-5f7f5644a4a4",
+      "query_to_node_ms": 3875,
+      "node_setup_ms": 645.0698199999999,
+      "hermes_initialize_ms": 3934.1163480000005,
+      "session_new_ms": 5750.934605,
+      "node_to_prompt_ms": 10346.669705,
+      "first_client_answer_ms": 17794.65562500991,
+      "answer_emit_to_client_ms": 59.655517578125,
+      "prompt_bytes": 50944,
+      "answer_valid": true,
+      "provider_requests": []
+    },
+    {
+      "label": "query_1",
+      "run_id": "b12df013-7b44-4d79-b4d1-91d2c6a3c1e4",
+      "query_to_node_ms": 2299,
+      "node_setup_ms": 739.1702290000001,
+      "hermes_initialize_ms": 3968.7969680000006,
+      "session_new_ms": 4921.932815,
+      "node_to_prompt_ms": 9637.312871,
+      "first_client_answer_ms": 21192.0647919178,
+      "answer_emit_to_client_ms": 51.064697265625,
+      "prompt_bytes": 51382,
+      "answer_valid": true,
+      "provider_requests": []
+    },
+    {
+      "label": "query_2",
+      "run_id": "60c61978-7939-44e2-93b7-9f75c3ea0483",
+      "query_to_node_ms": 2242,
+      "node_setup_ms": 409.460461,
+      "hermes_initialize_ms": 3664.3687460000006,
+      "session_new_ms": 4623.65753,
+      "node_to_prompt_ms": 8705.301598,
+      "first_client_answer_ms": 20125.05254102871,
+      "answer_emit_to_client_ms": 109.052490234375,
+      "prompt_bytes": 51382,
+      "answer_valid": true,
+      "provider_requests": []
+    },
+    {
+      "label": "query_provider",
+      "run_id": "068105d9-edbc-4c1f-8871-394caba0a5d6",
+      "query_to_node_ms": 2937,
+      "node_setup_ms": 490.64067900000003,
+      "hermes_initialize_ms": 3697.187847,
+      "session_new_ms": 3266.9384689999997,
+      "node_to_prompt_ms": 7462.30288,
+      "first_client_answer_ms": 21003.112916019745,
+      "answer_emit_to_client_ms": 66.113037109375,
+      "prompt_bytes": 51382,
+      "answer_valid": true,
+      "provider_requests": [
+        {
+          "request_id": "621262392931973",
+          "start_wall_ms": 1789205489845,
+          "first_chunk_ms": 2077,
+          "first_reasoning_ms": 2077,
+          "first_tool_ms": 2837
+        },
+        {
+          "request_id": "621265542175455",
+          "start_wall_ms": 1789205492937,
+          "first_chunk_ms": 1165,
+          "first_tool_ms": 1166
+        },
+        {
+          "request_id": "621266796744591",
+          "start_wall_ms": 1789205494192,
+          "first_chunk_ms": 2164,
+          "first_tool_ms": 2168
+        },
+        {
+          "request_id": "621269343517245",
+          "start_wall_ms": 1789205496738,
+          "first_chunk_ms": 2174,
+          "first_reasoning_ms": 2174,
+          "first_text_ms": 2628
+        }
+      ]
+    },
+    {
+      "label": "query_variable_path_no_hold",
+      "run_id": "75364067-d58d-4cde-870a-44257d66f3ec",
+      "query_to_node_ms": 2653,
+      "node_setup_ms": 585.065879,
+      "hermes_initialize_ms": 2781.1323199999997,
+      "session_new_ms": 3086.4197680000007,
+      "node_to_prompt_ms": 6458.542513,
+      "first_client_answer_ms": 44926.039583049715,
+      "answer_emit_to_client_ms": 23.03955078125,
+      "prompt_bytes": 51382,
+      "answer_valid": true,
+      "provider_requests": [
+        {
+          "request_id": "621469713628765",
+          "start_wall_ms": 1789205697155,
+          "first_chunk_ms": 1864,
+          "first_tool_ms": 1865
+        },
+        {
+          "request_id": "621471915944752",
+          "start_wall_ms": 1789205699311,
+          "first_chunk_ms": 1196,
+          "first_tool_ms": 1196
+        },
+        {
+          "request_id": "621473198308889",
+          "start_wall_ms": 1789205700593,
+          "first_chunk_ms": 1628,
+          "first_tool_ms": 1629
+        },
+        {
+          "request_id": "621475012608446",
+          "start_wall_ms": 1789205702408,
+          "first_chunk_ms": 1591,
+          "first_tool_ms": 1591
+        },
+        {
+          "request_id": "621476707999075",
+          "start_wall_ms": 1789205704103,
+          "first_chunk_ms": 1227,
+          "first_tool_ms": 1227
+        },
+        {
+          "request_id": "621478027243866",
+          "start_wall_ms": 1789205705422,
+          "first_chunk_ms": 1130,
+          "first_tool_ms": 1131
+        },
+        {
+          "request_id": "621479229302898",
+          "start_wall_ms": 1789205706624,
+          "first_chunk_ms": 2597,
+          "first_reasoning_ms": 2597,
+          "first_tool_ms": 13667
+        },
+        {
+          "request_id": "621493377014394",
+          "start_wall_ms": 1789205720772,
+          "first_chunk_ms": 2685,
+          "first_reasoning_ms": 2685,
+          "first_tool_ms": 2938
+        },
+        {
+          "request_id": "621496515259704",
+          "start_wall_ms": 1789205723911,
+          "first_chunk_ms": 2529,
+          "first_tool_ms": 2529
+        },
+        {
+          "request_id": "621499241487480",
+          "start_wall_ms": 1789205726636,
+          "first_chunk_ms": 2885,
+          "first_tool_ms": 2885
+        },
+        {
+          "request_id": "621502241165138",
+          "start_wall_ms": 1789205729636,
+          "first_chunk_ms": 2417,
+          "first_text_ms": 2417
+        }
+      ]
+    },
+    {
+      "label": "query_warm",
+      "run_id": "25bb4bfe-d280-4362-81a7-fa8e78886a68",
+      "query_to_node_ms": 3053,
+      "node_setup_ms": 464.62767499999995,
+      "hermes_initialize_ms": 2823.752738,
+      "session_new_ms": 3428.0211769999996,
+      "node_to_prompt_ms": 6724.287827,
+      "first_client_answer_ms": 38756.53983396478,
+      "answer_emit_to_client_ms": 77.539794921875,
+      "prompt_bytes": 51382,
+      "answer_valid": true,
+      "warm_hold_ms": 20005,
+      "warm_idle_samples": 27,
+      "warm_idle_cgroup_bytes": {
+        "min": 393498624,
+        "median": 394551296,
+        "max": 394936320
+      },
+      "release_to_answer_emit_ms": 8896,
+      "release_to_client_answer_ms": 8973.539794921875,
+      "mcp_bridge": {
+        "session_request_to_bridge_start_ms": 2695,
+        "bridge_start_to_initialize_response_ms": 138,
+        "initialize_to_tools_ms": 150,
+        "tools_to_session_ready_ms": 445,
+        "tools": 60
+      },
+      "provider_requests": [
+        {
+          "request_id": "622357673783144",
+          "start_wall_ms": 1789206585114,
+          "first_chunk_ms": 2000,
+          "first_reasoning_ms": 2001,
+          "first_tool_ms": 2042
+        },
+        {
+          "request_id": "622359883598709",
+          "start_wall_ms": 1789206587278,
+          "first_chunk_ms": 1438,
+          "first_tool_ms": 1438
+        },
+        {
+          "request_id": "622361420372993",
+          "start_wall_ms": 1789206588815,
+          "first_chunk_ms": 1475,
+          "first_reasoning_ms": 1475,
+          "first_tool_ms": 1784
+        },
+        {
+          "request_id": "622363708879758",
+          "start_wall_ms": 1789206591104,
+          "first_chunk_ms": 1803,
+          "first_text_ms": 1804
+        }
+      ]
+    }
+  ],
+  "raw_runs": [
+    {
+      "label": "no_tools",
+      "run_id": "9c01315c-0b23-4525-8b2d-5f7f5644a4a4",
+      "query_wall_ms": 1789204112171,
+      "ack_ms": 533.3861670223996,
+      "events": [
+        {
+          "ms": 642.1757499920204,
+          "type": "hello",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 868.9724170835689,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 880.1568750059232,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 1692.6130420761183,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 1986.1030830070376,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 3675.1007500570267,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 17785.735542071052,
+          "type": "progress",
+          "id": "google-gemini-summary-69d64a2c-a37f-44a9-9adf-555c307862ad-1",
+          "name": null
+        },
+        {
+          "ms": 17794.65562500991,
+          "type": "message",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 17799.778250046074,
+          "type": "usage",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 23449.324708082713,
+          "type": "followups",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 23460.55725007318,
+          "type": "vitals",
+          "id": null,
+          "name": null
+        }
+      ],
+      "sandbox_trace": [
+        {
+          "phase": "node_preload",
+          "ms": 0.027541999999996847,
+          "wallMs": 1789204116046
+        },
+        {
+          "phase": "hermes_spawn",
+          "ms": 645.0698199999999,
+          "wallMs": 1789204116691
+        },
+        {
+          "phase": "acp_send",
+          "ms": 646.4810329999999,
+          "wallMs": 1789204116692,
+          "method": "initialize"
+        },
+        {
+          "phase": "acp_response",
+          "ms": 4580.5973810000005,
+          "wallMs": 1789204120626,
+          "method": "initialize",
+          "error": false
+        },
+        {
+          "phase": "acp_send",
+          "ms": 4583.140514000001,
+          "wallMs": 1789204120629,
+          "method": "session/new"
+        },
+        {
+          "phase": "acp_response",
+          "ms": 10334.075119000001,
+          "wallMs": 1789204126380,
+          "method": "session/new",
+          "error": false
+        },
+        {
+          "phase": "acp_send",
+          "ms": 10346.669705,
+          "wallMs": 1789204126392,
+          "method": "session/prompt",
+          "promptBytes": 50944
+        },
+        {
+          "phase": "acp_update",
+          "ms": 10348.33321,
+          "wallMs": 1789204126394,
+          "type": "available_commands_update",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 10348.53542,
+          "wallMs": 1789204126394,
+          "type": "usage_update",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 11010.810257000001,
+          "wallMs": 1789204127056,
+          "type": "session_info_update",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 13190.553731,
+          "wallMs": 1789204129236,
+          "type": "agent_thought_chunk",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 13848.93043,
+          "wallMs": 1789204129895,
+          "type": "agent_message_chunk",
+          "sequence": 1
+        },
+        {
+          "phase": "first_answer_emit",
+          "ms": 13860.511095,
+          "wallMs": 1789204129906
+        },
+        {
+          "phase": "acp_response",
+          "ms": 13862.029351000001,
+          "wallMs": 1789204129908,
+          "method": "session/prompt",
+          "error": false
+        },
+        {
+          "phase": "hermes_exit",
+          "ms": 13894.659422,
+          "wallMs": 1789204129940
+        },
+        {
+          "phase": "agent_result",
+          "ms": 13896.594387000001,
+          "wallMs": 1789204129942
+        },
+        {
+          "phase": "entry_complete",
+          "ms": 13898.122309,
+          "wallMs": 1789204129944
+        }
+      ],
+      "memory_peak_bytes": 570904576,
+      "client_complete_ms": 23483.953332994133,
+      "answer_valid": true
+    },
+    {
+      "label": "query_1",
+      "run_id": "b12df013-7b44-4d79-b4d1-91d2c6a3c1e4",
+      "query_wall_ms": 1789204135753,
+      "ack_ms": 63.941875007003546,
+      "events": [
+        {
+          "ms": 112.47979197651148,
+          "type": "hello",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 218.91466691158712,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 235.17737491056323,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 813.4154169820249,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 949.8682499397546,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 2125.638625002466,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 15099.833333981223,
+          "type": "progress",
+          "id": "google-gemini-summary-a1bffa8a-db23-40ce-b777-adfac2221193-1",
+          "name": null
+        },
+        {
+          "ms": 15106.130583910272,
+          "type": "tool_start",
+          "id": "tc-ea2f62565bde",
+          "name": "other"
+        },
+        {
+          "ms": 15162.713625002652,
+          "type": "tool_end",
+          "id": "tc-ea2f62565bde",
+          "name": null
+        },
+        {
+          "ms": 16479.448958998546,
+          "type": "tool_start",
+          "id": "tc-08bac643bcf0",
+          "name": "other"
+        },
+        {
+          "ms": 16485.878166975453,
+          "type": "tool_end",
+          "id": "tc-08bac643bcf0",
+          "name": null
+        },
+        {
+          "ms": 18436.693833908066,
+          "type": "progress",
+          "id": "google-gemini-summary-a1bffa8a-db23-40ce-b777-adfac2221193-2",
+          "name": null
+        },
+        {
+          "ms": 18439.984041964635,
+          "type": "tool_start",
+          "id": "tc-f1bbf4504049",
+          "name": "mcp_neko_graphjin_execute_graphql"
+        },
+        {
+          "ms": 21183.75908397138,
+          "type": "progress",
+          "id": "google-gemini-summary-a1bffa8a-db23-40ce-b777-adfac2221193-3",
+          "name": null
+        },
+        {
+          "ms": 21192.0647919178,
+          "type": "message",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 21195.282666943967,
+          "type": "usage",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 26660.116624902003,
+          "type": "followups",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 26670.671375002712,
+          "type": "vitals",
+          "id": null,
+          "name": null
+        }
+      ],
+      "sandbox_trace": [
+        {
+          "phase": "node_preload",
+          "ms": 0.022542000000001394,
+          "wallMs": 1789204138052
+        },
+        {
+          "phase": "hermes_spawn",
+          "ms": 739.1702290000001,
+          "wallMs": 1789204138791
+        },
+        {
+          "phase": "acp_send",
+          "ms": 740.459984,
+          "wallMs": 1789204138792,
+          "method": "initialize"
+        },
+        {
+          "phase": "acp_response",
+          "ms": 4709.256952000001,
+          "wallMs": 1789204142761,
+          "method": "initialize",
+          "error": false
+        },
+        {
+          "phase": "acp_send",
+          "ms": 4711.484584,
+          "wallMs": 1789204142763,
+          "method": "session/new"
+        },
+        {
+          "phase": "acp_response",
+          "ms": 9633.417399,
+          "wallMs": 1789204147685,
+          "method": "session/new",
+          "error": false
+        },
+        {
+          "phase": "acp_send",
+          "ms": 9637.312871,
+          "wallMs": 1789204147689,
+          "method": "session/prompt",
+          "promptBytes": 51382
+        },
+        {
+          "phase": "acp_update",
+          "ms": 9639.367585999998,
+          "wallMs": 1789204147691,
+          "type": "available_commands_update",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 9639.516502999999,
+          "wallMs": 1789204147691,
+          "type": "usage_update",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 10278.446052,
+          "wallMs": 1789204148330,
+          "type": "session_info_update",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 12033.318011,
+          "wallMs": 1789204150085,
+          "type": "agent_thought_chunk",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 12751.589376,
+          "wallMs": 1789204150803,
+          "type": "tool_call",
+          "sequence": 1,
+          "toolId": "tc-ea2f62565bde"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 12763.457917,
+          "wallMs": 1789204150815,
+          "type": "tool_start",
+          "id": "tc-ea2f62565bde"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 12852.819269,
+          "wallMs": 1789204150905,
+          "type": "tool_call_update",
+          "sequence": 1,
+          "toolId": "tc-ea2f62565bde",
+          "status": "completed"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 12853.231561999999,
+          "wallMs": 1789204150905,
+          "type": "tool_end",
+          "id": "tc-ea2f62565bde"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 14108.228787999999,
+          "wallMs": 1789204152160,
+          "type": "tool_call",
+          "sequence": 2,
+          "toolId": "tc-08bac643bcf0"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 14118.340906,
+          "wallMs": 1789204152170,
+          "type": "tool_start",
+          "id": "tc-08bac643bcf0"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 14143.987744999999,
+          "wallMs": 1789204152196,
+          "type": "tool_call_update",
+          "sequence": 2,
+          "toolId": "tc-08bac643bcf0",
+          "status": "completed"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 14144.263371,
+          "wallMs": 1789204152196,
+          "type": "tool_end",
+          "id": "tc-08bac643bcf0"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 16121.067849,
+          "wallMs": 1789204154173,
+          "type": "tool_call",
+          "sequence": 3,
+          "toolId": "tc-f1bbf4504049"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 16121.856393999999,
+          "wallMs": 1789204154174,
+          "type": "tool_start",
+          "id": "tc-f1bbf4504049"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 18839.204772999998,
+          "wallMs": 1789204156891,
+          "type": "agent_message_chunk",
+          "sequence": 1
+        },
+        {
+          "phase": "first_answer_emit",
+          "ms": 18842.224409,
+          "wallMs": 1789204156894
+        },
+        {
+          "phase": "acp_response",
+          "ms": 18843.075786999998,
+          "wallMs": 1789204156895,
+          "method": "session/prompt",
+          "error": false
+        },
+        {
+          "phase": "hermes_exit",
+          "ms": 18880.341332,
+          "wallMs": 1789204156932
+        },
+        {
+          "phase": "agent_result",
+          "ms": 18880.971626,
+          "wallMs": 1789204156933
+        },
+        {
+          "phase": "entry_complete",
+          "ms": 18882.193631,
+          "wallMs": 1789204156934
+        }
+      ],
+      "memory_peak_bytes": 501166080,
+      "client_complete_ms": 26694.441208965145,
+      "answer_valid": true
+    },
+    {
+      "label": "query_2",
+      "run_id": "60c61978-7939-44e2-93b7-9f75c3ea0483",
+      "query_wall_ms": 1789204162498,
+      "ack_ms": 78.68533302098513,
+      "events": [
+        {
+          "ms": 129.2776659829542,
+          "type": "hello",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 275.43641603551805,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 290.7993330154568,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 772.245250060223,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 900.202332995832,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 2077.229041024111,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 13835.29137505684,
+          "type": "progress",
+          "id": "google-gemini-summary-47db24a6-d39e-4545-b7b5-183cb45ed439-1",
+          "name": null
+        },
+        {
+          "ms": 13835.331125068478,
+          "type": "tool_start",
+          "id": "tc-3c17c0a72a71",
+          "name": "other"
+        },
+        {
+          "ms": 13859.277083072811,
+          "type": "tool_end",
+          "id": "tc-3c17c0a72a71",
+          "name": null
+        },
+        {
+          "ms": 15122.382458066568,
+          "type": "tool_start",
+          "id": "tc-b6944422128e",
+          "name": "other"
+        },
+        {
+          "ms": 15169.148833025247,
+          "type": "tool_end",
+          "id": "tc-b6944422128e",
+          "name": null
+        },
+        {
+          "ms": 16898.51783309132,
+          "type": "tool_start",
+          "id": "tc-2bdb19ec434c",
+          "name": "mcp_neko_graphjin_execute_graphql"
+        },
+        {
+          "ms": 20109.693750040606,
+          "type": "progress",
+          "id": "google-gemini-summary-47db24a6-d39e-4545-b7b5-183cb45ed439-2",
+          "name": null
+        },
+        {
+          "ms": 20125.05254102871,
+          "type": "message",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 20131.59970799461,
+          "type": "usage",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 25531.962166074663,
+          "type": "followups",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 25539.641625015065,
+          "type": "vitals",
+          "id": null,
+          "name": null
+        }
+      ],
+      "sandbox_trace": [
+        {
+          "phase": "node_preload",
+          "ms": 0.02329199999999787,
+          "wallMs": 1789204164740
+        },
+        {
+          "phase": "hermes_spawn",
+          "ms": 409.460461,
+          "wallMs": 1789204165149
+        },
+        {
+          "phase": "acp_send",
+          "ms": 410.652424,
+          "wallMs": 1789204165150,
+          "method": "initialize"
+        },
+        {
+          "phase": "acp_response",
+          "ms": 4075.0211700000004,
+          "wallMs": 1789204168815,
+          "method": "initialize",
+          "error": false
+        },
+        {
+          "phase": "acp_send",
+          "ms": 4078.9980579999997,
+          "wallMs": 1789204168819,
+          "method": "session/new"
+        },
+        {
+          "phase": "acp_response",
+          "ms": 8702.655588,
+          "wallMs": 1789204173442,
+          "method": "session/new",
+          "error": false
+        },
+        {
+          "phase": "acp_send",
+          "ms": 8705.301598,
+          "wallMs": 1789204173445,
+          "method": "session/prompt",
+          "promptBytes": 51382
+        },
+        {
+          "phase": "acp_update",
+          "ms": 8705.957558,
+          "wallMs": 1789204173446,
+          "type": "available_commands_update",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 8707.482813,
+          "wallMs": 1789204173447,
+          "type": "usage_update",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 9263.72695,
+          "wallMs": 1789204174003,
+          "type": "session_info_update",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 11372.881679,
+          "wallMs": 1789204176113,
+          "type": "agent_thought_chunk",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 11504.594511000001,
+          "wallMs": 1789204176244,
+          "type": "tool_call",
+          "sequence": 1,
+          "toolId": "tc-3c17c0a72a71"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 11507.692272,
+          "wallMs": 1789204176247,
+          "type": "tool_start",
+          "id": "tc-3c17c0a72a71"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 11607.256242000001,
+          "wallMs": 1789204176347,
+          "type": "tool_call_update",
+          "sequence": 1,
+          "toolId": "tc-3c17c0a72a71",
+          "status": "completed"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 11607.703577,
+          "wallMs": 1789204176347,
+          "type": "tool_end",
+          "id": "tc-3c17c0a72a71"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 12871.597209000001,
+          "wallMs": 1789204177611,
+          "type": "tool_call",
+          "sequence": 2,
+          "toolId": "tc-b6944422128e"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 12872.418503,
+          "wallMs": 1789204177612,
+          "type": "tool_start",
+          "id": "tc-b6944422128e"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 12896.247919000001,
+          "wallMs": 1789204177636,
+          "type": "tool_call_update",
+          "sequence": 2,
+          "toolId": "tc-b6944422128e",
+          "status": "completed"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 12896.52517,
+          "wallMs": 1789204177636,
+          "type": "tool_end",
+          "id": "tc-b6944422128e"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 14608.644273,
+          "wallMs": 1789204179348,
+          "type": "tool_call",
+          "sequence": 3,
+          "toolId": "tc-2bdb19ec434c"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 14615.646714,
+          "wallMs": 1789204179355,
+          "type": "tool_start",
+          "id": "tc-2bdb19ec434c"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 17770.056691,
+          "wallMs": 1789204182510,
+          "type": "agent_message_chunk",
+          "sequence": 1
+        },
+        {
+          "phase": "first_answer_emit",
+          "ms": 17773.945497,
+          "wallMs": 1789204182514
+        },
+        {
+          "phase": "acp_response",
+          "ms": 17774.85125,
+          "wallMs": 1789204182515,
+          "method": "session/prompt",
+          "error": false
+        },
+        {
+          "phase": "hermes_exit",
+          "ms": 17835.082375,
+          "wallMs": 1789204182575
+        },
+        {
+          "phase": "agent_result",
+          "ms": 17841.78994,
+          "wallMs": 1789204182581
+        },
+        {
+          "phase": "entry_complete",
+          "ms": 17846.984333,
+          "wallMs": 1789204182587
+        }
+      ],
+      "memory_peak_bytes": 424169472,
+      "client_complete_ms": 25545.448083081283,
+      "answer_valid": true
+    },
+    {
+      "label": "query_provider",
+      "run_id": "068105d9-edbc-4c1f-8871-394caba0a5d6",
+      "query_wall_ms": 1789205478879,
+      "ack_ms": 67.80070799868554,
+      "events": [
+        {
+          "ms": 94.29170796647668,
+          "type": "hello",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 245.0460409745574,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 256.69208297040313,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 984.1244160197675,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 1096.9638329697773,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 2825.782791012898,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 13913.610749994405,
+          "type": "progress",
+          "id": "google-gemini-summary-54eb71af-9a3e-4f22-bd7a-90bd2572379f-1",
+          "name": null
+        },
+        {
+          "ms": 13953.147749998607,
+          "type": "tool_start",
+          "id": "tc-ee5c582d0c9e",
+          "name": "other"
+        },
+        {
+          "ms": 14062.386250006966,
+          "type": "tool_end",
+          "id": "tc-ee5c582d0c9e",
+          "name": null
+        },
+        {
+          "ms": 15279.833249980584,
+          "type": "tool_start",
+          "id": "tc-9477fce5e1fc",
+          "name": "other"
+        },
+        {
+          "ms": 15318.78895801492,
+          "type": "tool_end",
+          "id": "tc-9477fce5e1fc",
+          "name": null
+        },
+        {
+          "ms": 17607.255791081116,
+          "type": "tool_start",
+          "id": "tc-5bd73c5fcb60",
+          "name": "mcp_neko_graphjin_execute_graphql"
+        },
+        {
+          "ms": 20997.627999982797,
+          "type": "progress",
+          "id": "google-gemini-summary-54eb71af-9a3e-4f22-bd7a-90bd2572379f-2",
+          "name": null
+        },
+        {
+          "ms": 21003.112916019745,
+          "type": "message",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 21006.052708020434,
+          "type": "usage",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 26342.031250009313,
+          "type": "followups",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 26346.385875018314,
+          "type": "vitals",
+          "id": null,
+          "name": null
+        }
+      ],
+      "sandbox_trace": [
+        {
+          "phase": "node_preload",
+          "ms": 0.01733300000000071,
+          "wallMs": 1789205481816
+        },
+        {
+          "phase": "hermes_spawn",
+          "ms": 490.64067900000003,
+          "wallMs": 1789205482307
+        },
+        {
+          "phase": "acp_send",
+          "ms": 491.36680599999994,
+          "wallMs": 1789205482308,
+          "method": "initialize"
+        },
+        {
+          "phase": "acp_response",
+          "ms": 4188.554653,
+          "wallMs": 1789205486005,
+          "method": "initialize",
+          "error": false
+        },
+        {
+          "phase": "acp_send",
+          "ms": 4191.864407,
+          "wallMs": 1789205486008,
+          "method": "session/new"
+        },
+        {
+          "phase": "acp_response",
+          "ms": 7458.802876,
+          "wallMs": 1789205489275,
+          "method": "session/new",
+          "error": false
+        },
+        {
+          "phase": "acp_send",
+          "ms": 7462.30288,
+          "wallMs": 1789205489279,
+          "method": "session/prompt",
+          "promptBytes": 51382
+        },
+        {
+          "phase": "acp_update",
+          "ms": 7463.360215,
+          "wallMs": 1789205489280,
+          "type": "available_commands_update",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 7463.404507,
+          "wallMs": 1789205489280,
+          "type": "usage_update",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 7930.90045,
+          "wallMs": 1789205489747,
+          "type": "session_info_update",
+          "sequence": 1
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "621262392931973",
+          "wallMs": 1789205489845
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "621262392931973",
+          "wallMs": 1789205491922
+        },
+        {
+          "phase": "provider_first_reasoning",
+          "requestId": "621262392931973",
+          "wallMs": 1789205491922
+        },
+        {
+          "phase": "acp_update",
+          "ms": 10110.441417,
+          "wallMs": 1789205491927,
+          "type": "agent_thought_chunk",
+          "sequence": 1
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "621262392931973",
+          "wallMs": 1789205492682
+        },
+        {
+          "phase": "acp_update",
+          "ms": 10959.910274,
+          "wallMs": 1789205492776,
+          "type": "tool_call",
+          "sequence": 1,
+          "toolId": "tc-ee5c582d0c9e"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 10961.342568,
+          "wallMs": 1789205492778,
+          "type": "tool_start",
+          "id": "tc-ee5c582d0c9e"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 11116.089394999999,
+          "wallMs": 1789205492932,
+          "type": "tool_call_update",
+          "sequence": 1,
+          "toolId": "tc-ee5c582d0c9e",
+          "status": "completed"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 11116.41402,
+          "wallMs": 1789205492933,
+          "type": "tool_end",
+          "id": "tc-ee5c582d0c9e"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "621265542175455",
+          "wallMs": 1789205492937
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "621265542175455",
+          "wallMs": 1789205494102
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "621265542175455",
+          "wallMs": 1789205494103
+        },
+        {
+          "phase": "acp_update",
+          "ms": 12332.811565,
+          "wallMs": 1789205494149,
+          "type": "tool_call",
+          "sequence": 2,
+          "toolId": "tc-9477fce5e1fc"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 12333.905399,
+          "wallMs": 1789205494150,
+          "type": "tool_start",
+          "id": "tc-9477fce5e1fc"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 12371.387282,
+          "wallMs": 1789205494188,
+          "type": "tool_call_update",
+          "sequence": 2,
+          "toolId": "tc-9477fce5e1fc",
+          "status": "completed"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 12371.575365,
+          "wallMs": 1789205494188,
+          "type": "tool_end",
+          "id": "tc-9477fce5e1fc"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "621266796744591",
+          "wallMs": 1789205494192
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "621266796744591",
+          "wallMs": 1789205496356
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "621266796744591",
+          "wallMs": 1789205496360
+        },
+        {
+          "phase": "acp_update",
+          "ms": 14626.357889,
+          "wallMs": 1789205496443,
+          "type": "tool_call",
+          "sequence": 3,
+          "toolId": "tc-5bd73c5fcb60"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 14628.414766,
+          "wallMs": 1789205496445,
+          "type": "tool_start",
+          "id": "tc-5bd73c5fcb60"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "621269343517245",
+          "wallMs": 1789205496738
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "621269343517245",
+          "wallMs": 1789205498912
+        },
+        {
+          "phase": "provider_first_reasoning",
+          "requestId": "621269343517245",
+          "wallMs": 1789205498912
+        },
+        {
+          "phase": "provider_first_text",
+          "requestId": "621269343517245",
+          "wallMs": 1789205499366
+        },
+        {
+          "phase": "acp_update",
+          "ms": 17997.203034,
+          "wallMs": 1789205499813,
+          "type": "agent_message_chunk",
+          "sequence": 1
+        },
+        {
+          "phase": "first_answer_emit",
+          "ms": 17999.444579,
+          "wallMs": 1789205499816
+        },
+        {
+          "phase": "acp_response",
+          "ms": 18004.075418,
+          "wallMs": 1789205499820,
+          "method": "session/prompt",
+          "error": false
+        },
+        {
+          "phase": "hermes_exit",
+          "ms": 18056.91757,
+          "wallMs": 1789205499873
+        },
+        {
+          "phase": "agent_result",
+          "ms": 18057.942488,
+          "wallMs": 1789205499874
+        },
+        {
+          "phase": "entry_complete",
+          "ms": 18061.238284,
+          "wallMs": 1789205499878
+        }
+      ],
+      "memory_peak_bytes": 577101824,
+      "memory_samples": [
+        {
+          "wallMs": 1789205481418,
+          "bytes": 31199232
+        },
+        {
+          "wallMs": 1789205482063,
+          "bytes": 86695936
+        },
+        {
+          "wallMs": 1789205483086,
+          "bytes": 134692864
+        },
+        {
+          "wallMs": 1789205483860,
+          "bytes": 173342720
+        },
+        {
+          "wallMs": 1789205484562,
+          "bytes": 206209024
+        },
+        {
+          "wallMs": 1789205485159,
+          "bytes": 253960192
+        },
+        {
+          "wallMs": 1789205485910,
+          "bytes": 293060608
+        },
+        {
+          "wallMs": 1789205486515,
+          "bytes": 308068352
+        },
+        {
+          "wallMs": 1789205487131,
+          "bytes": 317898752
+        },
+        {
+          "wallMs": 1789205487761,
+          "bytes": 329592832
+        },
+        {
+          "wallMs": 1789205488364,
+          "bytes": 373252096
+        },
+        {
+          "wallMs": 1789205488980,
+          "bytes": 482930688
+        },
+        {
+          "wallMs": 1789205489650,
+          "bytes": 562327552
+        },
+        {
+          "wallMs": 1789205490321,
+          "bytes": 570585088
+        },
+        {
+          "wallMs": 1789205490909,
+          "bytes": 571777024
+        },
+        {
+          "wallMs": 1789205491541,
+          "bytes": 571703296
+        },
+        {
+          "wallMs": 1789205492172,
+          "bytes": 571654144
+        },
+        {
+          "wallMs": 1789205492834,
+          "bytes": 571695104
+        },
+        {
+          "wallMs": 1789205493468,
+          "bytes": 572276736
+        },
+        {
+          "wallMs": 1789205494060,
+          "bytes": 572305408
+        },
+        {
+          "wallMs": 1789205494737,
+          "bytes": 572624896
+        },
+        {
+          "wallMs": 1789205495420,
+          "bytes": 572669952
+        },
+        {
+          "wallMs": 1789205496040,
+          "bytes": 572407808
+        },
+        {
+          "wallMs": 1789205496677,
+          "bytes": 572428288
+        },
+        {
+          "wallMs": 1789205497334,
+          "bytes": 573276160
+        },
+        {
+          "wallMs": 1789205497979,
+          "bytes": 572571648
+        },
+        {
+          "wallMs": 1789205498623,
+          "bytes": 572653568
+        },
+        {
+          "wallMs": 1789205499226,
+          "bytes": 576348160
+        },
+        {
+          "wallMs": 1789205499866,
+          "bytes": 406433792
+        },
+        {
+          "wallMs": 1789205500570,
+          "bytes": 240603136
+        },
+        {
+          "wallMs": 1789205501253,
+          "bytes": 240472064
+        },
+        {
+          "wallMs": 1789205501933,
+          "bytes": 240119808
+        },
+        {
+          "wallMs": 1789205502546,
+          "bytes": 240283648
+        },
+        {
+          "wallMs": 1789205503193,
+          "bytes": 240205824
+        },
+        {
+          "wallMs": 1789205503822,
+          "bytes": 240234496
+        },
+        {
+          "wallMs": 1789205504418,
+          "bytes": 240275456
+        }
+      ],
+      "client_complete_ms": 26363.681165967137,
+      "answer_valid": true
+    },
+    {
+      "label": "query_variable_path_no_hold",
+      "run_id": "75364067-d58d-4cde-870a-44257d66f3ec",
+      "query_wall_ms": 1789205687556,
+      "ack_ms": 55.83595798816532,
+      "events": [
+        {
+          "ms": 84.53229197766632,
+          "type": "hello",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 228.26987504959106,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 234.8737920401618,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 954.4451669789851,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 1071.654292056337,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 2559.9259580485523,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 11706.55712496955,
+          "type": "tool_start",
+          "id": "tc-ebfe2bab1f49",
+          "name": "other"
+        },
+        {
+          "ms": 11747.668707976118,
+          "type": "tool_end",
+          "id": "tc-ebfe2bab1f49",
+          "name": null
+        },
+        {
+          "ms": 13021.845667040907,
+          "type": "tool_start",
+          "id": "tc-efdf87450a2c",
+          "name": "other"
+        },
+        {
+          "ms": 13051.645833067596,
+          "type": "tool_end",
+          "id": "tc-efdf87450a2c",
+          "name": null
+        },
+        {
+          "ms": 14690.109750023112,
+          "type": "tool_start",
+          "id": "tc-6e2e3ff762d0",
+          "name": "mcp_neko_graphjin_execute_graphql"
+        },
+        {
+          "ms": 16542.748208041303,
+          "type": "tool_start",
+          "id": "tc-98e72f79e183",
+          "name": "other"
+        },
+        {
+          "ms": 16560.4721250711,
+          "type": "tool_end",
+          "id": "tc-98e72f79e183",
+          "name": null
+        },
+        {
+          "ms": 17851.755500072613,
+          "type": "tool_start",
+          "id": "tc-dfc140a5156e",
+          "name": "other"
+        },
+        {
+          "ms": 17860.990000073798,
+          "type": "tool_end",
+          "id": "tc-dfc140a5156e",
+          "name": null
+        },
+        {
+          "ms": 19024.350541993044,
+          "type": "tool_start",
+          "id": "tc-cd5611443266",
+          "name": "other"
+        },
+        {
+          "ms": 19070.24208304938,
+          "type": "tool_end",
+          "id": "tc-cd5611443266",
+          "name": null
+        },
+        {
+          "ms": 33010.90233307332,
+          "type": "progress",
+          "id": "google-gemini-summary-1ffa50ac-c2c7-4106-982b-cb318ea9d28f-1",
+          "name": null
+        },
+        {
+          "ms": 33078.79383303225,
+          "type": "tool_start",
+          "id": "tc-b1171f34eefc",
+          "name": "render_cards"
+        },
+        {
+          "ms": 36371.02591700386,
+          "type": "progress",
+          "id": "google-gemini-summary-1ffa50ac-c2c7-4106-982b-cb318ea9d28f-2",
+          "name": null
+        },
+        {
+          "ms": 36383.969417074695,
+          "type": "tool_start",
+          "id": "tc-c0259fb7c924",
+          "name": "render_cards"
+        },
+        {
+          "ms": 38979.84012507368,
+          "type": "tool_start",
+          "id": "tc-7eeabcddc576",
+          "name": "execute"
+        },
+        {
+          "ms": 39070.14616706874,
+          "type": "tool_end",
+          "id": "tc-7eeabcddc576",
+          "name": null
+        },
+        {
+          "ms": 42067.746542044915,
+          "type": "tool_start",
+          "id": "tc-71c3c3448b3c",
+          "name": "render_cards"
+        },
+        {
+          "ms": 44926.039583049715,
+          "type": "message",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 44936.545124975964,
+          "type": "usage",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 50356.54870804865,
+          "type": "followups",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 50363.29233297147,
+          "type": "vitals",
+          "id": null,
+          "name": null
+        }
+      ],
+      "sandbox_trace": [
+        {
+          "phase": "node_preload",
+          "ms": 0.031500000000001194,
+          "wallMs": 1789205690209
+        },
+        {
+          "phase": "hermes_spawn",
+          "ms": 585.065879,
+          "wallMs": 1789205690794
+        },
+        {
+          "phase": "acp_send",
+          "ms": 587.961214,
+          "wallMs": 1789205690797,
+          "method": "initialize"
+        },
+        {
+          "phase": "acp_response",
+          "ms": 3369.0935339999996,
+          "wallMs": 1789205693578,
+          "method": "initialize",
+          "error": false
+        },
+        {
+          "phase": "acp_send",
+          "ms": 3370.6425769999996,
+          "wallMs": 1789205693580,
+          "method": "session/new"
+        },
+        {
+          "phase": "acp_response",
+          "ms": 6457.062345,
+          "wallMs": 1789205696666,
+          "method": "session/new",
+          "error": false
+        },
+        {
+          "phase": "acp_send",
+          "ms": 6458.542513,
+          "wallMs": 1789205696668,
+          "method": "session/prompt",
+          "promptBytes": 51382
+        },
+        {
+          "phase": "acp_update",
+          "ms": 6458.995639000001,
+          "wallMs": 1789205696668,
+          "type": "available_commands_update",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 6459.038972,
+          "wallMs": 1789205696668,
+          "type": "usage_update",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 6850.946323,
+          "wallMs": 1789205697060,
+          "type": "session_info_update",
+          "sequence": 1
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "621469713628765",
+          "wallMs": 1789205697155
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "621469713628765",
+          "wallMs": 1789205699019
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "621469713628765",
+          "wallMs": 1789205699020
+        },
+        {
+          "phase": "acp_update",
+          "ms": 9029.399749999999,
+          "wallMs": 1789205699238,
+          "type": "tool_call",
+          "sequence": 1,
+          "toolId": "tc-ebfe2bab1f49"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 9036.418297,
+          "wallMs": 1789205699245,
+          "type": "tool_start",
+          "id": "tc-ebfe2bab1f49"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 9097.693346,
+          "wallMs": 1789205699307,
+          "type": "tool_call_update",
+          "sequence": 1,
+          "toolId": "tc-ebfe2bab1f49",
+          "status": "completed"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 9097.883221,
+          "wallMs": 1789205699307,
+          "type": "tool_end",
+          "id": "tc-ebfe2bab1f49"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "621471915944752",
+          "wallMs": 1789205699311
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "621471915944752",
+          "wallMs": 1789205700507
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "621471915944752",
+          "wallMs": 1789205700507
+        },
+        {
+          "phase": "acp_update",
+          "ms": 10359.175465999999,
+          "wallMs": 1789205700568,
+          "type": "tool_call",
+          "sequence": 2,
+          "toolId": "tc-efdf87450a2c"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 10361.165008999998,
+          "wallMs": 1789205700570,
+          "type": "tool_start",
+          "id": "tc-efdf87450a2c"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 10378.194398,
+          "wallMs": 1789205700587,
+          "type": "tool_call_update",
+          "sequence": 2,
+          "toolId": "tc-efdf87450a2c",
+          "status": "completed"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 10378.585772999999,
+          "wallMs": 1789205700588,
+          "type": "tool_end",
+          "id": "tc-efdf87450a2c"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "621473198308889",
+          "wallMs": 1789205700593
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "621473198308889",
+          "wallMs": 1789205702221
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "621473198308889",
+          "wallMs": 1789205702222
+        },
+        {
+          "phase": "acp_update",
+          "ms": 12035.02008,
+          "wallMs": 1789205702244,
+          "type": "tool_call",
+          "sequence": 3,
+          "toolId": "tc-6e2e3ff762d0"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 12035.62783,
+          "wallMs": 1789205702245,
+          "type": "tool_start",
+          "id": "tc-6e2e3ff762d0"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "621475012608446",
+          "wallMs": 1789205702408
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "621475012608446",
+          "wallMs": 1789205703999
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "621475012608446",
+          "wallMs": 1789205703999
+        },
+        {
+          "phase": "acp_update",
+          "ms": 13863.220189,
+          "wallMs": 1789205704072,
+          "type": "tool_call",
+          "sequence": 4,
+          "toolId": "tc-98e72f79e183"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 13864.989356999999,
+          "wallMs": 1789205704074,
+          "type": "tool_start",
+          "id": "tc-98e72f79e183"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 13884.352372,
+          "wallMs": 1789205704093,
+          "type": "tool_call_update",
+          "sequence": 3,
+          "toolId": "tc-98e72f79e183",
+          "status": "completed"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 13884.591373,
+          "wallMs": 1789205704094,
+          "type": "tool_end",
+          "id": "tc-98e72f79e183"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "621476707999075",
+          "wallMs": 1789205704103
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "621476707999075",
+          "wallMs": 1789205705330
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "621476707999075",
+          "wallMs": 1789205705330
+        },
+        {
+          "phase": "acp_update",
+          "ms": 15176.918850999999,
+          "wallMs": 1789205705386,
+          "type": "tool_call",
+          "sequence": 5,
+          "toolId": "tc-dfc140a5156e"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 15178.841685,
+          "wallMs": 1789205705388,
+          "type": "tool_start",
+          "id": "tc-dfc140a5156e"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 15210.843502,
+          "wallMs": 1789205705420,
+          "type": "tool_call_update",
+          "sequence": 4,
+          "toolId": "tc-dfc140a5156e",
+          "status": "completed"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 15211.129211,
+          "wallMs": 1789205705420,
+          "type": "tool_end",
+          "id": "tc-dfc140a5156e"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "621478027243866",
+          "wallMs": 1789205705422
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "621478027243866",
+          "wallMs": 1789205706552
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "621478027243866",
+          "wallMs": 1789205706553
+        },
+        {
+          "phase": "acp_update",
+          "ms": 16372.938169000001,
+          "wallMs": 1789205706582,
+          "type": "tool_call",
+          "sequence": 6,
+          "toolId": "tc-cd5611443266"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 16373.28242,
+          "wallMs": 1789205706582,
+          "type": "tool_start",
+          "id": "tc-cd5611443266"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 16409.403781,
+          "wallMs": 1789205706618,
+          "type": "tool_call_update",
+          "sequence": 5,
+          "toolId": "tc-cd5611443266",
+          "status": "completed"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 16409.585615,
+          "wallMs": 1789205706619,
+          "type": "tool_end",
+          "id": "tc-cd5611443266"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "621479229302898",
+          "wallMs": 1789205706624
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "621479229302898",
+          "wallMs": 1789205709221
+        },
+        {
+          "phase": "provider_first_reasoning",
+          "requestId": "621479229302898",
+          "wallMs": 1789205709221
+        },
+        {
+          "phase": "acp_update",
+          "ms": 19017.082588999998,
+          "wallMs": 1789205709226,
+          "type": "agent_thought_chunk",
+          "sequence": 1
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "621479229302898",
+          "wallMs": 1789205720291
+        },
+        {
+          "phase": "acp_update",
+          "ms": 30192.544448,
+          "wallMs": 1789205720402,
+          "type": "tool_call",
+          "sequence": 7,
+          "toolId": "tc-b1171f34eefc"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 30320.343383,
+          "wallMs": 1789205720529,
+          "type": "tool_start",
+          "id": "tc-b1171f34eefc"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "621493377014394",
+          "wallMs": 1789205720772
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "621493377014394",
+          "wallMs": 1789205723457
+        },
+        {
+          "phase": "provider_first_reasoning",
+          "requestId": "621493377014394",
+          "wallMs": 1789205723457
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "621493377014394",
+          "wallMs": 1789205723710
+        },
+        {
+          "phase": "acp_update",
+          "ms": 33611.235813,
+          "wallMs": 1789205723820,
+          "type": "tool_call",
+          "sequence": 8,
+          "toolId": "tc-c0259fb7c924"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 33627.219825,
+          "wallMs": 1789205723836,
+          "type": "tool_start",
+          "id": "tc-c0259fb7c924"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "621496515259704",
+          "wallMs": 1789205723911
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "621496515259704",
+          "wallMs": 1789205726440
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "621496515259704",
+          "wallMs": 1789205726440
+        },
+        {
+          "phase": "acp_update",
+          "ms": 36293.339637,
+          "wallMs": 1789205726502,
+          "type": "tool_call",
+          "sequence": 9,
+          "toolId": "tc-7eeabcddc576"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 36294.42718,
+          "wallMs": 1789205726503,
+          "type": "tool_start",
+          "id": "tc-7eeabcddc576"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 36420.573863,
+          "wallMs": 1789205726630,
+          "type": "tool_call_update",
+          "sequence": 6,
+          "toolId": "tc-7eeabcddc576",
+          "status": "failed"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 36421.521655,
+          "wallMs": 1789205726631,
+          "type": "tool_end",
+          "id": "tc-7eeabcddc576"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "621499241487480",
+          "wallMs": 1789205726636
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "621499241487480",
+          "wallMs": 1789205729521
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "621499241487480",
+          "wallMs": 1789205729521
+        },
+        {
+          "phase": "acp_update",
+          "ms": 39384.065951,
+          "wallMs": 1789205729593,
+          "type": "tool_call",
+          "sequence": 10,
+          "toolId": "tc-71c3c3448b3c"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 39386.966953,
+          "wallMs": 1789205729596,
+          "type": "tool_start",
+          "id": "tc-71c3c3448b3c"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "621502241165138",
+          "wallMs": 1789205729636
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "621502241165138",
+          "wallMs": 1789205732053
+        },
+        {
+          "phase": "provider_first_text",
+          "requestId": "621502241165138",
+          "wallMs": 1789205732053
+        },
+        {
+          "phase": "acp_update",
+          "ms": 42248.692295,
+          "wallMs": 1789205732458,
+          "type": "agent_message_chunk",
+          "sequence": 1
+        },
+        {
+          "phase": "first_answer_emit",
+          "ms": 42250.373754,
+          "wallMs": 1789205732459
+        },
+        {
+          "phase": "acp_response",
+          "ms": 42257.377635,
+          "wallMs": 1789205732466,
+          "method": "session/prompt",
+          "error": false
+        },
+        {
+          "phase": "hermes_exit",
+          "ms": 42291.337287,
+          "wallMs": 1789205732500
+        },
+        {
+          "phase": "agent_result",
+          "ms": 42292.013786999996,
+          "wallMs": 1789205732501
+        },
+        {
+          "phase": "entry_complete",
+          "ms": 42293.055121,
+          "wallMs": 1789205732502
+        }
+      ],
+      "memory_peak_bytes": 579837952,
+      "memory_samples": [
+        {
+          "wallMs": 1789205689631,
+          "bytes": 26132480
+        },
+        {
+          "wallMs": 1789205690407,
+          "bytes": 83443712
+        },
+        {
+          "wallMs": 1789205691027,
+          "bytes": 141070336
+        },
+        {
+          "wallMs": 1789205691622,
+          "bytes": 175120384
+        },
+        {
+          "wallMs": 1789205692213,
+          "bytes": 209534976
+        },
+        {
+          "wallMs": 1789205692815,
+          "bytes": 241811456
+        },
+        {
+          "wallMs": 1789205693497,
+          "bytes": 297308160
+        },
+        {
+          "wallMs": 1789205694111,
+          "bytes": 315740160
+        },
+        {
+          "wallMs": 1789205694749,
+          "bytes": 321703936
+        },
+        {
+          "wallMs": 1789205695387,
+          "bytes": 343904256
+        },
+        {
+          "wallMs": 1789205695976,
+          "bytes": 380792832
+        },
+        {
+          "wallMs": 1789205696615,
+          "bytes": 485289984
+        },
+        {
+          "wallMs": 1789205697197,
+          "bytes": 572461056
+        },
+        {
+          "wallMs": 1789205697823,
+          "bytes": 572424192
+        },
+        {
+          "wallMs": 1789205698496,
+          "bytes": 573800448
+        },
+        {
+          "wallMs": 1789205699268,
+          "bytes": 574234624
+        },
+        {
+          "wallMs": 1789205699978,
+          "bytes": 574304256
+        },
+        {
+          "wallMs": 1789205700648,
+          "bytes": 574550016
+        },
+        {
+          "wallMs": 1789205701296,
+          "bytes": 574705664
+        },
+        {
+          "wallMs": 1789205701926,
+          "bytes": 574525440
+        },
+        {
+          "wallMs": 1789205702500,
+          "bytes": 575356928
+        },
+        {
+          "wallMs": 1789205703152,
+          "bytes": 575213568
+        },
+        {
+          "wallMs": 1789205703760,
+          "bytes": 575057920
+        },
+        {
+          "wallMs": 1789205704376,
+          "bytes": 575414272
+        },
+        {
+          "wallMs": 1789205705190,
+          "bytes": 575021056
+        },
+        {
+          "wallMs": 1789205705889,
+          "bytes": 575582208
+        },
+        {
+          "wallMs": 1789205706562,
+          "bytes": 575750144
+        },
+        {
+          "wallMs": 1789205707235,
+          "bytes": 575868928
+        },
+        {
+          "wallMs": 1789205707863,
+          "bytes": 575049728
+        },
+        {
+          "wallMs": 1789205708531,
+          "bytes": 479498240
+        },
+        {
+          "wallMs": 1789205709188,
+          "bytes": 479449088
+        },
+        {
+          "wallMs": 1789205709847,
+          "bytes": 479625216
+        },
+        {
+          "wallMs": 1789205710510,
+          "bytes": 479645696
+        },
+        {
+          "wallMs": 1789205711169,
+          "bytes": 479629312
+        },
+        {
+          "wallMs": 1789205711852,
+          "bytes": 479412224
+        },
+        {
+          "wallMs": 1789205712535,
+          "bytes": 479440896
+        },
+        {
+          "wallMs": 1789205713180,
+          "bytes": 479326208
+        },
+        {
+          "wallMs": 1789205713834,
+          "bytes": 479514624
+        },
+        {
+          "wallMs": 1789205714475,
+          "bytes": 479813632
+        },
+        {
+          "wallMs": 1789205715123,
+          "bytes": 479588352
+        },
+        {
+          "wallMs": 1789205715775,
+          "bytes": 479858688
+        },
+        {
+          "wallMs": 1789205716436,
+          "bytes": 479707136
+        },
+        {
+          "wallMs": 1789205717051,
+          "bytes": 479383552
+        },
+        {
+          "wallMs": 1789205717688,
+          "bytes": 479944704
+        },
+        {
+          "wallMs": 1789205718323,
+          "bytes": 479866880
+        },
+        {
+          "wallMs": 1789205718919,
+          "bytes": 479662080
+        },
+        {
+          "wallMs": 1789205719554,
+          "bytes": 479363072
+        },
+        {
+          "wallMs": 1789205720210,
+          "bytes": 479498240
+        },
+        {
+          "wallMs": 1789205720912,
+          "bytes": 542359552
+        },
+        {
+          "wallMs": 1789205721533,
+          "bytes": 542494720
+        },
+        {
+          "wallMs": 1789205722153,
+          "bytes": 542646272
+        },
+        {
+          "wallMs": 1789205722791,
+          "bytes": 543064064
+        },
+        {
+          "wallMs": 1789205723457,
+          "bytes": 542896128
+        },
+        {
+          "wallMs": 1789205724088,
+          "bytes": 542408704
+        },
+        {
+          "wallMs": 1789205724667,
+          "bytes": 542707712
+        },
+        {
+          "wallMs": 1789205725262,
+          "bytes": 543186944
+        },
+        {
+          "wallMs": 1789205725959,
+          "bytes": 542810112
+        },
+        {
+          "wallMs": 1789205726636,
+          "bytes": 551428096
+        },
+        {
+          "wallMs": 1789205727278,
+          "bytes": 551297024
+        },
+        {
+          "wallMs": 1789205727927,
+          "bytes": 551235584
+        },
+        {
+          "wallMs": 1789205728544,
+          "bytes": 551485440
+        },
+        {
+          "wallMs": 1789205729128,
+          "bytes": 551571456
+        },
+        {
+          "wallMs": 1789205729724,
+          "bytes": 551419904
+        },
+        {
+          "wallMs": 1789205730391,
+          "bytes": 551211008
+        },
+        {
+          "wallMs": 1789205731065,
+          "bytes": 551641088
+        },
+        {
+          "wallMs": 1789205731661,
+          "bytes": 551473152
+        },
+        {
+          "wallMs": 1789205732402,
+          "bytes": 551235584
+        },
+        {
+          "wallMs": 1789205733017,
+          "bytes": 185331712
+        },
+        {
+          "wallMs": 1789205733594,
+          "bytes": 185139200
+        },
+        {
+          "wallMs": 1789205734179,
+          "bytes": 185004032
+        },
+        {
+          "wallMs": 1789205734809,
+          "bytes": 184946688
+        },
+        {
+          "wallMs": 1789205735490,
+          "bytes": 185454592
+        },
+        {
+          "wallMs": 1789205736080,
+          "bytes": 185577472
+        },
+        {
+          "wallMs": 1789205736680,
+          "bytes": 185442304
+        },
+        {
+          "wallMs": 1789205737254,
+          "bytes": 185602048
+        }
+      ],
+      "client_complete_ms": 50382.98558304086,
+      "answer_valid": true
+    },
+    {
+      "label": "query_warm",
+      "run_id": "25bb4bfe-d280-4362-81a7-fa8e78886a68",
+      "query_wall_ms": 1789206554766,
+      "ack_ms": 62.56145890802145,
+      "events": [
+        {
+          "ms": 83.38333398569375,
+          "type": "hello",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 273.15904200077057,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 280.24762496352196,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 917.3880839953199,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 1043.146124924533,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 2823.961167014204,
+          "type": "status",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 32480.827749939635,
+          "type": "progress",
+          "id": "google-gemini-summary-73d71e30-9846-47ca-8130-893c027a18ca-1",
+          "name": null
+        },
+        {
+          "ms": 32485.216291970573,
+          "type": "tool_start",
+          "id": "tc-ec09e4b7c3b0",
+          "name": "other"
+        },
+        {
+          "ms": 32521.149624953978,
+          "type": "tool_end",
+          "id": "tc-ec09e4b7c3b0",
+          "name": null
+        },
+        {
+          "ms": 34027.95799996238,
+          "type": "tool_start",
+          "id": "tc-4e14e7acd7a7",
+          "name": "other"
+        },
+        {
+          "ms": 34049.12758397404,
+          "type": "tool_end",
+          "id": "tc-4e14e7acd7a7",
+          "name": null
+        },
+        {
+          "ms": 36045.27529201005,
+          "type": "progress",
+          "id": "google-gemini-summary-73d71e30-9846-47ca-8130-893c027a18ca-2",
+          "name": null
+        },
+        {
+          "ms": 36060.13345893007,
+          "type": "tool_start",
+          "id": "tc-4df7a3f29373",
+          "name": "mcp_neko_graphjin_execute_graphql"
+        },
+        {
+          "ms": 38756.53983396478,
+          "type": "message",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 38765.176291926764,
+          "type": "usage",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 44192.6185839111,
+          "type": "followups",
+          "id": null,
+          "name": null
+        },
+        {
+          "ms": 44199.20141692273,
+          "type": "vitals",
+          "id": null,
+          "name": null
+        }
+      ],
+      "sandbox_trace": [
+        {
+          "phase": "node_preload",
+          "ms": 0.01737499999998704,
+          "wallMs": 1789206557819
+        },
+        {
+          "phase": "hermes_spawn",
+          "ms": 464.62767499999995,
+          "wallMs": 1789206558284
+        },
+        {
+          "phase": "acp_send",
+          "ms": 465.32734000000005,
+          "wallMs": 1789206558285,
+          "method": "initialize"
+        },
+        {
+          "phase": "acp_response",
+          "ms": 3289.080078,
+          "wallMs": 1789206561108,
+          "method": "initialize",
+          "error": false
+        },
+        {
+          "phase": "acp_send",
+          "ms": 3291.373783,
+          "wallMs": 1789206561111,
+          "method": "session/new"
+        },
+        {
+          "phase": "mcp_bridge_node_start",
+          "wallMs": 1789206563806
+        },
+        {
+          "phase": "mcp_initialize_response",
+          "wallMs": 1789206563944
+        },
+        {
+          "phase": "mcp_tools_response",
+          "wallMs": 1789206564094,
+          "tools": 60
+        },
+        {
+          "phase": "acp_response",
+          "ms": 6719.39496,
+          "wallMs": 1789206564539,
+          "method": "session/new",
+          "error": false
+        },
+        {
+          "phase": "acp_send",
+          "ms": 6724.287827,
+          "wallMs": 1789206564544,
+          "method": "session/prompt",
+          "promptBytes": 51382
+        },
+        {
+          "phase": "warm_hold_begin",
+          "ms": 6724.691826,
+          "wallMs": 1789206564544,
+          "durationMs": 20000
+        },
+        {
+          "phase": "acp_update",
+          "ms": 6729.18411,
+          "wallMs": 1789206564548,
+          "type": "available_commands_update",
+          "sequence": 1
+        },
+        {
+          "phase": "acp_update",
+          "ms": 6729.708318,
+          "wallMs": 1789206564549,
+          "type": "usage_update",
+          "sequence": 1
+        },
+        {
+          "phase": "warm_hold_end",
+          "ms": 26729.979673,
+          "wallMs": 1789206584549
+        },
+        {
+          "phase": "acp_update",
+          "ms": 27205.433453999998,
+          "wallMs": 1789206585025,
+          "type": "session_info_update",
+          "sequence": 1
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "622357673783144",
+          "wallMs": 1789206585114
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "622357673783144",
+          "wallMs": 1789206587114
+        },
+        {
+          "phase": "provider_first_reasoning",
+          "requestId": "622357673783144",
+          "wallMs": 1789206587115
+        },
+        {
+          "phase": "acp_update",
+          "ms": 29298.049342,
+          "wallMs": 1789206587117,
+          "type": "agent_thought_chunk",
+          "sequence": 1
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "622357673783144",
+          "wallMs": 1789206587156
+        },
+        {
+          "phase": "acp_update",
+          "ms": 29397.574382,
+          "wallMs": 1789206587217,
+          "type": "tool_call",
+          "sequence": 1,
+          "toolId": "tc-ec09e4b7c3b0"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 29400.862252,
+          "wallMs": 1789206587220,
+          "type": "tool_start",
+          "id": "tc-ec09e4b7c3b0"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 29455.987492,
+          "wallMs": 1789206587275,
+          "type": "tool_call_update",
+          "sequence": 1,
+          "toolId": "tc-ec09e4b7c3b0",
+          "status": "completed"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 29458.659113,
+          "wallMs": 1789206587278,
+          "type": "tool_end",
+          "id": "tc-ec09e4b7c3b0"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "622359883598709",
+          "wallMs": 1789206587278
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "622359883598709",
+          "wallMs": 1789206588716
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "622359883598709",
+          "wallMs": 1789206588716
+        },
+        {
+          "phase": "acp_update",
+          "ms": 30959.538123,
+          "wallMs": 1789206588779,
+          "type": "tool_call",
+          "sequence": 2,
+          "toolId": "tc-4e14e7acd7a7"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 30960.987079,
+          "wallMs": 1789206588780,
+          "type": "tool_start",
+          "id": "tc-4e14e7acd7a7"
+        },
+        {
+          "phase": "acp_update",
+          "ms": 30987.220827,
+          "wallMs": 1789206588807,
+          "type": "tool_call_update",
+          "sequence": 2,
+          "toolId": "tc-4e14e7acd7a7",
+          "status": "completed"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 30987.386535,
+          "wallMs": 1789206588807,
+          "type": "tool_end",
+          "id": "tc-4e14e7acd7a7"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "622361420372993",
+          "wallMs": 1789206588815
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "622361420372993",
+          "wallMs": 1789206590290
+        },
+        {
+          "phase": "provider_first_reasoning",
+          "requestId": "622361420372993",
+          "wallMs": 1789206590290
+        },
+        {
+          "phase": "provider_first_tool",
+          "requestId": "622361420372993",
+          "wallMs": 1789206590599
+        },
+        {
+          "phase": "acp_update",
+          "ms": 32946.432064,
+          "wallMs": 1789206590766,
+          "type": "tool_call",
+          "sequence": 3,
+          "toolId": "tc-4df7a3f29373"
+        },
+        {
+          "phase": "agent_event",
+          "ms": 32953.362261,
+          "wallMs": 1789206590773,
+          "type": "tool_start",
+          "id": "tc-4df7a3f29373"
+        },
+        {
+          "phase": "provider_request",
+          "requestId": "622363708879758",
+          "wallMs": 1789206591104
+        },
+        {
+          "phase": "provider_first_chunk",
+          "requestId": "622363708879758",
+          "wallMs": 1789206592907
+        },
+        {
+          "phase": "provider_first_text",
+          "requestId": "622363708879758",
+          "wallMs": 1789206592908
+        },
+        {
+          "phase": "acp_update",
+          "ms": 35622.414385000004,
+          "wallMs": 1789206593442,
+          "type": "agent_message_chunk",
+          "sequence": 1
+        },
+        {
+          "phase": "first_answer_emit",
+          "ms": 35625.982045000004,
+          "wallMs": 1789206593445
+        },
+        {
+          "phase": "acp_response",
+          "ms": 35632.625451,
+          "wallMs": 1789206593452,
+          "method": "session/prompt",
+          "error": false
+        },
+        {
+          "phase": "hermes_exit",
+          "ms": 35658.21169900001,
+          "wallMs": 1789206593478
+        },
+        {
+          "phase": "agent_result",
+          "ms": 35658.868907000004,
+          "wallMs": 1789206593478
+        },
+        {
+          "phase": "entry_complete",
+          "ms": 35659.814947000006,
+          "wallMs": 1789206593479
+        }
+      ],
+      "memory_peak_bytes": 488259584,
+      "memory_samples": [
+        {
+          "wallMs": 1789206557320,
+          "bytes": 27226112
+        },
+        {
+          "wallMs": 1789206557964,
+          "bytes": 82255872
+        },
+        {
+          "wallMs": 1789206558553,
+          "bytes": 139665408
+        },
+        {
+          "wallMs": 1789206559169,
+          "bytes": 173826048
+        },
+        {
+          "wallMs": 1789206559760,
+          "bytes": 208023552
+        },
+        {
+          "wallMs": 1789206560408,
+          "bytes": 255123456
+        },
+        {
+          "wallMs": 1789206561022,
+          "bytes": 294768640
+        },
+        {
+          "wallMs": 1789206561618,
+          "bytes": 310214656
+        },
+        {
+          "wallMs": 1789206562236,
+          "bytes": 319709184
+        },
+        {
+          "wallMs": 1789206562834,
+          "bytes": 326049792
+        },
+        {
+          "wallMs": 1789206563455,
+          "bytes": 361017344
+        },
+        {
+          "wallMs": 1789206564070,
+          "bytes": 451354624
+        },
+        {
+          "wallMs": 1789206564719,
+          "bytes": 393924608
+        },
+        {
+          "wallMs": 1789206565352,
+          "bytes": 393605120
+        },
+        {
+          "wallMs": 1789206566035,
+          "bytes": 393924608
+        },
+        {
+          "wallMs": 1789206566715,
+          "bytes": 393498624
+        },
+        {
+          "wallMs": 1789206567308,
+          "bytes": 394821632
+        },
+        {
+          "wallMs": 1789206567991,
+          "bytes": 394891264
+        },
+        {
+          "wallMs": 1789206568608,
+          "bytes": 394362880
+        },
+        {
+          "wallMs": 1789206569234,
+          "bytes": 394502144
+        },
+        {
+          "wallMs": 1789206569888,
+          "bytes": 394625024
+        },
+        {
+          "wallMs": 1789206570519,
+          "bytes": 394612736
+        },
+        {
+          "wallMs": 1789206571164,
+          "bytes": 394326016
+        },
+        {
+          "wallMs": 1789206571815,
+          "bytes": 394653696
+        },
+        {
+          "wallMs": 1789206572414,
+          "bytes": 394092544
+        },
+        {
+          "wallMs": 1789206573054,
+          "bytes": 394907648
+        },
+        {
+          "wallMs": 1789206573724,
+          "bytes": 394653696
+        },
+        {
+          "wallMs": 1789206574348,
+          "bytes": 394567680
+        },
+        {
+          "wallMs": 1789206574942,
+          "bytes": 394551296
+        },
+        {
+          "wallMs": 1789206575605,
+          "bytes": 394162176
+        },
+        {
+          "wallMs": 1789206576267,
+          "bytes": 394522624
+        },
+        {
+          "wallMs": 1789206576908,
+          "bytes": 394158080
+        },
+        {
+          "wallMs": 1789206577558,
+          "bytes": 394412032
+        },
+        {
+          "wallMs": 1789206578219,
+          "bytes": 394936320
+        },
+        {
+          "wallMs": 1789206578868,
+          "bytes": 394223616
+        },
+        {
+          "wallMs": 1789206579527,
+          "bytes": 394612736
+        },
+        {
+          "wallMs": 1789206580172,
+          "bytes": 394076160
+        },
+        {
+          "wallMs": 1789206580784,
+          "bytes": 394407936
+        },
+        {
+          "wallMs": 1789206581462,
+          "bytes": 394653696
+        },
+        {
+          "wallMs": 1789206582094,
+          "bytes": 394579968
+        },
+        {
+          "wallMs": 1789206582767,
+          "bytes": 394559488
+        },
+        {
+          "wallMs": 1789206583401,
+          "bytes": 394293248
+        },
+        {
+          "wallMs": 1789206584042,
+          "bytes": 394743808
+        },
+        {
+          "wallMs": 1789206584624,
+          "bytes": 403623936
+        },
+        {
+          "wallMs": 1789206585260,
+          "bytes": 481521664
+        },
+        {
+          "wallMs": 1789206585904,
+          "bytes": 481271808
+        },
+        {
+          "wallMs": 1789206586507,
+          "bytes": 482738176
+        },
+        {
+          "wallMs": 1789206587112,
+          "bytes": 482910208
+        },
+        {
+          "wallMs": 1789206587683,
+          "bytes": 483086336
+        },
+        {
+          "wallMs": 1789206588325,
+          "bytes": 482988032
+        },
+        {
+          "wallMs": 1789206588963,
+          "bytes": 483135488
+        },
+        {
+          "wallMs": 1789206589614,
+          "bytes": 483655680
+        },
+        {
+          "wallMs": 1789206590256,
+          "bytes": 483454976
+        },
+        {
+          "wallMs": 1789206590993,
+          "bytes": 483819520
+        },
+        {
+          "wallMs": 1789206591598,
+          "bytes": 484294656
+        },
+        {
+          "wallMs": 1789206592195,
+          "bytes": 484311040
+        },
+        {
+          "wallMs": 1789206592844,
+          "bytes": 484200448
+        },
+        {
+          "wallMs": 1789206593494,
+          "bytes": 258641920
+        },
+        {
+          "wallMs": 1789206594144,
+          "bytes": 150904832
+        },
+        {
+          "wallMs": 1789206594772,
+          "bytes": 151199744
+        },
+        {
+          "wallMs": 1789206595418,
+          "bytes": 151085056
+        },
+        {
+          "wallMs": 1789206596054,
+          "bytes": 150896640
+        },
+        {
+          "wallMs": 1789206596854,
+          "bytes": 150781952
+        },
+        {
+          "wallMs": 1789206597439,
+          "bytes": 150454272
+        },
+        {
+          "wallMs": 1789206598076,
+          "bytes": 150994944
+        }
+      ],
+      "client_complete_ms": 44226.91504191607,
+      "answer_valid": true
+    }
+  ],
+  "blank_sandboxes": [
+    {
+      "sample": 1,
+      "create_initial_true_ms": 1256.2717499677092,
+      "memory": [
+        {
+          "current_bytes": 13979648,
+          "peak_bytes": 17301504,
+          "working_set_bytes": 11509760
+        },
+        {
+          "current_bytes": 13611008,
+          "peak_bytes": 17465344,
+          "working_set_bytes": 11141120
+        },
+        {
+          "current_bytes": 13750272,
+          "peak_bytes": 17465344,
+          "working_set_bytes": 11280384
+        }
+      ]
+    },
+    {
+      "sample": 2,
+      "create_initial_true_ms": 687.5409999629483,
+      "memory": [
+        {
+          "current_bytes": 11677696,
+          "peak_bytes": 14950400,
+          "working_set_bytes": 11210752
+        },
+        {
+          "current_bytes": 11800576,
+          "peak_bytes": 15405056,
+          "working_set_bytes": 11333632
+        },
+        {
+          "current_bytes": 11833344,
+          "peak_bytes": 15413248,
+          "working_set_bytes": 11366400
+        }
+      ]
+    },
+    {
+      "sample": 3,
+      "create_initial_true_ms": 783.1257499055937,
+      "memory": [
+        {
+          "current_bytes": 11780096,
+          "peak_bytes": 15425536,
+          "working_set_bytes": 11313152
+        },
+        {
+          "current_bytes": 11702272,
+          "peak_bytes": 15425536,
+          "working_set_bytes": 11235328
+        },
+        {
+          "current_bytes": 11538432,
+          "peak_bytes": 15425536,
+          "working_set_bytes": 11071488
+        }
+      ]
+    }
+  ]
+}

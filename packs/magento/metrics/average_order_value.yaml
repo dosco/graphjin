@@ -1,0 +1,22 @@
+key: metric.average_order_value
+targetRef: magento.metric.average_order_value
+title: Average order value
+description: Net invoiced base-currency revenue divided by invoiced orders placed in the period.
+role: executive
+chartHint: metric
+unit: currency
+directionGood: up
+cadence: hourly
+calculationNote: Counts orders placed in the period whose base invoiced total is positive; returns null when there are none.
+execution:
+  mode: saved_query
+  source: magento_analytics
+  query: average_order_value
+  result:
+    kind: scalar
+    expression:
+      divide:
+        - { subtract: [sales_invoice.0.invoiced, sales_creditmemo.0.refunded] }
+        - invoiced_orders.0.count
+    zeroDenominator: null
+  freshnessSeconds: 7200

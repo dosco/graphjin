@@ -1,3 +1,5 @@
+# GraphJin
+
 ### Go ###
 # Binaries for programs and plugins
 *.exe
@@ -36,13 +38,12 @@ examples/*/codesql/
 .vscode
 .DS_Store
 .swp
-.release
-main
-graphjin
+/.release
+/main
 *-fuzz.zip
-crashers
-suppressions
-release
+/crashers
+/suppressions
+/release
 .gofuzz
 *-fuzz.zip
 *.test
@@ -52,8 +53,8 @@ release
 node_modules
 # Ignore Go binary but not npm bin directory
 /graphjin
-!/bin/
-./package-lock.json
+!/npm/bin/
+/npm/package-lock.json
 slim.report.json
 examples/nodejs/config/**/*.gql
 
@@ -64,6 +65,8 @@ examples/nodejs/config/**/*.gql
 *.webm
 *.log
 *.txt
+!apps/embedding/requirements*.txt
+!**/LICENSE.txt
 
 test.db
 tests/.snowflake-capture/
@@ -89,3 +92,50 @@ docs/DESIGN-OPENAPI-TOPLEVEL.md
 __pycache__/
 *.pyc
 *.egg-info/
+
+# OpenNeko
+
+.next/
+packages/llm/.cache/
+apps/web/.cache/
+apps/worker/.cache/
+apps/web/test-results/
+apps/web/playwright-report/
+
+# Private plans and notes stay local. GraphJin tracks docs/.
+/private/
+.turbo/
+dist/
+build/
+out/
+
+.env.local
+.env.*.local
+
+# GraphJin's working dir for the dev stack: everything except templates and
+# the committed operating-loop config is runtime.
+db/graphjin/*
+!db/graphjin/dev.example.yml
+!db/graphjin/dev.sources.example.yml
+!db/graphjin/customer.sources.example.yml
+
+# local onboarding scratch
+adventureworks-onboarding.md
+
+# local agent-tool config (never part of the application runtime). GraphJin
+# tracks .claude/skills/ and .codex/config.toml.
+.agents/
+.codex/*
+!.codex/config.toml
+
+# design preview screenshots
+design-preview/
+
+# CLI runtime dir: embedded compose and scratch artifacts written when
+# `openneko start` runs from the source checkout
+.openneko/
+
+# Local dev bring-up artifacts
+.local/
+dev-volumes/
+compose.dev-overrides.yml

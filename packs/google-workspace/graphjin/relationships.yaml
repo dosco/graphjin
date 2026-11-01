@@ -1,0 +1,4 @@
+key: relationships.google_workspace
+targetRef: google_workspace
+source: google_workspace_gmail
+relationships: []

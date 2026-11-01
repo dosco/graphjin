@@ -1,0 +1,16 @@
+key: watcher.cron_health
+targetRef: magento.watcher.cron_health
+name: Magento cron failure or stall
+description: Fires when cron failures or stale running jobs are observed.
+workflow: workflow.cron_indexer_health
+enabled: false
+activation: admin_confirms_threshold
+query: watch_cron_health
+valuePath: cron_schedule.0.count
+operator: gt
+threshold: 0
+cadenceSeconds: 900
+debounceSeconds: 1800
+cooldownSeconds: 7200
+severity: high
+dedupeKey: "cron-health:{oldest_started_at}"

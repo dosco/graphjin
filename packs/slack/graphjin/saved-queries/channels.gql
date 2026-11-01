@@ -1,0 +1,12 @@
+query SlackChannels {
+  slack_list_conversations(types: "public_channel,private_channel", exclude_archived: true) {
+    ok
+    error
+    channels {
+      id
+      name
+      is_private
+      is_member
+    }
+  }
+}

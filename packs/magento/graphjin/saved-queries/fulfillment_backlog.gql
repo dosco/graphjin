@@ -1,0 +1,20 @@
+# Fulfillment backlog: Invoiced item quantity that has not been shipped or
+# refunded. Parent order items only; quantity is invoiced less shipped and
+# refunded. Terminal-state order filtering is intentionally omitted because it
+# is not reliable through MariaDB relationship filters.
+query MagentoFulfillmentBacklog($from: String!, $storeIds: [Int!]) {
+  sales_order_item(
+    where: {
+      store_id: {in: $storeIds}
+      created_at: {gte: $from}
+      parent_item_id: {is_null: true}
+      qty_invoiced: {gt: 0}
+      qty_shipped: {lt: {col: "qty_invoiced"}}
+    }
+  ) {
+    backlog_lines: count_item_id
+    invoiced_quantity: sum_qty_invoiced
+    shipped_quantity: sum_qty_shipped
+    refunded_quantity: sum_qty_refunded
+  }
+}

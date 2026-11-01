@@ -1,0 +1,32 @@
+/* ─── ACT CARD residual ─── */
+/* The Card component (components/ui/card.tsx) supplies surface bones; this
+   file only keeps:
+   1. .act-list — wrapper grid used by page.tsx + actions/page.tsx
+   2. .act-card — preserved so the `.dash-call .act-card` cascade in
+      _dashboard.css can re-tint the inner card when nested in the amber call
+      panel. Without this hook the override would need to move into the
+      dashboard JSX.
+   3. .nav-link-badge — used by SectionNav until chrome is migrated. */
+.act-list {
+  display: grid;
+  gap: 14px;
+}
+.act-card {
+  /* layout-only; visuals come from <Card>. The class is the cascade target. */
+}
+
+.nav-link-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 100px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--type-label);
+  font-weight: 700;
+  line-height: 1;
+}

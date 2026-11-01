@@ -1,0 +1,64 @@
+# Local, source-built GraphJin server-agent demo overlay.
+#
+# Run with a dedicated Compose project so it never reuses the packaged demo or
+# another local GraphJin's volumes:
+#   GRAPHJIN_AGENT_API_KEY=... GRAPHJIN_PORT=8082 OPENNEKO_PORT=3000 \
+#   CUSTOMER_PGPORT=5434 docker compose -p openneko-agentic \
+#     -f compose.yml -f compose.adventureworks.yml \
+#     -f compose.graphjin-agent.yml up -d --build
+services:
+  # This overlay switches the demo back to sources (agentic) mode, so the
+  # per-org JWT secret must again be reconciled before GraphJin starts.
+  graphjin-secret-init:
+    environment:
+      GRAPHJIN_SOURCES_CONFIG: /config/graphjin/agentic.yml
+    volumes:
+      - graphjin-config:/config/graphjin
+
+  graphjin-config-init:
+    volumes:
+      - graphjin-config:/config
+      - ./db/graphjin/dev.sources.example.yml:/seed/agentic.yml:ro
+    # This overlay replaces the base initializer rather than appending a
+    # command that the base shell entrypoint would ignore.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ ! -f /config/agentic.yml ]; then
+          cp /seed/agentic.yml /config/agentic.yml
+          KEY=$$(head -c 32 /dev/urandom | base64 | tr -d '\n')
+          sed -i "s|REPLACE_WITH_BASE64_32_BYTE_KEY|$$KEY|" /config/agentic.yml
+        fi
+        chown -R 1001:999 /config 2>/dev/null || true
+        find /config -type d -exec chmod 0700 {} +
+        find /config -type f -exec chmod 0600 {} +
+
+  openneko-serve:
+    environment:
+      GO_ENV: agentic
+      # Remove the legacy database env inherited from compose.adventureworks;
+      # sources mode rejects even an otherwise valid config when those keys
+      # are present.
+      GJ_DATABASE_HOST: !reset null
+      GJ_DATABASE_PORT: !reset null
+      GJ_DATABASE_USER: !reset null
+      GJ_DATABASE_PASSWORD: !reset null
+      GJ_DATABASE_DBNAME: !reset null
+      GRAPHJIN_AGENT_API_KEY: ${GRAPHJIN_AGENT_API_KEY:-}
+      GJ_AGENT_PROVIDER: ${GRAPHJIN_AGENT_PROVIDER:-google-gemini}
+      GJ_AGENT_MODEL: ${GRAPHJIN_AGENT_MODEL:-gemini-3.8-flash}
+      GJ_AGENT_BASE_URL: ${GRAPHJIN_AGENT_BASE_URL:-}
+
+  web:
+    environment:
+      OPENNEKO_GRAPHJIN_CONFIG: /graphjin-config/agentic.yml
+    volumes:
+      - graphjin-config:/graphjin-config
+
+  worker:
+    environment:
+      OPENNEKO_GRAPHJIN_CONFIG: /graphjin-config/agentic.yml
+    volumes:
+      - graphjin-config:/graphjin-config

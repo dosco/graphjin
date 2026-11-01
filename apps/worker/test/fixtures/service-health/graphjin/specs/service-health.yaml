@@ -1,0 +1,55 @@
+openapi: 3.0.3
+info:
+  title: Service health fixture
+  version: 1.0.0
+paths:
+  /health-summary:
+    get:
+      operationId: getHealthSummary
+      responses:
+        "200":
+          description: Health summary
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - healthy
+                  - checked_at
+                properties:
+                  healthy:
+                    type: integer
+                  checked_at:
+                    type: string
+                    format: date-time
+    post:
+      operationId: resetHealth
+      responses:
+        "200":
+          description: Reset
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  healthy:
+                    type: integer
+    delete:
+      operationId: deleteHealth
+      responses:
+        "200":
+          description: Reset
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  healthy:
+                    type: integer
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+security:
+  - bearerAuth: []

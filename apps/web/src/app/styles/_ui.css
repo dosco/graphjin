@@ -1,0 +1,148 @@
+/* Shared interaction contracts. Visual composition stays with components;
+   this file owns only cross-page behavior that must not drift. */
+
+/* Portalled overlays sit above app chrome (rail 130, workflow sheet 150).
+   Menus inside those overlays remain above their containing surface. */
+:is([data-slot="alert-dialog-overlay"], [data-slot="alert-dialog-content"],
+    [data-slot="sheet-overlay"], [data-slot="sheet-content"],
+    [data-slot="command-overlay"], [data-slot="command-content"]) {
+  z-index: 200;
+}
+
+:is([data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"],
+    [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"],
+    [data-slot="select-content"], [data-slot="popover-content"]) {
+  z-index: 210;
+}
+
+[data-ui-field-control] {
+  min-height: var(--control-md);
+}
+
+/* The group owns the outline; its input must fit inside that outline. */
+[data-slot="input-group"] {
+  min-height: var(--control-md);
+  height: auto;
+  border-radius: var(--radius-control);
+  background: var(--card);
+}
+
+[data-slot="input-group"] > [data-ui-field-control] {
+  min-height: 0;
+  height: calc(var(--control-md) - 3px);
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-slot="input-group"] > textarea[data-ui-field-control] {
+  height: auto;
+  min-height: 96px;
+}
+
+[data-slot="input-group"]:has(:focus-visible) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+[data-ui-action-group] {
+  min-width: 0;
+}
+
+[data-ui-checkbox] {
+  min-height: var(--control-md);
+  align-items: center;
+}
+
+.skip-to-main {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  z-index: 200;
+  padding: 8px 12px;
+  border-radius: var(--radius-control);
+  background: var(--text);
+  color: var(--bg);
+  font-family: var(--font-body), Manrope, sans-serif;
+  font-size: var(--type-body-sm);
+  font-weight: 700;
+}
+
+.skip-to-main:focus {
+  top: 12px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where([data-ui-button], .ui-button) {
+    transition-property: color, background-color, border-color, box-shadow, opacity;
+    transform: none;
+  }
+
+  :where([data-ui-button], .ui-button):hover,
+  :where([data-ui-button], .ui-button):active {
+    transform: none;
+  }
+}
+
+/* Fields inside table rows match the compact 32px row actions on desktop.
+   Phones and coarse pointers keep the 44px touch target. */
+@media (min-width: 721px) and (pointer: fine) {
+  [data-slot="table-cell"] :where(input, select)[data-ui-field-control] {
+    min-height: var(--control-sm);
+    padding-block: 5px;
+  }
+}
+
+@media (max-width: 720px), (pointer: coarse) {
+  :where([data-ui-button], .ui-button),
+  [data-ui-tab],
+  [data-ui-segment],
+  [data-ui-menu-trigger],
+  [data-ui-menu-item],
+  [data-ui-disclosure],
+  [data-ui-field-control],
+  [data-slot="input-group"],
+  [data-slot="select-trigger"],
+  [data-slot="select-item"],
+  [data-ui-checkbox],
+  [data-ui-stat-link] {
+    min-height: var(--control-touch);
+  }
+
+  [data-slot="input-group"] > input[data-ui-field-control] {
+    min-height: 0;
+    height: calc(var(--control-touch) - 3px);
+  }
+
+  :where([data-ui-button], .ui-button)[data-size="icon-sm"],
+  :where([data-ui-button], .ui-button)[data-size="icon"] {
+    width: var(--control-touch);
+    min-width: var(--control-touch);
+    height: var(--control-touch);
+  }
+
+  [data-ui-action-group][data-mobile="stack"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-ui-action-group][data-mobile="stack"] > :where([data-ui-button], .ui-button) {
+    width: 100%;
+  }
+}
+
+[data-slot="skeleton"] {
+  background: linear-gradient(90deg, var(--neutral) 0%, var(--neutral-soft) 50%, var(--neutral) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-sheen 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-sheen {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="skeleton"] { animation: none; }
+}

@@ -1,0 +1,131 @@
+apiVersion: openneko.app/v1
+kind: SolutionPack
+metadata:
+  id: magento
+  name: Magento
+  version: 0.3.1
+  publisher: openneko
+  category: commerce
+
+management:
+  label: Manage store operations
+  path: /admin/settings/packs/magento/operations
+
+compatibility:
+  openneko: ">=2.27.0 <3.0.0"
+  graphjin:
+    analytics: ">=3.18.42 <4.0.0"
+    operator: ">=3.20.77 <4.0.0"
+  applications:
+    - id: magento
+      editions: [open-source, adobe-commerce]
+      versions: ">=2.4.6 <2.5.0"
+  databases:
+    - engine: mariadb
+      versions: ">=10.6"
+    - engine: mysql
+      versions: ">=8.0"
+
+inputs:
+  - key: magento.base_url
+    type: url
+    required: true
+  - key: magento.store_code
+    type: string
+    default: all
+  - key: magento.table_prefix
+    type: string
+    default: ""
+  - key: magento.base_currency
+    type: string
+    discover: true
+  - key: magento.timezone
+    type: timezone
+    discover: true
+  - key: database.connectivity_mode
+    type: enum
+    values: [external_network, host_gateway, remote]
+    default: external_network
+  - key: database.host
+    type: string
+    required: true
+  - key: database.port
+    type: integer
+    default: 3306
+  - key: database.name
+    type: string
+    required: true
+  - key: database.type
+    type: enum
+    values: [mariadb, mysql]
+    discover: true
+  - key: magento.max_rows_per_changeset
+    type: integer
+    default: 500
+  - key: magento.max_price_delta_percent
+    type: integer
+    default: 10
+  - key: magento.max_discount_percent
+    type: integer
+    default: 30
+  - key: magento.max_coupon_count
+    type: integer
+    default: 500
+  - key: magento.max_projected_exposure
+    type: integer
+    default: 5000
+  - key: magento.max_daily_auto_actions
+    type: integer
+    default: 25
+  - key: magento.sku_cooldown_seconds
+    type: integer
+    default: 3600
+  - key: magento.customers_enabled
+    type: boolean
+    default: false
+
+secrets:
+  - key: database.analytics_username
+    purpose: graphjin_source
+  - key: database.analytics_password
+    purpose: graphjin_source
+  - key: magento.integration_token
+    purpose: graphjin_api_auth
+    required: false
+
+artifacts:
+  graphjin:
+    sources: graphjin/sources.yaml
+    relationships: graphjin/relationships.yaml
+    specs:
+      - graphjin/specs/magento-operator-v1.yaml
+      - graphjin/specs/magento-operator-v2.yaml
+    savedQueries: graphjin/saved-queries
+  metrics: metrics
+  workflows: workflows
+  watchers: watchers
+  actions: actions
+  policies: policies
+  skills:
+    - skills/magento-review-performance
+    - skills/magento-investigate-order
+    - skills/magento-triage-fulfillment
+    - skills/magento-investigate-refunds
+    - skills/magento-check-inventory
+    - skills/magento-diagnose-platform-health
+    - skills/magento-manage-catalog
+    - skills/magento-run-promotions
+    - skills/magento-security-advisories
+
+health:
+  requiredPreflight: [mariadb-connect, mariadb-read-only, magento-version, magento-scopes]
+  readiness:
+    analytics: [analytics-smoke]
+    catalog: [graphjin-mutations, magento-api-token, magento-catalog-acl]
+    inventory: [graphjin-mutations, magento-api-token, magento-inventory-acl, magento-bulk-consumers]
+    orders: [graphjin-mutations, magento-api-token, magento-orders-acl]
+    promotions: [graphjin-mutations, magento-api-token, magento-promotions-acl]
+    content: [graphjin-mutations, magento-api-token, magento-content-acl]
+    customers: [graphjin-mutations, magento-api-token, magento-customers-acl, magento-customers-enabled]
+  postInstall: [analytics-smoke, operator-catalog-smoke]
+  postWriteCanary: [domain-reconciled, indexer-state-recorded]

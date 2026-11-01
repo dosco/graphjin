@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en" data-density="compact">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenNeko · Workflows — density study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Manrope:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* OpenNeko Workflows — density study. Comfortable = today's single-column
+   rows (name + desc + schedule). Compact = tiled cards that surface each
+   watcher's vitals (next run, runs today, last status, pending) at a glance. */
+:root{
+  --bg:#FAFAF7;--card:#FFFFFF;--text:#2D2A24;--text2:#7A756A;--text3:#B0AA9F;
+  --border:#EEEBE4;--neutral:#F2EFE8;--neutral-soft:#F7F4ED;
+  --accent:#6B5CE7;--accent-soft:#EDE9FE;
+  --success:#6CFF7F;--success-ink:#113719;--success-soft:#E2FBE6;--success-mid:#4CAF82;
+  --watch:#E9A23B;--watch-soft:#FFF1D8;--warn-ink:#8A6D00;
+  --danger:#E05656;--danger-soft:#FEECEC;
+  --shadow:0 1px 3px rgba(20,18,12,.04),0 4px 16px rgba(20,18,12,.03);
+  --shadow-h:0 2px 8px rgba(20,18,12,.06),0 12px 36px -8px rgba(20,18,12,.07);
+  --display:'Archivo',sans-serif;--body:'Manrope',sans-serif;--mono:'Geist Mono',ui-monospace,monospace;
+}
+html[data-density="comfortable"]{--d-canvas:1000px;--d-grid:1fr;--d-meta:none;--d-pad:14px 18px;--d-radius:14px}
+html[data-density="compact"]{--d-canvas:1280px;--d-grid:repeat(auto-fill,minmax(340px,1fr));--d-meta:grid;--d-pad:13px 15px 14px;--d-radius:15px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--body);background:var(--bg);color:var(--text);line-height:1.5;-webkit-font-smoothing:antialiased;padding-bottom:60px}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:radial-gradient(circle at 15% 8%,rgba(107,92,231,.05),transparent 42%),radial-gradient(circle at 90% 4%,rgba(108,255,127,.05),transparent 40%)}
+.wrap{position:relative;z-index:1;max-width:var(--d-canvas);margin:0 auto;padding:24px 22px 0;transition:max-width .45s cubic-bezier(.4,0,.2,1)}
+a{color:inherit;text-decoration:none}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* top bar */
+.topbar{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+.brand{display:inline-flex;align-items:center;gap:9px;font-family:var(--display);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.brand .mark{width:19px;height:19px;border-radius:50%;background:conic-gradient(from 220deg,var(--text) 0 50%,transparent 50% 100%);border:1.5px solid var(--text)}
+.brand .ver{font-family:var(--body);font-weight:600;font-size:10.5px;color:var(--text2);background:var(--neutral);padding:2px 6px;border-radius:999px}
+.nav{display:flex;gap:2px;margin-left:6px}
+.nav a{font-size:13.5px;font-weight:500;color:var(--text2);padding:7px 12px;border-radius:999px;border:1px solid transparent}
+.nav a:hover{background:rgba(20,18,12,.04);color:var(--text)}
+.nav a.on{border-color:var(--border);color:var(--text);font-weight:600}
+.nav a.on::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent);margin-right:7px;vertical-align:2px}
+.spacer{flex:1}
+.seg{display:inline-flex;background:var(--neutral);border:1px solid var(--border);border-radius:999px;padding:3px;gap:2px}
+.seg button{font-family:var(--body);font-weight:600;font-size:12.5px;color:var(--text2);border:0;background:transparent;padding:6px 14px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.seg button .ic{width:13px;height:13px}
+.seg button[aria-pressed="true"]{background:var(--card);color:var(--text);box-shadow:0 1px 2px rgba(20,18,12,.08),0 2px 8px -2px rgba(20,18,12,.1)}
+
+/* page head */
+.head{display:flex;align-items:center;gap:13px;margin-bottom:22px}
+.head .ico{width:36px;height:36px;border-radius:11px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-size:17px}
+.head h1{font-family:var(--display);font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
+.head .sub{font-size:13px;color:var(--text3);margin-top:1px}
+.head .new{margin-left:auto;font-size:14px;font-weight:600;color:var(--text2);background:rgba(255,255,255,.6);border:1.5px solid var(--border);border-radius:100px;padding:9px 16px;cursor:pointer;transition:border-color .18s,color .18s,background .18s,transform .18s}
+.head .new:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);transform:translateY(-1px)}
+
+/* group label */
+.glabel{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--text3);margin:0 0 12px;display:flex;align-items:center;gap:9px}
+.glabel::after{content:"";flex:1;height:1px;background:var(--border)}
+.glabel .ct{color:var(--text2);background:var(--neutral);border-radius:999px;padding:1px 8px;font-size:10.5px}
+section{margin-bottom:26px}
+
+/* grid + card */
+.grid{display:grid;grid-template-columns:var(--d-grid);gap:11px;transition:grid-template-columns .1s}
+.wf{position:relative;background:var(--card);border:1px solid var(--border);border-radius:var(--d-radius);padding:var(--d-pad);
+  cursor:pointer;transition:border-color .18s,transform .18s,box-shadow .18s;overflow:hidden}
+.wf:hover{border-color:var(--text3);transform:translateY(-1px);box-shadow:var(--shadow)}
+.wf.broken{border-color:rgba(224,86,86,.4)}
+.wf.broken::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--danger);opacity:.8}
+.wf.paused{opacity:.82}
+.wf-top{display:flex;align-items:center;gap:9px}
+.wf-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+.wf.active .wf-dot{background:var(--success-mid);box-shadow:0 0 0 3px var(--success-soft)}
+.wf.paused .wf-dot{background:var(--text3)}
+.wf.broken .wf-dot{background:var(--danger);box-shadow:0 0 0 3px var(--danger-soft)}
+.wf-dot.run{background:var(--watch)!important;box-shadow:0 0 0 3px var(--watch-soft)!important;animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 3px var(--watch-soft)}50%{box-shadow:0 0 0 6px transparent}}
+.wf-name{font-family:var(--display);font-size:15px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wf-pending{margin-left:auto;flex:0 0 auto;font-size:10.5px;font-weight:700;color:#fff;background:var(--watch);padding:1px 8px;border-radius:999px;letter-spacing:.02em}
+.wf-del{margin-left:auto;flex:0 0 auto;width:24px;height:24px;border-radius:7px;border:0;background:transparent;color:var(--text3);cursor:pointer;display:none;place-items:center;font-size:13px}
+.wf:hover .wf-del{display:grid}
+.wf:hover .wf-pending+.wf-del{margin-left:6px}
+.wf-desc{font-size:12.5px;line-height:1.45;color:var(--text2);margin-top:7px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.wf-sched{font-family:var(--mono);font-size:11.5px;color:var(--text3);margin-top:9px;display:flex;align-items:center;gap:8px}
+.wf-bars{display:flex;align-items:flex-end;gap:1.5px;height:15px;margin-left:auto}
+.wf-bars i{width:3px;background:var(--text3);border-radius:1px;opacity:.85}
+
+/* vitals (compact only) */
+.wf-meta{display:var(--d-meta);grid-template-columns:1fr 1fr;gap:7px 12px;margin-top:11px;padding-top:11px;border-top:1px solid var(--border)}
+.wf-meta>div{min-width:0}
+.wf-meta .k{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);margin-bottom:3px}
+.wf-meta .v{font-size:12.5px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:6px}
+.wf-meta .v.ok{color:var(--success-mid)}
+.wf-meta .v.bad{color:var(--danger)}
+.wf-meta .v.warn{color:var(--warn-ink)}
+.budget{height:4px;border-radius:2px;background:var(--neutral);flex:1;min-width:28px;overflow:hidden;max-width:54px}
+.budget i{display:block;height:100%;background:var(--accent);border-radius:2px}
+.budget.hot i{background:var(--watch)}
+
+@media (max-width:680px){html[data-density]{--d-canvas:100%;--d-grid:1fr;--d-meta:grid}.nav{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <span class="brand"><span class="mark"></span>OpenNeko <span class="ver">1.17.2</span></span>
+    <nav class="nav"><a href="#">Dashboard</a><a href="#">Ask</a><a href="#">Actions</a><a href="#" class="on">Workflows</a></nav>
+    <span class="spacer"></span>
+    <div class="seg" role="group" aria-label="Density">
+      <button data-set="comfortable" aria-pressed="false"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="12" height="3.4" rx="1.2"/><rect x="2" y="9.6" width="12" height="3.4" rx="1.2"/></svg>Comfortable</button>
+      <button data-set="compact" aria-pressed="true"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2.5" width="5" height="5" rx="1.2"/><rect x="9" y="2.5" width="5" height="5" rx="1.2"/><rect x="2" y="8.5" width="5" height="5" rx="1.2"/><rect x="9" y="8.5" width="5" height="5" rx="1.2"/></svg>Compact</button>
+    </div>
+  </div>
+
+  <div class="head">
+    <span class="ico">▢</span>
+    <div><h1>Workflows</h1><div class="sub">8 watchers · 5 active</div></div>
+    <button class="new">+ New workflow</button>
+  </div>
+
+  <section>
+    <div class="glabel">Active <span class="ct">5</span></div>
+    <div class="grid" id="g-active"></div>
+  </section>
+  <section>
+    <div class="glabel">Paused <span class="ct">2</span></div>
+    <div class="grid" id="g-paused"></div>
+  </section>
+  <section>
+    <div class="glabel">Needs attention <span class="ct">1</span></div>
+    <div class="grid" id="g-broken"></div>
+  </section>
+
+</div>
+
+<script>
+function bars(values){const max=Math.max(1,...values);return `<span class="wf-bars">`+values.map(v=>{
+  const h=Math.max(2,Math.round((v/max)*15));return `<i style="height:${h}px;opacity:${v===0?.3:.85}"></i>`}).join('')+`</span>`}
+
+function metaCell(k,v,cls,extra){return `<div><div class="k">${k}</div><div class="v ${cls||''}">${v}${extra||''}</div></div>`}
+function budget(used,cap){const pct=Math.round(used/cap*100);return `<div class="budget ${pct>=80?'hot':''}"><i style="width:${pct}%"></i></div>`}
+
+const ACTIVE=[
+  {name:'Revenue concentration watch',state:'active',desc:'Tracks top-10 customer share daily and flags if concentration climbs back above 50%.',
+   sched:'Daily · 9:00a',next:'in 19h',used:1,cap:3,last:'✓ 2h ago',lastCls:'ok',pending:0,spark:[1,0,1,1,0,1,2,1,0,1,1,0,2,1]},
+  {name:'Churn-risk outreach',state:'active',running:true,desc:'Watches workflow outputs tagged "watch" and drafts retention notes to at-risk enterprise accounts.',
+   sched:'Every 6h',next:'running…',used:2,cap:8,last:'✓ 22m ago',lastCls:'ok',pending:3,spark:[2,1,3,2,4,2,3,5,2,3,4,3,2,4]},
+  {name:'Inventory reorder',state:'active',desc:'Compares stock against reorder thresholds and proposes purchase orders for at-risk SKUs.',
+   sched:'Daily · 7:00a',next:'in 17h',used:1,cap:2,last:'✓ 5h ago',lastCls:'ok',pending:2,spark:[1,1,0,1,2,1,1,0,1,1,2,1,1,1]},
+  {name:'Competitor radar',state:'active',desc:'Scans tracked competitors\' changelogs and pricing pages, summarising anything material.',
+   sched:'Daily · 6:00a',next:'in 16h',used:1,cap:1,last:'✓ 1h ago',lastCls:'ok',pending:0,spark:[0,1,0,0,1,0,1,0,0,1,0,0,1,0]},
+  {name:'Lead triage',state:'active',desc:'Fires on every inbound lead: scores ICP fit, tags, and routes high-fit leads to an AE.',
+   sched:'On new lead',next:'event-driven',used:41,cap:200,last:'✓ 4m ago',lastCls:'ok',pending:0,spark:[6,9,5,8,12,7,9,14,8,11,9,13,7,10]},
+];
+const PAUSED=[
+  {name:'Support SLA monitor',state:'paused',desc:'Hourly check on first-response times; pings #support when p90 crosses 3h.',
+   sched:'Hourly · paused',next:'—',used:0,cap:24,last:'✓ yesterday',lastCls:'',pending:0,spark:[1,1,2,1,0,1,1,2,1,1,0,1,1,1]},
+  {name:'Weekly board digest',state:'paused',desc:'Assembles the Monday metrics email for the leadership channel.',
+   sched:'Weekly · Mon 8:00a',next:'—',used:0,cap:1,last:'✓ Mon',lastCls:'',pending:0,spark:[0,0,0,0,0,0,1,0,0,0,0,0,0,1]},
+];
+const BROKEN=[
+  {name:'Invoice anomaly check',state:'broken',desc:'Flags invoices that deviate from historical patterns. Last run failed: GraphJin column ref error.',
+   sched:'Daily · 3:00a',next:'paused on error',used:0,cap:2,last:'✗ failed 3h ago',lastCls:'bad',pending:0,spark:[1,1,0,1,1,0,1,0,0,0,0,0,0,0]},
+];
+
+function card(w){
+  const running=w.running?' run':'';
+  const pend=w.pending>0?`<span class="wf-pending">${w.pending} pending</span>`:'';
+  return `<article class="wf ${w.state}">
+    <div class="wf-top">
+      <span class="wf-dot${running}"></span>
+      <span class="wf-name">${w.name}</span>
+      ${pend}
+      <button class="wf-del" title="Delete">🗑</button>
+    </div>
+    <div class="wf-desc">${w.desc}</div>
+    <div class="wf-sched"><span>${w.sched}</span>${bars(w.spark)}</div>
+    <div class="wf-meta">
+      ${metaCell('Next run',w.next)}
+      ${metaCell('Today',`${w.used}/${w.cap}`,'',budget(w.used,w.cap))}
+      ${metaCell('Last run',w.last,w.lastCls)}
+      ${metaCell('Pending',w.pending>0?`${w.pending} action${w.pending>1?'s':''}`:'none',w.pending>0?'warn':'')}
+    </div>
+  </article>`;
+}
+document.getElementById('g-active').innerHTML=ACTIVE.map(card).join('');
+document.getElementById('g-paused').innerHTML=PAUSED.map(card).join('');
+document.getElementById('g-broken').innerHTML=BROKEN.map(card).join('');
+document.querySelectorAll('.wf-del').forEach(b=>b.addEventListener('click',e=>e.stopPropagation()));
+
+const root=document.documentElement;
+document.querySelectorAll('.seg button').forEach(btn=>btn.addEventListener('click',()=>{
+  root.setAttribute('data-density',btn.dataset.set);
+  document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(b===btn)));
+}));
+</script>
+</body>
+</html>

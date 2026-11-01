@@ -1,0 +1,17 @@
+sources:
+  - key: source.slack
+    name: slack
+    kind: api
+    base_url: https://slack.com
+    openapi: graphjin/specs/slack.yaml
+    operations:
+      lookupUserByEmail: { expose_top_level: true }
+      getUser: { expose_top_level: true }
+      listUsers: { expose_top_level: true }
+      getConversation: { expose_top_level: true }
+      listConversations: { expose_top_level: true }
+    auth:
+      type: bearer
+      token: "{{secret.slack.bot_token}}"
+    read_only: false
+    capabilities: { api.read: true, api.write: true, api.delete: false }

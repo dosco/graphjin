@@ -1,0 +1,31 @@
+openapi: 3.0.3
+info:
+  title: OpenNeko backend eval selection API
+  version: "1.0"
+paths:
+  /selections:
+    post:
+      operationId: selectFulfillmentRoute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order_id, priority]
+              additionalProperties: false
+              properties:
+                order_id: { type: string }
+                priority: { type: string, enum: [expedite] }
+      responses:
+        "201":
+          description: Deterministic selection receipt
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [receipt, route, order_id]
+                properties:
+                  receipt: { type: string }
+                  route: { type: string }
+                  order_id: { type: string }

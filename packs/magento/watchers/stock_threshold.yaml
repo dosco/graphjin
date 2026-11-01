@@ -1,0 +1,16 @@
+key: watcher.stock_threshold
+targetRef: magento.watcher.stock_threshold
+name: Magento low-stock threshold
+description: Fires when the count of source-level low/out-of-stock SKUs crosses a threshold.
+workflow: workflow.low_stock_investigation
+enabled: false
+activation: admin_confirms_threshold
+query: watch_stock_threshold
+valuePath: inventory_source_item.0.count
+operator: gt
+threshold: 0
+cadenceSeconds: 900
+debounceSeconds: 3600
+cooldownSeconds: 14400
+severity: medium
+dedupeKey: "stock-threshold:{count}"

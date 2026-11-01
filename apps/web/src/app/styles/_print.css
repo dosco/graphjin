@@ -1,0 +1,186 @@
+/* Ask threads print to A4. Text may continue across pages; a card, chart,
+   map, diagram, tool, or table row stays on one page. */
+
+.work-print-head,
+.answer-map-print {
+  display: none;
+}
+
+/* The page takes the A4 text width while printThread() prepares charts and maps. */
+html[data-printing] .work-transcript {
+  width: 182mm;
+  max-width: 182mm;
+}
+
+/* A tool prints whole on one page: full content height, scaled to fit.
+   Applied while preparing too, so the frame is laid out at print size first. */
+html[data-printing] .work-tool-body {
+  height: calc(var(--tool-content-height) * var(--tool-print-scale));
+  overflow: hidden;
+}
+
+html[data-printing] .work-tool-body iframe {
+  height: var(--tool-content-height) !important;
+  transform: scale(var(--tool-print-scale));
+  transform-origin: top center;
+}
+
+@media print {
+  .work-tool-body {
+    height: calc(var(--tool-content-height) * var(--tool-print-scale));
+    overflow: hidden;
+  }
+
+  .work-tool-body iframe {
+    height: var(--tool-content-height) !important;
+    transform: scale(var(--tool-print-scale));
+    transform-origin: top center;
+  }
+}
+
+@page {
+  size: A4;
+  margin: 14mm;
+}
+
+@media print {
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: var(--card) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  :has(> #main-content) > :not(#main-content),
+  .skip-to-main,
+  .work-command-head,
+  .work-composer,
+  .work-command-surface > :not(.work-transcript),
+  .work-trail,
+  .work-progress-summary,
+  .work-progress-disclosure,
+  .work-tool-group,
+  .work-status-row,
+  .answer-in-progress,
+  .work-bubble-actions,
+  .work-bubble-time,
+  .work-choice,
+  .work-answer-followups,
+  .answer-ask,
+  .answer-ask-card,
+  .work-table-ask,
+  .answer-whatif-eyebrow button,
+  .work-tool-head button,
+  .maplibregl-control-container,
+  nextjs-portal {
+    display: none !important;
+  }
+
+  #main-content,
+  .work-command-surface {
+    width: auto !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* The same width the page took while preparing, so tools and charts keep the layout they were measured at. */
+  .work-transcript {
+    width: 182mm !important;
+    max-width: 182mm !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .work-transcript {
+    gap: 18px;
+  }
+
+  .work-print-head {
+    display: block;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--text);
+    break-after: avoid;
+  }
+
+  .work-print-head span,
+  .work-print-head time {
+    color: var(--text3);
+    font-size: 9pt;
+  }
+
+  .work-print-head h1 {
+    margin: 4px 0 2px;
+    color: var(--text);
+    font-family: var(--font-display), "Archivo", sans-serif;
+    font-size: 18pt;
+    font-weight: 850;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+  }
+
+  .work-timeline .work-surface-frame,
+  .work-surface-frame {
+    box-shadow: none !important;
+    background: var(--card) !important;
+  }
+
+  .work-surface-title,
+  .work-chart-title,
+  .work-key-figures-label,
+  .answer-whatif-eyebrow {
+    break-after: avoid;
+  }
+
+  .work-bubble,
+  .work-key-figures,
+  .work-key-figure,
+  .work-chart,
+  .work-callout,
+  .work-table-wrap thead,
+  .work-table tr,
+  .answer-compare-panel,
+  .answer-whatif,
+  .answer-map-canvas,
+  .answer-map-rank li,
+  .answer-diagram,
+  .work-tool,
+  .work-confirm,
+  img,
+  svg,
+  canvas,
+  iframe {
+    break-inside: avoid;
+  }
+
+  .work-table-wrap,
+  .answer-compare,
+  .answer-diagram-canvas {
+    overflow: visible !important;
+  }
+
+  .answer-diagram-canvas svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .answer-map-gl canvas {
+    visibility: hidden;
+  }
+
+  .answer-map-print[src] {
+    display: block;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+}

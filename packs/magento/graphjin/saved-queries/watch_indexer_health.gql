@@ -1,0 +1,5 @@
+# Watcher count for Magento invalid or stale indexer. Fires when an indexer is
+# non-valid or older than the configured threshold.
+query MagentoWatchIndexerHealth($staleBefore: String!) {
+  indexer_state(where: {or: [{status: {neq: "valid"}}, {updated: {lt: $staleBefore}}]}) { count: count_indexer_id }
+}

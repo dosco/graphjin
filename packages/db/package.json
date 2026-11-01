@@ -1,0 +1,31 @@
+{
+  "name": "@neko/db",
+  "version": "5.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts",
+    "./jobs": "./src/jobs.ts",
+    "./connection": "./src/connection.ts",
+    "./provider-config": "./src/provider-config.ts",
+    "./server-provider-secrets": "./src/server-provider-secrets.ts",
+    "./test-helpers": "./test/integration/_helpers.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@neko/secret-crypt": "workspace:*",
+    "drizzle-orm": "^0.36.4",
+    "pg": "^8.13.1",
+    "pg-boss": "^10.1.5"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "vitest": "^2.1.8"
+  }
+}

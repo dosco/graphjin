@@ -1,22 +1,90 @@
+# VCS / editor
 .git
-.github
+.gitignore
+.vscode
+.idea
+*.swp
+.DS_Store
+
+# Per-package build / install output
+**/node_modules
+**/.next
+**/dist
+**/build
+**/out
+**/.turbo
+**/*.tsbuildinfo
+
+# Logs / scratch
+*.log
+.npm
+.pnpm-store
+**/.cache
+
+# Local-only configs the entrypoint will materialize at runtime instead
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+
+# Repo-local agent-tool config (including legacy local tool state)
+.agents
 .claude
+
+# Repo-local runtime state. These directories can contain encrypted secret
+# stores, backup archives, generated binaries, and evaluation artifacts; none
+# belongs in a production image or even in the build-context upload.
+.openneko
+.local
+dev-volumes
+
+# Compose stack artefacts (the production image doesn't need them)
+compose.yml
+compose.adventureworks.yml
+db/graphjin/dev.yml
+
+# Dev docs & samples not needed at runtime
+docs
+adventureworks-onboarding.md
+README.md
+LICENSE
+
+# Tests — image is for production; keeps build context small.
+# Scoped to package-level test directories so we don't strip
+# Next route segments named "test" (e.g. /api/.../test/route.ts).
+packages/*/test
+apps/*/test
+**/__tests__
+**/*.test.ts
+**/*.test.tsx
+**/vitest.config.ts
+**/vitest.e2e.config.ts
+
+# Don't recursively COPY ourselves. entrypoint.sh is needed by the
+# Dockerfile's COPY step, so it stays in the build context.
+Dockerfile
+.dockerignore
+cloudbuild.yaml
+
+# GraphJin builds into the openneko binary. Its website, docs, benchmark
+# data, database test suites and npm package are not build inputs.
+website
+docs
+benchmark
+training
+notes
+tests
+tests-large
+wasm
+npm
+bin
+coverage.out
+cmd/graphjin
+cmd/cmd
+
+# GraphJin local agent and editor config
 .claude-plugin
 .codex
 .cursor
 .devcontainer
-.DS_Store
-
-node_modules
-coverage.out
-graphjin
-dist
-release
-bin
-wasm
-cmd/graphjin
-cmd/cmd
-tests/.snowflake-capture
-
-*.log
-*.tmp

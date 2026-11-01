@@ -1,0 +1,51 @@
+app_name: OpenNeko Magento pack validation
+mode: dev
+host_port: 127.0.0.1:8182
+web_ui: false
+production: false
+disable_allow_list: true
+enable_schema: false
+secret_key: local-magento-pack-validation-only
+
+auth:
+  type: none
+  development: true
+
+# This fixture uses the legacy single-database spelling so its password can be
+# supplied through GraphJin's documented GJ_DATABASE_PASSWORD override. The
+# installed pack itself uses the named, read-only magento_analytics source.
+database:
+  type: mariadb
+  host: 127.0.0.1
+  port: 3306
+  dbname: magento
+  user: openneko_analytics
+  password: ${GJ_DATABASE_PASSWORD}
+
+system:
+  capabilities:
+    catalog.read: false
+    security.read: false
+    config.read: false
+    config.write: false
+    runtime.read: false
+    raw_graphql.query: true
+    raw_graphql.mutate: false
+
+tables:
+  - { name: sales_order, read_only: true }
+  - { name: sales_order_item, read_only: true }
+  - { name: sales_invoice, read_only: true }
+  - { name: sales_invoice_item, read_only: true }
+  - { name: sales_creditmemo, read_only: true }
+  - { name: cron_schedule, read_only: true }
+  - { name: indexer_state, read_only: true }
+  - { name: inventory_source_item, read_only: true }
+
+relationships:
+  - from: sales_order.entity_id
+    to: sales_order_item.order_id
+  - from: sales_order.entity_id
+    to: sales_invoice.order_id
+  - from: sales_invoice.entity_id
+    to: sales_invoice_item.parent_id

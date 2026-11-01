@@ -1,0 +1,14 @@
+# Installed after torch/torchvision from https://download.pytorch.org/whl/cpu
+# (see the Dockerfile embedding-python stage); the torch pins keep pip from
+# replacing the CPU wheels.
+torch==2.14.1
+torchvision==0.29.1
+sentence-transformers==6.2.0
+transformers==5.20.2
+pillow==13.0.0
+huggingface-hub==2.2.0
+tokenizers==0.23.3
+safetensors==0.8.0
+numpy==2.5.4
+# 2026.10.19 and later drop the compromised eMudhra roots.
+certifi==2026.10.23

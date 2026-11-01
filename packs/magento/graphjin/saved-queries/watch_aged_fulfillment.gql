@@ -1,0 +1,8 @@
+# Watcher count for Magento aged fulfillment backlog. Fires when paid,
+# unshipped orders exceed the configured SLA.
+query MagentoWatchAgedFulfillment($from: String!, $olderThan: String!, $storeIds: [Int!]) {
+  sales_order(where: {and: [{created_at: {gte: $from}}, {created_at: {lt: $olderThan}}], store_id: {in: $storeIds}, state: {nin: ["canceled", "closed", "complete"]}, base_total_paid: {gt: 0}}) {
+    count: count_entity_id
+    oldest_created_at: min_created_at
+  }
+}

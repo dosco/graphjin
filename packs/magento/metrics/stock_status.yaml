@@ -1,0 +1,16 @@
+key: metric.stock_status
+targetRef: magento.metric.stock_status
+title: Low and out-of-stock SKUs
+description: Source-level Magento MSI items at or below the configured quantity threshold.
+role: operations
+chartHint: table
+unit: count
+directionGood: down
+cadence: hourly
+calculationNote: Source quantity is an approximation, not Magento salable quantity; reservations may change availability.
+execution:
+  mode: saved_query
+  source: magento_analytics
+  query: stock_status
+  result: { kind: rows, path: inventory_source_item }
+  freshnessSeconds: 3600

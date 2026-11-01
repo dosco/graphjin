@@ -1,0 +1,40 @@
+{
+  "name": "graphjin",
+  "version": "3.21.18",
+  "description": "GraphJin — one governed graph for AI agents: GraphQL + MCP over your databases, files, APIs, and code",
+  "bin": {
+    "graphjin": "bin/graphjin.js"
+  },
+  "files": [
+    "./bin"
+  ],
+  "scripts": {
+    "postinstall": "node ./bin/install.js",
+    "website:dev": "npm --prefix ../website run dev",
+    "website:build": "npm --prefix ../website run build",
+    "website:index": "npm --prefix ../website run index"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dosco/graphjin.git"
+  },
+  "keywords": [
+    "graphql",
+    "sql",
+    "database",
+    "api",
+    "cli",
+    "postgres",
+    "mysql",
+    "mcp"
+  ],
+  "author": "Vikram <https://twitter.com/dosco>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/dosco/graphjin/issues"
+  },
+  "homepage": "https://graphjin.com",
+  "dependencies": {
+    "tar": "^7.0.0"
+  }
+}

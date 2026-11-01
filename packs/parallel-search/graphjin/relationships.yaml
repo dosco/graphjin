@@ -1,0 +1,4 @@
+key: relationships.parallel_search
+targetRef: parallel_search
+source: parallel
+relationships: []

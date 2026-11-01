@@ -1,0 +1,182 @@
+/* ─── TOASTS ─── */
+[data-sonner-toaster] {
+  --width: 360px;
+  --offset-right: 24px;
+  --offset-bottom: 24px;
+  --mobile-offset-right: 16px;
+  --mobile-offset-bottom: 16px;
+  font-family: var(--font-body), 'Manrope', sans-serif;
+}
+
+.app-toast {
+  --toast-accent: var(--text3);
+  --toast-tint: transparent;
+  width: var(--width);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px 14px 18px;
+  background: var(--card);
+  background-image: linear-gradient(var(--toast-tint), var(--toast-tint));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow:
+    0 1px 2px rgba(20, 18, 12, 0.04),
+    0 12px 40px -8px rgba(20, 18, 12, 0.12),
+    0 24px 60px -16px rgba(20, 18, 12, 0.08);
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: var(--type-body-sm);
+  font-weight: 400;
+  line-height: 1.5;
+  box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+  transition:
+    box-shadow 240ms ease,
+    border-color 240ms ease;
+}
+
+
+.app-toast:hover {
+  border-color: color-mix(in srgb, var(--border) 40%, var(--text3) 60%);
+  box-shadow:
+    0 2px 4px rgba(20, 18, 12, 0.05),
+    0 16px 48px -10px rgba(20, 18, 12, 0.16),
+    0 28px 70px -18px rgba(20, 18, 12, 0.1);
+}
+
+.app-toast.app-toast-success {
+  --toast-accent: var(--accent);
+  --toast-tint: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.app-toast.app-toast-error {
+  --toast-accent: var(--danger);
+  --toast-tint: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.app-toast.app-toast-warning {
+  --toast-accent: var(--watch);
+  --toast-tint: color-mix(in srgb, var(--watch) 8%, transparent);
+}
+
+.app-toast.app-toast-info {
+  --toast-accent: var(--text2);
+}
+
+.app-toast .app-toast-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: var(--toast-accent);
+}
+
+.app-toast .app-toast-icon > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.app-toast .app-toast-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  padding-right: 14px;
+}
+
+.app-toast .app-toast-title {
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: var(--type-body);
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: -0.1px;
+  color: var(--text);
+}
+
+.app-toast .app-toast-desc {
+  font-size: var(--type-body-sm);
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--text2);
+}
+
+.app-toast .app-toast-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--text3);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 160ms ease, background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.app-toast:hover .app-toast-close,
+.app-toast:focus-within .app-toast-close {
+  opacity: 1;
+}
+
+.app-toast .app-toast-close:hover {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.app-toast .app-toast-close > svg {
+  width: 12px;
+  height: 12px;
+}
+
+.app-toast .app-toast-action {
+  flex-shrink: 0;
+  margin-left: auto;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--text);
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--card);
+  font-family: inherit;
+  font-size: var(--type-body-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.app-toast .app-toast-action:hover {
+  transform: translateY(-1px);
+}
+
+.app-toast .app-toast-cancel {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text2);
+  font-family: inherit;
+  font-size: var(--type-body-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.app-toast .app-toast-cancel:hover {
+  color: var(--text);
+  border-color: var(--text3);
+}

@@ -1,0 +1,57 @@
+app_name: ./Graphjin/Neko-AdventureWorks Development
+host_port: 0.0.0.0:8080
+production: false
+debug: true
+log_format: plain
+log_level: debug
+http_compress: true
+reload_on_config_change: true
+server_timing: true
+
+auth:
+  type: none
+auth_fail_block: false
+
+cors_allowed_origins:
+  - '*'
+
+default_limit: 20
+enable_tracing: true
+
+# Subscription polling — GraphJin re-runs each subscription's query on this
+# cadence and pushes new matches over the WebSocket. Latency for source_change
+# triggers is bounded by this interval. 5s is a safe default for an operational
+# DB; tune down on quiet schemas, up on busy ones.
+subs_poll_duration: 5s
+
+mcp:
+  disable: false
+  allow_config_updates: false
+  allow_mutations: true
+  allow_raw_queries: true
+  workflow_timeout: 300
+  allow_dev_tools: true
+
+analytics_mode: true
+
+# Sensitive column names blocked from query/results.
+blocklist:
+  - ar_internal_metadata
+  - schema_migrations
+  - secret
+  - password
+  - encrypted
+  - token
+
+# GraphJin reads connection details from GJ_DATABASE_* env vars when set
+# (see compose.adventureworks.yml). The block below is only used as a fallback
+# / shape reference; copy this file to dev.yml and edit if you need to point at
+# a database other than the one in the compose stack.
+databases:
+  adventureworks:
+    type: postgres
+    host: adventureworks-db
+    port: 5432
+    dbname: adventureworks
+    user: postgres
+    password: postgres

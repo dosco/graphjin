@@ -1,0 +1,2728 @@
+{
+  "schema_version": "graphjin.eval.suite/v1",
+  "name": "GraphJin Curated Eval Library",
+  "target_catalog_fingerprint": "",
+  "generator": {
+    "version": "graphjin.eval.generator/v17",
+    "seed": 23,
+    "scale": 53
+  },
+  "tasks": [
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_6b4919a6f00d492fe36dcb80",
+      "slug": "imported-aw-q01-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many sales orders did we receive over the latest 12 months in our data, and how does that compare with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q01-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q01_current($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { count_salesorderid } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.count_salesorderid",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_salesorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_b0a7845a7d00dce6bcc4c54d",
+      "slug": "imported-aw-q01-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many sales orders did we receive over the latest 12 months in our data, and how does that compare with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q01-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q01_baseline($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { count_salesorderid } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "salesorderheader.0.count_salesorderid",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_salesorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_50bd316a0f2a68b2aabfdb0c",
+      "slug": "imported-aw-q02-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "On the most recent day represented in our sales data, how many orders were placed, compared with the previous calendar day?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q02-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q02_current($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { count_salesorderid } }",
+        "variables": {
+          "from": "{{anchor+0d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.count_salesorderid",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_salesorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_4c07eec61cd0a697ef462126",
+      "slug": "imported-aw-q02-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "On the most recent day represented in our sales data, how many orders were placed, compared with the previous calendar day? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q02-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q02_baseline($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { count_salesorderid } }",
+        "variables": {
+          "from": "{{anchor-1d}}",
+          "to": "{{anchor+0d}}"
+        },
+        "extract": "salesorderheader.0.count_salesorderid",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_salesorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_da9b13799317ce3e60219bcd",
+      "slug": "imported-aw-q03-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many sales orders were placed in the latest 30 days in our data, compared with the 30 days immediately before that?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q03-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q03_current($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { count_salesorderid } }",
+        "variables": {
+          "from": "{{anchor-29d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.count_salesorderid",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_salesorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_43dd6591152ee227b0550ce4",
+      "slug": "imported-aw-q03-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many sales orders were placed in the latest 30 days in our data, compared with the 30 days immediately before that? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q03-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q03_baseline($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { count_salesorderid } }",
+        "variables": {
+          "from": "{{anchor-59d}}",
+          "to": "{{anchor-29d}}"
+        },
+        "extract": "salesorderheader.0.count_salesorderid",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_salesorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_0d95e18c6c185f207d1f3a31",
+      "slug": "imported-aw-q04-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "What was our total sales revenue, including tax and freight, over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q04-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q04_current($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { sum_totaldue } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.sum_totaldue",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_totaldue"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_3b7980810869ab99b74c2981",
+      "slug": "imported-aw-q04-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "What was our total sales revenue, including tax and freight, over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q04-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q04_baseline($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { sum_totaldue } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "salesorderheader.0.sum_totaldue",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_totaldue"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_589b9a8cb72616ae7e9478a7",
+      "slug": "imported-aw-q05-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "What was our average total order value, including tax and freight, over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q05-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q05_current($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { avg_totaldue } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.avg_totaldue",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "avg_totaldue"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_81a78674cb7b94f66a9b66df",
+      "slug": "imported-aw-q05-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "What was our average total order value, including tax and freight, over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q05-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q05_baseline($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { avg_totaldue } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "salesorderheader.0.avg_totaldue",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "avg_totaldue"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_ef0679c7be7e32b55f1ae256",
+      "slug": "imported-aw-q07-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many online sales orders did we receive over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q07-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q07_current($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to }, onlineorderflag: { eq: true } }) { count_salesorderid } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.count_salesorderid",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_salesorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_ec4ad4e4620551fc4c5777a7",
+      "slug": "imported-aw-q07-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many online sales orders did we receive over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q07-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q07_baseline($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to }, onlineorderflag: { eq: true } }) { count_salesorderid } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "salesorderheader.0.count_salesorderid",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_salesorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_25ccbc4237f376f516b0a243",
+      "slug": "imported-aw-q09-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "What was our merchandise sales subtotal, excluding tax and freight, over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q09-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q09_current($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { sum_subtotal } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.sum_subtotal",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_subtotal"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_21fda8c4d083e32af8d8ae1a",
+      "slug": "imported-aw-q09-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "What was our merchandise sales subtotal, excluding tax and freight, over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q09-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q09_baseline($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { sum_subtotal } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "salesorderheader.0.sum_subtotal",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_subtotal"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_432e8b26bbb94478b4fba548",
+      "slug": "imported-aw-q10-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How much did we charge for freight on sales orders over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q10-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q10_current($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { sum_freight } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.sum_freight",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_freight"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_d0574f5bd9ab43451fbf35fa",
+      "slug": "imported-aw-q10-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How much did we charge for freight on sales orders over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q10-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q10_baseline($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { sum_freight } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "salesorderheader.0.sum_freight",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_freight"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_0d2563996bd8d93fef59976e",
+      "slug": "imported-aw-q11-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many product units did we sell over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q11-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q11_current($from: String!, $to: String!) { salesorderdetail(where: { salesorderheader: { orderdate: { gte: $from, lt: $to } } }) { sum_orderqty } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderdetail.0.sum_orderqty",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_orderqty"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_f152a16a07041161eecf2e36",
+      "slug": "imported-aw-q11-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many product units did we sell over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q11-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q11_baseline($from: String!, $to: String!) { salesorderdetail(where: { salesorderheader: { orderdate: { gte: $from, lt: $to } } }) { sum_orderqty } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "salesorderdetail.0.sum_orderqty",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_orderqty"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_d94e732c68f426265eab46ab",
+      "slug": "imported-aw-q14-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many sales-order line items received a price discount over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q14-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q14_current($from: String!, $to: String!) { salesorderdetail(where: { salesorderheader: { orderdate: { gte: $from, lt: $to } }, unitpricediscount: { gt: 0 } }) { count_salesorderdetailid } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderdetail.0.count_salesorderdetailid",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_salesorderdetailid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_373d8af9f5f7536c1017e193",
+      "slug": "imported-aw-q14-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many sales-order line items received a price discount over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q14-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q14_baseline($from: String!, $to: String!) { salesorderdetail(where: { salesorderheader: { orderdate: { gte: $from, lt: $to } }, unitpricediscount: { gt: 0 } }) { count_salesorderdetailid } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "salesorderdetail.0.count_salesorderdetailid",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_salesorderdetailid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_fc4eeb7000a3048c6b36be06",
+      "slug": "imported-aw-q15-current",
+      "category": "ranking",
+      "difficulty": "T3",
+      "prompt": "Which sales territory generated the highest total order value, including tax and freight, over the latest 12 months in our data? Give me the amount and compare that territory with the preceding 12 months.",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q15-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q15_current($from: String!, $to: String!) { salesorderheader(order_by: { sum_totaldue: desc }, limit: 1, where: { orderdate: { gte: $from, lt: $to } }) { territoryid sum_totaldue salesterritory { name } } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.sum_totaldue",
+        "dimension_extract": "salesorderheader.0.salesterritory.name",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_totaldue"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_ffad7e4b00130897c630b099",
+      "slug": "imported-aw-q16-current",
+      "category": "ranking",
+      "difficulty": "T3",
+      "prompt": "Which product sold the most units over the latest 12 months in our data? Give me the unit count and compare that product with the preceding 12 months.",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q16-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q16_current($from: String!, $to: String!) { salesorderdetail(order_by: { sum_orderqty: desc }, limit: 1, where: { salesorderheader: { orderdate: { gte: $from, lt: $to } } }) { productid sum_orderqty  } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderdetail.0.sum_orderqty",
+        "dimension_literal": "Water Bottle - 30 oz.",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_orderqty"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_59ee22944a7034d0542416f8",
+      "slug": "imported-aw-q17-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many purchase orders did we place over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q17-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q17_current($from: String!, $to: String!) { purchaseorderheader(where: { orderdate: { gte: $from, lt: $to } }) { count_purchaseorderid } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "purchaseorderheader.0.count_purchaseorderid",
+        "anchor_query": "query aw_anchor { purchaseorderheader { max_orderdate } }",
+        "anchor_extract": "purchaseorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_purchaseorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_8dc38df7a99d347ddcdf0191",
+      "slug": "imported-aw-q17-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many purchase orders did we place over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q17-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q17_baseline($from: String!, $to: String!) { purchaseorderheader(where: { orderdate: { gte: $from, lt: $to } }) { count_purchaseorderid } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "purchaseorderheader.0.count_purchaseorderid",
+        "anchor_query": "query aw_anchor { purchaseorderheader { max_orderdate } }",
+        "anchor_extract": "purchaseorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_purchaseorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_26d2dac8fcff6c9b641f6a3e",
+      "slug": "imported-aw-q18-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "What was the subtotal of our purchase orders, before tax and freight, over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q18-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q18_current($from: String!, $to: String!) { purchaseorderheader(where: { orderdate: { gte: $from, lt: $to } }) { sum_subtotal } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "purchaseorderheader.0.sum_subtotal",
+        "anchor_query": "query aw_anchor { purchaseorderheader { max_orderdate } }",
+        "anchor_extract": "purchaseorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_subtotal"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_cf709c06b907c403e979f8c9",
+      "slug": "imported-aw-q18-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "What was the subtotal of our purchase orders, before tax and freight, over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q18-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q18_baseline($from: String!, $to: String!) { purchaseorderheader(where: { orderdate: { gte: $from, lt: $to } }) { sum_subtotal } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "purchaseorderheader.0.sum_subtotal",
+        "anchor_query": "query aw_anchor { purchaseorderheader { max_orderdate } }",
+        "anchor_extract": "purchaseorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_subtotal"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_cc5e90ccd52124c66a8f7280",
+      "slug": "imported-aw-q19-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many units were rejected on our purchase-order lines over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q19-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q19_current($from: String!, $to: String!) { purchaseorderdetail(where: { purchaseorderheader: { orderdate: { gte: $from, lt: $to } } }) { sum_rejectedqty } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "purchaseorderdetail.0.sum_rejectedqty",
+        "anchor_query": "query aw_anchor { purchaseorderheader { max_orderdate } }",
+        "anchor_extract": "purchaseorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_rejectedqty"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_a807db4d383fddba722eaec6",
+      "slug": "imported-aw-q19-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many units were rejected on our purchase-order lines over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q19-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q19_baseline($from: String!, $to: String!) { purchaseorderdetail(where: { purchaseorderheader: { orderdate: { gte: $from, lt: $to } } }) { sum_rejectedqty } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "purchaseorderdetail.0.sum_rejectedqty",
+        "anchor_query": "query aw_anchor { purchaseorderheader { max_orderdate } }",
+        "anchor_extract": "purchaseorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_rejectedqty"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_20f6c70ee820364f0120b7ae",
+      "slug": "imported-aw-q20-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many manufacturing work orders did we start over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q20-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q20_current($from: String!, $to: String!) { workorder(where: { startdate: { gte: $from, lt: $to } }) { count_workorderid } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "workorder.0.count_workorderid",
+        "anchor_query": "query aw_anchor { workorder { max_startdate } }",
+        "anchor_extract": "workorder.0.max_startdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_workorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_251b484768fd8c5fe93106f2",
+      "slug": "imported-aw-q20-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many manufacturing work orders did we start over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q20-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q20_baseline($from: String!, $to: String!) { workorder(where: { startdate: { gte: $from, lt: $to } }) { count_workorderid } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "workorder.0.count_workorderid",
+        "anchor_query": "query aw_anchor { workorder { max_startdate } }",
+        "anchor_extract": "workorder.0.max_startdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_workorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_c624a615529e835d23c54379",
+      "slug": "imported-aw-q22-current",
+      "category": "ranking",
+      "difficulty": "T3",
+      "prompt": "Which salesperson booked the highest total order value, including tax and freight, over the latest 12 months in our data? Give me the amount and compare that salesperson with the preceding 12 months.",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q22-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q22_current($from: String!, $to: String!) { salesorderheader(order_by: { sum_totaldue: desc }, limit: 1, where: { orderdate: { gte: $from, lt: $to }, salespersonid: { is_null: false } }) { salespersonid sum_totaldue salesperson { person { lastname } } } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.sum_totaldue",
+        "dimension_extract": "salesorderheader.0.salesperson.person.0.lastname",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_totaldue"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_f2c9de1cc671256874bea9a8",
+      "slug": "imported-aw-q23-current",
+      "category": "ranking",
+      "difficulty": "T3",
+      "prompt": "Which shipping method carried the most sales orders over the latest 12 months in our data? Give me the order count and compare that method with the preceding 12 months.",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q23-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q23_current($from: String!, $to: String!) { salesorderheader(order_by: { count_salesorderid: desc }, limit: 1, where: { orderdate: { gte: $from, lt: $to } }) { shipmethodid count_salesorderid shipmethod { name } } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.count_salesorderid",
+        "dimension_extract": "salesorderheader.0.shipmethod.name",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_salesorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_ae72c2cce99435f9443ae431",
+      "slug": "imported-aw-q26-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "What was the value of our single largest sales order, including tax and freight, over the latest 12 months in our data, compared with the largest order in the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q26-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q26_current($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { max_totaldue } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.max_totaldue",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "max_totaldue"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_a84745a703a2a638830b17ba",
+      "slug": "imported-aw-q26-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "What was the value of our single largest sales order, including tax and freight, over the latest 12 months in our data, compared with the largest order in the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q26-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q26_baseline($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { max_totaldue } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "salesorderheader.0.max_totaldue",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "max_totaldue"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_602b338f1bc81bed7f0d4945",
+      "slug": "imported-aw-q27-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "What was our merchandise sales subtotal, excluding tax and freight, over the latest 30 days in our data, compared with the 30 days immediately before that?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q27-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q27_current($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { sum_subtotal } }",
+        "variables": {
+          "from": "{{anchor-29d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.sum_subtotal",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_subtotal"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_46433e9319230cf8dd76fe0d",
+      "slug": "imported-aw-q27-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "What was our merchandise sales subtotal, excluding tax and freight, over the latest 30 days in our data, compared with the 30 days immediately before that? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q27-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q27_baseline($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { sum_subtotal } }",
+        "variables": {
+          "from": "{{anchor-59d}}",
+          "to": "{{anchor-29d}}"
+        },
+        "extract": "salesorderheader.0.sum_subtotal",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_subtotal"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_1c14744a6ede2bcd12698a16",
+      "slug": "imported-aw-q28-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How much total revenue, including tax and freight, came from online sales orders over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q28-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q28_current($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to }, onlineorderflag: { eq: true } }) { sum_totaldue } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.sum_totaldue",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_totaldue"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_4a243623b639779f0b8ac65d",
+      "slug": "imported-aw-q28-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How much total revenue, including tax and freight, came from online sales orders over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q28-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q28_baseline($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to }, onlineorderflag: { eq: true } }) { sum_totaldue } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "salesorderheader.0.sum_totaldue",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_totaldue"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_75e050547946d3c884ffc32f",
+      "slug": "imported-aw-q32-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How much freight did we pay on purchase orders over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q32-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q32_current($from: String!, $to: String!) { purchaseorderheader(where: { orderdate: { gte: $from, lt: $to } }) { sum_freight } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "purchaseorderheader.0.sum_freight",
+        "anchor_query": "query aw_anchor { purchaseorderheader { max_orderdate } }",
+        "anchor_extract": "purchaseorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_freight"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_66a881ee33225bab8e14ec45",
+      "slug": "imported-aw-q32-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How much freight did we pay on purchase orders over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q32-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q32_baseline($from: String!, $to: String!) { purchaseorderheader(where: { orderdate: { gte: $from, lt: $to } }) { sum_freight } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "purchaseorderheader.0.sum_freight",
+        "anchor_query": "query aw_anchor { purchaseorderheader { max_orderdate } }",
+        "anchor_extract": "purchaseorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_freight"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_fdd0a6e129c6bd1fada63032",
+      "slug": "imported-aw-q33-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many product units did we order from vendors on purchase-order lines over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q33-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q33_current($from: String!, $to: String!) { purchaseorderdetail(where: { purchaseorderheader: { orderdate: { gte: $from, lt: $to } } }) { sum_orderqty } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "purchaseorderdetail.0.sum_orderqty",
+        "anchor_query": "query aw_anchor { purchaseorderheader { max_orderdate } }",
+        "anchor_extract": "purchaseorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_orderqty"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_0ccb0383591080df3fe161cb",
+      "slug": "imported-aw-q33-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many product units did we order from vendors on purchase-order lines over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q33-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q33_baseline($from: String!, $to: String!) { purchaseorderdetail(where: { purchaseorderheader: { orderdate: { gte: $from, lt: $to } } }) { sum_orderqty } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "purchaseorderdetail.0.sum_orderqty",
+        "anchor_query": "query aw_anchor { purchaseorderheader { max_orderdate } }",
+        "anchor_extract": "purchaseorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_orderqty"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_6096ce57c19680e9b6053f63",
+      "slug": "imported-aw-q34-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many manufacturing work orders started over the latest 12 months in our data scrapped at least one unit, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q34-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q34_current($from: String!, $to: String!) { workorder(where: { startdate: { gte: $from, lt: $to }, scrappedqty: { gt: 0 } }) { count_workorderid } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "workorder.0.count_workorderid",
+        "anchor_query": "query aw_anchor { workorder { max_startdate } }",
+        "anchor_extract": "workorder.0.max_startdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_workorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_d7c7a8b9f9ec2382ccfdfe79",
+      "slug": "imported-aw-q34-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many manufacturing work orders started over the latest 12 months in our data scrapped at least one unit, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q34-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q34_baseline($from: String!, $to: String!) { workorder(where: { startdate: { gte: $from, lt: $to }, scrappedqty: { gt: 0 } }) { count_workorderid } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "workorder.0.count_workorderid",
+        "anchor_query": "query aw_anchor { workorder { max_startdate } }",
+        "anchor_extract": "workorder.0.max_startdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_workorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_fb8139e5d2d5e8f9459d03da",
+      "slug": "imported-aw-q35-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many product units were covered by manufacturing work orders started over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q35-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q35_current($from: String!, $to: String!) { workorder(where: { startdate: { gte: $from, lt: $to } }) { sum_orderqty } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "workorder.0.sum_orderqty",
+        "anchor_query": "query aw_anchor { workorder { max_startdate } }",
+        "anchor_extract": "workorder.0.max_startdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_orderqty"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_5abd8cc30851d5f6567438aa",
+      "slug": "imported-aw-q35-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many product units were covered by manufacturing work orders started over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q35-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q35_baseline($from: String!, $to: String!) { workorder(where: { startdate: { gte: $from, lt: $to } }) { sum_orderqty } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "workorder.0.sum_orderqty",
+        "anchor_query": "query aw_anchor { workorder { max_startdate } }",
+        "anchor_extract": "workorder.0.max_startdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_orderqty"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_d1d98c4a9fcbbbfb00c2fde4",
+      "slug": "imported-aw-q36-current",
+      "category": "ranking",
+      "difficulty": "T3",
+      "prompt": "Which product had the most manufacturing work orders started over the latest 12 months in our data? Give me the work-order count and compare that product with the preceding 12 months.",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q36-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q36_current($from: String!, $to: String!) { workorder(order_by: { count_workorderid: desc }, limit: 1, where: { startdate: { gte: $from, lt: $to } }) { productid count_workorderid product { name } } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "workorder.0.count_workorderid",
+        "dimension_extract": "workorder.0.product.name",
+        "anchor_query": "query aw_anchor { workorder { max_startdate } }",
+        "anchor_extract": "workorder.0.max_startdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_workorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_116ad82ebbcbebb2356beb0c",
+      "slug": "imported-aw-q37-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "On sales-order line items that received a price discount, what was the average discount percentage over the latest 12 months in our data, compared with the preceding 12 months?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q37-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q37_current($from: String!, $to: String!) { salesorderdetail(where: { salesorderheader: { orderdate: { gte: $from, lt: $to } }, unitpricediscount: { gt: 0 } }) { avg_unitpricediscount } }",
+        "variables": {
+          "from": "{{anchor-364d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderdetail.0.avg_unitpricediscount",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1,
+        "accept_scales": [
+          1,
+          100
+        ]
+      },
+      "method": {
+        "require_query_match": [
+          "avg_unitpricediscount"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_266ba4c3860b4c9741b0397c",
+      "slug": "imported-aw-q37-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "On sales-order line items that received a price discount, what was the average discount percentage over the latest 12 months in our data, compared with the preceding 12 months? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q37-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q37_baseline($from: String!, $to: String!) { salesorderdetail(where: { salesorderheader: { orderdate: { gte: $from, lt: $to } }, unitpricediscount: { gt: 0 } }) { avg_unitpricediscount } }",
+        "variables": {
+          "from": "{{anchor-729d}}",
+          "to": "{{anchor-364d}}"
+        },
+        "extract": "salesorderdetail.0.avg_unitpricediscount",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1,
+        "accept_scales": [
+          1,
+          100
+        ]
+      },
+      "method": {
+        "require_query_match": [
+          "avg_unitpricediscount"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_b3affacb3415e293aec3a95d",
+      "slug": "imported-aw-q39-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "On the most recent day represented in our sales data, what was our total sales revenue, including tax and freight, compared with the previous calendar day?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q39-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q39_current($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { sum_totaldue } }",
+        "variables": {
+          "from": "{{anchor+0d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.sum_totaldue",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_totaldue"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_6bb545dce9989e0f651bc98e",
+      "slug": "imported-aw-q39-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "On the most recent day represented in our sales data, what was our total sales revenue, including tax and freight, compared with the previous calendar day? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q39-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q39_baseline($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { sum_totaldue } }",
+        "variables": {
+          "from": "{{anchor-1d}}",
+          "to": "{{anchor+0d}}"
+        },
+        "extract": "salesorderheader.0.sum_totaldue",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "sum_totaldue"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_1e466e7f240066c9546ace81",
+      "slug": "imported-aw-q40-current",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many sales orders were placed over the latest 7 days in our data, compared with the 7 days immediately before that?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q40-current"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q40_current($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { count_salesorderid } }",
+        "variables": {
+          "from": "{{anchor-6d}}",
+          "to": "{{anchor+1d}}"
+        },
+        "extract": "salesorderheader.0.count_salesorderid",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_salesorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    },
+    {
+      "schema_version": "graphjin.eval.task/v1",
+      "id": "gjv1_1ca5c0e7a09934c04ee15fc3",
+      "slug": "imported-aw-q40-baseline",
+      "category": "window",
+      "difficulty": "T2",
+      "prompt": "How many sales orders were placed over the latest 7 days in our data, compared with the 7 days immediately before that? What was the figure for the preceding period?",
+      "provenance": {
+        "source": "imported",
+        "generation_seed": 23,
+        "source_id": "aw-q40-baseline"
+      },
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true
+      },
+      "expected_status": "answered",
+      "oracle": {
+        "query": "query aw_q40_baseline($from: String!, $to: String!) { salesorderheader(where: { orderdate: { gte: $from, lt: $to } }) { count_salesorderid } }",
+        "variables": {
+          "from": "{{anchor-13d}}",
+          "to": "{{anchor-6d}}"
+        },
+        "extract": "salesorderheader.0.count_salesorderid",
+        "anchor_query": "query aw_anchor { salesorderheader { max_orderdate } }",
+        "anchor_extract": "salesorderheader.0.max_orderdate"
+      },
+      "answer": {
+        "kind": "number",
+        "tolerance_pct": 1
+      },
+      "method": {
+        "require_query_match": [
+          "count_salesorderid"
+        ],
+        "forbid_finalize_from_list_only": true
+      },
+      "behavior": {
+        "required_actions": [
+          "execute_graphql",
+          "query_catalog"
+        ],
+        "forbidden_actions": [
+          "execute_graphql:mutation"
+        ]
+      },
+      "budget": {
+        "max_actor_turns": 10,
+        "max_total_tokens": 400000
+      }
+    }
+  ]
+}

@@ -1,0 +1,647 @@
+{
+  "source_commit": "186383e",
+  "date": "2026-09-12",
+  "base_image_id": "sha256:617c3cb3b2b20aff56bbce691003086585d21aebbe2434242dfcb2e03345dfb9",
+  "offline": [
+    {
+      "variant": "stock",
+      "sample": 1,
+      "withMcp": true,
+      "initialize_ms": 1569.030426,
+      "idle": [
+        {
+          "current_bytes": 189378560,
+          "working_set_bytes": 168693760,
+          "peak_bytes": 191176704
+        },
+        {
+          "current_bytes": 189456384,
+          "working_set_bytes": 168771584,
+          "peak_bytes": 191176704
+        },
+        {
+          "current_bytes": 189472768,
+          "working_set_bytes": 168787968,
+          "peak_bytes": 191176704
+        },
+        {
+          "current_bytes": 189476864,
+          "working_set_bytes": 168792064,
+          "peak_bytes": 191176704
+        },
+        {
+          "current_bytes": 189493248,
+          "working_set_bytes": 168808448,
+          "peak_bytes": 191176704
+        }
+      ],
+      "checkout_session_ms": 2385.7535930000004,
+      "post_checkout_memory": {
+        "current_bytes": 311148544,
+        "working_set_bytes": 266133504,
+        "peak_bytes": 311148544
+      },
+      "model_verified": true,
+      "no_config_before_checkout": true,
+      "preload": null
+    },
+    {
+      "variant": "preload",
+      "sample": 1,
+      "withMcp": true,
+      "initialize_ms": 1910.489624,
+      "idle": [
+        {
+          "current_bytes": 107753472,
+          "working_set_bytes": 107749376,
+          "peak_bytes": 108097536
+        },
+        {
+          "current_bytes": 107786240,
+          "working_set_bytes": 107782144,
+          "peak_bytes": 108097536
+        },
+        {
+          "current_bytes": 108212224,
+          "working_set_bytes": 108208128,
+          "peak_bytes": 108212224
+        },
+        {
+          "current_bytes": 108212224,
+          "working_set_bytes": 108208128,
+          "peak_bytes": 108228608
+        },
+        {
+          "current_bytes": 108105728,
+          "working_set_bytes": 108101632,
+          "peak_bytes": 108228608
+        }
+      ],
+      "checkout_session_ms": 1510.001526000001,
+      "post_checkout_memory": {
+        "current_bytes": 179064832,
+        "working_set_bytes": 178839552,
+        "peak_bytes": 179277824
+      },
+      "model_verified": true,
+      "no_config_before_checkout": true,
+      "preload": {
+        "preload_ms": 1420.0165030779317,
+        "builtin_tool_count": 83,
+        "has_terminal": true,
+        "scoped_tool_names": [
+          "a2a_call",
+          "a2a_discover",
+          "a2a_history",
+          "a2a_list",
+          "a2a_orchestrate",
+          "spotify_albums",
+          "spotify_devices",
+          "spotify_library",
+          "spotify_playback",
+          "spotify_playlists",
+          "spotify_queue",
+          "spotify_search"
+        ]
+      }
+    },
+    {
+      "variant": "stock",
+      "sample": 2,
+      "withMcp": false,
+      "initialize_ms": 1136.6207809999999,
+      "idle": [
+        {
+          "current_bytes": 94302208,
+          "working_set_bytes": 94302208,
+          "peak_bytes": 101564416
+        },
+        {
+          "current_bytes": 94777344,
+          "working_set_bytes": 94777344,
+          "peak_bytes": 101564416
+        },
+        {
+          "current_bytes": 94674944,
+          "working_set_bytes": 94674944,
+          "peak_bytes": 101564416
+        },
+        {
+          "current_bytes": 94674944,
+          "working_set_bytes": 94674944,
+          "peak_bytes": 101564416
+        },
+        {
+          "current_bytes": 94269440,
+          "working_set_bytes": 94269440,
+          "peak_bytes": 101564416
+        }
+      ],
+      "checkout_session_ms": 1559.4832970000007,
+      "post_checkout_memory": {
+        "current_bytes": 152784896,
+        "working_set_bytes": 152563712,
+        "peak_bytes": 152784896
+      },
+      "model_verified": true,
+      "no_config_before_checkout": true,
+      "preload": null
+    },
+    {
+      "variant": "preload",
+      "sample": 2,
+      "withMcp": false,
+      "initialize_ms": 1827.038542,
+      "idle": [
+        {
+          "current_bytes": 107704320,
+          "working_set_bytes": 107704320,
+          "peak_bytes": 107720704
+        },
+        {
+          "current_bytes": 107720704,
+          "working_set_bytes": 107720704,
+          "peak_bytes": 107720704
+        },
+        {
+          "current_bytes": 108163072,
+          "working_set_bytes": 108163072,
+          "peak_bytes": 108163072
+        },
+        {
+          "current_bytes": 107839488,
+          "working_set_bytes": 107839488,
+          "peak_bytes": 108163072
+        },
+        {
+          "current_bytes": 107855872,
+          "working_set_bytes": 107855872,
+          "peak_bytes": 108163072
+        }
+      ],
+      "checkout_session_ms": 1002.039057,
+      "post_checkout_memory": {
+        "current_bytes": 148983808,
+        "working_set_bytes": 138670080,
+        "peak_bytes": 149295104
+      },
+      "model_verified": true,
+      "no_config_before_checkout": true,
+      "preload": {
+        "preload_ms": 1373.1650260742754,
+        "builtin_tool_count": 83,
+        "has_terminal": true,
+        "scoped_tool_names": [
+          "a2a_call",
+          "a2a_discover",
+          "a2a_history",
+          "a2a_list",
+          "a2a_orchestrate",
+          "spotify_albums",
+          "spotify_devices",
+          "spotify_library",
+          "spotify_playback",
+          "spotify_playlists",
+          "spotify_queue",
+          "spotify_search"
+        ]
+      }
+    },
+    {
+      "variant": "stock",
+      "sample": 3,
+      "withMcp": true,
+      "initialize_ms": 1346.378688,
+      "idle": [
+        {
+          "current_bytes": 113266688,
+          "working_set_bytes": 95318016,
+          "peak_bytes": 115609600
+        },
+        {
+          "current_bytes": 113479680,
+          "working_set_bytes": 95531008,
+          "peak_bytes": 115609600
+        },
+        {
+          "current_bytes": 113496064,
+          "working_set_bytes": 95547392,
+          "peak_bytes": 115609600
+        },
+        {
+          "current_bytes": 113360896,
+          "working_set_bytes": 95412224,
+          "peak_bytes": 115609600
+        },
+        {
+          "current_bytes": 113364992,
+          "working_set_bytes": 95416320,
+          "peak_bytes": 115609600
+        }
+      ],
+      "checkout_session_ms": 2209.206886,
+      "post_checkout_memory": {
+        "current_bytes": 214085632,
+        "working_set_bytes": 179871744,
+        "peak_bytes": 217378816
+      },
+      "model_verified": true,
+      "no_config_before_checkout": true,
+      "preload": null
+    },
+    {
+      "variant": "preload",
+      "sample": 3,
+      "withMcp": true,
+      "initialize_ms": 1886.165349,
+      "idle": [
+        {
+          "current_bytes": 108302336,
+          "working_set_bytes": 108298240,
+          "peak_bytes": 108318720
+        },
+        {
+          "current_bytes": 107552768,
+          "working_set_bytes": 107548672,
+          "peak_bytes": 108318720
+        },
+        {
+          "current_bytes": 107982848,
+          "working_set_bytes": 107978752,
+          "peak_bytes": 108318720
+        },
+        {
+          "current_bytes": 107982848,
+          "working_set_bytes": 107978752,
+          "peak_bytes": 108318720
+        },
+        {
+          "current_bytes": 107999232,
+          "working_set_bytes": 107995136,
+          "peak_bytes": 108318720
+        }
+      ],
+      "checkout_session_ms": 1415.5499179999997,
+      "post_checkout_memory": {
+        "current_bytes": 179101696,
+        "working_set_bytes": 178876416,
+        "peak_bytes": 179101696
+      },
+      "model_verified": true,
+      "no_config_before_checkout": true,
+      "preload": {
+        "preload_ms": 1350.1820930978283,
+        "builtin_tool_count": 83,
+        "has_terminal": true,
+        "scoped_tool_names": [
+          "a2a_call",
+          "a2a_discover",
+          "a2a_history",
+          "a2a_list",
+          "a2a_orchestrate",
+          "spotify_albums",
+          "spotify_devices",
+          "spotify_library",
+          "spotify_playback",
+          "spotify_playlists",
+          "spotify_queue",
+          "spotify_search"
+        ]
+      }
+    },
+    {
+      "variant": "stock",
+      "sample": 4,
+      "withMcp": false,
+      "initialize_ms": 1089.851158,
+      "idle": [
+        {
+          "current_bytes": 95580160,
+          "working_set_bytes": 95580160,
+          "peak_bytes": 101924864
+        },
+        {
+          "current_bytes": 95834112,
+          "working_set_bytes": 95834112,
+          "peak_bytes": 101924864
+        },
+        {
+          "current_bytes": 95850496,
+          "working_set_bytes": 95850496,
+          "peak_bytes": 101924864
+        },
+        {
+          "current_bytes": 95617024,
+          "working_set_bytes": 95617024,
+          "peak_bytes": 101924864
+        },
+        {
+          "current_bytes": 95625216,
+          "working_set_bytes": 95625216,
+          "peak_bytes": 101924864
+        }
+      ],
+      "checkout_session_ms": 1420.4574229999998,
+      "post_checkout_memory": {
+        "current_bytes": 155381760,
+        "working_set_bytes": 155160576,
+        "peak_bytes": 155398144
+      },
+      "model_verified": true,
+      "no_config_before_checkout": true,
+      "preload": null
+    },
+    {
+      "variant": "preload",
+      "sample": 4,
+      "withMcp": false,
+      "initialize_ms": 1891.418459,
+      "idle": [
+        {
+          "current_bytes": 107638784,
+          "working_set_bytes": 107638784,
+          "peak_bytes": 107814912
+        },
+        {
+          "current_bytes": 107671552,
+          "working_set_bytes": 107671552,
+          "peak_bytes": 107814912
+        },
+        {
+          "current_bytes": 108089344,
+          "working_set_bytes": 108089344,
+          "peak_bytes": 108097536
+        },
+        {
+          "current_bytes": 107855872,
+          "working_set_bytes": 107855872,
+          "peak_bytes": 108097536
+        },
+        {
+          "current_bytes": 107888640,
+          "working_set_bytes": 107888640,
+          "peak_bytes": 108097536
+        }
+      ],
+      "checkout_session_ms": 841.1027699999995,
+      "post_checkout_memory": {
+        "current_bytes": 151396352,
+        "working_set_bytes": 151175168,
+        "peak_bytes": 151478272
+      },
+      "model_verified": true,
+      "no_config_before_checkout": true,
+      "preload": {
+        "preload_ms": 1270.2856429386884,
+        "builtin_tool_count": 83,
+        "has_terminal": true,
+        "scoped_tool_names": [
+          "a2a_call",
+          "a2a_discover",
+          "a2a_history",
+          "a2a_list",
+          "a2a_orchestrate",
+          "spotify_albums",
+          "spotify_devices",
+          "spotify_library",
+          "spotify_playback",
+          "spotify_playlists",
+          "spotify_queue",
+          "spotify_search"
+        ]
+      }
+    }
+  ],
+  "gateway": [
+    {
+      "variant": "stock",
+      "sample": 1,
+      "withMcp": true,
+      "initialize_ms": 1484.172011,
+      "idle": [
+        {
+          "current_bytes": 224714752,
+          "working_set_bytes": 201592832,
+          "peak_bytes": 227172352
+        },
+        {
+          "current_bytes": 224714752,
+          "working_set_bytes": 201592832,
+          "peak_bytes": 227172352
+        },
+        {
+          "current_bytes": 224714752,
+          "working_set_bytes": 201592832,
+          "peak_bytes": 227172352
+        },
+        {
+          "current_bytes": 224440320,
+          "working_set_bytes": 201318400,
+          "peak_bytes": 227172352
+        },
+        {
+          "current_bytes": 224456704,
+          "working_set_bytes": 201297920,
+          "peak_bytes": 227172352
+        }
+      ],
+      "checkout_session_ms": 2767.602224,
+      "post_checkout_memory": {
+        "current_bytes": 347217920,
+        "working_set_bytes": 299700224,
+        "peak_bytes": 347217920
+      },
+      "model_verified": true,
+      "no_config_before_checkout": true,
+      "preload": null
+    },
+    {
+      "variant": "preload",
+      "sample": 1,
+      "withMcp": true,
+      "initialize_ms": 1764.1098339999999,
+      "idle": [
+        {
+          "current_bytes": 124211200,
+          "working_set_bytes": 123703296,
+          "peak_bytes": 124301312
+        },
+        {
+          "current_bytes": 124125184,
+          "working_set_bytes": 123617280,
+          "peak_bytes": 124301312
+        },
+        {
+          "current_bytes": 123678720,
+          "working_set_bytes": 123170816,
+          "peak_bytes": 124301312
+        },
+        {
+          "current_bytes": 123912192,
+          "working_set_bytes": 123404288,
+          "peak_bytes": 124301312
+        },
+        {
+          "current_bytes": 123928576,
+          "working_set_bytes": 123420672,
+          "peak_bytes": 124301312
+        }
+      ],
+      "checkout_session_ms": 1622.8860869999999,
+      "post_checkout_memory": {
+        "current_bytes": 194985984,
+        "working_set_bytes": 194232320,
+        "peak_bytes": 194985984
+      },
+      "model_verified": true,
+      "no_config_before_checkout": true,
+      "preload": {
+        "preload_ms": 1322.4643539870158,
+        "builtin_tool_count": 83,
+        "has_terminal": true,
+        "scoped_tool_names": [
+          "a2a_call",
+          "a2a_discover",
+          "a2a_history",
+          "a2a_list",
+          "a2a_orchestrate",
+          "spotify_albums",
+          "spotify_devices",
+          "spotify_library",
+          "spotify_playback",
+          "spotify_playlists",
+          "spotify_queue",
+          "spotify_search"
+        ]
+      }
+    },
+    {
+      "variant": "stock",
+      "sample": 2,
+      "withMcp": false,
+      "initialize_ms": 1034.5120319999999,
+      "idle": [
+        {
+          "current_bytes": 111558656,
+          "working_set_bytes": 111083520,
+          "peak_bytes": 117264384
+        },
+        {
+          "current_bytes": 111558656,
+          "working_set_bytes": 111083520,
+          "peak_bytes": 117264384
+        },
+        {
+          "current_bytes": 111558656,
+          "working_set_bytes": 111083520,
+          "peak_bytes": 117264384
+        },
+        {
+          "current_bytes": 111341568,
+          "working_set_bytes": 110866432,
+          "peak_bytes": 117264384
+        },
+        {
+          "current_bytes": 111341568,
+          "working_set_bytes": 110866432,
+          "peak_bytes": 117264384
+        }
+      ],
+      "checkout_session_ms": 1691.0681180000001,
+      "post_checkout_memory": {
+        "current_bytes": 176918528,
+        "working_set_bytes": 176177152,
+        "peak_bytes": 176918528
+      },
+      "model_verified": true,
+      "no_config_before_checkout": true,
+      "preload": null
+    },
+    {
+      "variant": "preload",
+      "sample": 2,
+      "withMcp": false,
+      "initialize_ms": 1825.5661340000001,
+      "idle": [
+        {
+          "current_bytes": 124137472,
+          "working_set_bytes": 123633664,
+          "peak_bytes": 124186624
+        },
+        {
+          "current_bytes": 124100608,
+          "working_set_bytes": 123596800,
+          "peak_bytes": 124186624
+        },
+        {
+          "current_bytes": 123953152,
+          "working_set_bytes": 123449344,
+          "peak_bytes": 124186624
+        },
+        {
+          "current_bytes": 124223488,
+          "working_set_bytes": 123719680,
+          "peak_bytes": 124477440
+        },
+        {
+          "current_bytes": 123990016,
+          "working_set_bytes": 123486208,
+          "peak_bytes": 124477440
+        }
+      ],
+      "checkout_session_ms": 1194.8681910000005,
+      "post_checkout_memory": {
+        "current_bytes": 172523520,
+        "working_set_bytes": 171782144,
+        "peak_bytes": 172523520
+      },
+      "model_verified": true,
+      "no_config_before_checkout": true,
+      "preload": {
+        "preload_ms": 1342.2217789338902,
+        "builtin_tool_count": 83,
+        "has_terminal": true,
+        "scoped_tool_names": [
+          "a2a_call",
+          "a2a_discover",
+          "a2a_history",
+          "a2a_list",
+          "a2a_orchestrate",
+          "spotify_albums",
+          "spotify_devices",
+          "spotify_library",
+          "spotify_playback",
+          "spotify_playlists",
+          "spotify_queue",
+          "spotify_search"
+        ]
+      }
+    }
+  ],
+  "method": {
+    "idle_seconds": 5,
+    "sandbox_cpus": 2,
+    "sandbox_memory_mib": 768,
+    "real_provider_calls": 0,
+    "real_credentials_used": false,
+    "user_workspace_or_memory_loaded": false,
+    "offline_network": "none",
+    "gateway_network_policies": {},
+    "configured_mcp_startup_disabled": true,
+    "late_provider": "offline fixture at 127.0.0.1:9 with non-secret invalid key",
+    "late_mcp": "one local fixture offered on odd samples; none on even samples",
+    "checks": [
+      "config.yaml absent before and throughout idle interval",
+      "fresh workspace created after idle interval",
+      "session response selected the model written after idle",
+      "preload registry contains terminal and no MCP-named scoped entries"
+    ],
+    "not_tested": [
+      "dynamic egress changes",
+      "late attachment of actual account credentials or private packs",
+      "model inference",
+      "real OpenNeko broker checkout",
+      "production pool implementation"
+    ]
+  }
+}

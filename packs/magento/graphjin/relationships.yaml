@@ -1,0 +1,55 @@
+key: relationships.magento
+targetRef: magento
+source: magento_analytics
+relationships:
+  - left: sales_order.entity_id
+    right: sales_order_item.order_id
+    cardinality: one_to_many
+  - left: sales_order.entity_id
+    right: sales_order_address.parent_id
+    cardinality: one_to_many
+  - left: sales_order.entity_id
+    right: sales_order_status_history.parent_id
+    cardinality: one_to_many
+  - left: sales_order.entity_id
+    right: sales_order_payment.parent_id
+    cardinality: one_to_one
+  - left: sales_order.customer_id
+    right: customer_entity.entity_id
+    cardinality: many_to_one
+  - left: customer_entity.entity_id
+    right: customer_address_entity.parent_id
+    cardinality: one_to_many
+  - left: sales_order.entity_id
+    right: sales_invoice.order_id
+    cardinality: one_to_many
+  - left: sales_invoice.entity_id
+    right: sales_invoice_item.parent_id
+    cardinality: one_to_many
+  - left: sales_order.entity_id
+    right: sales_creditmemo.order_id
+    cardinality: one_to_many
+  - left: sales_creditmemo.entity_id
+    right: sales_creditmemo_item.parent_id
+    cardinality: one_to_many
+  - left: sales_order.entity_id
+    right: sales_shipment.order_id
+    cardinality: one_to_many
+  - left: sales_shipment.entity_id
+    right: sales_shipment_item.parent_id
+    cardinality: one_to_many
+  - left: sales_order.store_id
+    right: store.store_id
+    cardinality: many_to_one
+  - left: store.group_id
+    right: store_group.group_id
+    cardinality: many_to_one
+  - left: store_group.website_id
+    right: store_website.website_id
+    cardinality: many_to_one
+  - left: sales_order_item.product_id
+    right: catalog_product_entity.entity_id
+    cardinality: many_to_one
+  - left: inventory_source_item.sku
+    right: catalog_product_entity.sku
+    cardinality: many_to_one

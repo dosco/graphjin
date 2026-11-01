@@ -1,0 +1,107 @@
+apiVersion: openneko.app/v1
+kind: SolutionPack
+metadata:
+  id: google-workspace
+  name: Google Workspace
+  version: 0.2.0
+  publisher: openneko
+  category: productivity
+
+compatibility:
+  openneko: ">=2.40.0 <3.0.0"
+  graphjin:
+    analytics: ">=3.20.77 <4.0.0"
+    operator: ">=3.20.77 <4.0.0"
+  applications:
+    - id: google-workspace
+      editions: [workspace]
+      versions: ">=1.0.0"
+  databases: []
+
+inputs:
+  - key: google-workspace.oauth_client_id
+    type: string
+    required: false
+    description: OAuth client ID from the customer's Google Cloud project.
+
+secrets:
+  - key: google-workspace.oauth_client_secret
+    purpose: pack_oauth_client
+    required: false
+  - key: google-workspace.access_token
+    purpose: pack_oauth_token
+    required: false
+  - key: google-workspace.refresh_token
+    purpose: pack_oauth_token
+    required: false
+
+oauth:
+  - key: workspace
+    providerLabel: Google Workspace
+    scope: user
+    experience:
+      description: Connect Gmail, Drive, Calendar, Sheets, Docs, and Slides for your work and automations.
+      setupInstructions: Create a Web application OAuth client in your Google Cloud project. Enable the APIs used by this pack and configure the consent screen. Add the redirect URI below, then save the client ID and client secret. Each user connects their own Google account on Integrations.
+      helpUrl: https://developers.google.com/identity/protocols/oauth2/web-server
+    authorizationUrl: https://accounts.google.com/o/oauth2/v2/auth
+    tokenUrl: https://oauth2.googleapis.com/token
+    userInfoUrl: https://openidconnect.googleapis.com/v1/userinfo
+    clientIdInput: google-workspace.oauth_client_id
+    clientSecret: google-workspace.oauth_client_secret
+    accessToken: google-workspace.access_token
+    refreshToken: google-workspace.refresh_token
+    authorizationParams:
+      access_type: offline
+      prompt: select_account consent
+    scopes:
+      - openid
+      - https://www.googleapis.com/auth/userinfo.email
+      - https://www.googleapis.com/auth/gmail.modify
+      - https://www.googleapis.com/auth/gmail.compose
+      - https://www.googleapis.com/auth/drive
+      - https://www.googleapis.com/auth/calendar.readonly
+      - https://www.googleapis.com/auth/calendar.events
+      - https://www.googleapis.com/auth/spreadsheets
+      - https://www.googleapis.com/auth/documents.readonly
+      - https://www.googleapis.com/auth/presentations.readonly
+
+permissions:
+  network:
+    - accounts.google.com
+    - oauth2.googleapis.com
+    - openidconnect.googleapis.com
+    - gmail.googleapis.com
+    - www.googleapis.com
+    - sheets.googleapis.com
+    - docs.googleapis.com
+    - slides.googleapis.com
+
+artifacts:
+  graphjin:
+    sources: graphjin/sources.yaml
+    relationships: graphjin/relationships.yaml
+    specs:
+      - graphjin/specs/gmail.yaml
+      - graphjin/specs/drive.yaml
+      - graphjin/specs/calendar.yaml
+      - graphjin/specs/sheets.yaml
+      - graphjin/specs/docs.yaml
+      - graphjin/specs/slides.yaml
+    savedQueries: graphjin/saved-queries
+  skills:
+    - skills/google-workspace-read
+    - skills/google-workspace-cross-app-research
+    - skills/google-workspace-gmail
+    - skills/google-workspace-calendar
+    - skills/google-workspace-drive
+    - skills/google-workspace-sheets
+  workflows: workflows
+  actions: actions
+  policies: policies
+
+health:
+  requiredPreflight: []
+  readiness:
+    workspace: []
+  postInstall: []
+  postWriteCanary: []

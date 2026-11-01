@@ -1,0 +1,23 @@
+key: action.undo_changeset
+targetRef: magento.undo_changeset
+kind: magento.undo_changeset
+description: Generate and execute a new inverse draft for an applied Magento change-set after checking for drift.
+domain: catalog
+readiness:
+  capability: operator
+  domain: catalog
+  unavailableReasons: [graphjin_version_unsupported, integration_token_missing, integration_token_invalid, acl_missing]
+inputSchema:
+  type: object
+  additionalProperties: false
+  required: [changeset_id, idempotency_key]
+  properties:
+    changeset_id: { type: string, format: uuid }
+    idempotency_key: { type: string, minLength: 8, maxLength: 200 }
+adapter:
+  kind: magento_changeset
+  source: magento_operator
+  spec: magento-operator-v2
+  ambiguousOutcome: reconcile_required
+  retry: never
+  operations: {}

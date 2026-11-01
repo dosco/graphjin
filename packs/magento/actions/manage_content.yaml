@@ -1,0 +1,85 @@
+key: action.manage_content
+targetRef: magento.manage_content
+kind: magento.manage_content
+description: Create, edit, publish, and restore versioned Magento CMS pages and blocks.
+domain: content
+readiness:
+  capability: operator
+  domain: content
+  unavailableReasons: [graphjin_version_unsupported, integration_token_missing, integration_token_invalid, acl_missing]
+inputSchema:
+  type: object
+  additionalProperties: false
+  required: [operation, scope, rows, idempotency_key]
+  properties:
+    operation: { type: string }
+    scope: { type: object }
+    rows: { type: array, minItems: 1, maxItems: 500 }
+    idempotency_key: { type: string, minLength: 8, maxLength: 200 }
+adapter:
+  kind: magento_changeset
+  source: magento_operator
+  spec: magento-operator-v2
+  ambiguousOutcome: reconcile_required
+  retry: never
+  operations:
+    cms_page_create:
+      operationId: magentoCreateCmsPage
+      mutationRoot: magento_operator_v2_magento_create_cms_page
+      readPath: /V1/cmsPage/{pageId}
+      defaultClass: 2
+      entityType: cms
+      reversible: true
+      bodyKey: page
+      inverseOperation: cms_page_delete
+      entityIdField: id
+    cms_page_update:
+      operationId: magentoUpdateCmsPage
+      mutationRoot: magento_operator_v2_magento_update_cms_page
+      readPath: /V1/cmsPage/{pageId}
+      defaultClass: 2
+      entityType: cms
+      reversible: true
+      bodyKey: page
+      inverseOperation: cms_page_update
+      numericPathParams: [pageId]
+    cms_page_delete:
+      operationId: magentoDeleteCmsPage
+      mutationRoot: magento_operator_v2_magento_delete_cms_page
+      readPath: /V1/cmsPage/{pageId}
+      defaultClass: 2
+      entityType: cms
+      reversible: true
+      bodyKey: page
+      inverseOperation: cms_page_create
+      numericPathParams: [pageId]
+    cms_block_create:
+      operationId: magentoCreateCmsBlock
+      mutationRoot: magento_operator_v2_magento_create_cms_block
+      readPath: /V1/cmsBlock/{blockId}
+      defaultClass: 2
+      entityType: cms
+      reversible: true
+      bodyKey: block
+      inverseOperation: cms_block_delete
+      entityIdField: id
+    cms_block_update:
+      operationId: magentoUpdateCmsBlock
+      mutationRoot: magento_operator_v2_magento_update_cms_block
+      readPath: /V1/cmsBlock/{blockId}
+      defaultClass: 2
+      entityType: cms
+      reversible: true
+      bodyKey: block
+      inverseOperation: cms_block_update
+      numericPathParams: [blockId]
+    cms_block_delete:
+      operationId: magentoDeleteCmsBlock
+      mutationRoot: magento_operator_v2_magento_delete_cms_block
+      readPath: /V1/cmsBlock/{blockId}
+      defaultClass: 2
+      entityType: cms
+      reversible: true
+      bodyKey: block
+      inverseOperation: cms_block_create
+      numericPathParams: [blockId]

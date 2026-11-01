@@ -1,0 +1,34 @@
+key: action.google_workspace_calendar
+targetRef: google_workspace.calendar
+kind: google_workspace.calendar
+description: Create, update, and delete Google Calendar events through Google REST APIs.
+readiness:
+  capability: operator
+  unavailableReasons: [oauth_not_connected, graphjin_restart_required]
+inputSchema:
+  type: object
+  additionalProperties: false
+  required: [operation, path]
+  properties:
+    operation: { type: string, enum: [create_event, update_event, delete_event] }
+    path: { type: object }
+    query: { type: object }
+    body: { type: object }
+example:
+  operation: create_event
+  path: { calendarId: primary }
+  query: { sendUpdates: all }
+  body:
+    summary: Team review
+    start: { dateTime: "2026-09-10T09:00:00+05:30" }
+    end: { dateTime: "2026-09-10T09:30:00+05:30" }
+adapter:
+  kind: graphjin_api_operation
+  source: google_workspace_calendar
+  spec: calendar
+  operations:
+    create_event: { operationId: createCalendarEvent, mutationRoot: gws_calendar_create_event, reversible: false }
+    update_event: { operationId: updateCalendarEvent, mutationRoot: gws_calendar_update_event, reversible: false }
+    delete_event: { operationId: deleteCalendarEvent, mutationRoot: gws_calendar_delete_event, reversible: false }
+  ambiguousOutcome: reconcile_required
+  retry: never

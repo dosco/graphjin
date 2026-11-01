@@ -1,0 +1,94 @@
+name: openneko (go)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/openneko/**"
+      - "db/migrations/**"
+      - "Dockerfile"
+      - "compose.yml"
+      - "compose.openshell.yml"
+      - ".github/workflows/deploy.yml"
+      - ".github/workflows/go.yml"
+  pull_request:
+    paths:
+      - "apps/openneko/**"
+      - "db/migrations/**"
+      - "Dockerfile"
+      - "compose.yml"
+      - "compose.openshell.yml"
+      - ".github/workflows/deploy.yml"
+      - ".github/workflows/go.yml"
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14]
+    defaults:
+      run:
+        working-directory: apps/openneko
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.10"
+          cache-dependency-path: apps/openneko/go.sum
+
+      - name: Verify embedded migrations are in sync
+        run: ./scripts/sync-migrations.sh --check
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean; run 'gofmt -w .':"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./... -count=1
+
+      - name: go build
+        run: go build ./...
+
+  integration-migrator:
+    name: integration - migrator (real postgres)
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: apps/openneko
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.10"
+          cache-dependency-path: apps/openneko/go.sum
+
+      - name: go test (database integration)
+        run: go test -tags=integration -count=1 -timeout 10m ./internal/db/...
+
+      - name: go test (OpenShell credential integration)
+        run: go test -tags=integration -count=1 -timeout 10m -run '^TestMigrateOpenShellRoleCredentialContract$' ./internal/cli
+
+  goreleaser-check:
+    name: goreleaser check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.10"
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: check
+          workdir: apps/openneko

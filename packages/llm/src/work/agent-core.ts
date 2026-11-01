@@ -1,0 +1,245 @@
+import type {
+  AgentBackend,
+  AgentEvent,
+  AgentNativeDelegationPolicy,
+  AgentRunResult,
+  AgentWorkspace,
+ HostedGraphjin,
+} from "../agent-backend";
+import { buildWorkflowBuilderServer } from "../workflows/builder-server";
+import { buildRuleBuilderServer } from "../workflows/rule-builder-server";
+import type { AgentControlPlane } from "./control-plane";
+import {
+  GRAPHJIN_TOOL_POLICY_ENV,
+  serializeGraphjinMcpToolPolicy,
+  type GraphjinDataPath,
+  type GraphjinMcpToolPolicy,
+} from "./graphjin-tool-policy";
+import { buildAskUserQuestionServer } from "./interaction-server";
+import {
+  buildPluginActionServer,
+  buildPackActionServer,
+  buildAuditViewerServer,
+  buildChannelManagerServer,
+  buildDataSourceManagerServer,
+  buildGraphjinAgentServer,
+  buildGraphjinMcpServer,
+  buildSourceConfigManagerServer,
+  buildUserManagerServer,
+  buildLibraryServer,
+  buildRenderCardsServer,
+  buildSkillBuilderServer,
+  buildWorkMemoryServer,
+  buildSkillSearchServer,
+  type PluginActionDescriptor,
+  type PackActionDescriptor,
+} from "./tools";
+
+export interface RunAgentBackendInput {
+  /** Agent backend. In the sandbox it is reconstructed from config. */
+  backend: AgentBackend;
+  prompt: string;
+  userMessage: string;
+  orgId: string;
+  threadId: string;
+  runId: string;
+  workspace: AgentWorkspace;
+  threadState?: Record<string, unknown>;
+  /** Skill names the run's actor holds. Undefined means every skill. */
+  allowedSkills?: readonly string[];
+  pluginActions: readonly PluginActionDescriptor[];
+  /** Installed pack actions, discovered independently of built-in actions. */
+  packActions?: readonly PackActionDescriptor[];
+  /** Mount the GraphJin source-config MCP server for this admin run. */
+  sourceConfigEnabled?: boolean;
+  /** Optional backend-neutral restriction for this run's GraphJin MCP. */
+  graphjinToolPolicy?: GraphjinMcpToolPolicy;
+  /** "agent" when the org opted in to GraphJin's server-side agent. */
+  graphjinDataPath?: GraphjinDataPath;
+  /** Set when openneko serve hosts GraphJin; replaces the data agent server. */
+  hostedGraphjin?: HostedGraphjin;
+  /** Optional per-run restriction on the backend's own sub-agent primitive. */
+  nativeDelegation?: AgentNativeDelegationPolicy;
+  /** In-process on the host; broker-backed inside the agent sandbox. */
+  controlPlane: AgentControlPlane;
+  /** Whether this channel renders a2ui cards (web). Default true. Gates the
+   * brokered neko_ui render server. */
+  wantsCards?: boolean;
+  /** The answer card schema: "rich" on the web, "core" on other channels. */
+  cardSchema?: "rich" | "core";
+  emit: (event: AgentEvent) => Promise<void>;
+  signal?: AbortSignal;
+}
+
+/**
+ * The agent loop that is sandbox-runnable: build the MCP tool servers and run
+ * the backend. Its ONLY control-plane touchpoint is `controlPlane` (the
+ * broker-backed impl inside the sandbox), so nothing here needs the DB. The
+ * DB-bound prologue (load bundle/knowledge/memory/skills + build the prompt)
+ * and epilogue (fence handling + persistence) stay on the host in runChatTurn.
+ *
+ * The agent mounts these logical servers through the broker-backed stdio bridge.
+ */
+export async function runAgentBackend(
+  input: RunAgentBackendInput,
+): Promise<AgentRunResult> {
+  const {
+    backend,
+    prompt,
+    userMessage,
+    orgId,
+    threadId,
+    runId,
+    workspace,
+    threadState,
+    pluginActions,
+    packActions = [],
+    sourceConfigEnabled = false,
+    graphjinToolPolicy,
+    graphjinDataPath = "direct",
+    hostedGraphjin,
+    nativeDelegation,
+    controlPlane,
+    wantsCards = true,
+    cardSchema = "core",
+    emit,
+    signal,
+  } = input;
+
+  const mcp = backend.capabilities.mcpTools;
+  const pluginActionServer = mcp
+    ? buildPluginActionServer({
+        orgId,
+        threadId,
+        runId,
+        descriptors: pluginActions,
+        emit,
+        controlPlane,
+      })
+    : null;
+  const packActionServer = mcp
+    ? buildPackActionServer({
+        orgId,
+        threadId,
+        runId,
+        descriptors: packActions,
+        emit,
+        controlPlane,
+      })
+    : null;
+
+  const mcpServers = mcp
+    ? {
+        // Work chat is interactive. Material ambiguity pauses the turn and
+        // returns control to the operator through a deterministic form.
+        neko_interaction: buildAskUserQuestionServer({
+          runId,
+          wantsCards,
+          emit,
+        }),
+        // GraphJin is brokered through the trusted host. No binary, source
+        // URL, or credential enters the box.
+        ...(graphjinDataPath === "agent"
+          ? hostedGraphjin
+            ? {}
+            : { neko_graphjin_agent: buildGraphjinAgentServer({ orgId, runId, controlPlane }) }
+          : {
+              neko_graphjin: buildGraphjinMcpServer({
+                orgId,
+                runId,
+                controlPlane,
+                ...(graphjinToolPolicy ? { toolPolicy: graphjinToolPolicy } : {}),
+              }),
+            }),
+        // Rendering is per-channel: the card server only ships to web turns.
+        ...(wantsCards ? { neko_ui: buildRenderCardsServer(emit, { rich: cardSchema === "rich" }) } : {}),
+        neko_skills: buildSkillBuilderServer(workspace.skillsRoot),
+        neko_memory: buildWorkMemoryServer({ orgId, threadId, runId }, { controlPlane }),
+        // Ax's discover() reaches the semantic skill index through this server.
+        neko_guides: buildSkillSearchServer({ orgId, runId }, { controlPlane }),
+        neko_library: buildLibraryServer({ orgId, threadId, runId }, { controlPlane }),
+        neko_workflow_builder: buildWorkflowBuilderServer({
+          orgId,
+          createdByThreadId: threadId,
+          createdByRunId: runId,
+          emit,
+          controlPlane,
+        }),
+        neko_rule_builder: buildRuleBuilderServer({
+          orgId,
+          createdByThreadId: threadId,
+          createdByRunId: runId,
+          emit,
+          controlPlane,
+        }),
+        neko_user_manager: buildUserManagerServer({
+          orgId,
+          runId,
+          emit,
+          controlPlane,
+        }),
+        neko_channel_manager: buildChannelManagerServer({
+          orgId,
+          runId,
+          emit,
+          controlPlane,
+        }),
+        neko_data_source_manager: buildDataSourceManagerServer({
+          orgId,
+          runId,
+          emit,
+          controlPlane,
+        }),
+        ...(sourceConfigEnabled
+          ? {
+              neko_source_config_manager: buildSourceConfigManagerServer({
+                orgId,
+                runId,
+                emit,
+                controlPlane,
+              }),
+            }
+          : {}),
+        neko_audit: buildAuditViewerServer({ orgId, runId, controlPlane }),
+        ...(pluginActionServer ? { neko_plugin_actions: pluginActionServer } : {}),
+        ...(packActionServer ? { neko_pack_actions: packActionServer } : {}),
+      }
+    : undefined;
+
+  return backend.run({
+    prompt,
+    userMessage,
+    orgId,
+    workspace,
+    threadState,
+    onEvent: emit,
+    mcpServers,
+    ...(graphjinDataPath === "agent" && hostedGraphjin ? { hostedGraphjin: { ...hostedGraphjin, threadId } } : {}),
+    // ACP backends mount the same servers as stdio bridge children — ship the
+    // per-run context the bridge needs to rebuild them (broker coords ride the
+    // process env; see apps/worker/src/agent-sandbox/mcp-bridge.ts).
+    mcpBridgeEnv: mcp
+      ? {
+          OPENNEKO_MCP_MODE: "work",
+          OPENNEKO_MCP_ORG_ID: orgId,
+          OPENNEKO_MCP_THREAD_ID: threadId,
+          OPENNEKO_MCP_RUN_ID: runId,
+          OPENNEKO_MCP_SKILLS_ROOT: workspace.skillsRoot,
+          OPENNEKO_MCP_WANTS_CARDS: wantsCards ? "1" : "0",
+          OPENNEKO_MCP_CARD_SCHEMA: cardSchema,
+          ...(graphjinToolPolicy
+            ? {
+                [GRAPHJIN_TOOL_POLICY_ENV]:
+                  serializeGraphjinMcpToolPolicy(graphjinToolPolicy),
+              }
+            : {}),
+          OPENNEKO_MCP_PLUGIN_ACTIONS: JSON.stringify(pluginActions ?? []),
+          OPENNEKO_MCP_PACK_ACTIONS: JSON.stringify(packActions),
+        }
+      : undefined,
+    ...(nativeDelegation ? { nativeDelegation } : {}),
+    wantsCards,
+    tag: `work ${runId}`,
+    signal,
+  });
+}

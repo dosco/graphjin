@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en" data-density="compact">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenNeko · Actions — density study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Manrope:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* OpenNeko Actions — density study. Comfortable = today's stacked approval
+   cards. Compact = a triage queue: list left, full action detail in a
+   reading pane right (j/k to move, a/r to act — wiring already exists). */
+:root{
+  --bg:#FAFAF7;--card:#FFFFFF;--text:#2D2A24;--text2:#7A756A;--text3:#B0AA9F;
+  --border:#EEEBE4;--neutral:#F2EFE8;--neutral-soft:#F7F4ED;
+  --accent:#6B5CE7;--accent-soft:#EDE9FE;
+  --success:#6CFF7F;--success-ink:#113719;--success-soft:#E2FBE6;--success-mid:#4CAF82;
+  --watch:#E9A23B;--watch-soft:#FFF1D8;--warn-ink:#8A6D00;
+  --danger:#E05656;--danger-soft:#FEECEC;
+  --shadow:0 1px 3px rgba(20,18,12,.04),0 4px 16px rgba(20,18,12,.03);
+  --shadow-h:0 2px 8px rgba(20,18,12,.06),0 12px 36px -8px rgba(20,18,12,.07);
+  --display:'Archivo',sans-serif;--body:'Manrope',sans-serif;--mono:'Geist Mono',ui-monospace,monospace;
+}
+html[data-density="comfortable"]{--d-canvas:820px;--d-triage:none;--d-stack:flex}
+html[data-density="compact"]{--d-canvas:1180px;--d-triage:grid;--d-stack:none}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--body);background:var(--bg);color:var(--text);line-height:1.5;-webkit-font-smoothing:antialiased;padding-bottom:60px}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:radial-gradient(circle at 15% 8%,rgba(107,92,231,.05),transparent 42%),radial-gradient(circle at 90% 4%,rgba(108,255,127,.05),transparent 40%)}
+.wrap{position:relative;z-index:1;max-width:var(--d-canvas);margin:0 auto;padding:24px 22px 0;transition:max-width .45s cubic-bezier(.4,0,.2,1)}
+a{color:inherit;text-decoration:none}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* top bar */
+.topbar{display:flex;align-items:center;gap:16px;margin-bottom:16px}
+.brand{display:inline-flex;align-items:center;gap:9px;font-family:var(--display);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.brand .mark{width:19px;height:19px;border-radius:50%;background:conic-gradient(from 220deg,var(--text) 0 50%,transparent 50% 100%);border:1.5px solid var(--text)}
+.brand .ver{font-family:var(--body);font-weight:600;font-size:10.5px;color:var(--text2);background:var(--neutral);padding:2px 6px;border-radius:999px}
+.nav{display:flex;gap:2px;margin-left:6px}
+.nav a{font-size:13.5px;font-weight:500;color:var(--text2);padding:7px 12px;border-radius:999px;border:1px solid transparent}
+.nav a:hover{background:rgba(20,18,12,.04);color:var(--text)}
+.nav a.on{border-color:var(--border);color:var(--text);font-weight:600}
+.nav a.on::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent);margin-right:7px;vertical-align:2px}
+.spacer{flex:1}
+.seg{display:inline-flex;background:var(--neutral);border:1px solid var(--border);border-radius:999px;padding:3px;gap:2px}
+.seg button{font-family:var(--body);font-weight:600;font-size:12.5px;color:var(--text2);border:0;background:transparent;padding:6px 14px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.seg button .ic{width:13px;height:13px}
+.seg button[aria-pressed="true"]{background:var(--card);color:var(--text);box-shadow:0 1px 2px rgba(20,18,12,.08),0 2px 8px -2px rgba(20,18,12,.1)}
+
+/* head + tabs */
+.head{display:flex;align-items:baseline;gap:13px;margin-bottom:4px}
+.head h1{font-family:var(--display);font-size:28px;font-weight:800;letter-spacing:-.02em}
+.head .ct{font-family:var(--mono);font-size:13px;color:var(--text3)}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:6px 0 14px}
+.tabs button{font-size:13px;font-weight:600;color:var(--text3);background:0;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;padding:8px 14px;cursor:pointer}
+.tabs button.on{color:var(--text);border-color:var(--accent)}
+.tabs button:hover:not(.on){color:var(--text2)}
+.khint{font-family:var(--mono);font-size:12px;color:var(--text3);margin-bottom:16px}
+.khint kbd{background:var(--neutral);border:1px solid var(--border);border-radius:4px;padding:1px 6px;color:var(--text2)}
+
+/* pills */
+.pill{font-family:var(--display);font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:999px;border:1px solid;white-space:nowrap}
+.pill.high{background:var(--danger-soft);color:var(--danger);border-color:rgba(224,86,86,.3)}
+.pill.med{background:var(--watch-soft);color:var(--warn-ink);border-color:rgba(233,162,59,.3)}
+.pill.low{background:var(--success-soft);color:var(--success-ink);border-color:rgba(76,175,130,.3)}
+
+/* ── TRIAGE (compact) ── */
+.triage{display:var(--d-triage);grid-template-columns:392px minmax(0,1fr);gap:14px;align-items:start}
+.queue{display:flex;flex-direction:column;gap:3px}
+.qrow{display:flex;gap:11px;padding:11px 13px;border-radius:13px;border:1px solid transparent;cursor:pointer;transition:background .14s,border-color .14s}
+.qrow:hover{background:var(--neutral-soft)}
+.qrow.sel{background:color-mix(in srgb,var(--accent-soft) 60%,transparent);border-color:color-mix(in srgb,var(--accent) 28%,var(--border))}
+.qrow .tone{width:9px;height:9px;border-radius:50%;margin-top:4px;flex:0 0 auto}
+.tone.action{background:var(--danger)}.tone.watch{background:var(--watch)}.tone.good{background:var(--success-mid)}
+.qrow .qb{min-width:0;flex:1}
+.qrow .qh{font-size:14px;font-weight:600;letter-spacing:-.005em;line-height:1.35;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.qrow .qsub{font-size:11.5px;color:var(--text3);margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.qrow .qsub b{color:var(--text2);font-weight:600}
+.qrow .qrisk{flex:0 0 auto;align-self:flex-start;margin-top:1px}
+
+/* detail reading pane */
+.detail{position:sticky;top:18px;background:var(--card);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);padding:18px 20px 18px}
+.detail .drisk{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.detail .dkind{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text3)}
+.detail h2{font-family:var(--display);font-size:20px;font-weight:800;letter-spacing:-.02em;line-height:1.18}
+.detail .dby{font-size:12.5px;color:var(--text2);margin-top:8px;line-height:1.5}
+.detail .dby b{color:var(--text);font-weight:600}
+.sect{margin-top:16px}
+.sect .sl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--text3);margin-bottom:7px}
+.sect p{font-size:13.5px;line-height:1.55;color:var(--text)}
+.payload{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:11px 13px;display:grid;gap:6px}
+.payload .pr{display:flex;gap:12px;font-size:12.5px}
+.payload .pk{color:var(--text3);min-width:96px;flex:0 0 auto}
+.payload .pv{font-family:var(--mono);color:var(--text);font-variant-numeric:tabular-nums;word-break:break-word}
+.gate{display:flex;align-items:center;gap:10px;background:var(--watch-soft);border:1px solid rgba(233,162,59,.32);border-radius:12px;padding:10px 13px;font-size:12.5px;color:var(--warn-ink)}
+.gate .gk{font-weight:600}
+.gate .pill{margin-left:auto}
+.detail-acts{display:flex;align-items:center;gap:9px;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
+.btn{font-family:var(--body);font-weight:700;font-size:13.5px;border-radius:11px;padding:10px 18px;cursor:pointer;border:1px solid transparent;transition:transform .15s,box-shadow .15s,background .15s}
+.btn:hover{transform:translateY(-1px)}
+.btn.ok{background:var(--text);color:var(--bg)}
+.btn.ok:hover{box-shadow:0 6px 18px -6px rgba(20,18,12,.3)}
+.btn.no{background:var(--card);border-color:var(--border);color:var(--text2)}
+.btn.no:hover{border-color:var(--danger);color:var(--danger)}
+.detail-acts .akbd{font-family:var(--mono);font-size:11px;color:var(--text3);margin-left:2px}
+.detail-acts .links{margin-left:auto;display:flex;gap:14px;font-size:12px;color:var(--accent)}
+.detail-acts .links a:hover{text-decoration:underline;text-underline-offset:2px}
+
+/* ── STACK (comfortable) — today's approval cards ── */
+.stack{display:var(--d-stack);flex-direction:column;gap:14px}
+.acard{background:var(--card);border:1px solid var(--border);border-radius:20px;box-shadow:var(--shadow);padding:16px 18px}
+.acard-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.acard-head .st{font-family:var(--display);font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+  background:var(--watch-soft);color:var(--warn-ink);border:1px solid rgba(233,162,59,.3);padding:3px 10px;border-radius:999px}
+.acard-head .tm{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text3)}
+.acard .trigger{background:var(--watch-soft);border:1px solid rgba(233,162,59,.25);border-radius:11px;padding:9px 12px;font-size:12.5px;color:var(--text2);margin-bottom:11px}
+.arow{display:flex;gap:11px;padding:12px 13px;border:1px solid var(--border);border-radius:13px}
+.arow+.arow{margin-top:9px}
+.arow .tone{width:9px;height:9px;border-radius:50%;margin-top:4px;flex:0 0 auto}
+.arow .ab{flex:1;min-width:0}
+.arow .ah{font-size:14px;font-weight:600}
+.arow .at{font-family:var(--mono);font-size:11.5px;color:var(--text2);margin-top:2px}
+.arow .aa{display:flex;gap:8px;margin-top:10px;align-items:center}
+.arow .aa .why{margin-left:auto;font-size:11.5px;color:var(--text2)}
+
+@media (max-width:840px){
+  html[data-density="compact"]{--d-triage:none;--d-stack:flex;--d-canvas:100%}
+  .nav{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <span class="brand"><span class="mark"></span>OpenNeko <span class="ver">1.17.2</span></span>
+    <nav class="nav"><a href="#">Dashboard</a><a href="#">Ask</a><a href="#" class="on">Actions</a><a href="#">Workflows</a></nav>
+    <span class="spacer"></span>
+    <div class="seg" role="group" aria-label="Density">
+      <button data-set="comfortable" aria-pressed="false"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="12" height="3.4" rx="1.2"/><rect x="2" y="9.6" width="12" height="3.4" rx="1.2"/></svg>Comfortable</button>
+      <button data-set="compact" aria-pressed="true"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2.5" width="4" height="11" rx="1.2"/><rect x="7.5" y="2.5" width="6.5" height="11" rx="1.2"/></svg>Compact</button>
+    </div>
+  </div>
+
+  <div class="head"><h1>Actions</h1><span class="ct">5 pending</span></div>
+  <div class="tabs">
+    <button>Fired</button><button class="on">Awaiting you</button><button>Rejected</button><button>All</button>
+  </div>
+  <div class="khint"><kbd>a</kbd> approve · <kbd>r</kbd> reject · <kbd>j</kbd>/<kbd>k</kbd> navigate</div>
+
+  <!-- TRIAGE (compact) -->
+  <div class="triage">
+    <div class="queue" id="queue"></div>
+    <div class="detail" id="detail"></div>
+  </div>
+
+  <!-- STACK (comfortable) -->
+  <div class="stack" id="stack"></div>
+
+</div>
+
+<script>
+const ITEMS=[
+  {id:'a1',tone:'action',risk:'high',kind:'payment.refund',
+   headline:'Refund $4,200 to Acme Corp — disputed annual charge',
+   workflow:'Billing watch',trigger:'Acme flagged the annual renewal as a duplicate charge',time:'9:02a',
+   target:'stripe · ch_3PQ…91',
+   summary:'Acme was billed twice for the FY25 annual plan after a failed-then-retried payment. The agent reconciled both charges and proposes refunding the duplicate.',
+   payload:[['Amount','$4,200.00'],['Reason','duplicate_charge'],['Customer','Acme Corp · cus_Nf2…'],['Invoice','INV-4471'],['Charge','ch_3PQ…91']],
+   gate:'Refunds over $1,000 require approval',gatePill:'med'},
+  {id:'a2',tone:'watch',risk:'medium',kind:'email.send',
+   headline:'Send churn-risk note to Northwind, Globex, Initech',
+   workflow:'Churn-risk outreach',trigger:'Logins dropped >60% WoW across 3 enterprise accounts',time:'8:51a',
+   target:'gmail · 3 recipients',
+   summary:'Three enterprise accounts went quiet this week with no support tickets. The agent drafted a personalised check-in from their CSM to re-open the conversation.',
+   payload:[['To','3 recipients'],['From','csm@yourco.com'],['Subject','Quick check-in'],['Template','retention_v3'],['Attachments','none']],
+   gate:'External email to >2 recipients requires approval',gatePill:'med'},
+  {id:'a3',tone:'watch',risk:'medium',kind:'erp.purchase_order',
+   headline:'Create PO for 2 reorder SKUs ($18,400)',
+   workflow:'Inventory reorder',trigger:'SKU-0091 and SKU-0123 fell below reorder threshold',time:'8:22a',
+   target:'netsuite · vendor V-208',
+   summary:'Two fast-moving SKUs are below their reorder points with ~6 days of cover left. The agent sized a replenishment order against the preferred vendor\'s MOQ.',
+   payload:[['Vendor','Acme Supply (V-208)'],['SKU-0091','480 units · $9,600'],['SKU-0123','220 units · $8,800'],['Total','$18,400'],['ETA','7–9 days']],
+   gate:'Purchase orders over $10,000 require approval',gatePill:'med'},
+  {id:'a4',tone:'action',risk:'high',kind:'ads.pause_campaign',
+   headline:'Pause ad campaign “Q2-Brand” — CPA 3× target',
+   workflow:'Ad spend monitor',trigger:'Q2-Brand CPA hit $312 vs $100 target for 2 days',time:'7:40a',
+   target:'google-ads · camp 88123',
+   summary:'The Q2-Brand campaign has run 3× over target CPA for two consecutive days, burning ~$1,400/day with no conversions lift. The agent proposes pausing it pending review.',
+   payload:[['Campaign','Q2-Brand (88123)'],['Spend (48h)','$2,810'],['CPA','$312 (target $100)'],['Conversions','9'],['Action','pause']],
+   gate:'Spend-affecting actions require approval',gatePill:'med'},
+  {id:'a5',tone:'good',risk:'low',kind:'slack.post',
+   headline:'Post price-change notice to #leadership',
+   workflow:'Competitor radar',trigger:'Tracked competitor shipped usage-based pricing',time:'7:12a',
+   target:'slack · #leadership',
+   summary:'A tracked competitor moved to usage-based pricing overnight. The agent drafted a short heads-up summarising the change and its overlap with your mid-market segment.',
+   payload:[['Channel','#leadership'],['Length','94 words'],['Mentions','none'],['Links','1 (changelog)']],
+   gate:'Internal Slack posts auto-approve under rule "internal-notices"',gatePill:'low'},
+];
+
+let sel='a1';
+const q=document.getElementById('queue');
+function renderQueue(){
+  q.innerHTML=ITEMS.map(it=>`
+    <div class="qrow ${it.id===sel?'sel':''}" data-id="${it.id}">
+      <span class="tone ${it.tone}"></span>
+      <div class="qb">
+        <div class="qh">${it.headline}</div>
+        <div class="qsub">from <b>${it.workflow}</b> · <span class="mono">${it.time}</span></div>
+      </div>
+      <span class="pill ${it.risk==='high'?'high':it.risk==='medium'?'med':'low'} qrisk">${it.risk}</span>
+    </div>`).join('');
+  q.querySelectorAll('.qrow').forEach(r=>r.addEventListener('click',()=>{sel=r.dataset.id;renderQueue();renderDetail();}));
+}
+const d=document.getElementById('detail');
+function renderDetail(){
+  const it=ITEMS.find(x=>x.id===sel);
+  d.innerHTML=`
+    <div class="drisk">
+      <span class="pill ${it.risk==='high'?'high':it.risk==='medium'?'med':'low'}">${it.risk} risk</span>
+      <span class="dkind">${it.kind}</span>
+    </div>
+    <h2>${it.headline}</h2>
+    <div class="dby">Proposed by <b>${it.workflow}</b> · triggered by “${it.trigger}”</div>
+    <div class="sect"><div class="sl">Why</div><p>${it.summary}</p></div>
+    <div class="sect"><div class="sl">Target</div><p class="mono" style="font-size:12.5px;color:var(--text2)">${it.target}</p></div>
+    <div class="sect"><div class="sl">Payload</div>
+      <div class="payload">${it.payload.map(([k,v])=>`<div class="pr"><span class="pk">${k}</span><span class="pv">${v}</span></div>`).join('')}</div>
+    </div>
+    <div class="sect"><div class="sl">Gated by</div>
+      <div class="gate"><span class="gk">${it.gate}</span><span class="pill ${it.gatePill}">${it.gatePill==='low'?'auto':'approval'}</span></div>
+    </div>
+    <div class="detail-acts">
+      <button class="btn ok">Approve <span class="akbd">a</span></button>
+      <button class="btn no">Reject <span class="akbd">r</span></button>
+      <span class="links"><a href="#">why →</a><a href="#">view run →</a></span>
+    </div>`;
+}
+renderQueue();renderDetail();
+
+/* comfortable stack — today's grouped approval cards */
+document.getElementById('stack').innerHTML=ITEMS.slice(0,3).map(it=>`
+  <article class="acard">
+    <div class="acard-head"><span class="st">Awaiting you</span><span class="tm mono">${it.time}</span></div>
+    <div class="trigger">${it.trigger}</div>
+    <div class="arow">
+      <span class="tone ${it.tone}"></span>
+      <div class="ab">
+        <div class="ah">${it.headline}</div>
+        <div class="at">${it.target}</div>
+        <div class="aa">
+          <button class="btn ok" style="padding:6px 13px;font-size:12.5px">Approve</button>
+          <button class="btn no" style="padding:6px 13px;font-size:12.5px">Reject</button>
+          <a class="why" href="#">why →</a>
+        </div>
+      </div>
+    </div>
+  </article>`).join('');
+
+/* keyboard j/k + a/r on the triage queue */
+window.addEventListener('keydown',e=>{
+  if(document.documentElement.getAttribute('data-density')!=='compact')return;
+  const i=ITEMS.findIndex(x=>x.id===sel);
+  if(e.key==='j'||e.key==='ArrowDown'){e.preventDefault();sel=ITEMS[Math.min(ITEMS.length-1,i+1)].id;renderQueue();renderDetail();}
+  else if(e.key==='k'||e.key==='ArrowUp'){e.preventDefault();sel=ITEMS[Math.max(0,i-1)].id;renderQueue();renderDetail();}
+});
+
+const root=document.documentElement;
+document.querySelectorAll('.seg button').forEach(btn=>btn.addEventListener('click',()=>{
+  root.setAttribute('data-density',btn.dataset.set);
+  document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(b===btn)));
+}));
+document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+}));
+</script>
+</body>
+</html>

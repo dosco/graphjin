@@ -1,0 +1,190 @@
+/* ─────────────────────────────────────────────────────────────
+   RESPONSIVE LAYER
+   Tablet and phone overrides. Approach: keep desktop polish,
+   adapt layout — don't just shrink. Drawers stack, sidebars
+   collapse, section-nav scrolls horizontally as an iOS-style
+   tab strip, fluid type only where display sizes crushed.
+   Typography choices and brand palette unchanged.
+   ───────────────────────────────────────────────────────────── */
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; overflow-x: clip; }
+
+/* Prevent horizontal scroll caused by stray overflows. Long words
+   (URLs, table-like content) wrap inside cards instead of pushing
+   the layout. */
+body { overflow-x: clip; }
+/* A dialog or menu locks scroll on the viewport; a locked body would become
+   the scroll container and unstick the sticky sidebar and header. */
+html:has(> body[data-scroll-locked]) { overflow: hidden; }
+html body[data-scroll-locked] { overflow: visible !important; }
+.icard, .briefing-card, .act-card, .workflows-row,
+.work-bubble, .work-markdown, .builder-msg, .run-output-card,
+.settings-card { overflow-wrap: anywhere; }
+
+/* Intrinsic sizing is the most common source of mobile overflow: grid and
+   flex children otherwise keep the min-content width of long identifiers. */
+.root,
+.root > *,
+.brief-grid > *,
+.settings-grid > *,
+.work-layout > *,
+.builder-layout > *,
+.triage-layout > *,
+.settings-card-head > *,
+.run-header-row > * {
+  min-width: 0;
+}
+
+.root :where(input, textarea, select) {
+  max-width: 100%;
+}
+
+/* ── TABLET LANDSCAPE & BELOW ── */
+@media (max-width: 1024px) {
+  .work-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+}
+
+/* ── TABLET PORTRAIT & BELOW ── */
+@media (max-width: 768px) {
+  /* Bring page width to the viewport edge with safer side padding. */
+  .root {
+    padding: 28px var(--page-gutter) 120px;
+    padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+  }
+  .app-header { margin-bottom: 18px; }
+
+  /* Work surfaces stay single-column below desktop. Thread history moves
+     into the mobile command dock instead of adding a second navigation pane. */
+  .work-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .work-bubble { max-width: 100%; }
+
+  .builder-layout { grid-template-columns: minmax(0, 1fr); }
+  .builder-card { position: static; }
+
+  /* Roomier touch targets across nav, pills, and primary buttons. */
+  .settings-link { padding: 9px 14px; font-size: var(--type-body); }
+  .settings-backlink { min-height: var(--control-touch); }
+  .pill { padding: 10px 16px; font-size: var(--type-body); }
+  .workflows-new-btn, .run-followup-btn { padding: 10px 16px; font-size: var(--type-body); }
+  .act-row-btn, .workflow-drawer-btn { padding: 10px 16px; font-size: var(--type-body); }
+  .act-row-btn, .workflow-drawer-btn, .modal-btn {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* Hover-reveal actions are always visible — there is no hover. */
+  .iactions, .work-bubble-actions { opacity: 1; }
+  .workflows-row-delete { display: inline-flex; }
+  .library-row-action { opacity: 1; pointer-events: auto; }
+
+  /* Real tap area for icon/delete buttons on touch. */
+  .workflows-row-delete { width: 36px; height: 36px; }
+  .work-bubble-actions button { padding: 9px; }
+}
+
+/* ── PHONE ── */
+@media (max-width: 600px) {
+  .root {
+    padding: 22px 16px 116px;
+    padding-bottom: calc(116px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-header { margin-bottom: 14px; }
+
+  /* Dashboard role pills — comfortable wrap, no overflow. */
+  .dash-meta { gap: 8px; margin-bottom: 24px; }
+  .pills { gap: 6px; }
+  .pill { padding: 9px 14px; font-size: var(--type-body); }
+
+  /* Greeting / eyebrow scale down so the headline doesn't crush. */
+  .greet { font-size: 34px; margin-bottom: 6px; }
+  .greet-sub { font-size: var(--type-body-lg); margin-bottom: 26px; }
+  .greet-sub-quote { font-size: var(--type-subsection); margin-bottom: 26px; padding-left: 12px; }
+  .greet-eyebrow { font-size: var(--type-label); gap: 10px; }
+  .greet-eyebrow-rule { width: 28px; }
+
+  .briefing-summary { font-size: var(--type-body-lg); }
+  .briefing-tributary-title { font-size: var(--type-label); }
+
+  /* Insight card — keep the left mood-bar but reclaim horizontal room. */
+  .icard { padding: 18px 18px 18px 22px; border-radius: 16px; }
+  .inum { font-size: 22px; min-width: 32px; }
+  .itext { font-size: var(--type-body-lg); }
+  .iactions { top: 10px; right: 10px; }
+  .ipin { width: 34px; height: 34px; }
+
+  /* Profile + settings cards — tighter padding, still feels designed. */
+  .profile-card, .settings-card { padding: var(--panel-padding); border-radius: var(--radius); }
+  .settings-card-head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .settings-card-title { font-size: var(--type-section); }
+  .settings-card-copy { font-size: var(--type-body); }
+  .settings-grid { grid-template-columns: minmax(0, 1fr) !important; gap: 12px; }
+
+  /* Workflows + runs page header rows — title above action button. */
+  .workflows-new-btn { align-self: flex-start; }
+  .workflows-row-meta { flex-wrap: wrap; row-gap: 4px; }
+
+  .run-header-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .run-title { font-size: var(--type-page); }
+  .run-followup-btn { align-self: flex-start; }
+  .run-header-meta { font-size: var(--type-body-sm); }
+  .run-phase-strip { flex-wrap: wrap; gap: 6px; }
+  .run-output-card, .run-action-card { padding: 16px 16px; border-radius: 14px; }
+
+  /* Actions — row buttons wrap so primary/destructive stay full-tappable
+     instead of stretching past the card. */
+  .act-card { padding: 14px 14px; border-radius: 14px; }
+  .act-row { padding: 12px 12px; border-radius: 12px; }
+  .act-row-actions { flex-wrap: wrap; row-gap: 8px; }
+  .act-row-btn { flex: 1 1 auto; min-width: 0; text-align: center; }
+
+  /* Work transcript / composer bubbles. */
+  .work-bubble { padding: 14px 16px; font-size: var(--type-body-lg); }
+  .work-bubble.is-user { padding: 10px 14px; }
+
+  /* Builder chat min-height was 520px — too tall to be useful on a phone. */
+  .builder-chat { min-height: 360px; padding: 14px 14px 12px; }
+  .builder-msgs { max-height: 460px; }
+  .builder-input { font-size: 16px; }
+
+  /* Modal — full-width with comfortable side gutters. */
+  .modal-card { width: calc(100vw - 24px); max-width: 100%; padding: 22px; border-radius: 18px; }
+  .modal-actions { flex-wrap: wrap; }
+  .modal-btn { flex: 1 1 auto; }
+
+  /* Creator credit — hidden on phones. There is no corner that
+     doesn't either obscure content or sit on the input bar; the
+     attribution lives in the marketing site footer instead. */
+  .creator-credit { display: none; }
+}
+
+/* ── SMALL PHONE POLISH ── */
+@media (max-width: 380px) {
+  .root { padding-left: 14px; padding-right: 14px; }
+  .greet { font-size: 30px; }
+  .pill { padding: 8px 12px; font-size: var(--type-body); }
+  .icard { padding: 16px 14px 16px 18px; }
+  .act-row-btn { font-size: var(--type-body-sm); padding: 10px 12px; }
+}
+
+/* ── TOUCH-ONLY: always reveal hover-only chrome ── */
+@media (hover: none) {
+  .iactions, .work-bubble-actions { opacity: 1; }
+  .library-row-action { opacity: 1; pointer-events: auto; }
+  .workflows-row-delete { opacity: 1; pointer-events: auto; }
+  .workflows-row-arrow { opacity: 0; }
+  .ipin:hover:not(:disabled) { background: transparent; border-color: transparent; }
+}
+
+/* Phones: the dock owns navigation, brand, and sign-out, so every page
+   opens on its title. Pages with a back link keep only that link. */
+@media (max-width: 720px) {
+  body:has(> .app-rail-wrap) .app-header.is-nav-only:not(.is-auth-header) {
+    display: none;
+  }
+
+  body:has(> .app-rail-wrap) .app-header.has-context :is(.topbar-brand, .topbar-ver, .topbar-nav, .density-seg, .topbar-credit, .topbar-signout) {
+    display: none;
+  }
+}

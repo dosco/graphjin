@@ -1,0 +1,162 @@
+name: openneko-backend-eval
+
+# Frozen, read-only AdventureWorks data plane for backend evaluation.
+#
+# This is intentionally standalone. It does not extend compose.yml or
+# compose.adventureworks.yml, so starting it cannot inherit the product demo's
+# databases, simulator, scenario injector, or GraphJin config volume.
+services:
+  embedding:
+    image: openneko-embedding:eval
+    build:
+      context: .
+      target: embedding
+    ports:
+      - "127.0.0.1:${OPENNEKO_EVAL_EMBEDDING_PORT:-15003}:5003"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5003/health/ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks:
+      - eval-adventureworks
+
+  adventureworks-db:
+    image: postgres:16.15-alpine3.24@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${OPENNEKO_EVAL_AW_POSTGRES_PASSWORD:-eval-postgres-only}
+      POSTGRES_DB: postgres
+    ports:
+      - "127.0.0.1:${OPENNEKO_EVAL_AW_DB_PORT:-15433}:5432"
+    volumes:
+      - eval-adventureworks-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks:
+      - eval-adventureworks
+
+  # Reuses the product demo's loader. The freeze service below accepts its
+  # output only when the downloaded archive, loader source, and install SQL
+  # match the checked-in source manifest.
+  adventureworks-init:
+    build:
+      context: .
+      target: adventureworks-loader
+    depends_on:
+      adventureworks-db:
+        condition: service_healthy
+    environment:
+      PGHOST: adventureworks-db
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: ${OPENNEKO_EVAL_AW_POSTGRES_PASSWORD:-eval-postgres-only}
+      ADVENTUREWORKS_DB: adventureworks
+      ADVENTUREWORKS_CACHE_DIR: /cache
+      ADVENTUREWORKS_INSTALL_SQL: /workspace/db/seeds/dev/adventureworks-install.sql
+      OPENNEKO_EVAL_DIR: /eval
+    entrypoint: ["/bin/sh", "/eval/seed.sh"]
+    restart: "no"
+    volumes:
+      - ./:/workspace:ro
+      - ./evals/environment/adventureworks:/eval:ro
+      - eval-adventureworks-cache:/cache
+    networks:
+      - eval-adventureworks
+
+  # Host scripts invoke this one-shot to capture, restore, and verify the
+  # logical snapshot. Its default action is a fail-closed bootstrap: restore a
+  # complete snapshot or exit 42 when the pinned seed must be loaded first.
+  adventureworks-freeze:
+    image: postgres:16.15-alpine3.24@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    depends_on:
+      adventureworks-db:
+        condition: service_healthy
+    environment:
+      PGHOST: adventureworks-db
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: ${OPENNEKO_EVAL_AW_POSTGRES_PASSWORD:-eval-postgres-only}
+      PGDATABASE: adventureworks
+      OPENNEKO_EVAL_READER_USER: openneko_eval_reader
+      OPENNEKO_EVAL_READER_PASSWORD: ${OPENNEKO_EVAL_AW_READER_PASSWORD:-eval-reader-only}
+      OPENNEKO_EVAL_DIR: /eval
+      OPENNEKO_EVAL_SNAPSHOT_DIR: /snapshot
+    entrypoint: ["/bin/sh", "/eval/freeze.sh"]
+    command: ["bootstrap"]
+    restart: "no"
+    volumes:
+      - ./:/workspace:ro
+      - ./evals/environment/adventureworks:/eval:ro
+      - eval-adventureworks-cache:/cache:ro
+      - eval-adventureworks-snapshot:/snapshot
+    networks:
+      - eval-adventureworks
+
+  eval-api-fixture:
+    build:
+      context: .
+      target: eval-api-fixture
+    image: openneko-backend-eval-api-fixture:v1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks:
+      - eval-adventureworks
+
+  graphjin:
+    build:
+      context: .
+      target: graphjin-runtime
+    image: openneko-backend-eval-graphjin:local
+    entrypoint: ["/sbin/tini", "--", "graphjin"]
+    command: ["serve", "--path", "/config"]
+    restart: unless-stopped
+    depends_on:
+      adventureworks-db:
+        condition: service_healthy
+      eval-api-fixture:
+        condition: service_healthy
+    environment:
+      GO_ENV: eval
+      NO_PROXY: localhost,127.0.0.1,::1,adventureworks-db,eval-api-fixture,graphjin
+      no_proxy: localhost,127.0.0.1,::1,adventureworks-db,eval-api-fixture,graphjin
+    ports:
+      - "127.0.0.1:${OPENNEKO_EVAL_GRAPHJIN_PORT:-18080}:8080"
+    volumes:
+      # Bind only the immutable config file. A read-only bind of /config itself
+      # prevents the OCI runtime from creating the managed-catalog tmpfs below.
+      - ./evals/environment/adventureworks/graphjin/eval.yml:/config/eval.yml:ro
+      - ./evals/environment/adventureworks/graphjin/specs/selection-api.yaml:/config/specs/selection-api.yaml:ro
+    # Keep any internal catalog/cache files ephemeral. The eval explicitly
+    # disables managed artifacts, watches, and tasks; eval.yml and the OpenAPI
+    # specification remain separate read-only bind mounts.
+    tmpfs:
+      - /config/.graphjin:rw,noexec,nosuid,size=16m
+    healthcheck:
+      test: ["CMD", "curl", "-sS", "-o", "/dev/null", "http://127.0.0.1:8080/api/v1/graphql"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    networks:
+      - eval-adventureworks
+
+volumes:
+  eval-adventureworks-db:
+    name: openneko-backend-eval-adventureworks-db-v1
+  eval-adventureworks-cache:
+    name: openneko-backend-eval-adventureworks-cache-v1
+  eval-adventureworks-snapshot:
+    name: openneko-backend-eval-adventureworks-snapshot-v1
+
+networks:
+  eval-adventureworks:
+    name: openneko-backend-eval-adventureworks-v1

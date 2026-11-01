@@ -1,0 +1,14 @@
+key: policy.financial_handoff
+targetRef: magento.policy.financial_handoff
+name: Magento financial handoff drafts
+description: Preparing evidence is allowed, but the resulting artifact contains no Magento execute capability.
+appliesToKinds: [magento.financial_handoff]
+appliesToScopes: [internal]
+mode: auto
+priority: 20
+enabled: true
+allowedTargets:
+  destination: magento_admin_handoff
+limits:
+  executePath: false
+  allowedKinds: [online_refund, return_approval, financial_configuration, store_credit_over_cap]

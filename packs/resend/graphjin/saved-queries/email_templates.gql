@@ -1,0 +1,8 @@
+query ResendEmailTemplates {
+  resend_list_templates {
+    id
+    alias
+    name
+    status
+  }
+}

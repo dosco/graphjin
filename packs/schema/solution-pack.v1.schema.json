@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openneko.app/schemas/solution-pack.v1.schema.json",
+  "title": "OpenNeko solution pack",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "compatibility", "inputs", "secrets", "artifacts", "health"],
+  "properties": {
+    "apiVersion": { "const": "openneko.app/v1" },
+    "kind": { "const": "SolutionPack" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "version", "publisher", "category"],
+      "properties": {
+        "id": { "$ref": "#/$defs/slug" },
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "$ref": "#/$defs/version" },
+        "publisher": { "$ref": "#/$defs/slug" },
+        "category": { "$ref": "#/$defs/slug" }
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "network": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$"
+          }
+        }
+      }
+    },
+    "management": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "path"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/(?!/)[a-zA-Z0-9/_-]*$"
+        }
+      }
+    },
+    "oauth": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "providerLabel",
+          "authorizationUrl",
+          "tokenUrl",
+          "userInfoUrl",
+          "clientIdInput",
+          "clientSecret",
+          "accessToken",
+          "refreshToken",
+          "scopes"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "providerLabel": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authorizationUrl": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tokenUrl": {
+            "type": "string",
+            "minLength": 1
+          },
+          "userInfoUrl": {
+            "type": "string",
+            "minLength": 1
+          },
+          "clientIdInput": {
+            "type": "string",
+            "minLength": 1
+          },
+          "clientSecret": {
+            "type": "string",
+            "minLength": 1
+          },
+          "accessToken": {
+            "type": "string",
+            "minLength": 1
+          },
+          "refreshToken": {
+            "type": "string",
+            "minLength": 1
+          },
+          "accountIdField": {
+            "type": "string",
+            "minLength": 1
+          },
+          "accountLabelField": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scope": {
+            "enum": [
+              "deployment",
+              "user"
+            ],
+            "default": "deployment"
+          },
+          "scopes": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "authorizationParams": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "experience": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "description"
+            ],
+            "properties": {
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "setupInstructions": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              },
+              "helpUrl": {
+                "type": "string",
+                "format": "uri",
+                "pattern": "^https://"
+              }
+            }
+          }
+        }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["openneko", "graphjin", "applications", "databases"],
+      "properties": {
+        "openneko": { "type": "string", "minLength": 1 },
+        "graphjin": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["analytics", "operator"],
+          "properties": {
+            "analytics": { "type": "string", "minLength": 1 },
+            "operator": { "type": "string", "minLength": 1 }
+          }
+        },
+        "applications": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "editions", "versions"],
+            "properties": {
+              "id": { "$ref": "#/$defs/slug" },
+              "editions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/slug" } },
+              "versions": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "databases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["engine", "versions"],
+            "properties": {
+              "engine": { "enum": ["mariadb", "mysql", "postgres"] },
+              "versions": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "type"],
+        "properties": {
+          "key": { "$ref": "#/$defs/dottedKey" },
+          "type": { "enum": ["string", "url", "integer", "enum", "timezone", "boolean"] },
+          "required": { "type": "boolean" },
+          "default": { "type": ["string", "number", "boolean"] },
+          "discover": { "type": "boolean" },
+          "values": { "type": "array", "items": { "type": ["string", "number", "boolean"] } },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "secrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "purpose"],
+        "properties": {
+          "key": { "$ref": "#/$defs/dottedKey" },
+          "purpose": { "enum": ["graphjin_source", "graphjin_api_auth", "pack_runtime", "pack_oauth_client", "pack_oauth_token"] },
+          "required": { "type": "boolean", "default": true }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["graphjin", "metrics", "workflows", "watchers", "actions", "policies", "skills"],
+      "properties": {
+        "graphjin": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sources", "relationships", "specs"],
+          "properties": {
+            "sources": { "$ref": "#/$defs/path" },
+            "relationships": { "$ref": "#/$defs/path" },
+            "specs": { "type": "array", "items": { "$ref": "#/$defs/path" } },
+            "savedQueries": { "$ref": "#/$defs/path" }
+          }
+        },
+        "metrics": { "$ref": "#/$defs/path" },
+        "workflows": { "$ref": "#/$defs/path" },
+        "watchers": { "$ref": "#/$defs/path" },
+        "actions": { "$ref": "#/$defs/path" },
+        "policies": { "$ref": "#/$defs/path" },
+        "skills": { "type": "array", "items": { "$ref": "#/$defs/path" } }
+      }
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requiredPreflight", "readiness", "postInstall", "postWriteCanary"],
+      "properties": {
+        "requiredPreflight": { "$ref": "#/$defs/checks" },
+        "readiness": { "type": "object", "additionalProperties": { "$ref": "#/$defs/checks" } },
+        "postInstall": { "$ref": "#/$defs/checks" },
+        "postWriteCanary": { "$ref": "#/$defs/checks" }
+      }
+    }
+  },
+  "$defs": {
+    "slug": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$" },
+    "dottedKey": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]+$" },
+    "path": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$" },
+    "checks": { "type": "array", "items": { "$ref": "#/$defs/slug" } }
+  }
+}

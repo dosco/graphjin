@@ -1,0 +1,20 @@
+import { beforeEach, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
+const state = vi.hoisted(() => ({ authorized: true, threadId: "thread" }));
+vi.mock("@/lib/db", () => ({ getOrgId: async () => "org" }));
+vi.mock("@/lib/work-thread-auth", () => ({ getAuthorizedWorkThread: async () => state.authorized ? {} : null }));
+vi.mock("@/lib/work-store", () => ({ getWorkRun: async () => ({ thread_id: state.threadId }) }));
+import { POST } from "@/app/api/work/threads/[threadId]/runs/[runId]/timing/route";
+beforeEach(() => { state.authorized = true; state.threadId = "thread"; vi.restoreAllMocks(); });
+const send = (body: unknown) => POST(new NextRequest("http://localhost/timing", { method: "POST", body: JSON.stringify(body) }), { params: Promise.resolve({ threadId: "thread", runId: "run" }) });
+it("accepts bounded timings only for an authorized run and never logs arbitrary data", async () => {
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  expect((await send({ acknowledgementMs: 10, firstOutputMs: 23 })).status).toBe(204);
+  expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({ runId: "run", threadId: "thread", origin: "client_reported", firstOutputMs: 23 });
+  for (const body of [{ prompt: "private" }, { firstOutputMs: -1 }, { firstOutputMs: "5" }, { firstOutputMs: 3_600_001 }, [], null]) expect((await send(body)).status).toBe(400);
+  state.authorized = false;
+  expect((await send({ firstOutputMs: 2 })).status).toBe(404);
+  state.authorized = true; state.threadId = "another";
+  expect((await send({ firstOutputMs: 2 })).status).toBe(404);
+  expect(log).toHaveBeenCalledTimes(1);
+});

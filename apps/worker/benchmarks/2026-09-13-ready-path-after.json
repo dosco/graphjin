@@ -1,0 +1,2561 @@
+{
+  "metadata": {
+    "commit": "67b4c6f5b9f3add6bd68813c64a4479347dec1b0",
+    "imageId": "sha256:3e7b627a7e739e29bf38d29edde2e2141d61a632e9ff97293ef1c2f05f233fc9",
+    "runtime": "Next development server, real PostgreSQL/GraphJin/embedding/OpenShell/model; route compilation excluded from server startup phases",
+    "branch": "codex/startup-ready-path",
+    "sourceDiffSHA256": "14b61e6a0b26d24bc9ea0cab6a7f1af18cc17039de760af9ce5f63f1652a2193"
+  },
+  "samples": [
+    {
+      "scenario": "warm-hot",
+      "repetition": 0,
+      "turn": 0,
+      "runId": "9740ae75-7c22-4c4d-8163-63ff99318ee7",
+      "status": "completed",
+      "ackSeconds": 2.120032582897693,
+      "totalSeconds": 27.895502457977273,
+      "streamExitCode": 22,
+      "readyMs": 5795.464750000001,
+      "phases": [
+        {
+          "phase": "run.link",
+          "elapsedMs": 162.88525000000118
+        },
+        {
+          "phase": "run.save_user_message",
+          "elapsedMs": 172.9177920000002,
+          "durationMs": 9.042542000001049,
+          "ok": true
+        },
+        {
+          "phase": "http.ack_ready",
+          "elapsedMs": 174.14025000000038,
+          "durationMs": 173
+        },
+        {
+          "phase": "http.response",
+          "elapsedMs": 174.4577079999999
+        },
+        {
+          "phase": "http.submit",
+          "elapsedMs": 174.58991700000115,
+          "durationMs": 174.5102079999997,
+          "ok": true
+        },
+        {
+          "phase": "run.mark_running",
+          "elapsedMs": 180.64600000000064,
+          "durationMs": 6.53374999999869,
+          "ok": true
+        },
+        {
+          "phase": "run.load_thread",
+          "elapsedMs": 214.4527080000007,
+          "durationMs": 33.62570799999958,
+          "ok": true
+        },
+        {
+          "phase": "config.backend",
+          "elapsedMs": 217.34700000000157,
+          "durationMs": 2.523749999998472,
+          "ok": true
+        },
+        {
+          "phase": "workspace.prepare",
+          "elapsedMs": 220.12083300000086,
+          "durationMs": 2.5600409999988187,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.snapshot_read",
+          "elapsedMs": 223.95604200000162,
+          "durationMs": 0.6716250000008586,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.cache",
+          "elapsedMs": 224.1455420000002,
+          "outcome": "hit"
+        },
+        {
+          "phase": "knowledge.prefetch",
+          "elapsedMs": 224.28441700000076,
+          "durationMs": 3.9955840000002354,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.read_pack",
+          "elapsedMs": 225.08150000000023,
+          "durationMs": 0.6972910000004049,
+          "ok": true
+        },
+        {
+          "phase": "identity.resolve",
+          "elapsedMs": 228.85220800000025,
+          "durationMs": 3.387124999999287,
+          "ok": true
+        },
+        {
+          "phase": "config.graphjin",
+          "elapsedMs": 244.21820800000023,
+          "durationMs": 1.6751670000012382,
+          "ok": true
+        },
+        {
+          "phase": "context.compaction",
+          "elapsedMs": 244.63429200000064,
+          "durationMs": 0.16316700000061246,
+          "ok": true
+        },
+        {
+          "phase": "context.persona",
+          "elapsedMs": 254.34275000000162,
+          "durationMs": 5.742125000000669,
+          "ok": true
+        },
+        {
+          "phase": "context.skills",
+          "elapsedMs": 268.40204200000153,
+          "durationMs": 19.80975000000035,
+          "ok": true
+        },
+        {
+          "phase": "context.memory",
+          "elapsedMs": 1454.380000000001,
+          "durationMs": 1205.7939159999987,
+          "ok": true
+        },
+        {
+          "phase": "identity.sandbox",
+          "elapsedMs": 1483.3491250000006,
+          "durationMs": 11.780500000000757,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.stage",
+          "elapsedMs": 1648.8922080000011,
+          "durationMs": 98.69900000000052,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.staging_cache",
+          "elapsedMs": 1650.3667080000014,
+          "outcome": "hit"
+        },
+        {
+          "phase": "sandbox.acquire",
+          "elapsedMs": 1667.2762920000005,
+          "durationMs": 4.86029199999939,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.warm_provider",
+          "elapsedMs": 1691.7002920000014,
+          "durationMs": 23.559665999999197,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.warm_policy",
+          "elapsedMs": 4401.51475,
+          "durationMs": 2704.446,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_reconcile",
+          "elapsedMs": 4630.2149580000005,
+          "durationMs": 2950.8702080000003,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.config_upload",
+          "elapsedMs": 5789.906625000001,
+          "durationMs": 1073.1942500000005,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_upload",
+          "elapsedMs": 5794.734625000001,
+          "durationMs": 1066.3915410000009,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_sync",
+          "elapsedMs": 5795.042708000001,
+          "durationMs": 4126.8525420000005,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_delta",
+          "elapsedMs": 5795.276250000001,
+          "files": 7,
+          "changed": 1,
+          "bytes": 54321
+        },
+        {
+          "phase": "sandbox.config_delta",
+          "elapsedMs": 5795.3840420000015,
+          "files": 2,
+          "changed": 2,
+          "bytes": 317
+        },
+        {
+          "phase": "sandbox.warm_bind",
+          "elapsedMs": 5795.464750000001,
+          "durationMs": 4127.703583999999,
+          "ok": true
+        },
+        {
+          "phase": "run.first_assistant_output",
+          "elapsedMs": 25370.561458
+        },
+        {
+          "phase": "sandbox.exec",
+          "elapsedMs": 25791.309208000002,
+          "durationMs": 19746.710999999996,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "scenario": "warm-hot",
+      "repetition": 0,
+      "turn": 1,
+      "runId": "452c217b-7940-4d20-91f6-36cfd5bbce32",
+      "status": "completed",
+      "ackSeconds": 0.19937158399261534,
+      "totalSeconds": 16.559401542064734,
+      "streamExitCode": 22,
+      "readyMs": 3964.6690830000007,
+      "phases": [
+        {
+          "phase": "run.link",
+          "elapsedMs": 128.67320800000016
+        },
+        {
+          "phase": "run.save_user_message",
+          "elapsedMs": 153.9610410000023,
+          "durationMs": 24.564666999998735,
+          "ok": true
+        },
+        {
+          "phase": "http.ack_ready",
+          "elapsedMs": 155.68545799999993,
+          "durationMs": 156
+        },
+        {
+          "phase": "http.response",
+          "elapsedMs": 156.2561659999992
+        },
+        {
+          "phase": "http.submit",
+          "elapsedMs": 157.15883300000132,
+          "durationMs": 157.13487500000338,
+          "ok": true
+        },
+        {
+          "phase": "run.mark_running",
+          "elapsedMs": 162.8982079999987,
+          "durationMs": 7.3807500000039,
+          "ok": true
+        },
+        {
+          "phase": "run.load_thread",
+          "elapsedMs": 194.38779100000102,
+          "durationMs": 29.914999999993597,
+          "ok": true
+        },
+        {
+          "phase": "config.backend",
+          "elapsedMs": 201.57579099999566,
+          "durationMs": 6.846917000002577,
+          "ok": true
+        },
+        {
+          "phase": "workspace.prepare",
+          "elapsedMs": 212.50345799999923,
+          "durationMs": 7.741374999997788,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.snapshot_read",
+          "elapsedMs": 232.7468749999971,
+          "durationMs": 6.132540999999037,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.cache",
+          "elapsedMs": 235.2174159999995,
+          "outcome": "hit"
+        },
+        {
+          "phase": "knowledge.prefetch",
+          "elapsedMs": 237.3764999999985,
+          "durationMs": 24.554416999999376,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.read_pack",
+          "elapsedMs": 247.87900000000081,
+          "durationMs": 8.227041999998619,
+          "ok": true
+        },
+        {
+          "phase": "identity.resolve",
+          "elapsedMs": 262.86916599999677,
+          "durationMs": 11.043042000004789,
+          "ok": true
+        },
+        {
+          "phase": "config.graphjin",
+          "elapsedMs": 634.125374999996,
+          "durationMs": 37.63037500000064,
+          "ok": true
+        },
+        {
+          "phase": "context.compaction",
+          "elapsedMs": 635.7854579999985,
+          "durationMs": 1.3630830000038259,
+          "ok": true
+        },
+        {
+          "phase": "context.persona",
+          "elapsedMs": 684.2202909999978,
+          "durationMs": 22.00037500000326,
+          "ok": true
+        },
+        {
+          "phase": "context.skills",
+          "elapsedMs": 757.9807910000018,
+          "durationMs": 95.79170800000429,
+          "ok": true
+        },
+        {
+          "phase": "context.memory",
+          "elapsedMs": 3573.426249999997,
+          "durationMs": 2911.265582999993,
+          "ok": true
+        },
+        {
+          "phase": "identity.sandbox",
+          "elapsedMs": 3579.383999999998,
+          "durationMs": 2.4705420000027516,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.stage",
+          "elapsedMs": 3611.972290999998,
+          "durationMs": 24.974292000006244,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.staging_cache",
+          "elapsedMs": 3612.4551250000004,
+          "outcome": "hit"
+        },
+        {
+          "phase": "sandbox.acquire",
+          "elapsedMs": 3650.205249999999,
+          "durationMs": 0.5967090000049211,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_reconcile",
+          "elapsedMs": 3902.0072910000017,
+          "durationMs": 248.29104099999677,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_upload",
+          "elapsedMs": 3963.3280000000013,
+          "durationMs": 57.76375000000553,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_sync",
+          "elapsedMs": 3964.075082999996,
+          "durationMs": 313.58050000000367,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_delta",
+          "elapsedMs": 3964.257749999997,
+          "files": 7,
+          "changed": 1,
+          "bytes": 54493
+        },
+        {
+          "phase": "sandbox.config_delta",
+          "elapsedMs": 3964.592375,
+          "files": 2,
+          "changed": 0,
+          "bytes": 0
+        },
+        {
+          "phase": "sandbox.warm_bind",
+          "elapsedMs": 3964.6690830000007,
+          "durationMs": 314.30020800000057,
+          "ok": true
+        },
+        {
+          "phase": "run.first_assistant_output",
+          "elapsedMs": 16135.611665999997
+        },
+        {
+          "phase": "sandbox.exec",
+          "elapsedMs": 16351.682165999999,
+          "durationMs": 12382.010042000002,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "scenario": "warm-hot",
+      "repetition": 0,
+      "turn": 2,
+      "runId": "b86c4c9d-2c4c-4f3d-8af7-f39a4fb5654c",
+      "status": "completed",
+      "ackSeconds": 0.25560379191301763,
+      "totalSeconds": 13.783200124977157,
+      "streamExitCode": 22,
+      "readyMs": 2584.4201660000035,
+      "phases": [
+        {
+          "phase": "run.link",
+          "elapsedMs": 166.21683300000586
+        },
+        {
+          "phase": "run.save_user_message",
+          "elapsedMs": 193.71395800000028,
+          "durationMs": 23.405624999999418,
+          "ok": true
+        },
+        {
+          "phase": "http.ack_ready",
+          "elapsedMs": 195.08408300000156,
+          "durationMs": 195
+        },
+        {
+          "phase": "http.response",
+          "elapsedMs": 196.4201250000042
+        },
+        {
+          "phase": "http.submit",
+          "elapsedMs": 196.92029100000218,
+          "durationMs": 196.9006659999941,
+          "ok": true
+        },
+        {
+          "phase": "run.mark_running",
+          "elapsedMs": 208.84075000000303,
+          "durationMs": 13.908374999999069,
+          "ok": true
+        },
+        {
+          "phase": "run.load_thread",
+          "elapsedMs": 226.2085830000069,
+          "durationMs": 16.59195799999725,
+          "ok": true
+        },
+        {
+          "phase": "config.backend",
+          "elapsedMs": 230.6186250000028,
+          "durationMs": 4.103332999999111,
+          "ok": true
+        },
+        {
+          "phase": "workspace.prepare",
+          "elapsedMs": 260.11820800000714,
+          "durationMs": 26.88041599999997,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.snapshot_read",
+          "elapsedMs": 270.4471660000054,
+          "durationMs": 4.290791999999783,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.cache",
+          "elapsedMs": 271.00187500000175,
+          "outcome": "hit"
+        },
+        {
+          "phase": "knowledge.prefetch",
+          "elapsedMs": 271.20908300000156,
+          "durationMs": 10.235915999997815,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.read_pack",
+          "elapsedMs": 272.58641600000556,
+          "durationMs": 1.1216249999997672,
+          "ok": true
+        },
+        {
+          "phase": "identity.resolve",
+          "elapsedMs": 284.8295000000071,
+          "durationMs": 11.97570899999846,
+          "ok": true
+        },
+        {
+          "phase": "config.graphjin",
+          "elapsedMs": 291.2877080000035,
+          "durationMs": 1.7637909999975818,
+          "ok": true
+        },
+        {
+          "phase": "context.compaction",
+          "elapsedMs": 292.23341600000276,
+          "durationMs": 0.28295799999614246,
+          "ok": true
+        },
+        {
+          "phase": "context.persona",
+          "elapsedMs": 645.2797500000015,
+          "durationMs": 42.241916999999376,
+          "ok": true
+        },
+        {
+          "phase": "context.skills",
+          "elapsedMs": 755.2495000000054,
+          "durationMs": 152.34145900000294,
+          "ok": true
+        },
+        {
+          "phase": "context.memory",
+          "elapsedMs": 1315.1914160000015,
+          "durationMs": 712.6521670000002,
+          "ok": true
+        },
+        {
+          "phase": "identity.sandbox",
+          "elapsedMs": 1324.278333000002,
+          "durationMs": 5.185040999997,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.stage",
+          "elapsedMs": 1397.3947500000068,
+          "durationMs": 47.27729199999885,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.staging_cache",
+          "elapsedMs": 1398.076000000001,
+          "outcome": "hit"
+        },
+        {
+          "phase": "sandbox.acquire",
+          "elapsedMs": 1408.8692500000034,
+          "durationMs": 0.27895900000294205,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_reconcile",
+          "elapsedMs": 2331.890333000003,
+          "durationMs": 913.2262499999997,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_upload",
+          "elapsedMs": 2583.2871250000026,
+          "durationMs": 249.2609999999986,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_sync",
+          "elapsedMs": 2584.040666000001,
+          "durationMs": 1172.5623750000013,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_delta",
+          "elapsedMs": 2584.259416000001,
+          "files": 7,
+          "changed": 1,
+          "bytes": 54665
+        },
+        {
+          "phase": "sandbox.config_delta",
+          "elapsedMs": 2584.339875000005,
+          "files": 2,
+          "changed": 0,
+          "bytes": 0
+        },
+        {
+          "phase": "sandbox.warm_bind",
+          "elapsedMs": 2584.4201660000035,
+          "durationMs": 1173.270832999995,
+          "ok": true
+        },
+        {
+          "phase": "run.first_assistant_output",
+          "elapsedMs": 13548.40225
+        },
+        {
+          "phase": "sandbox.exec",
+          "elapsedMs": 13647.01950000001,
+          "durationMs": 11001.049249999996,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "scenario": "warm-hot",
+      "repetition": 1,
+      "turn": 0,
+      "runId": "fcdb15a4-4198-4019-aeb0-578a50a4d447",
+      "status": "completed",
+      "ackSeconds": 1.8555683749727905,
+      "totalSeconds": 25.600118833011948,
+      "streamExitCode": 0,
+      "readyMs": 2794.970833000001,
+      "phases": [
+        {
+          "phase": "run.link",
+          "elapsedMs": 186.65329100000054
+        },
+        {
+          "phase": "run.save_user_message",
+          "elapsedMs": 197.6645410000001,
+          "durationMs": 10.445666999999958,
+          "ok": true
+        },
+        {
+          "phase": "http.ack_ready",
+          "elapsedMs": 198.7465000000011,
+          "durationMs": 198
+        },
+        {
+          "phase": "http.response",
+          "elapsedMs": 199.01670800000102
+        },
+        {
+          "phase": "http.submit",
+          "elapsedMs": 199.13100000000122,
+          "durationMs": 199.0296670000007,
+          "ok": true
+        },
+        {
+          "phase": "run.mark_running",
+          "elapsedMs": 203.57416600000033,
+          "durationMs": 4.852582999999868,
+          "ok": true
+        },
+        {
+          "phase": "run.load_thread",
+          "elapsedMs": 252.36770800000158,
+          "durationMs": 48.61041599999953,
+          "ok": true
+        },
+        {
+          "phase": "config.backend",
+          "elapsedMs": 257.79091600000174,
+          "durationMs": 4.862042000000656,
+          "ok": true
+        },
+        {
+          "phase": "workspace.prepare",
+          "elapsedMs": 261.74633300000096,
+          "durationMs": 3.5962079999990237,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.snapshot_read",
+          "elapsedMs": 265.8393330000017,
+          "durationMs": 0.8682909999988624,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.cache",
+          "elapsedMs": 266.0024160000012,
+          "outcome": "hit"
+        },
+        {
+          "phase": "knowledge.prefetch",
+          "elapsedMs": 266.13708300000144,
+          "durationMs": 4.2242499999993015,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.read_pack",
+          "elapsedMs": 266.82050000000163,
+          "durationMs": 0.5835409999999683,
+          "ok": true
+        },
+        {
+          "phase": "identity.resolve",
+          "elapsedMs": 272.67320800000016,
+          "durationMs": 5.011708999998518,
+          "ok": true
+        },
+        {
+          "phase": "config.graphjin",
+          "elapsedMs": 297.58350000000064,
+          "durationMs": 2.5311669999991864,
+          "ok": true
+        },
+        {
+          "phase": "context.compaction",
+          "elapsedMs": 298.0783330000013,
+          "durationMs": 0.15612500000133878,
+          "ok": true
+        },
+        {
+          "phase": "context.persona",
+          "elapsedMs": 310.4935000000005,
+          "durationMs": 6.244667000000845,
+          "ok": true
+        },
+        {
+          "phase": "context.skills",
+          "elapsedMs": 333.11883300000045,
+          "durationMs": 28.826499999999214,
+          "ok": true
+        },
+        {
+          "phase": "context.memory",
+          "elapsedMs": 1484.1684160000004,
+          "durationMs": 1179.9649580000005,
+          "ok": true
+        },
+        {
+          "phase": "identity.sandbox",
+          "elapsedMs": 1493.9932910000007,
+          "durationMs": 4.102041000000099,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.stage",
+          "elapsedMs": 1589.074791000001,
+          "durationMs": 65.61449999999968,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.staging_cache",
+          "elapsedMs": 1589.3995410000007,
+          "outcome": "hit"
+        },
+        {
+          "phase": "sse.subscribe",
+          "elapsedMs": 15.923415999999634,
+          "durationMs": 15.889375000000655,
+          "ok": true
+        },
+        {
+          "phase": "sse.first_event",
+          "elapsedMs": 1684.3334160000013,
+          "durationMs": 2.9160420000007434
+        },
+        {
+          "phase": "sandbox.acquire",
+          "elapsedMs": 1689.5546250000007,
+          "durationMs": 4.677874999999403,
+          "ok": true
+        },
+        {
+          "phase": "sse.listen",
+          "elapsedMs": 36.123083000000406,
+          "durationMs": 21.4242090000007,
+          "ok": true
+        },
+        {
+          "phase": "sse.hello",
+          "elapsedMs": 36.47899999999936,
+          "durationMs": 21.854291999999987
+        },
+        {
+          "phase": "sandbox.warm_provider",
+          "elapsedMs": 1704.6668750000008,
+          "durationMs": 14.510458999999173,
+          "ok": true
+        },
+        {
+          "phase": "sse.initial_db_read",
+          "elapsedMs": 42.72149999999965,
+          "durationMs": 6.127500000000509,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_reconcile",
+          "elapsedMs": 2622.7130830000006,
+          "durationMs": 926.3970829999998,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_upload",
+          "elapsedMs": 2754.250333,
+          "durationMs": 128.64508299999943,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.config_upload",
+          "elapsedMs": 2756.9360000000015,
+          "durationMs": 129.30587500000001,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_sync",
+          "elapsedMs": 2757.303583000001,
+          "durationMs": 1067.0789999999997,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_delta",
+          "elapsedMs": 2757.542166000001,
+          "files": 7,
+          "changed": 1,
+          "bytes": 54321
+        },
+        {
+          "phase": "sandbox.config_delta",
+          "elapsedMs": 2757.624750000001,
+          "files": 2,
+          "changed": 2,
+          "bytes": 317
+        },
+        {
+          "phase": "sandbox.warm_policy",
+          "elapsedMs": 2794.6657080000004,
+          "durationMs": 1089.706209,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.warm_bind",
+          "elapsedMs": 2794.970833000001,
+          "durationMs": 1105.2792919999993,
+          "ok": true
+        },
+        {
+          "phase": "run.first_assistant_output",
+          "elapsedMs": 21063.741875
+        },
+        {
+          "phase": "sse.first_output",
+          "elapsedMs": 21082.575458,
+          "durationMs": 19401.149834000003
+        },
+        {
+          "phase": "sandbox.exec",
+          "elapsedMs": 21087.857540999998,
+          "durationMs": 18177.30375,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "scenario": "warm-hot",
+      "repetition": 1,
+      "turn": 1,
+      "runId": "03a0917d-1546-45da-8d02-ad5a095eccab",
+      "status": "completed",
+      "ackSeconds": 0.0634238749044016,
+      "totalSeconds": 11.571894874912687,
+      "streamExitCode": 0,
+      "readyMs": 2824.008834,
+      "phases": [
+        {
+          "phase": "run.link",
+          "elapsedMs": 29.93183400000271
+        },
+        {
+          "phase": "run.save_user_message",
+          "elapsedMs": 39.28162500000326,
+          "durationMs": 8.890749999998661,
+          "ok": true
+        },
+        {
+          "phase": "http.ack_ready",
+          "elapsedMs": 39.9865839999984,
+          "durationMs": 40
+        },
+        {
+          "phase": "http.response",
+          "elapsedMs": 40.573334000000614
+        },
+        {
+          "phase": "http.submit",
+          "elapsedMs": 40.72779200000514,
+          "durationMs": 40.70662500000617,
+          "ok": true
+        },
+        {
+          "phase": "run.mark_running",
+          "elapsedMs": 45.518042000003334,
+          "durationMs": 5.577624999998079,
+          "ok": true
+        },
+        {
+          "phase": "run.load_thread",
+          "elapsedMs": 49.59095900000102,
+          "durationMs": 3.8508339999971213,
+          "ok": true
+        },
+        {
+          "phase": "config.backend",
+          "elapsedMs": 50.81141700000444,
+          "durationMs": 1.0267920000042068,
+          "ok": true
+        },
+        {
+          "phase": "workspace.prepare",
+          "elapsedMs": 61.75066700000025,
+          "durationMs": 10.761040999997931,
+          "ok": true
+        },
+        {
+          "phase": "sse.subscribe",
+          "elapsedMs": 8.062958000002254,
+          "durationMs": 8.047416000001249,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.snapshot_read",
+          "elapsedMs": 68.11612500000047,
+          "durationMs": 3.3632500000021537,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.cache",
+          "elapsedMs": 68.30304199999955,
+          "outcome": "hit"
+        },
+        {
+          "phase": "knowledge.prefetch",
+          "elapsedMs": 68.41170899999997,
+          "durationMs": 6.487499999995634,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.read_pack",
+          "elapsedMs": 70.03949999999895,
+          "durationMs": 1.5379160000011325,
+          "ok": true
+        },
+        {
+          "phase": "identity.resolve",
+          "elapsedMs": 72.0994170000049,
+          "durationMs": 1.8814169999968726,
+          "ok": true
+        },
+        {
+          "phase": "sse.listen",
+          "elapsedMs": 19.557916000005207,
+          "durationMs": 11.762041000001773,
+          "ok": true
+        },
+        {
+          "phase": "sse.hello",
+          "elapsedMs": 20.409458000001905,
+          "durationMs": 12.625334000003932
+        },
+        {
+          "phase": "sse.initial_db_read",
+          "elapsedMs": 22.553500000001804,
+          "durationMs": 1.865749999997206,
+          "ok": true
+        },
+        {
+          "phase": "sse.first_event",
+          "elapsedMs": 86.3627919999999,
+          "durationMs": 20.15908400000626
+        },
+        {
+          "phase": "config.graphjin",
+          "elapsedMs": 88.78687499999796,
+          "durationMs": 2.206083999997645,
+          "ok": true
+        },
+        {
+          "phase": "context.compaction",
+          "elapsedMs": 89.0147500000021,
+          "durationMs": 0.05695799999375595,
+          "ok": true
+        },
+        {
+          "phase": "context.persona",
+          "elapsedMs": 104.61641700000473,
+          "durationMs": 8.795750000004773,
+          "ok": true
+        },
+        {
+          "phase": "context.skills",
+          "elapsedMs": 117.61416699999972,
+          "durationMs": 21.839417000002868,
+          "ok": true
+        },
+        {
+          "phase": "context.memory",
+          "elapsedMs": 1067.1554170000018,
+          "durationMs": 971.4251660000009,
+          "ok": true
+        },
+        {
+          "phase": "identity.sandbox",
+          "elapsedMs": 1091.2740840000042,
+          "durationMs": 20.24291600000288,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.stage",
+          "elapsedMs": 1175.0726670000004,
+          "durationMs": 57.83608300000196,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.staging_cache",
+          "elapsedMs": 1175.515833999998,
+          "outcome": "hit"
+        },
+        {
+          "phase": "sandbox.acquire",
+          "elapsedMs": 1253.6784590000025,
+          "durationMs": 0.3158340000009048,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_reconcile",
+          "elapsedMs": 1591.9827920000025,
+          "durationMs": 334.02308300000004,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_upload",
+          "elapsedMs": 2822.692167000001,
+          "durationMs": 1228.080750000001,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_sync",
+          "elapsedMs": 2823.6039999999994,
+          "durationMs": 1569.5815829999992,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_delta",
+          "elapsedMs": 2823.830584000003,
+          "files": 7,
+          "changed": 1,
+          "bytes": 54493
+        },
+        {
+          "phase": "sandbox.config_delta",
+          "elapsedMs": 2823.921417000005,
+          "files": 2,
+          "changed": 0,
+          "bytes": 0
+        },
+        {
+          "phase": "sandbox.warm_bind",
+          "elapsedMs": 2824.008834,
+          "durationMs": 1570.2007499999963,
+          "ok": true
+        },
+        {
+          "phase": "run.first_assistant_output",
+          "elapsedMs": 11341.562666999998
+        },
+        {
+          "phase": "sse.first_output",
+          "elapsedMs": 11356.195459000002,
+          "durationMs": 11289.869834000005
+        },
+        {
+          "phase": "sandbox.exec",
+          "elapsedMs": 11365.391209000001,
+          "durationMs": 8521.670041999998,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "scenario": "warm-hot",
+      "repetition": 1,
+      "turn": 2,
+      "runId": "390e2007-1a0c-4112-b467-b97f0cee2fad",
+      "status": "completed",
+      "ackSeconds": 0.0580611249897629,
+      "totalSeconds": 8.955138333956711,
+      "streamExitCode": 0,
+      "readyMs": 544.1763330000031,
+      "phases": [
+        {
+          "phase": "run.link",
+          "elapsedMs": 27.007458000000042
+        },
+        {
+          "phase": "run.save_user_message",
+          "elapsedMs": 36.910125000002154,
+          "durationMs": 9.396499999995285,
+          "ok": true
+        },
+        {
+          "phase": "http.ack_ready",
+          "elapsedMs": 37.81058300000586,
+          "durationMs": 38
+        },
+        {
+          "phase": "http.response",
+          "elapsedMs": 38.07233300000371
+        },
+        {
+          "phase": "http.submit",
+          "elapsedMs": 38.185333000001265,
+          "durationMs": 38.177332999999635,
+          "ok": true
+        },
+        {
+          "phase": "run.mark_running",
+          "elapsedMs": 43.05579100000614,
+          "durationMs": 5.692042000002402,
+          "ok": true
+        },
+        {
+          "phase": "run.load_thread",
+          "elapsedMs": 46.936875000006694,
+          "durationMs": 3.709374999998545,
+          "ok": true
+        },
+        {
+          "phase": "config.backend",
+          "elapsedMs": 48.05541600000288,
+          "durationMs": 0.9611250000016298,
+          "ok": true
+        },
+        {
+          "phase": "workspace.prepare",
+          "elapsedMs": 55.546000000002095,
+          "durationMs": 7.354417000002286,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.snapshot_read",
+          "elapsedMs": 67.40766600000643,
+          "durationMs": 3.7583749999976135,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.cache",
+          "elapsedMs": 67.59375,
+          "outcome": "hit"
+        },
+        {
+          "phase": "knowledge.prefetch",
+          "elapsedMs": 67.69350000000122,
+          "durationMs": 12.014875000000757,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.read_pack",
+          "elapsedMs": 69.39495800000441,
+          "durationMs": 1.606208000004699,
+          "ok": true
+        },
+        {
+          "phase": "sse.subscribe",
+          "elapsedMs": 8.141540999997233,
+          "durationMs": 8.119916000003286,
+          "ok": true
+        },
+        {
+          "phase": "identity.resolve",
+          "elapsedMs": 71.4910000000018,
+          "durationMs": 1.9295830000046408,
+          "ok": true
+        },
+        {
+          "phase": "sse.first_event",
+          "elapsedMs": 78.45883300000423,
+          "durationMs": 8.143332999999984
+        },
+        {
+          "phase": "config.graphjin",
+          "elapsedMs": 80.38112499999988,
+          "durationMs": 1.6727500000051805,
+          "ok": true
+        },
+        {
+          "phase": "context.compaction",
+          "elapsedMs": 80.59100000000035,
+          "durationMs": 0.053875000005064066,
+          "ok": true
+        },
+        {
+          "phase": "sse.listen",
+          "elapsedMs": 21.94333299999562,
+          "durationMs": 14.09375,
+          "ok": true
+        },
+        {
+          "phase": "sse.hello",
+          "elapsedMs": 22.326540999994904,
+          "durationMs": 14.502458000002662
+        },
+        {
+          "phase": "sse.initial_db_read",
+          "elapsedMs": 24.982958000000508,
+          "durationMs": 2.5582910000011907,
+          "ok": true
+        },
+        {
+          "phase": "context.persona",
+          "elapsedMs": 94.53141600000527,
+          "durationMs": 8.783959000000323,
+          "ok": true
+        },
+        {
+          "phase": "context.skills",
+          "elapsedMs": 117.74816600000486,
+          "durationMs": 31.998082999998587,
+          "ok": true
+        },
+        {
+          "phase": "context.memory",
+          "elapsedMs": 170.96920800000225,
+          "durationMs": 85.2592500000028,
+          "ok": true
+        },
+        {
+          "phase": "identity.sandbox",
+          "elapsedMs": 176.28925000000163,
+          "durationMs": 4.0494589999943855,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.stage",
+          "elapsedMs": 227.4262080000044,
+          "durationMs": 40.684958999998344,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.staging_cache",
+          "elapsedMs": 227.82808300000033,
+          "outcome": "hit"
+        },
+        {
+          "phase": "sandbox.acquire",
+          "elapsedMs": 236.90120800000295,
+          "durationMs": 0.29616600000008475,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_reconcile",
+          "elapsedMs": 414.2926660000012,
+          "durationMs": 173.36450000000332,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_upload",
+          "elapsedMs": 543.1997080000001,
+          "durationMs": 126.39945799999987,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_sync",
+          "elapsedMs": 543.8570410000029,
+          "durationMs": 305.7231659999961,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_delta",
+          "elapsedMs": 544.0347500000062,
+          "files": 7,
+          "changed": 1,
+          "bytes": 54665
+        },
+        {
+          "phase": "sandbox.config_delta",
+          "elapsedMs": 544.1112080000021,
+          "files": 2,
+          "changed": 0,
+          "bytes": 0
+        },
+        {
+          "phase": "sandbox.warm_bind",
+          "elapsedMs": 544.1763330000031,
+          "durationMs": 307.0879170000044,
+          "ok": true
+        },
+        {
+          "phase": "run.first_assistant_output",
+          "elapsedMs": 8777.110375000004
+        },
+        {
+          "phase": "sse.first_output",
+          "elapsedMs": 8787.693583,
+          "durationMs": 8717.293124999997
+        },
+        {
+          "phase": "sandbox.exec",
+          "elapsedMs": 8805.340875000002,
+          "durationMs": 8251.737666,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "scenario": "warm-hot",
+      "repetition": 2,
+      "turn": 0,
+      "runId": "4d626b4b-7a75-4bdf-bdf6-28a007ac6555",
+      "status": "completed",
+      "ackSeconds": 2.5804175829980522,
+      "totalSeconds": 17.89024304097984,
+      "streamExitCode": 0,
+      "readyMs": 1773.5975829999988,
+      "phases": [
+        {
+          "phase": "run.link",
+          "elapsedMs": 420.14545799999905
+        },
+        {
+          "phase": "run.save_user_message",
+          "elapsedMs": 433.95304099999885,
+          "durationMs": 13.170625000000655,
+          "ok": true
+        },
+        {
+          "phase": "http.ack_ready",
+          "elapsedMs": 435.27958299999955,
+          "durationMs": 434
+        },
+        {
+          "phase": "http.response",
+          "elapsedMs": 435.66250000000036
+        },
+        {
+          "phase": "http.submit",
+          "elapsedMs": 435.79220799999894,
+          "durationMs": 435.6850409999988,
+          "ok": true
+        },
+        {
+          "phase": "run.mark_running",
+          "elapsedMs": 440.801958,
+          "durationMs": 5.562207999999373,
+          "ok": true
+        },
+        {
+          "phase": "run.load_thread",
+          "elapsedMs": 496.7857499999991,
+          "durationMs": 55.65850000000137,
+          "ok": true
+        },
+        {
+          "phase": "config.backend",
+          "elapsedMs": 500.4892499999987,
+          "durationMs": 3.1250830000008136,
+          "ok": true
+        },
+        {
+          "phase": "workspace.prepare",
+          "elapsedMs": 504.28829099999894,
+          "durationMs": 3.5639160000009724,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.snapshot_read",
+          "elapsedMs": 513.216375,
+          "durationMs": 1.3276249999998981,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.cache",
+          "elapsedMs": 513.7780829999992,
+          "outcome": "hit"
+        },
+        {
+          "phase": "knowledge.prefetch",
+          "elapsedMs": 514.0874160000003,
+          "durationMs": 9.641833999998198,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.read_pack",
+          "elapsedMs": 516.1854160000003,
+          "durationMs": 1.9712079999990237,
+          "ok": true
+        },
+        {
+          "phase": "identity.resolve",
+          "elapsedMs": 519.6580409999988,
+          "durationMs": 2.9667089999984455,
+          "ok": true
+        },
+        {
+          "phase": "config.graphjin",
+          "elapsedMs": 550.3746659999997,
+          "durationMs": 2.2381660000010015,
+          "ok": true
+        },
+        {
+          "phase": "context.compaction",
+          "elapsedMs": 550.8344159999997,
+          "durationMs": 0.15758400000049733,
+          "ok": true
+        },
+        {
+          "phase": "context.persona",
+          "elapsedMs": 579.4911249999986,
+          "durationMs": 20.49512499999946,
+          "ok": true
+        },
+        {
+          "phase": "context.skills",
+          "elapsedMs": 601.3623329999991,
+          "durationMs": 42.392125000000306,
+          "ok": true
+        },
+        {
+          "phase": "context.memory",
+          "elapsedMs": 643.9583750000002,
+          "durationMs": 85.05212500000016,
+          "ok": true
+        },
+        {
+          "phase": "identity.sandbox",
+          "elapsedMs": 649.8754579999986,
+          "durationMs": 3.6295829999999114,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.stage",
+          "elapsedMs": 686.5565829999996,
+          "durationMs": 24.87249999999949,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.staging_cache",
+          "elapsedMs": 686.9026249999988,
+          "outcome": "hit"
+        },
+        {
+          "phase": "sandbox.acquire",
+          "elapsedMs": 698.2352080000001,
+          "durationMs": 1.1325830000005226,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.warm_provider",
+          "elapsedMs": 720.2117909999997,
+          "durationMs": 20.842666999998983,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_reconcile",
+          "elapsedMs": 961.8921250000003,
+          "durationMs": 252.03212500000154,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_upload",
+          "elapsedMs": 1097.6211249999997,
+          "durationMs": 124.29545800000051,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.config_upload",
+          "elapsedMs": 1129.9122079999997,
+          "durationMs": 160.84458300000006,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_sync",
+          "elapsedMs": 1130.5327909999996,
+          "durationMs": 430.91729099999975,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_delta",
+          "elapsedMs": 1130.835165999999,
+          "files": 7,
+          "changed": 1,
+          "bytes": 54321
+        },
+        {
+          "phase": "sandbox.config_delta",
+          "elapsedMs": 1131.2364159999997,
+          "files": 2,
+          "changed": 2,
+          "bytes": 317
+        },
+        {
+          "phase": "sandbox.warm_policy",
+          "elapsedMs": 1772.172541,
+          "durationMs": 1051.484833999999,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.warm_bind",
+          "elapsedMs": 1773.5975829999988,
+          "durationMs": 1074.8309579999986,
+          "ok": true
+        },
+        {
+          "phase": "sse.subscribe",
+          "elapsedMs": 13.585500000001048,
+          "durationMs": 13.48583299999882,
+          "ok": true
+        },
+        {
+          "phase": "sse.listen",
+          "elapsedMs": 29.657791999999972,
+          "durationMs": 17.42816700000003,
+          "ok": true
+        },
+        {
+          "phase": "sse.hello",
+          "elapsedMs": 30.62420899999961,
+          "durationMs": 18.474874999999884
+        },
+        {
+          "phase": "sse.initial_db_read",
+          "elapsedMs": 34.84520900000098,
+          "durationMs": 4.016875000001164,
+          "ok": true
+        },
+        {
+          "phase": "sse.first_event",
+          "elapsedMs": 35.21429200000057,
+          "durationMs": 23.08008300000074
+        },
+        {
+          "phase": "run.first_assistant_output",
+          "elapsedMs": 13733.942208
+        },
+        {
+          "phase": "sse.first_output",
+          "elapsedMs": 13754.374041,
+          "durationMs": 11652.139291
+        },
+        {
+          "phase": "sandbox.exec",
+          "elapsedMs": 13867.292915999999,
+          "durationMs": 12079.993790999999,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "scenario": "warm-hot",
+      "repetition": 2,
+      "turn": 1,
+      "runId": "51719443-2b1e-44b6-9cd8-04324dc85572",
+      "status": "completed",
+      "ackSeconds": 0.06998258293606341,
+      "totalSeconds": 7.546006290940568,
+      "streamExitCode": 0,
+      "readyMs": 403.48333300000013,
+      "phases": [
+        {
+          "phase": "run.link",
+          "elapsedMs": 38.50429200000144
+        },
+        {
+          "phase": "run.save_user_message",
+          "elapsedMs": 47.699250000001484,
+          "durationMs": 8.760999999998603,
+          "ok": true
+        },
+        {
+          "phase": "http.ack_ready",
+          "elapsedMs": 48.135332999998354,
+          "durationMs": 48
+        },
+        {
+          "phase": "http.response",
+          "elapsedMs": 48.35591700000077
+        },
+        {
+          "phase": "http.submit",
+          "elapsedMs": 48.467375000000175,
+          "durationMs": 48.458707999998296,
+          "ok": true
+        },
+        {
+          "phase": "run.mark_running",
+          "elapsedMs": 56.022375000000466,
+          "durationMs": 7.912000000000262,
+          "ok": true
+        },
+        {
+          "phase": "run.load_thread",
+          "elapsedMs": 61.18366700000115,
+          "durationMs": 4.979500000001281,
+          "ok": true
+        },
+        {
+          "phase": "config.backend",
+          "elapsedMs": 62.24679200000173,
+          "durationMs": 0.9214579999970738,
+          "ok": true
+        },
+        {
+          "phase": "sse.subscribe",
+          "elapsedMs": 5.335750000002008,
+          "durationMs": 5.323083999999653,
+          "ok": true
+        },
+        {
+          "phase": "workspace.prepare",
+          "elapsedMs": 74.6505419999994,
+          "durationMs": 12.252541000001656,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.snapshot_read",
+          "elapsedMs": 77.97350000000006,
+          "durationMs": 1.1612500000010186,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.cache",
+          "elapsedMs": 78.14870800000062,
+          "outcome": "hit"
+        },
+        {
+          "phase": "knowledge.prefetch",
+          "elapsedMs": 78.24533299999894,
+          "durationMs": 3.4353750000009313,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.read_pack",
+          "elapsedMs": 79.05937500000073,
+          "durationMs": 0.7275000000008731,
+          "ok": true
+        },
+        {
+          "phase": "identity.resolve",
+          "elapsedMs": 80.30383300000176,
+          "durationMs": 1.1201660000006086,
+          "ok": true
+        },
+        {
+          "phase": "sse.listen",
+          "elapsedMs": 18.05329200000051,
+          "durationMs": 13.030041999998502,
+          "ok": true
+        },
+        {
+          "phase": "sse.hello",
+          "elapsedMs": 18.394750000003114,
+          "durationMs": 13.393875000001572
+        },
+        {
+          "phase": "sse.initial_db_read",
+          "elapsedMs": 19.855584000000817,
+          "durationMs": 1.3647909999999683,
+          "ok": true
+        },
+        {
+          "phase": "sse.first_event",
+          "elapsedMs": 91.81770799999867,
+          "durationMs": 19.320332999999664
+        },
+        {
+          "phase": "config.graphjin",
+          "elapsedMs": 93.61908300000141,
+          "durationMs": 1.6314579999998386,
+          "ok": true
+        },
+        {
+          "phase": "context.compaction",
+          "elapsedMs": 93.84245799999917,
+          "durationMs": 0.0772499999984575,
+          "ok": true
+        },
+        {
+          "phase": "context.persona",
+          "elapsedMs": 102.84387499999866,
+          "durationMs": 5.2977089999985765,
+          "ok": true
+        },
+        {
+          "phase": "context.skills",
+          "elapsedMs": 115.80016700000124,
+          "durationMs": 18.263833000000886,
+          "ok": true
+        },
+        {
+          "phase": "context.memory",
+          "elapsedMs": 151.31725000000006,
+          "durationMs": 53.81287499999962,
+          "ok": true
+        },
+        {
+          "phase": "identity.sandbox",
+          "elapsedMs": 154.46849999999904,
+          "durationMs": 2.377874999998312,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.stage",
+          "elapsedMs": 191.54799999999886,
+          "durationMs": 30.92450000000099,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.staging_cache",
+          "elapsedMs": 192.11395800000173,
+          "outcome": "hit"
+        },
+        {
+          "phase": "sandbox.acquire",
+          "elapsedMs": 203.85012500000084,
+          "durationMs": 0.3105409999989206,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_reconcile",
+          "elapsedMs": 336.3463330000013,
+          "durationMs": 129.44295899999997,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_upload",
+          "elapsedMs": 402.26587500000096,
+          "durationMs": 63.86791699999958,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_sync",
+          "elapsedMs": 402.9913750000014,
+          "durationMs": 198.7678330000017,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_delta",
+          "elapsedMs": 403.3054579999989,
+          "files": 7,
+          "changed": 1,
+          "bytes": 54493
+        },
+        {
+          "phase": "sandbox.config_delta",
+          "elapsedMs": 403.40599999999904,
+          "files": 2,
+          "changed": 0,
+          "bytes": 0
+        },
+        {
+          "phase": "sandbox.warm_bind",
+          "elapsedMs": 403.48333300000013,
+          "durationMs": 199.50816699999996,
+          "ok": true
+        },
+        {
+          "phase": "run.first_assistant_output",
+          "elapsedMs": 7375.869125000001
+        },
+        {
+          "phase": "sse.first_output",
+          "elapsedMs": 7384.844667000001,
+          "durationMs": 7312.334583
+        },
+        {
+          "phase": "sandbox.exec",
+          "elapsedMs": 7416.5995,
+          "durationMs": 6998.281750000002,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "scenario": "warm-hot",
+      "repetition": 2,
+      "turn": 2,
+      "runId": "270a0a59-6bf0-45e5-adac-0ef929e0e945",
+      "status": "completed",
+      "ackSeconds": 0.1065447919536382,
+      "totalSeconds": 7.803308666916564,
+      "streamExitCode": 0,
+      "readyMs": 474.53741699999955,
+      "phases": [
+        {
+          "phase": "run.link",
+          "elapsedMs": 57.517416999995476
+        },
+        {
+          "phase": "run.save_user_message",
+          "elapsedMs": 79.90141700000095,
+          "durationMs": 21.380457999999635,
+          "ok": true
+        },
+        {
+          "phase": "http.ack_ready",
+          "elapsedMs": 80.90470799999457,
+          "durationMs": 80
+        },
+        {
+          "phase": "http.response",
+          "elapsedMs": 81.56987500000105
+        },
+        {
+          "phase": "http.submit",
+          "elapsedMs": 81.87858299999789,
+          "durationMs": 81.86133400000108,
+          "ok": true
+        },
+        {
+          "phase": "run.mark_running",
+          "elapsedMs": 89.46441699999559,
+          "durationMs": 8.617959000002884,
+          "ok": true
+        },
+        {
+          "phase": "run.load_thread",
+          "elapsedMs": 93.88737499999843,
+          "durationMs": 4.140207999997074,
+          "ok": true
+        },
+        {
+          "phase": "config.backend",
+          "elapsedMs": 95.47729199999594,
+          "durationMs": 1.3522500000035507,
+          "ok": true
+        },
+        {
+          "phase": "workspace.prepare",
+          "elapsedMs": 109.3467079999973,
+          "durationMs": 13.712125000005472,
+          "ok": true
+        },
+        {
+          "phase": "sse.subscribe",
+          "elapsedMs": 8.529750000001513,
+          "durationMs": 8.514582999996492,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.snapshot_read",
+          "elapsedMs": 118.78349999999773,
+          "durationMs": 4.801583000000392,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.cache",
+          "elapsedMs": 119.33112499999697,
+          "outcome": "hit"
+        },
+        {
+          "phase": "knowledge.prefetch",
+          "elapsedMs": 119.50366699999722,
+          "durationMs": 9.846707999997307,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.read_pack",
+          "elapsedMs": 124.73741699999664,
+          "durationMs": 5.11308299999655,
+          "ok": true
+        },
+        {
+          "phase": "identity.resolve",
+          "elapsedMs": 127.99191699999938,
+          "durationMs": 2.2748330000031274,
+          "ok": true
+        },
+        {
+          "phase": "sse.listen",
+          "elapsedMs": 29.998500000001513,
+          "durationMs": 21.855624999996508,
+          "ok": true
+        },
+        {
+          "phase": "sse.hello",
+          "elapsedMs": 30.766042000002926,
+          "durationMs": 22.645958000000974
+        },
+        {
+          "phase": "sse.first_event",
+          "elapsedMs": 137.0613749999975,
+          "durationMs": 25.819792000002053
+        },
+        {
+          "phase": "sse.initial_db_read",
+          "elapsedMs": 35.204334000001836,
+          "durationMs": 4.343499999995402,
+          "ok": true
+        },
+        {
+          "phase": "config.graphjin",
+          "elapsedMs": 139.06524999999965,
+          "durationMs": 1.8677080000052229,
+          "ok": true
+        },
+        {
+          "phase": "context.compaction",
+          "elapsedMs": 139.23833299999387,
+          "durationMs": 0.03716599999461323,
+          "ok": true
+        },
+        {
+          "phase": "context.persona",
+          "elapsedMs": 149.9342919999981,
+          "durationMs": 4.2910829999964335,
+          "ok": true
+        },
+        {
+          "phase": "context.skills",
+          "elapsedMs": 182.83595799999603,
+          "durationMs": 37.20316599999933,
+          "ok": true
+        },
+        {
+          "phase": "context.memory",
+          "elapsedMs": 204.5265419999996,
+          "durationMs": 58.959374999998545,
+          "ok": true
+        },
+        {
+          "phase": "identity.sandbox",
+          "elapsedMs": 209.60895799999707,
+          "durationMs": 3.8420829999959096,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.stage",
+          "elapsedMs": 247.22275000000081,
+          "durationMs": 33.13933399999951,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.staging_cache",
+          "elapsedMs": 247.479416999995,
+          "outcome": "hit"
+        },
+        {
+          "phase": "sandbox.acquire",
+          "elapsedMs": 262.4202499999956,
+          "durationMs": 0.32654099999490427,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_reconcile",
+          "elapsedMs": 376.6187499999942,
+          "durationMs": 107.90108399999735,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_upload",
+          "elapsedMs": 472.94637499999953,
+          "durationMs": 94.36054200000217,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.inputs_sync",
+          "elapsedMs": 474.0514999999941,
+          "durationMs": 211.21912499999598,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.workspace_delta",
+          "elapsedMs": 474.31466699999874,
+          "files": 7,
+          "changed": 1,
+          "bytes": 54665
+        },
+        {
+          "phase": "sandbox.config_delta",
+          "elapsedMs": 474.4354999999996,
+          "files": 2,
+          "changed": 0,
+          "bytes": 0
+        },
+        {
+          "phase": "sandbox.warm_bind",
+          "elapsedMs": 474.53741699999955,
+          "durationMs": 211.99524999999994,
+          "ok": true
+        },
+        {
+          "phase": "run.first_assistant_output",
+          "elapsedMs": 7657.8218329999945
+        },
+        {
+          "phase": "sse.first_output",
+          "elapsedMs": 7664.683124999996,
+          "durationMs": 7553.423499999997
+        },
+        {
+          "phase": "sandbox.exec",
+          "elapsedMs": 7699.784583000001,
+          "durationMs": 7210.4306670000005,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "scenario": "cold",
+      "repetition": 0,
+      "turn": 0,
+      "runId": "809a786a-7e7e-40aa-b5c6-e33ef08c0dad",
+      "status": "completed",
+      "ackSeconds": 2.416208624956198,
+      "totalSeconds": 19.658728124923073,
+      "streamExitCode": 0,
+      "readyMs": 4619.883333,
+      "phases": [
+        {
+          "phase": "run.link",
+          "elapsedMs": 901.8317079999997
+        },
+        {
+          "phase": "run.save_user_message",
+          "elapsedMs": 920.7724169999992,
+          "durationMs": 17.948707999999897,
+          "ok": true
+        },
+        {
+          "phase": "http.ack_ready",
+          "elapsedMs": 922.3126249999996,
+          "durationMs": 921
+        },
+        {
+          "phase": "http.response",
+          "elapsedMs": 923.1432919999997
+        },
+        {
+          "phase": "http.submit",
+          "elapsedMs": 923.4722499999998,
+          "durationMs": 923.3621659999999,
+          "ok": true
+        },
+        {
+          "phase": "run.mark_running",
+          "elapsedMs": 943.660167,
+          "durationMs": 21.384790999999495,
+          "ok": true
+        },
+        {
+          "phase": "run.load_thread",
+          "elapsedMs": 988.9862919999996,
+          "durationMs": 44.97449999999935,
+          "ok": true
+        },
+        {
+          "phase": "config.backend",
+          "elapsedMs": 992.8009169999996,
+          "durationMs": 3.440875000000233,
+          "ok": true
+        },
+        {
+          "phase": "workspace.prepare",
+          "elapsedMs": 1011.3377079999991,
+          "durationMs": 18.19154200000048,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.snapshot_read",
+          "elapsedMs": 1022.7266669999999,
+          "durationMs": 3.9864580000003116,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.cache",
+          "elapsedMs": 1023.4144579999993,
+          "outcome": "hit"
+        },
+        {
+          "phase": "knowledge.prefetch",
+          "elapsedMs": 1023.8530419999997,
+          "durationMs": 12.204917000000023,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.read_pack",
+          "elapsedMs": 1026.3216249999996,
+          "durationMs": 2.0681660000000193,
+          "ok": true
+        },
+        {
+          "phase": "identity.resolve",
+          "elapsedMs": 1032.0930419999995,
+          "durationMs": 4.205832999999984,
+          "ok": true
+        },
+        {
+          "phase": "config.graphjin",
+          "elapsedMs": 1067.6615829999992,
+          "durationMs": 4.5575840000001335,
+          "ok": true
+        },
+        {
+          "phase": "context.compaction",
+          "elapsedMs": 1068.6928329999992,
+          "durationMs": 0.5466249999999491,
+          "ok": true
+        },
+        {
+          "phase": "context.persona",
+          "elapsedMs": 1095.4795419999991,
+          "durationMs": 17.748459000000366,
+          "ok": true
+        },
+        {
+          "phase": "context.skills",
+          "elapsedMs": 1129.3067919999994,
+          "durationMs": 51.616415999999845,
+          "ok": true
+        },
+        {
+          "phase": "context.memory",
+          "elapsedMs": 1473.0407499999992,
+          "durationMs": 395.4433340000005,
+          "ok": true
+        },
+        {
+          "phase": "identity.sandbox",
+          "elapsedMs": 1492.5457499999993,
+          "durationMs": 7.302499999999782,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.stage",
+          "elapsedMs": 2529.886624999999,
+          "durationMs": 937.3445419999998,
+          "ok": true
+        },
+        {
+          "phase": "sse.subscribe",
+          "elapsedMs": 53.63129100000151,
+          "durationMs": 53.52245799999946,
+          "ok": true
+        },
+        {
+          "phase": "sse.listen",
+          "elapsedMs": 67.71362500000032,
+          "durationMs": 18.78770799999984,
+          "ok": true
+        },
+        {
+          "phase": "sse.hello",
+          "elapsedMs": 68.55658300000141,
+          "durationMs": 19.76324999999997
+        },
+        {
+          "phase": "sse.initial_db_read",
+          "elapsedMs": 72.21866600000067,
+          "durationMs": 3.4731659999997646,
+          "ok": true
+        },
+        {
+          "phase": "sse.first_event",
+          "elapsedMs": 72.59195800000089,
+          "durationMs": 23.812958000000435
+        },
+        {
+          "phase": "sandbox.create_upload",
+          "elapsedMs": 4619.883333,
+          "durationMs": 2069.385958,
+          "ok": true
+        },
+        {
+          "phase": "run.first_assistant_output",
+          "elapsedMs": 15444.260041999998
+        },
+        {
+          "phase": "sse.first_output",
+          "elapsedMs": 15458.932708,
+          "durationMs": 12145.574707999998
+        },
+        {
+          "phase": "sandbox.exec",
+          "elapsedMs": 15496.113875,
+          "durationMs": 10856.976332999999,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.delete",
+          "elapsedMs": 16037.447874999998,
+          "durationMs": 539.640625,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "scenario": "cold",
+      "repetition": 1,
+      "turn": 0,
+      "runId": "f72c6eeb-3386-49da-9cb4-8ef2e2a4768a",
+      "status": "completed",
+      "ackSeconds": 1.883582792012021,
+      "totalSeconds": 17.217643417068757,
+      "streamExitCode": 0,
+      "readyMs": 2261.5999999999995,
+      "phases": [
+        {
+          "phase": "run.link",
+          "elapsedMs": 244.92529100000047
+        },
+        {
+          "phase": "run.save_user_message",
+          "elapsedMs": 259.28408300000046,
+          "durationMs": 13.303791000000274,
+          "ok": true
+        },
+        {
+          "phase": "http.ack_ready",
+          "elapsedMs": 260.29025,
+          "durationMs": 260
+        },
+        {
+          "phase": "http.response",
+          "elapsedMs": 260.5660830000006
+        },
+        {
+          "phase": "http.submit",
+          "elapsedMs": 260.68837500000063,
+          "durationMs": 260.59379199999967,
+          "ok": true
+        },
+        {
+          "phase": "run.mark_running",
+          "elapsedMs": 266.6549160000004,
+          "durationMs": 6.38958300000013,
+          "ok": true
+        },
+        {
+          "phase": "run.load_thread",
+          "elapsedMs": 290.41029100000014,
+          "durationMs": 23.528542000000016,
+          "ok": true
+        },
+        {
+          "phase": "config.backend",
+          "elapsedMs": 293.6958330000007,
+          "durationMs": 2.978208999999879,
+          "ok": true
+        },
+        {
+          "phase": "workspace.prepare",
+          "elapsedMs": 298.33154100000047,
+          "durationMs": 4.380041999999776,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.snapshot_read",
+          "elapsedMs": 307.34799999999996,
+          "durationMs": 2.3539160000000265,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.cache",
+          "elapsedMs": 307.7053329999999,
+          "outcome": "hit"
+        },
+        {
+          "phase": "knowledge.prefetch",
+          "elapsedMs": 308.01145799999995,
+          "durationMs": 9.479167000000416,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.read_pack",
+          "elapsedMs": 309.6980830000002,
+          "durationMs": 1.4070000000001528,
+          "ok": true
+        },
+        {
+          "phase": "identity.resolve",
+          "elapsedMs": 313.96600000000035,
+          "durationMs": 3.808499999999185,
+          "ok": true
+        },
+        {
+          "phase": "config.graphjin",
+          "elapsedMs": 330.7879579999999,
+          "durationMs": 2.139874999999847,
+          "ok": true
+        },
+        {
+          "phase": "context.compaction",
+          "elapsedMs": 331.3531659999999,
+          "durationMs": 0.2759590000005119,
+          "ok": true
+        },
+        {
+          "phase": "context.persona",
+          "elapsedMs": 349.3162910000001,
+          "durationMs": 12.449791000000005,
+          "ok": true
+        },
+        {
+          "phase": "context.skills",
+          "elapsedMs": 361.537875,
+          "durationMs": 24.690582999999606,
+          "ok": true
+        },
+        {
+          "phase": "context.memory",
+          "elapsedMs": 1189.9674160000004,
+          "durationMs": 853.1349580000006,
+          "ok": true
+        },
+        {
+          "phase": "identity.sandbox",
+          "elapsedMs": 1196.6585000000005,
+          "durationMs": 3.663166999999703,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.stage",
+          "elapsedMs": 1383.9525830000002,
+          "durationMs": 177.54320800000005,
+          "ok": true
+        },
+        {
+          "phase": "sse.subscribe",
+          "elapsedMs": 9.397791999999754,
+          "durationMs": 9.347249999999804,
+          "ok": true
+        },
+        {
+          "phase": "sse.listen",
+          "elapsedMs": 23.07262499999979,
+          "durationMs": 14.634415999999874,
+          "ok": true
+        },
+        {
+          "phase": "sse.hello",
+          "elapsedMs": 23.774999999999636,
+          "durationMs": 15.395790999999917
+        },
+        {
+          "phase": "sse.initial_db_read",
+          "elapsedMs": 25.721832999999606,
+          "durationMs": 1.821416999999201,
+          "ok": true
+        },
+        {
+          "phase": "sse.first_event",
+          "elapsedMs": 26.022874999999658,
+          "durationMs": 17.648291000000427
+        },
+        {
+          "phase": "sandbox.create_upload",
+          "elapsedMs": 2261.5999999999995,
+          "durationMs": 867.3135409999995,
+          "ok": true
+        },
+        {
+          "phase": "run.first_assistant_output",
+          "elapsedMs": 13784.644958
+        },
+        {
+          "phase": "sse.first_output",
+          "elapsedMs": 13794.329041,
+          "durationMs": 12195.715250000001
+        },
+        {
+          "phase": "sandbox.exec",
+          "elapsedMs": 13810.464082999999,
+          "durationMs": 11519.200542,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.delete",
+          "elapsedMs": 14240.273249999998,
+          "durationMs": 429.28462500000023,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "scenario": "cold",
+      "repetition": 2,
+      "turn": 0,
+      "runId": "e9d60297-3f1b-40dc-bdac-81c0a3175e44",
+      "status": "completed",
+      "ackSeconds": 1.6830420410260558,
+      "totalSeconds": 19.372009958024137,
+      "streamExitCode": 0,
+      "readyMs": 2456.1989170000006,
+      "phases": [
+        {
+          "phase": "run.link",
+          "elapsedMs": 225.0236670000004
+        },
+        {
+          "phase": "run.save_user_message",
+          "elapsedMs": 237.88316700000087,
+          "durationMs": 12.134208999999828,
+          "ok": true
+        },
+        {
+          "phase": "http.ack_ready",
+          "elapsedMs": 238.94516700000077,
+          "durationMs": 239
+        },
+        {
+          "phase": "http.response",
+          "elapsedMs": 239.24866700000075
+        },
+        {
+          "phase": "http.submit",
+          "elapsedMs": 239.386125,
+          "durationMs": 239.30208299999958,
+          "ok": true
+        },
+        {
+          "phase": "run.mark_running",
+          "elapsedMs": 246.9672500000006,
+          "durationMs": 8.052165999999488,
+          "ok": true
+        },
+        {
+          "phase": "run.load_thread",
+          "elapsedMs": 280.03262500000073,
+          "durationMs": 32.852084000000104,
+          "ok": true
+        },
+        {
+          "phase": "config.backend",
+          "elapsedMs": 284.6652920000006,
+          "durationMs": 4.147541999999703,
+          "ok": true
+        },
+        {
+          "phase": "workspace.prepare",
+          "elapsedMs": 291.7068340000005,
+          "durationMs": 6.445625000000291,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.snapshot_read",
+          "elapsedMs": 301.30675000000065,
+          "durationMs": 1.6126249999997526,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.cache",
+          "elapsedMs": 301.6546250000001,
+          "outcome": "hit"
+        },
+        {
+          "phase": "knowledge.prefetch",
+          "elapsedMs": 301.8327500000005,
+          "durationMs": 9.518332999999984,
+          "ok": true
+        },
+        {
+          "phase": "knowledge.read_pack",
+          "elapsedMs": 303.1632920000002,
+          "durationMs": 1.0924170000007507,
+          "ok": true
+        },
+        {
+          "phase": "identity.resolve",
+          "elapsedMs": 306.13970900000004,
+          "durationMs": 2.171166999999514,
+          "ok": true
+        },
+        {
+          "phase": "config.graphjin",
+          "elapsedMs": 340.7997090000008,
+          "durationMs": 2.802332999999635,
+          "ok": true
+        },
+        {
+          "phase": "context.compaction",
+          "elapsedMs": 341.3989590000001,
+          "durationMs": 0.22875000000021828,
+          "ok": true
+        },
+        {
+          "phase": "context.persona",
+          "elapsedMs": 361.3180420000008,
+          "durationMs": 11.122124999999869,
+          "ok": true
+        },
+        {
+          "phase": "context.skills",
+          "elapsedMs": 375.6477500000001,
+          "durationMs": 25.489207999999962,
+          "ok": true
+        },
+        {
+          "phase": "context.memory",
+          "elapsedMs": 1051.7943340000002,
+          "durationMs": 701.6772499999997,
+          "ok": true
+        },
+        {
+          "phase": "identity.sandbox",
+          "elapsedMs": 1058.4511670000002,
+          "durationMs": 3.915334000000257,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.stage",
+          "elapsedMs": 1252.6711670000004,
+          "durationMs": 180.57145799999944,
+          "ok": true
+        },
+        {
+          "phase": "sse.subscribe",
+          "elapsedMs": 8.982250000000022,
+          "durationMs": 8.940459000000374,
+          "ok": true
+        },
+        {
+          "phase": "sse.listen",
+          "elapsedMs": 24.036415999999917,
+          "durationMs": 16.04333299999962,
+          "ok": true
+        },
+        {
+          "phase": "sse.hello",
+          "elapsedMs": 24.56012499999997,
+          "durationMs": 16.622666999999637
+        },
+        {
+          "phase": "sse.initial_db_read",
+          "elapsedMs": 26.391332999999577,
+          "durationMs": 1.7422919999999067,
+          "ok": true
+        },
+        {
+          "phase": "sse.first_event",
+          "elapsedMs": 26.576583000000028,
+          "durationMs": 18.64350000000013
+        },
+        {
+          "phase": "sandbox.create_upload",
+          "elapsedMs": 2456.1989170000006,
+          "durationMs": 1190.3014169999997,
+          "ok": true
+        },
+        {
+          "phase": "run.first_assistant_output",
+          "elapsedMs": 14804.509709000002
+        },
+        {
+          "phase": "sse.first_output",
+          "elapsedMs": 14815.188709000002,
+          "durationMs": 13450.592166999999
+        },
+        {
+          "phase": "sandbox.exec",
+          "elapsedMs": 14834.243292,
+          "durationMs": 12358.656707999999,
+          "ok": true
+        },
+        {
+          "phase": "sandbox.delete",
+          "elapsedMs": 15286.359124999999,
+          "durationMs": 451.658875000001,
+          "ok": true
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "12/12 completed. First process had three SSE 404 responses; thread API polling confirmed terminal completion. Other nine streams succeeded.",
+    "Server ready metric excludes route compilation; end-to-end client totals include it and the fallback polling.",
+    "Same 7-file dataset and image as baseline; concurrent local eval work was not stopped.",
+    "An earlier observer-aborted attempt is excluded from timing aggregation and documented in the report."
+  ]
+}

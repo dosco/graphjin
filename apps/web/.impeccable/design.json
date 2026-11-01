@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-10T00:00:00Z",
+  "title": "Design System: OpenNeko Console",
+  "extensions": {
+    "colorMeta": {
+      "iris": { "role": "primary", "displayName": "Iris", "canonical": "#6B5CE7", "tonalRamp": ["#130c50","#1e127c","#2819a9","#331fd5","#5544e4","#7e71ea","#aea6f2","#dfdbfa"] },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#2D2A24", "tonalRamp": ["#333029","#4f4a3f","#6c6456","#887f6d","#a09888","#b6b0a4","#d2cec6","#edebe8"] },
+      "paper": { "role": "neutral", "displayName": "Paper", "canonical": "#FAFAF7", "tonalRamp": ["#333029","#4f4a3f","#6c6456","#887f6d","#a09888","#b6b0a4","#d2cec6","#edebe8"] },
+      "mint": { "role": "tertiary", "displayName": "Mint", "canonical": "#6CFF7F", "tonalRamp": ["#005c0c","#008f12","#00c219","#00f520","#29ff44","#5cff71","#99ffa6","#d6ffdb"] },
+      "pine": { "role": "tertiary", "displayName": "Pine", "canonical": "#357A57", "tonalRamp": [] },
+      "amber": { "role": "secondary", "displayName": "Amber", "canonical": "#E9A23B", "tonalRamp": ["#533509","#80520e","#ae6f14","#dc8c19","#e9a43e","#efb96c","#f5d3a3","#fbeeda"] },
+      "amber-ink": { "role": "secondary", "displayName": "Amber Ink", "canonical": "#7E6200", "tonalRamp": [] },
+      "brick": { "role": "tertiary", "displayName": "Brick", "canonical": "#A53535", "tonalRamp": ["#451616","#6c2323","#932f2f","#b93c3c","#cb5d5d","#d78383","#e6b2b2","#f5e0e0"] },
+      "coral": { "role": "tertiary", "displayName": "Coral", "canonical": "#F58A8A", "tonalRamp": [] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Entry statements and empty-state headlines only. Archivo 800." },
+      "headline": { "displayName": "Headline", "purpose": "The page title. Archivo 800." },
+      "body": { "displayName": "Body", "purpose": "Default reading and control text. Manrope." },
+      "label": { "displayName": "Label", "purpose": "Uppercase eyebrow and status labels. Manrope 800, letter-spaced. Used sparingly." }
+    },
+    "shadows": [
+      { "name": "rest", "value": "0 1px 3px rgba(20,18,12,0.04), 0 4px 16px rgba(20,18,12,0.03)", "purpose": "Default card and control resting shadow." },
+      { "name": "hover", "value": "0 2px 8px rgba(20,18,12,0.06), 0 12px 36px -8px rgba(20,18,12,0.07)", "purpose": "Raised state when a card lifts on hover." },
+      { "name": "lift", "value": "0 1px 2px rgba(20,18,12,0.04), 0 18px 48px -16px rgba(20,18,12,0.16)", "purpose": "Menus, popovers, and floating panels." },
+      { "name": "focus-ring", "value": "0 0 0 3px color-mix(in srgb, #6B5CE7 18%, transparent)", "purpose": "Input focus glow. Buttons use a 2px iris ring with a 2px paper offset instead." }
+    ],
+    "motion": [
+      { "name": "ease-standard", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Default easing for state transitions." },
+      { "name": "duration-control", "value": "150ms", "purpose": "Control state transitions (color, background, border, transform)." },
+      { "name": "agent-breathe", "value": "1.4s ease-in-out infinite", "purpose": "Soft breathing pulse that signals the agent is working. Honors prefers-reduced-motion." },
+      { "name": "hover-lift", "value": "translateY(-1px)", "purpose": "A card or button rises one pixel on hover; never a layout-property animation." }
+    ],
+    "breakpoints": [
+      { "name": "phone", "value": "720px" },
+      { "name": "tablet", "value": "768px" },
+      { "name": "tablet-landscape", "value": "1024px" },
+      { "name": "rail", "value": "1100px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single main action in a region. Near-black at rest, iris on hover.",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 6 9 17l-5-5\"/></svg>Approve action</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:8px 16px;border:1.5px solid #2D2A24;border-radius:10px;background:#2D2A24;color:#FAFAF7;font-family:'Manrope Variable',Manrope,sans-serif;font-weight:600;font-size:14px;line-height:1;box-shadow:0 2px 10px rgba(20,18,12,0.16);cursor:pointer;transition:color .15s,background-color .15s,border-color .15s,transform .15s,box-shadow .15s}.ds-btn-primary:hover{border-color:#6B5CE7;background:#6B5CE7;color:#fff;transform:translateY(-1px)}.ds-btn-primary:focus-visible{outline:none;box-shadow:0 0 0 2px #FAFAF7,0 0 0 4px #6B5CE7}.ds-btn-primary:active{transform:translateY(0)}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Ordinary visible actions. Hairline border, iris on hover.",
+      "html": "<button class=\"ds-btn-secondary\">View evidence</button>",
+      "css": ".ds-btn-secondary{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:8px 16px;border:1.5px solid #EEEBE4;border-radius:10px;background:rgba(255,255,255,0.85);color:#6F6A60;font-family:'Manrope Variable',Manrope,sans-serif;font-weight:600;font-size:14px;line-height:1;box-shadow:0 1px 3px rgba(20,18,12,0.04),0 4px 16px rgba(20,18,12,0.03);cursor:pointer;transition:color .15s,background-color .15s,border-color .15s,transform .15s}.ds-btn-secondary:hover{border-color:#6B5CE7;background:#EDE9FE;color:#6B5CE7;transform:translateY(-1px)}.ds-btn-secondary:focus-visible{outline:none;box-shadow:0 0 0 2px #FAFAF7,0 0 0 4px #6B5CE7}"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Destructive actions. Never disguised as secondary.",
+      "html": "<button class=\"ds-btn-danger\">Delete source</button>",
+      "css": ".ds-btn-danger{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:8px 16px;border:1.5px solid rgba(165,53,53,0.30);border-radius:10px;background:#FEECEC;color:#A53535;font-family:'Manrope Variable',Manrope,sans-serif;font-weight:600;font-size:14px;line-height:1;cursor:pointer;transition:color .15s,background-color .15s,border-color .15s,transform .15s}.ds-btn-danger:hover{border-color:#A53535;background:#A53535;color:#fff;transform:translateY(-1px)}.ds-btn-danger:focus-visible{outline:none;box-shadow:0 0 0 2px #FAFAF7,0 0 0 4px #A53535}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Labelled form control. Iris focus glow, no bare outline removal.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search workflows\" />",
+      "css": ".ds-input{width:100%;min-height:40px;padding:10px 14px;border:1.5px solid #EEEBE4;border-radius:10px;background:#fff;color:#2D2A24;font-family:'Manrope Variable',Manrope,sans-serif;font-size:14px;outline:none;transition:border-color .15s,box-shadow .15s,background-color .15s}.ds-input::placeholder{color:#756F65}.ds-input:hover{border-color:#756F65}.ds-input:focus-visible{border-color:#6B5CE7;box-shadow:0 0 0 3px rgba(107,92,231,0.18)}"
+    },
+    {
+      "name": "Status Pill (watch)",
+      "kind": "chip",
+      "refersTo": "pill-watch",
+      "description": "Compact row status. Amber-soft fill with the readable Amber Ink text.",
+      "html": "<span class=\"ds-pill-watch\">Needs review</span>",
+      "css": ".ds-pill-watch{display:inline-flex;align-items:center;min-height:24px;padding:4px 10px;border-radius:999px;background:#FFF1D8;color:#7E6200;border:1px solid rgba(233,162,59,0.30);font-family:'Manrope Variable',Manrope,sans-serif;font-weight:800;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;line-height:1;white-space:nowrap}"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "The default container. Surface on paper, soft resting shadow.",
+      "html": "<div class=\"ds-card\">Connected source: Magento. Last read 3 minutes ago.</div>",
+      "css": ".ds-card{background:#fff;border:1px solid #EEEBE4;border-radius:20px;box-shadow:0 1px 3px rgba(20,18,12,0.04),0 4px 16px rgba(20,18,12,0.03);padding:14px 16px;color:#2D2A24;font-family:'Manrope Variable',Manrope,sans-serif;font-size:14px;line-height:1.55}"
+    },
+    {
+      "name": "Insight / Briefing Card",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "The signature. What the agent found for you, coded by severity and awaiting your decision. The 4px stripe, tint, and hover border all follow one mood color.",
+      "html": "<div class=\"ds-icard\"><span class=\"ds-icard-pill\">Watch</span><div class=\"ds-icard-title\">Apple Pay place-order rate down 94% since 2:14am</div><p class=\"ds-icard-body\">Checkout still completes on card. The agent isolated the failing step and drafted a fix.</p><button class=\"ds-icard-act\">Review the fix</button></div>",
+      "css": ".ds-icard{position:relative;overflow:hidden;background:#fff;border:1px solid #EEEBE4;border-radius:20px;box-shadow:0 1px 3px rgba(20,18,12,0.04),0 4px 16px rgba(20,18,12,0.03);padding:16px 18px 16px 22px;color:#2D2A24;font-family:'Manrope Variable',Manrope,sans-serif;transition:box-shadow .3s,transform .3s,border-color .3s}.ds-icard::before{content:\"\";position:absolute;left:0;top:0;bottom:0;width:4px;background:#E9A23B;opacity:.85;border-radius:20px 0 0 20px}.ds-icard:hover{box-shadow:0 2px 8px rgba(20,18,12,0.06),0 12px 36px -8px rgba(20,18,12,0.07);transform:translateY(-1px);border-color:#E9A23B}.ds-icard-pill{display:inline-flex;align-items:center;min-height:22px;padding:3px 9px;border-radius:999px;background:#FFF1D8;color:#7E6200;border:1px solid rgba(233,162,59,0.30);font-weight:800;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;line-height:1}.ds-icard-title{margin:10px 0 4px;font-family:'Archivo Variable',Archivo,sans-serif;font-weight:800;font-size:16px;letter-spacing:-0.01em;line-height:1.25}.ds-icard-body{margin:0 0 12px;font-size:14px;line-height:1.55;color:#6F6A60}.ds-icard-act{display:inline-flex;align-items:center;min-height:36px;padding:7px 14px;border:1.5px solid #2D2A24;border-radius:10px;background:#2D2A24;color:#FAFAF7;font-family:'Manrope Variable',Manrope,sans-serif;font-weight:600;font-size:13px;line-height:1;cursor:pointer;transition:background-color .15s,border-color .15s,transform .15s}.ds-icard-act:hover{background:#6B5CE7;border-color:#6B5CE7;color:#fff;transform:translateY(-1px)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Command Deck",
+    "overview": "OpenNeko works your systems in the background like a tireless deputy. It watches the data, finds the operating risk, and drafts the next move. The console is the deck where you stand above that work. It surfaces what the agent found and what needs a ruling, and you decide. The agent proposes; you dispose. You are the operator, and nothing acts outside the policy you set.\n\nThe interface is built to feel proactive. Motion shows the agent at work: a soft breathing pulse on a running task, a live signal on a briefing that just landed. The screen opens on what changed while you were away, not an empty prompt waiting for input. Every finding carries its evidence and the one action that resolves it, so a decision is a single confident move.\n\nIt stays calm while it does this. Warm paper and near-black ink, one iris accent for the action that matters, and a fixed status vocabulary of mint, amber, and brick. Dark hero heads frame what is live; bright accents mark what needs you now. Control before autonomy: the agent is always working, and you are always in command.",
+    "keyCharacteristics": [
+      "Proactive by default: the agent works in the background and surfaces decisions.",
+      "The operator commands. Nothing acts outside the policy you set.",
+      "Motion signals live agent work; it is never decoration.",
+      "The screen opens on what changed, with the resolving action one move away.",
+      "Calm surface: warm paper, near-black ink, one iris accent, fixed status colors.",
+      "One product language across every surface, operator to CXO."
+    ],
+    "rules": [
+      { "name": "The Bright-on-Dark Rule", "body": "Mint and amber at full brightness belong on the dark hero heads and dark chips. On any light surface the same status reads through Pine (success) and Amber Ink (watch). Brick red is the danger text on light; Coral is the danger text on dark.", "section": "colors" },
+      { "name": "The Mood Rule", "body": "A card's severity drives one variable, --mood-color. That one value paints the card's 4px left stripe, its faint corner tint, and its hover border together, so the whole card agrees on one state.", "section": "colors" },
+      { "name": "The One Accent Rule", "body": "Iris marks the single primary action and the active state. If two things on a screen are iris, one of them is wrong.", "section": "colors" },
+      { "name": "The Two-Voice Rule", "body": "Archivo carries hierarchy. Manrope carries copy and controls. There is no third face. Monospace appears only for real data, indices, and measurements.", "section": "typography" },
+      { "name": "The Soft-Lift Rule", "body": "A card rests on the Rest shadow and, on hover, moves up one pixel to the Hover shadow. Elevation is a response to state, never a decoration applied at rest.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do make the console feel proactive. Show when the agent is working, and open a surface on what changed, not on an empty prompt. Put the resolving action within reach of the finding.",
+      "Do build every control from src/components/ui.",
+      "Do use semantic tokens from _tokens.css. Never write a literal color in TSX.",
+      "Do set display type in Archivo (font-display) and copy and controls in Manrope (font-body).",
+      "Do code status through the mood and status tokens, and keep bright Mint and Amber for dark surfaces while using Pine and Amber Ink for the same status on light.",
+      "Do keep 44px tap targets on phone, honor prefers-reduced-motion, and keep keyboard focus visible.",
+      "Do write sentence case, and make an error name the next step."
+    ],
+    "donts": [
+      "Don't add dark mode. The theme is light only.",
+      "Don't create page-local button, field, or status-pill styling, and don't add a raw native control without a data-ui-bespoke-reason.",
+      "Don't restyle Admin or Settings to look designed. They stay precise and quiet.",
+      "Don't put a bright accent (Mint, Amber) on small text over a light surface. It fails contrast; use Pine or Amber Ink.",
+      "Don't animate width, height, padding, or margin for hot-path motion. Use transform and opacity on controls, 100 to 200ms.",
+      "Don't use em-dashes, Title Case, hype words, or internal implementation terms in default copy."
+    ]
+  }
+}

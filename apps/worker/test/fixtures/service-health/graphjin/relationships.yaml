@@ -1,0 +1,4 @@
+key: relationships.health
+targetRef: service-health.relationships
+source: service_health
+relationships: []

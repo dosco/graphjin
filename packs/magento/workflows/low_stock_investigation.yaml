@@ -1,0 +1,15 @@
+key: workflow.low_stock_investigation
+targetRef: magento.workflow.low_stock_investigation
+name: Magento low-stock investigation
+description: Review source-level low stock and prepare a replenishment proposal.
+enabled: true
+status: active
+goal: >-
+  Use the magento-check-inventory skill to investigate low-stock SKUs across
+  MSI sources. Clearly label source quantity as an approximation unless salable
+  quantity has been validated. Prepare a replenishment proposal but do not
+  mutate inventory or create purchase orders.
+schedule: null
+outputContract:
+  kind: recommendation
+  required: [title, body, mood, evidence]

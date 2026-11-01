@@ -1,0 +1,429 @@
+/* ─── EXAMPLE DATA BANNER ─── */
+.example-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption); font-weight: 700;
+  color: var(--warn-ink); text-decoration: none;
+  background: var(--warn-soft); border: 1px solid var(--warn); border-radius: 999px;
+  padding: 6px 14px 6px 12px; margin-bottom: 16px;
+  transition: background 0.2s, border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+.example-banner::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 30%, transparent);
+}
+.example-banner:hover {
+  background: color-mix(in srgb, var(--warn-soft) 58%, var(--warn));
+  border-color: color-mix(in srgb, var(--warn) 72%, var(--warn-ink));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(138,109,0,0.12);
+}
+
+/* ─── GREETING ─── */
+.greet-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 700;
+  color: var(--text3);
+  margin-bottom: 12px;
+}
+.greet-eyebrow-rule {
+  width: 28px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.45;
+}
+.greet-eyebrow-accent {
+  color: var(--accent);
+}
+.greet {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-display); font-weight: 800; line-height: var(--leading-display); letter-spacing: -0.035em;
+  margin-bottom: 12px;
+  color: var(--text);
+}
+.greet em {
+  font-style: italic;
+  font-weight: 700;
+  color: var(--accent);
+}
+.greet-sub {
+  font-size: var(--type-body-lg);
+  color: var(--text2);
+  margin-bottom: 36px;
+  line-height: 1.45;
+  max-width: 62ch;
+}
+.greet-sub-quote {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: var(--type-section);
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+  color: var(--text2);
+  margin-bottom: 36px;
+  padding-left: 14px;
+  border-left: 2px solid var(--accent);
+  max-width: 56ch;
+}
+.date-note { font-size: var(--type-body); color: var(--text3); }
+
+/* Command strip: the proactive agent-at-work hero of the briefing. */
+.dash-command-roles { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+.dash-command {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius);
+  padding: 22px clamp(20px, 3vw, 30px) 24px;
+  margin-bottom: 26px;
+  background: var(--text);
+  color: var(--bg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), var(--shadow-lift);
+}
+.dash-command-sweep {
+  position: absolute; left: 0; right: 0; top: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--success) 22%, var(--accent) 80%, transparent);
+  transform-origin: left;
+  animation: dash-command-sweep 1.1s cubic-bezier(0.4, 0, 0.15, 1) both;
+}
+@keyframes dash-command-sweep { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.dash-command-status {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  margin-bottom: 16px;
+  font-size: var(--type-body-sm);
+  color: var(--on-dark-2);
+}
+.dash-command-pulse {
+  position: relative; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--success); flex: none;
+}
+.dash-command-pulse::after {
+  content: ""; position: absolute; inset: -5px; border-radius: 50%;
+  border: 1.5px solid var(--success); opacity: 0.5;
+  animation: dash-command-breathe 1.9s ease-in-out infinite;
+}
+@keyframes dash-command-breathe { 0%, 100% { transform: scale(1); opacity: 0.5; } 50% { transform: scale(1.5); opacity: 0; } }
+.dash-command-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--on-dark-3); flex: none; }
+.dash-command-stamp { font-variant-numeric: tabular-nums; font-size: var(--type-caption); color: var(--on-dark-3); }
+.dash-command-head {
+  margin: 0;
+  max-width: 26ch;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: clamp(26px, 3.2vw, 38px);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: var(--bg);
+}
+.dash-command-n { color: var(--success); }
+.dash-command-read {
+  margin: 13px 0 0;
+  max-width: 60ch;
+  font-size: var(--type-body-lg);
+  line-height: 1.5;
+  color: var(--on-dark-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .dash-command-sweep { animation: none; transform: scaleX(1); }
+  .dash-command-pulse::after { animation: none; opacity: 0; }
+}
+
+@media (max-width: 600px) {
+  .greet { font-size: var(--type-display); }
+  .greet-sub { font-size: var(--type-body); }
+}
+
+/* ─── SECTION LABEL ─── */
+.label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption); font-weight: 700;
+  color: var(--text3); margin-bottom: 12px;
+}
+/* ─── INSIGHT CARD ─── */
+.icard {
+  background: var(--card); border-radius: var(--radius); padding: 22px 24px;
+  margin-bottom: 12px; box-shadow: var(--shadow); cursor: pointer;
+  transition: box-shadow 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1), border-color 0.3s;
+  border: 1px solid var(--border);
+  position: relative; overflow: hidden;
+}
+.icard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(135deg, var(--mood-tint, transparent) 0%, transparent 45%);
+  opacity: 0.55;
+  border-radius: inherit;
+}
+.icard:has([data-ui-menu-trigger][aria-expanded="true"]) { overflow: visible; }
+.icard:hover { box-shadow: var(--shadow-h); transform: translateY(-1px); border-color: var(--mood-color, var(--accent)); }
+.icard.exp { border-color: var(--border); }
+.itop { display: flex; align-items: flex-start; gap: 14px; position: relative; z-index: 1; }
+.mdot { display: none; }
+.inum {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--mood-color, var(--accent));
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  margin-top: -3px;
+  flex-shrink: 0;
+  min-width: 40px;
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+.icard:hover .inum {
+  opacity: 1;
+}
+.icontent { flex: 1; min-width: 0; }
+.itext {
+  font-size: var(--type-subsection);
+  font-weight: 500;
+  line-height: 1.42;
+  color: var(--text);
+  letter-spacing: -0.005em;
+}
+.ieyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 700;
+  color: var(--mood-color, var(--text3));
+  margin-bottom: 8px;
+}
+.ieyebrow-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px var(--mood-tint, transparent);
+}
+
+.icard-toggle,
+.mobile-progressive-toggle {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .mobile-progressive-list:not(.is-expanded) > :nth-child(n + 4) {
+    display: none;
+  }
+
+  .mobile-progressive-toggle {
+    display: inline-flex;
+    margin-top: 10px;
+  }
+
+  .icard-toggle {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    min-height: var(--control-touch);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+    padding: 8px 0 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+    background: transparent;
+    color: var(--text2);
+    font: 700 var(--type-body-sm)/1.2 var(--font-body), "Manrope", sans-serif;
+    cursor: pointer;
+  }
+
+  .icard-toggle svg {
+    width: 16px;
+    height: 16px;
+    transition: transform 0.18s ease;
+  }
+
+  .icard-toggle svg.is-open {
+    transform: rotate(180deg);
+  }
+
+  .idetail.open[data-mobile-open="false"] {
+    max-height: 0;
+    margin-top: 0;
+    opacity: 0;
+  }
+}
+
+.icard[data-mood="good"] { --mood-color: var(--success-mid); --mood-tint: var(--success-soft); }
+.icard[data-mood="watch"] { --mood-color: var(--watch); --mood-tint: var(--watch-soft); }
+.icard[data-mood="act"],
+.icard[data-mood="bad"] { --mood-color: var(--danger); --mood-tint: var(--danger-soft); }
+/* KpiHeadline component — single shared style family for the metric +
+   label + delta row. Used by BriefingCard (size="card") and ChatBubble
+   (size="chat"). The two sizes only differ in the headline metric font. */
+.kpi { display: flex; align-items: baseline; gap: 14px; margin-top: 8px; flex-wrap: wrap; }
+.kpi-metric {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+}
+.kpi-card .kpi-metric { font-size: 22px; }
+.kpi-chat { margin-top: 0; margin-bottom: 10px; }
+.kpi-chat .kpi-metric { font-size: 38px; }
+.kpi-label {
+  font-size: var(--type-caption);
+  color: var(--text3);
+  font-weight: 600;
+}
+.kpi-delta {
+  font-size: var(--type-body-sm);
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.kpi-delta-up {
+  background: var(--success-soft);
+  color: var(--success-ink);
+  border: 1px solid color-mix(in srgb, var(--success) 40%, transparent);
+}
+.kpi-delta-down {
+  background: var(--watch-soft);
+  color: var(--warn-ink);
+}
+.kpi-delta-crash {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+
+/* ─── DASH: THE CALL (Act 1 — Awaiting alert) ─── */
+.dash-call {
+  margin: 0 0 36px;
+}
+.dash-call-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  font-size: var(--type-body);
+  font-weight: 600;
+  color: var(--text2);
+}
+.dash-call-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--watch);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--watch) 18%, transparent);
+  animation: dash-call-pulse 2.4s ease-in-out infinite;
+}
+@keyframes dash-call-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--watch) 18%, transparent); }
+  50%      { box-shadow: 0 0 0 7px color-mix(in srgb, var(--watch) 8%, transparent); }
+}
+.dash-call-label { color: var(--text2); }
+.dash-call-count {
+  margin-left: 2px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--watch);
+  color: var(--on-accent);
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.4;
+}
+.dash-call-skim {
+  margin-left: auto;
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: var(--type-body-sm);
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  opacity: 0.75;
+  transition: opacity 0.15s;
+}
+.dash-call-skim:hover { opacity: 1; text-decoration: underline; text-underline-offset: 3px; }
+
+.dash-call .act-card {
+  border-color: color-mix(in srgb, var(--watch) 40%, var(--border));
+}
+
+/* ─── DASH: THE PROOF (Act 3 — Fired disclosure) ─── */
+.dash-proof {
+  margin: 8px 0 28px;
+  border-top: 1px dashed var(--border);
+  padding-top: 18px;
+}
+.dash-proof[open] {
+  border-top-style: solid;
+}
+.dash-proof-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 2px;
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: var(--type-subsection);
+  color: var(--text2);
+  transition: color 0.15s;
+}
+.dash-proof-summary::-webkit-details-marker { display: none; }
+.dash-proof-summary:hover { color: var(--text); }
+.dash-proof-tick {
+  font-size: 20px;
+  color: var(--success-mid);
+  line-height: 1;
+  align-self: center;
+}
+.dash-proof-count {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+}
+.dash-proof-label {
+  color: var(--text2);
+  font-size: var(--type-subsection);
+}
+.dash-proof-caret {
+  margin-left: auto;
+  color: var(--text3);
+  font-size: var(--type-body-sm);
+  transition: transform 0.18s ease;
+  align-self: center;
+}
+.dash-proof[open] .dash-proof-caret { transform: rotate(90deg); }
+.dash-proof-body { margin-top: 14px; }
+
+@media (max-width: 600px) {
+  .dash-call { padding: 14px 14px 12px; }
+  .dash-call-eyebrow { flex-wrap: wrap; row-gap: 6px; }
+  .dash-call-skim { margin-left: 0; flex-basis: 100%; }
+}

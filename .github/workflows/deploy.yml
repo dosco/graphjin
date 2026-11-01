@@ -1,0 +1,203 @@
+name: Deploy to VM
+
+# Deploy only after the release images and post-release smoke pass. A main
+# supervisor can include Compose commands missing from the previous release's
+# images, which left web and worker stopped when the reaper was first added.
+on:
+  workflow_run:
+    workflows: ["post-release smoke"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vm
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Never expose deployment secrets to pull-request workflow runs.
+    # `workflow_run.name` includes the dynamic versioned run-name, so rely on
+    # the workflow trigger above and require a successful main-branch smoke.
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'main')
+      }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve smoked release
+        id: release
+        env:
+          UPSTREAM_TITLE: ${{ github.event.workflow_run.display_title }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag=$(curl -fsSL https://api.github.com/repos/open-neko/openneko/releases/latest | jq -r .tag_name)
+          elif [[ "$UPSTREAM_TITLE" =~ ^post-release\ smoke\ \((v[0-9]+\.[0-9]+\.[0-9]+)\)$ ]]; then
+            tag="${BASH_REMATCH[1]}"
+          else
+            echo "::error::post-release smoke did not identify an exact stable tag: $UPSTREAM_TITLE"
+            exit 1
+          fi
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_DEPLOY_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      # Keep the host CLI and service images on the same smoked release.
+      - name: Refresh supervisor and deploy the released stack
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_IMAGE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 \
+              "$SSH_USER@$SSH_HOST" \
+              "DEPLOY_IMAGE_TAG=$DEPLOY_IMAGE_TAG bash -se" <<'EOF' | tee "$RUNNER_TEMP/openneko-deploy.log"
+            set -euo pipefail
+            ARCH=$(uname -m)
+            case "$ARCH" in x86_64) GOARCH=amd64 ;; aarch64|arm64) GOARCH=arm64 ;; *) GOARCH=amd64 ;; esac
+            if [ -z "${DEPLOY_IMAGE_TAG:-}" ]; then
+              echo "[deploy] unable to resolve a released application image tag" >&2
+              exit 1
+            fi
+            TMP=$(mktemp -d)
+            curl -fsSL -o "$TMP/o.tgz" \
+              "https://github.com/open-neko/openneko/releases/download/$DEPLOY_IMAGE_TAG/openneko_${DEPLOY_IMAGE_TAG#v}_linux_${GOARCH}.tar.gz"
+            tar -xzf "$TMP/o.tgz" -C "$TMP" openneko
+            sudo install -m 0755 "$TMP/openneko" /usr/local/bin/openneko
+            rm -rf "$TMP"
+            echo "[deploy] installed released CLI $DEPLOY_IMAGE_TAG"
+
+            cd ~/openneko
+
+            # Reclaim disk without touching anything the stack — or the operator
+            # — still needs. `image prune` (no -a) drops only DANGLING layers:
+            # the debris left by earlier interrupted pulls, never a tagged or
+            # in-use image. The tag sweep then removes SUPERSEDED OpenNeko
+            # versions only (our own registry, minus the current tag); in-use
+            # images survive because `docker rmi` refuses them. No `-a`, no
+            # `system prune`, no volumes — so pinned/rollback images and the
+            # database volumes are never at risk. Every step is non-fatal.
+            reclaim_disk() {
+              docker image prune -f 2>/dev/null || true
+              CUR="${DEPLOY_IMAGE_TAG#v}"
+              if [ -n "$CUR" ]; then
+                docker images --format '{{.Repository}}:{{.Tag}}' \
+                  | grep '^ghcr.io/open-neko/' \
+                  | grep -v ":v$CUR\$" \
+                  | xargs -r docker rmi 2>/dev/null || true
+              fi
+            }
+
+            # Make room BEFORE the ~15GB pull. The old GC ran only afterwards —
+            # too late to free space for the pull itself — and two deploys died
+            # on ENOSPC as a result. Clearing interrupted-pull debris and any
+            # idle older versions up front is what actually prevents that.
+            reclaim_disk
+
+            # upgrade force-recreates one-shot init containers as well as the
+            # long-running services, which is required for the one-time move
+            # from the legacy default network to the fixed runtime network.
+            OPENNEKO_VERSION="$DEPLOY_IMAGE_TAG" OPENNEKO_PORT=80 \
+              openneko upgrade --mode demo --version "$DEPLOY_IMAGE_TAG" --no-prune
+            OPENNEKO_PORT=80 openneko status
+
+            REAPER=$(docker ps -q \
+              --filter label=com.docker.compose.project=openneko-demo \
+              --filter label=com.docker.compose.service=neko-reaper | head -1)
+            test -n "$REAPER"
+            test "$(docker inspect -f '{{.State.Health.Status}}' "$REAPER")" = healthy
+
+            WORKER=$(docker ps -q \
+              --filter label=com.docker.compose.project=openneko-demo \
+              --filter label=com.docker.compose.service=worker | head -1)
+            test -n "$WORKER"
+
+            # Container health is insufficient for a datasource deployment:
+            # require the authenticated worker -> GraphJin -> AdventureWorks
+            # path to return a real row before accepting the rollout.
+            docker exec "$WORKER" node --import tsx/esm --input-type=module --eval '
+              import { mintGraphjinToken, callGraphjinMcpTool } from "@neko/llm";
+              const token = mintGraphjinToken({
+                orgId: "adventureworks",
+                userId: null,
+                role: "service",
+              });
+              const response = await callGraphjinMcpTool({
+                baseUrl: "http://openneko-serve:8080/api/v1/mcp",
+                headers: { authorization: "Bearer " + token },
+                signal: AbortSignal.timeout(10_000),
+              }, {
+                name: "execute_graphql",
+                arguments: {
+                  query: "query { soh(limit: 1, order_by: { id: desc }) { id } }",
+                },
+              });
+              const text = response.content
+                .map((item) => item.type === "text" ? item.text : "")
+                .join("");
+              const payload = JSON.parse(text);
+              if (response.isError ||
+                  !Array.isArray(payload.data?.soh) ||
+                  payload.data.soh.length !== 1) {
+                throw new Error("authenticated datasource query failed");
+              }
+              console.log("authenticated_datasource_query=ok");
+            '
+
+            # Process liveness used to pass while pg-boss's schedule polling
+            # had silently stopped. Require a successful durable scheduler DB
+            # transaction after this worker boot before accepting the deploy.
+            scheduler_ok=false
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              if docker exec "$WORKER" node -e '
+                fetch("http://127.0.0.1:4100/health/scheduler")
+                  .then(async (response) => {
+                    const health = await response.json();
+                    if (!response.ok || health.status !== "ok" || !health.lastSuccessAt) {
+                      throw new Error(JSON.stringify(health));
+                    }
+                    console.log(`[deploy] scheduler healthy at ${health.lastSuccessAt}`);
+                  })
+                  .catch((error) => { console.error(error.message); process.exit(1); });
+              '; then
+                scheduler_ok=true
+                break
+              fi
+              echo "[deploy] scheduler not ready (attempt $attempt/10)"
+              sleep 3
+            done
+            if [ "$scheduler_ok" != true ]; then
+              echo "[deploy] durable workflow scheduler failed its progress sentinel" >&2
+              exit 1
+            fi
+
+            # Sweep again: the release we just replaced is now idle and removable.
+            reclaim_disk
+            echo "[deploy] verification complete"
+          EOF
+          grep -F '[deploy] verification complete' "$RUNNER_TEMP/openneko-deploy.log"
+
+      - name: Smoke test
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          for i in 1 2 3 4 5; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' "http://$SSH_HOST/" || echo 000)
+            if [ "$code" = "200" ] || [ "$code" = "307" ] || [ "$code" = "302" ]; then
+              echo "web responded with $code"
+              exit 0
+            fi
+            echo "attempt $i: web returned $code, retrying in 3s"
+            sleep 3
+          done
+          echo "web did not respond after restart"
+          exit 1
