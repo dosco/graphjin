@@ -6,7 +6,7 @@ use case. OpenNeko installs these artifacts through the shared pack lifecycle.
 Packs that need connectors ship their own declarations and specifications.
 OpenNeko has no separate plugin system; channels and sign-in are built in.
 
-For operator instructions, see [installing and upgrading custom packs](docs/CUSTOM_PACKS.md).
+For operator commands, see [INSTALL.md](INSTALL.md#solution-packs-and-skills) and `openneko pack --help`.
 For contributing code, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Start from an example
@@ -196,8 +196,8 @@ operations are never exposed as mutations. See the
 [Google Workspace actions](packs/google-workspace/actions) for complete examples.
 
 Database source references require an existing read-only source binding and an
-organization GraphJin data source. See the [installation guide](docs/CUSTOM_PACKS.md)
-for `--source-id`, `--bind`, and secret-reference options.
+organization GraphJin data source. Run `openneko pack review --help` for the
+`--source-id`, `--bind` and `--secret-ref` options.
 
 ## Installation and configuration experience
 
@@ -407,8 +407,8 @@ the resulting behavior, compatibility changes, and validation evidence.
 
 For a custom pack, publish a ZIP containing `<pack-id>/pack.yaml` and the declared
 artifacts. Users upload the new version, review it, and upgrade. Changed content
-cannot replace an already uploaded version. See [archive limits and release
-commands](docs/CUSTOM_PACKS.md).
+cannot replace an already uploaded version. Run `openneko pack upload --help`
+for the upload command.
 
 Magento is maintained under `packs/magento/` in this repository. Submit Magento
 pack changes here; reserved first-party IDs cannot be replaced by custom uploads.
