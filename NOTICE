@@ -12,9 +12,8 @@ under the terms described in LICENSE, CLA.md, and LICENSING.md.
 The source code in this repository is licensed under the Apache License,
 Version 2.0 unless a file clearly states different terms.
 
-Third-party libraries, bundled skills, modular integrations, and plugin code may
-be governed by separate licenses. See THIRD_PARTY_LICENSES.md and individual
-files for details.
+Third-party libraries may be governed by separate licenses. See
+THIRD_PARTY_LICENSES.md and individual files for details.
 
 "OpenNeko" and the OpenNeko logo are trademarks of Amit Deshmukh / OpenNeko.
 The Apache License, Version 2.0 does not grant trademark rights. See

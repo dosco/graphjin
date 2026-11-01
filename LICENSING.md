@@ -18,31 +18,18 @@ Deshmukh. Contributor-authored code remains owned by its respective copyright
 holders and is licensed under the applicable contribution terms. See
 [NOTICE](NOTICE) and [CLA.md](CLA.md).
 
-## Third-party and modular components
+## Third-party components
 
-OpenNeko depends on and can interoperate with software that is not owned by
-OpenNeko. Those components remain under their own licenses.
+OpenNeko depends on software that OpenNeko does not own. Those dependencies
+keep their own licenses. [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
+lists the runtime dependencies and container-layer software.
 
-Examples include:
+Every bundled skill and every skill in a bundled solution pack is Apache 2.0.
+The `internal-comms` skill comes from Anthropic and keeps its `LICENSE.txt`
+and attribution.
 
-- Runtime dependencies and container-layer software listed in
-  [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
-- Anthropic-authored bundled skills under their declared upstream terms.
-- Built-in skills that carry their own `license:` frontmatter or local
-  `LICENSE.txt` files.
-
-If an individual file, package, bundled skill, plugin, or dependency includes a
-different license notice, that notice controls that component.
-
-## Plugins are independent works
-
-OpenNeko loads plugins as separate processes inside sandboxes, across a defined
-RPC boundary. A third-party plugin that communicates with OpenNeko only across
-that boundary is an independent work. Plugin authors may license their plugins
-however they choose.
-
-OpenNeko plugin interfaces and in-repository plugin support code are covered by
-the repository license unless a file says otherwise.
+If an individual file, package or dependency includes a different license
+notice, that notice controls that component.
 
 ## Trademarks and hosted services
 

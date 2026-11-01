@@ -2,9 +2,8 @@
 
 The source code in this repository is distributed under the
 [Apache License 2.0](LICENSE) unless a file clearly states different terms.
-This file lists third-party software and modular components that are shipped
-alongside, referenced by, or designed to interoperate with OpenNeko, and the
-additional license obligations those carry.
+This file lists third-party software that ships with OpenNeko, and the
+additional license obligations it carries.
 
 This file complements [NOTICE](NOTICE). Operators who redistribute OpenNeko in
 any form should ship LICENSE, NOTICE, this file, and any applicable third-party
@@ -24,15 +23,13 @@ binary, as the `graphjin` role.
 
 ---
 
-## Modular agents and skills
+## Bundled skills
 
-OpenNeko can invoke or interoperate with external agents and skills.
-Those components remain under their own licenses.
+Every bundled skill and every skill in a bundled solution pack is Apache-2.0.
 
 | Component | License | Notes |
 |---|---|---|
-| Anthropic-authored bundled skills | As declared | Preserve the upstream terms and attribution shipped with each skill. |
-| Built-in skills with `license:` frontmatter | As declared in each skill | Some bundled skills are Apache-2.0, MIT, or proprietary to their upstream source. Check each `SKILL.md` and local `LICENSE.txt`. |
+| `internal-comms` skill | Apache-2.0 | Authored by Anthropic. Keep its `LICENSE.txt` and attribution. |
 
 ---
 
