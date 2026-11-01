@@ -59,18 +59,16 @@ demo verticals — a zero-Docker SaaS ops demo, a corrugated-box plant, a PCB
 fab — are listed at
 <https://graphjin.com/start/demos/>.
 
-The console's `/mission` route is the human view over durable agentic state.
-It shows declared tasks and their provenance trails, the unseen watch-event
-inbox, and observed annotation drafts awaiting review. Agent chat renders all
-response notices as actions into those views and can pin a `task_id` above the
-composer so later turns warm-start and journal against the declared goal.
+GraphJin no longer embeds a web console. People see durable agentic state,
+such as declared tasks and their trails, the unseen watch-event inbox, and
+annotation drafts awaiting review, through the governed `gj_task`,
+`gj_watch_event`, and `gj_artifacts` roots, from any GraphQL or MCP client. An
+agent request can carry a `task_id` so later turns warm-start and journal
+against the declared goal.
 
-Owner-scoped roots require an identity. In development auth, the header's
-operator-identity control persists a user, role, and account in the browser and
-sends `X-User-ID`, `X-User-Role`, and `X-Account-ID`. With no development
-identity, Mission Control reports that state explicitly rather than mistaking an
-empty owner scope for an empty workload. Real authentication continues through
-the existing same-origin session cookie.
+Owner-scoped roots require an identity. In development auth, send
+`X-User-ID`, `X-User-Role`, and `X-Account-ID`; otherwise use the deployment's
+normal authentication.
 
 ## Words This Document Uses
 
@@ -152,8 +150,8 @@ was skipped, and model-claimed actions never count, only real tool results.
 Internally it is an RLM (reasoning-with-code) loop: the model writes JavaScript
 that calls the same catalog tools as runtime globals (`query_catalog`,
 `graphql_help`, `validate_where_clause`, `execute_saved_query`,
-`execute_graphql`, `final`), and the typed result is parsed from `key: value`
-output. There is no dependency on
+`execute_graphql`, `final`, and `query_file_tables` when file content indexing
+is on), and the typed result is parsed from `key: value` output. There is no dependency on
 provider tool-calling, but Ax requests structured JSON for each typed stage.
 Which mechanism it uses is not GraphJin's decision: `agent.provider` names an Ax
 deployment profile, `agent.model` selects a model within it, and the profile's
@@ -263,11 +261,18 @@ A calling agent should treat this as protocol, not prose: execute the
 
 ### Server-Owned Model Resolution
 
-The built-in agent always uses the provider, model, and credential environment
-variable configured under `agent`. MCP clients do not supply a model. If the
-environment variable named by `agent.api_key_env` is empty,
-`ask_graphjin_agent` and watch enrichment fail closed with
+The built-in agent always uses the provider, model, and credential configured
+under `agent`. MCP clients do not supply a model. Each run reads the key from
+`agent.api_key_file` when it is set, or else from the environment variable
+named by `agent.api_key_env`, so a new key applies without a restart. If no key
+is found, `ask_graphjin_agent` and watch enrichment fail closed with
 `model_credentials_required`; REST reports the same missing-credentials state.
+
+`gj_config` can change the `agent` block live, including `enabled`,
+`provider`, `model`, `base_url`, `reasoning`, `api_key_env`, and
+`api_key_file`. `POST /api/v1/agent` checks `agent.enabled` on each request.
+The MCP `ask_graphjin_agent` tool is registered at start, so turning the agent
+on or off changes the MCP tool list only after a restart.
 
 The removed `agent.sampling` setting and its environment aliases are rejected
 with guidance to configure GraphJin-owned model credentials.
@@ -1263,7 +1268,7 @@ Durability semantics:
   survive restarts: on boot the runner reloads every `enabled + active +
   approved` watch, merges `last_cursor_json` into the subscription variables,
   and resumes from the persisted cursor.
-- **Downtime resumes from the cursor.** Durable watches require cursor-capable
+- **Downtime resumes from the cursor.** Subscription watches require cursor-capable
   subscriptions such as `subscription($cursor: Cursor) { orders(first: 25,
   after: $cursor, order_by: { id: asc }) { id status } orders_cursor }`.
   The subscription cursor defines what is new after restart; `last_data_hash`
@@ -1295,6 +1300,22 @@ Durability semantics:
   replica delivers. Webhooks get 3 attempts, a 10s timeout, an HMAC signature,
   and an `Idempotency-Key` header; targets must match the `webhook_allow`
   allowlist.
+- **Webhook targets and signatures**: GraphJin refuses a target that is or
+  resolves to a private or local address, unless an allowlist entry names
+  that exact host or IP. The HMAC secret comes from the variable in
+  `secret_env`, or with `secret_source: "keystore"` from a per-watch secret
+  derived from `secrets.keystore.key` (hex HMAC-SHA256 of
+  `graphjin-watch-webhook:v1:<watch id>`). Set at most one of the two.
+
+A **polled watch** suits aggregates and API sources, which have no cursor.
+Add `poll_json: { interval_seconds: 300 }` and give a plain query instead of a
+subscription. GraphJin runs the query as the owner on that interval (10 seconds
+to 24 hours) and records an event each time the result changes. A polled watch
+takes `query`, not `saved_query_name`. `poll_json.variables` names variables
+that GraphJin computes on each poll as RFC3339 timestamps, for example
+`variables: { since: { kind: "seconds_ago", seconds: 3600 }, at: { kind: "now" } }`. Event IDs include the poll interval, so a
+value that returns to an earlier result is a new event, and a retried poll is
+not.
 
 Absence watches add `absence_json: { enabled: true, window: "4h", repeat:
 false }`. They create a synthetic `data_json.kind: "absence"` event when the
@@ -1596,10 +1617,15 @@ Current behavior gives models enough to operate safely:
   mode, writes require `mode: "preview"` with `expected_catalog_revision`, then
   `mode: "apply"` with the returned `preview_id` and the exact same payload.
 - Current `gj_config.update` support is limited to implemented update fields
-  such as `source_patches`, `sources`, `roles`, `relationships`, `databases`,
-  `tables`, `blocklist`, `functions`, and `mcp`. Prefer `source_patches` for
-  source access and GraphJin root policy so the model patches one source by
-  exact name while preserving unmentioned fields.
+  such as `source_patches`, `sources`, `roles`, `identity`, `system`,
+  `workflows`, `relationships`, `databases`, `tables`, `blocklist`,
+  `functions`, `mcp`, `serv`, `update_saved_queries`, `remove_saved_queries`,
+  and `reload_from_disk`. Prefer `source_patches` for source access, role
+  grants (`access.grants`), and GraphJin root policy so the model patches one
+  source by exact name while preserving unmentioned fields. Source patches run
+  after roles, so a grant can name a role added in the same update.
+- `gj_config` does not accept the full text of a config file. An update that
+  carries `config_yaml` is refused. Change individual settings instead.
 
 The current hardening layer makes config changes explicit:
 

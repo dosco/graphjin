@@ -165,6 +165,8 @@ does nothing, for one release.
 
 ### 9. Hot Deployment System (`deploy.go`, `admin.go`)
 
+> **Note:** the hot deploy routes and the `hot_deploy` and `admin_secret_key` settings are commented out in `routes.go` and `config.go`, so this system is not active. Live config changes go through `gj_config` instead.
+
 Database-backed configuration management for zero-downtime updates:
 
 **Storage Schema** (`_graphjin` schema):
@@ -304,7 +306,6 @@ host_port: "0.0.0.0:8080"
 production: false
 log_level: "info"          # debug, info, warn, error
 log_format: "json"         # json, simple
-web_ui: true               # defaults on in dev/agentic, off in prod
 enable_tracing: true
 watch_and_reload: true     # Dev only
 http_gzip: true

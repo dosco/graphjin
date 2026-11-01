@@ -291,7 +291,7 @@ system:
     gj_config: admin
 ```
 
-In dev mode, all GraphJin system roots default to `public` so the local console
+In dev mode, all GraphJin system roots default to `public` so local GraphQL
 and MCP tools can inspect the system without extra auth setup. In prod and
 agentic modes, keep the higher-risk roots on `admin` or `authenticated` unless you are
 deliberately exposing them.

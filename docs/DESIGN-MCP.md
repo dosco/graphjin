@@ -175,6 +175,7 @@ The current tool surface is catalog-first:
 - `validate_where_clause`
 - execution tools for saved queries/raw GraphQL when enabled
 - `ask_graphjin_agent` when the server-side agent is enabled
+- `query_file_tables` when `file_content.enabled` is on
 
 Legacy discovery/syntax MCP tools have been removed. `mcp.legacy_discovery`
 remains a compatibility config key for non-MCP legacy helper surfaces, but it
@@ -238,8 +239,8 @@ control; rollup watches correlate events across watch IDs.
 
 | File | Responsibility |
 | --- | --- |
-| `cmd/mcp_install.go` | `mcp add`, compatibility aliases, probing, client config writes |
-| `cmd/mcp_proxy.go` | local stdio-to-HTTP proxy for saved `auth_login` tokens |
+| `cmd/cli/mcp_install.go` | `mcp add`, compatibility aliases, probing, client config writes |
+| `cmd/cli/mcp_proxy.go` | local stdio-to-HTTP proxy for saved `auth_login` tokens |
 | `serv/mcp.go` | MCP server creation and stdio/HTTP handlers |
 | `serv/mcp_watch_resources.go` | caller-scoped watch-events resource subscriptions and notifications |
 | `serv/watch_flow.go` | inline AxFlow validation, preview approval, bounded execution, and dispositions |
