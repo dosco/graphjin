@@ -54,7 +54,6 @@ node_modules
 # Ignore Go binary but not npm bin directory
 /graphjin
 !/npm/bin/
-/npm/package-lock.json
 slim.report.json
 examples/nodejs/config/**/*.gql
 
@@ -79,6 +78,11 @@ cmd/cmd
 # the gates. .claude/worktrees and settings.local.json remain ignored.
 .claude/*
 !.claude/skills/
+# Only GraphJin's own skills are tracked; skills installed locally (ax, axcrew
+# and others) stay out. Add a line here for each new tracked skill.
+.claude/skills/*
+!.claude/skills/add-graphjin-database/
+!.claude/skills/graphjin-env-workflows/
 # Local WIP status files (never commit)
 snowflake-wip.md
 docs/DESIGN-OPENAPI-TOPLEVEL.md
@@ -139,3 +143,7 @@ design-preview/
 .local/
 dev-volumes/
 compose.dev-overrides.yml
+
+# Leftover plugin manifests from before the plugin system was removed
+openneko.plugins.json
+apps/*/openneko.plugins.json
