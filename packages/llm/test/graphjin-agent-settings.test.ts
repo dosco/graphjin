@@ -59,19 +59,30 @@ describe("GraphJin agent settings", () => {
 });
 
 describe("data path default", () => {
-  it("asks GraphJin's agent unless an admin saved direct tools", async () => {
+  it("uses direct tools unless an admin opted into GraphJin's agent", async () => {
     const { graphjinAgentEnabled } = await import("@neko/db");
-    expect(graphjinAgentEnabled(null)).toBe(true);
+    expect(graphjinAgentEnabled(null)).toBe(false);
     expect(graphjinAgentEnabled({ enabled: true })).toBe(true);
     expect(graphjinAgentEnabled({ enabled: false })).toBe(false);
   });
 
-  it("gives GraphJin's agent the primary model when nothing is saved", async () => {
+  it("leaves GraphJin's agent alone when nothing is saved", async () => {
+    vi.resetModules();
+    vi.doMock("@neko/db", async (original) => ({
+      ...(await original<typeof import("@neko/db")>()),
+      getGraphjinAgentRow: async () => null,
+    }));
+    const { resolveGraphjinAgentModel } = await import("../src/graphjin/agent-settings");
+    expect(await resolveGraphjinAgentModel("org-1")).toBeNull();
+    vi.doUnmock("@neko/db");
+  });
+
+  it("gives an opted-in GraphJin agent the primary model", async () => {
     vi.resetModules();
     const primary = { provider: "anthropic", model: "claude-sonnet-5-5", config: {}, secrets: { apiKey: "sk-primary" }, enabled: true };
     vi.doMock("@neko/db", async (original) => ({
       ...(await original<typeof import("@neko/db")>()),
-      getGraphjinAgentRow: async () => null,
+      getGraphjinAgentRow: async () => ({ enabled: true, provider: "primary", model: null, config: {}, secrets: {} }),
       db: () => ({ select: () => ({ from: () => ({ where: () => ({ limit: async () => [primary] }) }) }) }),
     }));
     const { resolveGraphjinAgentModel } = await import("../src/graphjin/agent-settings");
@@ -112,10 +123,11 @@ describe("provisionGraphjinAgent", () => {
       serv: { agent: expect.objectContaining({ enabled: true, provider: "anthropic", api_key_file: ".openneko-graphjin-agent-key" }) },
     });
 
-    // Unchanged settings apply nothing.
+    // The file already holds the block, but the running GraphJin may have
+    // missed it, so the block is applied again.
     apply.mockClear();
     await provisionGraphjinAgent("org-1", file, apply);
-    expect(apply).not.toHaveBeenCalled();
+    expect(apply).toHaveBeenCalledOnce();
 
     vi.doUnmock("@neko/db");
   });

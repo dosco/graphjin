@@ -1,9 +1,9 @@
 /**
  * Org-wide choice of how agent runs reach data. Persisted in
- * llm_provider_config with scope="graphjin-agent". With no row, runs ask
- * GraphJin's server-side agent, which reuses the primary provider. An admin
- * saves enabled=false to opt into direct GraphJin tools instead, for an
- * external GraphJin whose agent is not configured.
+ * llm_provider_config with scope="graphjin-agent". With no row, runs write
+ * their own queries with GraphJin's tools. An admin saves enabled=true to opt
+ * into GraphJin's server-side agent, which reuses the primary provider unless
+ * the row names another one.
  */
 
 import { and, db, eq } from "./index";
@@ -37,14 +37,14 @@ export async function getGraphjinAgentRow(orgId: string): Promise<GraphjinAgentR
 }
 
 /**
- * True when every agent run gets data only through GraphJin's agent: the
- * default, unless an admin opted into direct tools.
+ * True when every agent run gets data only through GraphJin's agent, which an
+ * admin must opt into.
  */
 export async function graphjinAgentEnabledForOrg(orgId: string): Promise<boolean> {
   return graphjinAgentEnabled(await getGraphjinAgentRow(orgId));
 }
 
-/** The agent path is on unless a saved row turns it off. */
+/** The agent path is off unless a saved row turns it on. */
 export function graphjinAgentEnabled(row: Pick<GraphjinAgentRow, "enabled"> | null): boolean {
-  return row ? row.enabled === true : true;
+  return row?.enabled === true;
 }

@@ -1,7 +1,6 @@
 // Org-wide GraphJin agent setting: OpenNeko owns GraphJin's agent provider,
-// model and key while the agent path is on, which is the default. When an
-// admin opts into direct tools, GraphJin's agent block stays as the operator
-// configured it.
+// model and key while an admin has the agent path on. It is off by default;
+// GraphJin's agent block then stays as the operator configured it.
 
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -162,7 +161,9 @@ async function graphjinEndpoint(orgId: string): Promise<string | null> {
  * Apply the agent path: write the key file, which GraphJin reads for each agent
  * run, write the agent block to the config file for GraphJin's next start, and
  * apply the same block to the running GraphJin through gj_config. Nothing
- * restarts.
+ * restarts. The block is applied even when the file already holds it: an
+ * earlier apply can miss, for example before a data source exists, and
+ * gj_config does nothing when the running settings already match.
  */
 export async function provisionGraphjinAgent(
   orgId: string,
@@ -178,18 +179,15 @@ export async function provisionGraphjinAgent(
   const model = await resolveGraphjinAgentModel(orgId);
   if (!model) return;
   const release = await acquireGraphjinConfigLock({ configFile });
-  let changed = false;
   try {
     const keyFile = join(dirname(configFile), GRAPHJIN_AGENT_KEY_FILE);
     const currentKey = await readFile(keyFile, "utf8").catch(() => null);
     if (currentKey !== model.apiKey) await writePrivate(keyFile, model.apiKey, 0o600);
     const patch = patchGraphjinAgentBlock(await readFile(configFile, "utf8"), model);
     if (patch.changed) await writePrivate(configFile, patch.content, 0o664);
-    changed = patch.changed;
   } finally {
     await release();
   }
-  if (!changed) return;
   const endpoint = await graphjinEndpoint(orgId);
   if (!endpoint) return;
   await apply(endpoint, { serv: { agent: graphjinAgentSettings(model) } });

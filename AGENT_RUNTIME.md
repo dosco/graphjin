@@ -46,14 +46,15 @@ through the per-run broker.
    that turn's model calls and keeps it nowhere else. The agent's MCP tools
    (records, GraphJin, memory, actions) travel back over the same socket to
    the runner, which calls the broker on loopback.
-   By default the turn gets its data by asking GraphJin's agent, in serve's
+   By default the agent writes its own GraphJin queries. They go through the
+   broker with the run's GraphJin JWT: queries must be read-only, and tool
+   calls that write are checked against the write policy. An admin can opt
+   the organization into GraphJin's data agent instead (Admin → Settings →
+   Agent). The turn then gets its data by asking GraphJin's agent in serve's
    own process: the host mints the run's GraphJin JWT into the job, and
    GraphJin verifies it exactly as its `/api/v1/agent` route would. Its steps
    show as status lines, the thread's earlier data questions go along as
-   history, and its tokens count against the turn's budget. An admin can
-   switch the organization to GraphJin's direct tools instead (Admin →
-   Settings → Agent), for an external GraphJin whose agent isn't set up;
-   the agent then writes its own queries.
+   history, and its tokens count against the turn's budget.
 4. When the run ends, the launcher kills the runner's process group, copies
    artifacts and skill edits back, and deletes the run folder. Folders a
    restart left behind are swept at the next start.
