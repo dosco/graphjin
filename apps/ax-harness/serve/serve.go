@@ -166,6 +166,14 @@ func MainWith(args []string, opts Options) {
 		os.Exit(2)
 	}
 	fmt.Fprintf(os.Stderr, "openneko serve: listening on %s\n", *socket)
+	// A stop signal ends the process at once. In-flight turns end with it;
+	// their callers see the socket close and fail the run.
+	go func() {
+		<-ctx.Done()
+		_ = listener.Close()
+		fmt.Fprintln(os.Stderr, "openneko serve: stopped")
+		os.Exit(0)
+	}()
 	server := &Server{Getenv: os.Getenv, MaxTurns: intEnv("OPENNEKO_SERVE_MAX_TURNS", defaultTurns), Ask: opts.Ask, EditConfig: opts.EditConfig}
 	if err := server.Serve(ctx, listener); err != nil {
 		fmt.Fprintln(os.Stderr, err)
