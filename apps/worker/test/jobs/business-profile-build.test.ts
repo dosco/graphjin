@@ -129,7 +129,7 @@ describeIfDb("runBusinessProfileBuild", () => {
     expect(queues).not.toContain("bootstrap_metrics_build");
   });
 
-  it("skips research and chains bootstrap_metrics_build when research is disabled", async () => {
+  it("chains nothing when research is disabled", async () => {
     mockResolveResearch.mockResolvedValue({
       enabled: false,
       provider: "disabled",
@@ -142,9 +142,7 @@ describeIfDb("runBusinessProfileBuild", () => {
     const jobId = await insertJob(orgId);
     await runBusinessProfileBuild(jobId, orgId);
 
-    const queues = mockEnqueue.mock.calls.map((c) => c[0] as string);
-    expect(queues).toContain("bootstrap_metrics_build");
-    expect(queues).not.toContain("industry_insights_build");
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   it("invokes the profiler with the org's company_note + mcp_url", async () => {

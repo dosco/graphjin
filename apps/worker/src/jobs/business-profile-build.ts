@@ -25,9 +25,10 @@ import {
  * 2. Run the profiler agent through Ax, query via the native broker, and
  *    synthesizes a markdown business profile.
  * 3. Retire the previous current customer_profile, insert the new one.
- * 4. Chain: enqueue an industry_insights_build job via pg-boss. The
- *    industry researcher consumes the just-built business_profile and
- *    updates the same customer_profile row in place.
+ * 4. Chain: when research is on, enqueue an industry_insights_build job.
+ *    The industry researcher consumes the just-built business_profile and
+ *    updates the same customer_profile row in place. Metrics are not built
+ *    here; bootstrap_metrics_build runs only when something asks for it.
  */
 export async function runBusinessProfileBuild(jobId: string, orgId: string) {
   // 1. Load inputs from the metadata DB.
@@ -108,9 +109,7 @@ export async function runBusinessProfileBuild(jobId: string, orgId: string) {
     built_by_job: jobId,
   });
 
-  // 6. Chain. If the org has research disabled, skip the industry insights
-  // step entirely and go straight to bootstrap_metrics_build — the writer
-  // accepts an empty industryInsights.
+  // 6. Chain industry insights when research is on.
   const research = await resolveResearchProviderConfig(orgId);
   if (research.enabled && research.provider !== "disabled") {
     await chainNext(orgId, "industry_insights_build", QUEUE.INDUSTRY_INSIGHTS_BUILD, "chain_after_business_profile_build");
@@ -118,13 +117,12 @@ export async function runBusinessProfileBuild(jobId: string, orgId: string) {
     console.log(
       `[business_profile_build] research disabled for org ${orgId}; skipping industry_insights_build`,
     );
-    await chainNext(orgId, "bootstrap_metrics_build", QUEUE.BOOTSTRAP_METRICS_BUILD, "chain_after_business_profile_build_research_disabled");
   }
 }
 
 async function chainNext(
   orgId: string,
-  kind: "industry_insights_build" | "bootstrap_metrics_build",
+  kind: "industry_insights_build",
   queue: (typeof QUEUE)[keyof typeof QUEUE],
   trigger: string,
 ) {

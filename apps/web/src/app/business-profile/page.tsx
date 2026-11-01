@@ -24,7 +24,6 @@ const STAGE_LABELS: Record<StageKind, string> = {
 const STAGE_ORDER: StageKind[] = [
   "business_profile_build",
   "industry_insights_build",
-  "bootstrap_metrics_build",
 ];
 const STAGE_FALLBACK_COPY: Record<StageKind, readonly string[]> = {
   business_profile_build: [

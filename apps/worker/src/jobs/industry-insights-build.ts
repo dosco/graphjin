@@ -4,9 +4,7 @@ import {
   db,
   eq,
   organization,
-  processing_job,
 } from "@neko/db";
-import { enqueue, QUEUE } from "@neko/db/jobs";
 import { updateProgress } from "../progress.js";
 import { ensureHostConfigProvisioned, runIndustryResearcher } from "@neko/llm";
 
@@ -82,31 +80,4 @@ export async function runIndustryInsightsBuild(jobId: string, orgId: string) {
       industry_insights_research_task: missionCharter || null,
     })
     .where(eq(customer_profile.id, profile.id));
-
-  // Chain bootstrap_metrics_build, mirroring how business_profile_build chains us.
-  await chainBootstrapMetricsBuild(orgId);
-}
-
-async function chainBootstrapMetricsBuild(orgId: string) {
-  const inserted = await db()
-    .insert(processing_job)
-    .values({
-      org_id: orgId,
-      kind: "bootstrap_metrics_build",
-      status: "queued",
-      trigger: "chain_after_industry_insights_build",
-    })
-    .returning({ id: processing_job.id });
-  const nextJobId = inserted[0]?.id;
-  if (!nextJobId) {
-    console.warn(`[industry_insights_build] failed to enqueue bootstrap_metrics_build for org ${orgId}`);
-    return;
-  }
-  await enqueue(QUEUE.BOOTSTRAP_METRICS_BUILD, {
-    processingJobId: nextJobId,
-    orgId,
-  });
-  console.log(
-    `[industry_insights_build] chained bootstrap_metrics_build job ${nextJobId} for org ${orgId}`,
-  );
 }
