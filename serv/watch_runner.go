@@ -268,7 +268,11 @@ func (s *graphjinService) loadRunnableWatches(ctx context.Context) ([]watchRunti
 	}
 	var defs []watchRuntimeDefinition
 	for _, row := range rows {
-		if !boolMapValue(row, "enabled") || watchStatus(stringMapValue(row, "status")) != "active" || watchApproval(stringMapValue(row, "approval")) != "approved" {
+		if !watchRowRunnable(row) {
+			continue
+		}
+		if stringMapValue(row, "schedule_cron") != "" {
+			// Schedule watches have no subscription; the schedule runner fires them.
 			continue
 		}
 		def := watchRuntimeDefinition{

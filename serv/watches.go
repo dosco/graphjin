@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/robfig/cron/v3"
 )
 
 const (
@@ -20,7 +21,7 @@ const (
 	watchValidationProbeTimeout = 10 * time.Second
 )
 
-const watchStoreFields = `id name task_id description query saved_query_name variables_json condition_js delivery_json enrich_json absence_json evidence_json lifecycle lease_expires_at lease_owner_id status approval enabled account_id owner_id owner_role last_data_hash last_cursor_json last_fired_at last_error failure_count created_at updated_at`
+const watchStoreFields = `id name task_id description query saved_query_name variables_json condition_js delivery_json enrich_json absence_json schedule_cron schedule_tz next_fire_at evidence_json lifecycle lease_expires_at lease_owner_id status approval enabled account_id owner_id owner_role last_data_hash last_cursor_json last_fired_at last_error failure_count created_at updated_at`
 
 const watchEventStoreFields = `id watch_id data_hash data_json data_truncated evidence_json delivery_status delivery_attempts delivery_json receipt_json enrichment_json seen seen_at snoozed_until account_id owner_id created_at updated_at`
 
@@ -64,6 +65,8 @@ func watchColumns() []core.ManagedColumn {
 		cpCol("delivery_json", "json", false),
 		cpCol("enrich_json", "json", false),
 		cpCol("absence_json", "json", false),
+		cpCol("schedule", "json", false),
+		cpCol("next_fire_at", "text", false),
 		cpCol("flow_review_json", "json", false),
 		cpCol("action_review_json", "json", false),
 		cpCol("flow_hash", "text", false),
@@ -310,12 +313,25 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	query := strings.TrimSpace(stringInput(root.Input, "query", ""))
 	savedQuery := strings.TrimSpace(stringInput(root.Input, "saved_query_name", ""))
 	variablesJSON := jsonStringInput(root.Input, "variables_json")
-	evidence, err := h.validateWatchDefinition(ctx, id, query, savedQuery, variablesJSON)
+	schedule, scheduled, err := parseWatchScheduleInput(root.Input["schedule"])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("gj_watch %w", err)
+	}
+	var evidence map[string]any
+	if scheduled {
+		if query != "" || savedQuery != "" {
+			return nil, fmt.Errorf("gj_watch schedule watches fire on time, not data changes; omit query and saved_query_name")
+		}
+		evidence = schedule.evidence()
+	} else {
+		evidence, err = h.validateWatchDefinition(ctx, id, query, savedQuery, variablesJSON)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339Nano)
+	nowTime := time.Now().UTC()
+	now := nowTime.Format(time.RFC3339Nano)
 	if err := h.enforceWatchLimit(ctx, ownerID, id); err != nil {
 		return nil, err
 	}
@@ -363,9 +379,13 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	if err != nil {
 		return nil, fmt.Errorf("gj_watch %w", err)
 	}
-	absenceJSON, _, _, err = normalizeWatchAbsenceJSON(absenceJSON)
+	var absenceEnabled bool
+	absenceJSON, _, absenceEnabled, err = normalizeWatchAbsenceJSON(absenceJSON)
 	if err != nil {
 		return nil, fmt.Errorf("gj_watch %w", err)
+	}
+	if scheduled && absenceEnabled {
+		return nil, fmt.Errorf("gj_watch absence_json needs a data subscription; schedule watches already fire on time")
 	}
 	var enrichCfg watchEnrichmentConfig
 	var enrichEnabled bool
@@ -413,6 +433,15 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 			evidenceMap = map[string]any{}
 		}
 	}
+	if scheduled {
+		// A watch converted from a subscription keeps no probe evidence: the
+		// cycle check reads watched_watch_ids, and a schedule watches nothing.
+		for _, key := range []string{"probe", "cursor_variables", "operation_name", "saved_query_name"} {
+			delete(evidenceMap, key)
+		}
+	} else {
+		delete(evidenceMap, "schedule")
+	}
 	for key, value := range evidence {
 		evidenceMap[key] = value
 	}
@@ -448,7 +477,9 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 		definitionChanged = query != stringMapValue(existing, "query") ||
 			savedQuery != stringMapValue(existing, "saved_query_name") ||
 			variablesJSON != jsonMapString(existing, "variables_json") ||
-			absenceJSON != jsonMapString(existing, "absence_json")
+			absenceJSON != jsonMapString(existing, "absence_json") ||
+			schedule.Cron != stringMapValue(existing, "schedule_cron") ||
+			schedule.Timezone != stringMapValue(existing, "schedule_tz")
 		_, existingEnrichCfg, existingEnrichEnabled, existingEnrichErr := normalizeWatchEnrichmentJSON(jsonMapString(existing, "enrich_json"))
 		existingFlowRequired := existingEnrichErr == nil && existingEnrichEnabled && existingEnrichCfg.Kind == "flow"
 		flowChanged = flowRequired != existingFlowRequired ||
@@ -466,6 +497,14 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 			lastError = ""
 			failureCount = 0
 		}
+	}
+	if scheduled && existing != nil && actionProposal.Required &&
+		(schedule.Cron != stringMapValue(existing, "schedule_cron") || schedule.Timezone != stringMapValue(existing, "schedule_tz")) {
+		// The action hash is computed from the query side of a watch, which a
+		// schedule watch does not have, so it cannot see the cadence. An
+		// approved webhook moved from monthly to every minute is a different
+		// action; make the reviewer approve it again.
+		evidenceMap[watchActionReviewKey] = actionReviewEvidence(actionProposal, watchReviewPending, now)
 	}
 	ensureWatchReviewEvidence(evidenceMap, enrichCfg, flowRequired, actionProposal, now)
 	flowApproval := watchFlowApproval(evidenceMap, enrichCfg, flowRequired)
@@ -487,10 +526,21 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 		return nil, err
 	}
 	evidenceJSON := mustMarshalString(evidenceMap)
+	nextFireAt := ""
+	if scheduled {
+		nextFireAt = formatWatchFireTime(schedule.next(nowTime))
+	}
+	// An edit that leaves a running schedule alone must not rewrite its
+	// next_fire_at: the schedule runner may be moving it forward right now,
+	// and writing the old value back would re-open a tick that already fired
+	// (only the deterministic event id would then keep it from firing twice).
+	keepNextFire := scheduled && existing != nil && !definitionChanged &&
+		watchRowRunnable(existing) && stringMapValue(existing, "next_fire_at") != ""
 	input := map[string]any{
 		"id": id, "name": name, "task_id": taskID, "description": description, "query": query, "saved_query_name": savedQuery,
 		"variables_json": nullableJSONString(variablesJSON), "condition_js": conditionJS,
 		"delivery_json": nullableJSONString(deliveryJSON), "enrich_json": nullableJSONString(enrichJSON), "absence_json": nullableJSONString(absenceJSON), "evidence_json": nullableJSONString(evidenceJSON),
+		"schedule_cron": schedule.Cron, "schedule_tz": schedule.Timezone, "next_fire_at": nullableJSONString(nextFireAt),
 		"lifecycle": lifecycle, "lease_expires_at": nullableJSONString(leaseExpiresAt), "lease_owner_id": leaseOwnerID,
 		"status": status, "approval": approval, "enabled": enabled, "account_id": accountID, "owner_id": ownerID, "owner_role": ownerRole,
 		"last_data_hash": lastDataHash, "last_cursor_json": nullableJSONString(lastCursorJSON), "last_fired_at": nullableJSONString(lastFiredAt), "last_error": lastError, "failure_count": failureCount,
@@ -513,6 +563,9 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 			delete(update, "failure_count")
 		}
 		delete(update, "created_at")
+		if keepNextFire {
+			delete(update, "next_fire_at")
+		}
 		rows, err = s.internalStoreMutationRows(ctx, "watches", `where: { id: { eq: $id } }, update: $input`, watchStoreFields, map[string]any{"id": id, "input": update})
 	}
 	if err != nil {
@@ -671,7 +724,7 @@ func (h watchControlPlane) validateWatchDefinition(
 	query = strings.TrimSpace(query)
 	savedQuery = strings.TrimSpace(savedQuery)
 	if query == "" && savedQuery == "" {
-		return nil, fmt.Errorf("gj_watch requires query or saved_query_name")
+		return nil, fmt.Errorf("gj_watch requires query, saved_query_name, or schedule")
 	}
 	vars, err := watchVariablesWithCursor(variablesJSON, "")
 	if err != nil {
@@ -1122,6 +1175,9 @@ condition_js TEXT NOT NULL DEFAULT '',
 delivery_json JSONB,
 enrich_json JSONB,
 absence_json JSONB,
+schedule_cron TEXT NOT NULL DEFAULT '',
+schedule_tz TEXT NOT NULL DEFAULT '',
+next_fire_at TIMESTAMPTZ,
 evidence_json JSONB,
 lifecycle TEXT NOT NULL DEFAULT 'durable',
 lease_expires_at TIMESTAMPTZ,
@@ -1180,6 +1236,9 @@ condition_js LONGTEXT NOT NULL,
 delivery_json LONGTEXT,
 enrich_json LONGTEXT,
 absence_json LONGTEXT,
+schedule_cron VARCHAR(255) NOT NULL DEFAULT '',
+schedule_tz VARCHAR(64) NOT NULL DEFAULT '',
+next_fire_at VARCHAR(64),
 evidence_json LONGTEXT,
 lifecycle VARCHAR(32) NOT NULL DEFAULT 'durable',
 lease_expires_at VARCHAR(64),
@@ -1233,6 +1292,9 @@ condition_js TEXT NOT NULL DEFAULT '',
 delivery_json TEXT,
 enrich_json TEXT,
 absence_json TEXT,
+schedule_cron TEXT NOT NULL DEFAULT '',
+schedule_tz TEXT NOT NULL DEFAULT '',
+next_fire_at TEXT,
 evidence_json TEXT,
 lifecycle TEXT NOT NULL DEFAULT 'durable',
 lease_expires_at TEXT,
@@ -1294,6 +1356,9 @@ func watchMigrationDDL(dbType, schema string) []string {
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS lease_owner_id TEXT NOT NULL DEFAULT ''`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS absence_json JSONB`, watches),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS schedule_cron TEXT NOT NULL DEFAULT ''`, watches),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS schedule_tz TEXT NOT NULL DEFAULT ''`, watches),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS next_fire_at TIMESTAMPTZ`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS data_truncated BOOLEAN NOT NULL DEFAULT FALSE`, events),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS snoozed_until TIMESTAMPTZ`, events),
 	}
@@ -1354,6 +1419,23 @@ func (s *graphjinService) migrateWatchSchema(ctx context.Context, db *sql.DB, db
 	if err := ensureSQLColumn(ctx, db, dbType, watches, "absence_json", absenceDef); err != nil {
 		return err
 	}
+	scheduleCronDef := "TEXT NOT NULL DEFAULT ''"
+	scheduleTZDef := "TEXT NOT NULL DEFAULT ''"
+	nextFireDef := "TEXT"
+	if dbType == "mysql" || dbType == "mariadb" {
+		scheduleCronDef = "VARCHAR(255) NOT NULL DEFAULT ''"
+		scheduleTZDef = "VARCHAR(64) NOT NULL DEFAULT ''"
+		nextFireDef = "VARCHAR(64)"
+	}
+	if err := ensureSQLColumn(ctx, db, dbType, watches, "schedule_cron", scheduleCronDef); err != nil {
+		return err
+	}
+	if err := ensureSQLColumn(ctx, db, dbType, watches, "schedule_tz", scheduleTZDef); err != nil {
+		return err
+	}
+	if err := ensureSQLColumn(ctx, db, dbType, watches, "next_fire_at", nextFireDef); err != nil {
+		return err
+	}
 	events := artifactTableName(dbType, schema, "watch_events")
 	dataTruncatedDef := "INTEGER NOT NULL DEFAULT 0"
 	if dbType == "mysql" || dbType == "mariadb" {
@@ -1367,6 +1449,136 @@ func (s *graphjinService) migrateWatchSchema(ctx context.Context, db *sql.DB, db
 		snoozedUntilDef = "VARCHAR(64)"
 	}
 	return ensureSQLColumn(ctx, db, dbType, events, "snoozed_until", snoozedUntilDef)
+}
+
+// watchSchedule is the time trigger of a schedule watch. Cron is a standard
+// five-field expression evaluated in Timezone, an IANA zone name.
+type watchSchedule struct {
+	Cron     string
+	Timezone string
+	spec     *cron.SpecSchedule
+}
+
+const (
+	watchScheduleMaxCronLen     = 255
+	watchScheduleMaxTimezoneLen = 64
+)
+
+var watchCronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+
+// parseWatchScheduleInput reads the optional schedule field of a gj_watch
+// mutation. It accepts an object or its JSON text; null, "" and {} mean the
+// watch has no schedule.
+func parseWatchScheduleInput(raw any) (watchSchedule, bool, error) {
+	errShape := fmt.Errorf(`schedule must be an object like {"cron": "0 9 * * 1-5", "timezone": "America/New_York"}`)
+	var value map[string]any
+	text := ""
+	switch v := raw.(type) {
+	case nil:
+		return watchSchedule{}, false, nil
+	case map[string]any:
+		value = v
+	case string:
+		text = v
+	case json.RawMessage:
+		text = string(v)
+	default:
+		return watchSchedule{}, false, errShape
+	}
+	if value == nil {
+		text = strings.TrimSpace(text)
+		if text == "" || text == "null" {
+			return watchSchedule{}, false, nil
+		}
+		if err := json.Unmarshal([]byte(text), &value); err != nil {
+			return watchSchedule{}, false, errShape
+		}
+	}
+	if len(value) == 0 {
+		return watchSchedule{}, false, nil
+	}
+	for key := range value {
+		if key != "cron" && key != "timezone" {
+			return watchSchedule{}, false, fmt.Errorf("schedule has unknown field %q; supported fields are cron and timezone", key)
+		}
+	}
+	cronExpr, ok := value["cron"].(string)
+	if !ok || strings.TrimSpace(cronExpr) == "" {
+		return watchSchedule{}, false, fmt.Errorf("schedule.cron is required, e.g. \"0 9 * * 1-5\"")
+	}
+	timezone := ""
+	if tz, exists := value["timezone"]; exists && tz != nil {
+		text, ok := tz.(string)
+		if !ok {
+			return watchSchedule{}, false, fmt.Errorf("schedule.timezone must be a string IANA zone name such as America/New_York")
+		}
+		timezone = text
+	}
+	sched, err := parseWatchSchedule(cronExpr, timezone)
+	if err != nil {
+		return watchSchedule{}, false, err
+	}
+	return sched, true, nil
+}
+
+// parseWatchSchedule validates a stored or submitted schedule. Every replica
+// must compute the same fire times from the same row, so expressions that
+// depend on the host (the Local zone) or carry their own zone prefix are
+// rejected rather than interpreted.
+func parseWatchSchedule(cronExpr, timezone string) (watchSchedule, error) {
+	fields := strings.Fields(cronExpr)
+	cronExpr = strings.Join(fields, " ")
+	if len(cronExpr) > watchScheduleMaxCronLen {
+		return watchSchedule{}, fmt.Errorf("schedule.cron is longer than %d characters", watchScheduleMaxCronLen)
+	}
+	if strings.HasPrefix(cronExpr, "@") || strings.Contains(cronExpr, "=") {
+		return watchSchedule{}, fmt.Errorf("schedule.cron %q is not supported; use five fields (minute hour day-of-month month day-of-week) and put the zone in schedule.timezone", cronExpr)
+	}
+	if len(fields) != 5 {
+		return watchSchedule{}, fmt.Errorf("schedule.cron %q must have 5 fields (minute hour day-of-month month day-of-week), got %d", cronExpr, len(fields))
+	}
+	timezone = strings.TrimSpace(timezone)
+	if timezone == "" {
+		timezone = "UTC"
+	}
+	if len(timezone) > watchScheduleMaxTimezoneLen || strings.EqualFold(timezone, "Local") {
+		return watchSchedule{}, fmt.Errorf("schedule.timezone %q must be an IANA zone name such as America/New_York or UTC", timezone)
+	}
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		return watchSchedule{}, fmt.Errorf("schedule.timezone %q is not a known IANA zone name (e.g. America/New_York, Europe/Berlin, UTC)", timezone)
+	}
+	parsed, err := watchCronParser.Parse(cronExpr)
+	if err != nil {
+		return watchSchedule{}, fmt.Errorf("schedule.cron %q is invalid: %w", cronExpr, err)
+	}
+	spec, ok := parsed.(*cron.SpecSchedule)
+	if !ok {
+		return watchSchedule{}, fmt.Errorf("schedule.cron %q is not a five-field cron expression", cronExpr)
+	}
+	spec.Location = loc
+	sched := watchSchedule{Cron: cronExpr, Timezone: timezone, spec: spec}
+	if sched.next(time.Now().UTC()).IsZero() {
+		return watchSchedule{}, fmt.Errorf("schedule.cron %q never fires", cronExpr)
+	}
+	return sched, nil
+}
+
+func (sch watchSchedule) evidence() map[string]any {
+	return map[string]any{
+		"validated_at":      time.Now().UTC().Format(time.RFC3339),
+		"operation":         "schedule",
+		"schedule":          map[string]any{"cron": sch.Cron, "timezone": sch.Timezone},
+		"watched_watch_ids": []string{},
+	}
+}
+
+func watchScheduleProjection(row map[string]any) any {
+	cronExpr := stringMapValue(row, "schedule_cron")
+	if cronExpr == "" {
+		return nil
+	}
+	return map[string]any{"cron": cronExpr, "timezone": stringMapValue(row, "schedule_tz")}
 }
 
 func watchID(ownerID, name string) string {
@@ -1435,6 +1647,8 @@ func watchStoreRow(row map[string]any, rawIDs bool) map[string]any {
 		"delivery_json":    row["delivery_json"],
 		"enrich_json":      row["enrich_json"],
 		"absence_json":     row["absence_json"],
+		"schedule":         watchScheduleProjection(row),
+		"next_fire_at":     stringMapValue(row, "next_fire_at"),
 		"evidence_json":    row["evidence_json"],
 		"lifecycle":        watchLifecycle(stringMapValue(row, "lifecycle")),
 		"lease_expires_at": stringMapValue(row, "lease_expires_at"),
