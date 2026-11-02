@@ -306,9 +306,10 @@ func (a *authLoginService) handleMCPOAuthRegister(w http.ResponseWriter, r *http
 	if req.TokenEndpointAuthMethod == "" {
 		req.TokenEndpointAuthMethod = "none"
 	}
-	a.mu.Lock()
-	a.oauthClients[clientID] = &req
-	a.mu.Unlock()
+	if err := a.state().putOAuthClient(r.Context(), &req, time.Time{}); err != nil {
+		http.Error(w, "failed to store client registration", http.StatusInternalServerError)
+		return
+	}
 
 	writeJSONStatus(w, http.StatusCreated, map[string]any{
 		"client_id":                  clientID,
@@ -376,8 +377,7 @@ func (a *authLoginService) handleMCPOAuthAuthorize(w http.ResponseWriter, r *htt
 		return
 	}
 	now := time.Now()
-	a.mu.Lock()
-	a.oauthStates[oidcState] = &mcpOAuthAuthRequest{
+	err = a.state().putOAuthRequest(r.Context(), oidcState, &mcpOAuthAuthRequest{
 		ClientID:            clientID,
 		RedirectURI:         redirectURI,
 		ClientState:         q.Get("state"),
@@ -387,27 +387,31 @@ func (a *authLoginService) handleMCPOAuthAuthorize(w http.ResponseWriter, r *htt
 		CodeChallengeMethod: "S256",
 		CreatedAt:           now,
 		ExpiresAt:           now.Add(mcpOAuthRequestTTL),
+	})
+	if err != nil {
+		http.Error(w, "failed to store authorization request", http.StatusInternalServerError)
+		return
 	}
-	a.mu.Unlock()
 
 	redirectTo := a.provider.AuthCodeURL(oidcState, publicBaseURL(r)+routeAuthCallback)
 	http.Redirect(w, r, redirectTo, http.StatusFound)
 }
 
 func (a *authLoginService) handleMCPOAuthCallback(w http.ResponseWriter, r *http.Request, state, providerCode string) bool {
-	a.mu.Lock()
-	req, ok := a.oauthStates[state]
-	if !ok {
-		a.mu.Unlock()
+	// Consuming the request up front makes the state single-use across
+	// replicas: a replayed callback finds nothing and falls through.
+	req, err := a.state().takeOAuthRequest(r.Context(), state)
+	if err != nil {
+		writeOAuthError(w, http.StatusInternalServerError, "server_error", "failed to load authorization request")
+		return true
+	}
+	if req == nil {
 		return false
 	}
 	if time.Now().After(req.ExpiresAt) {
-		delete(a.oauthStates, state)
-		a.mu.Unlock()
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "authorization request expired")
 		return true
 	}
-	a.mu.Unlock()
 
 	redirectURI := publicBaseURL(r) + routeAuthCallback
 	ident, err := a.provider.Exchange(r.Context(), providerCode, redirectURI)
@@ -421,9 +425,7 @@ func (a *authLoginService) handleMCPOAuthCallback(w http.ResponseWriter, r *http
 		http.Error(w, "failed to generate authorization code", http.StatusInternalServerError)
 		return true
 	}
-	a.mu.Lock()
-	delete(a.oauthStates, state)
-	a.oauthCodes[code] = &mcpOAuthCode{
+	err = a.state().putOAuthCode(r.Context(), code, &mcpOAuthCode{
 		ClientID:    req.ClientID,
 		RedirectURI: req.RedirectURI,
 		Scope:       req.Scope,
@@ -431,8 +433,11 @@ func (a *authLoginService) handleMCPOAuthCallback(w http.ResponseWriter, r *http
 		Challenge:   req.CodeChallenge,
 		Identity:    ident,
 		ExpiresAt:   time.Now().Add(mcpOAuthAuthCodeTTL),
+	})
+	if err != nil {
+		http.Error(w, "failed to store authorization code", http.StatusInternalServerError)
+		return true
 	}
-	a.mu.Unlock()
 
 	u, _ := url.Parse(req.RedirectURI)
 	v := u.Query()
@@ -474,12 +479,11 @@ func (a *authLoginService) handleMCPOAuthAuthorizationCodeToken(w http.ResponseW
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "code, client_id, redirect_uri, code_verifier, and resource are required")
 		return
 	}
-	a.mu.Lock()
-	authCode := a.oauthCodes[code]
-	if authCode != nil {
-		delete(a.oauthCodes, code)
+	authCode, err := a.state().takeOAuthCode(r.Context(), code)
+	if err != nil {
+		writeOAuthError(w, http.StatusInternalServerError, "server_error", "failed to load authorization code")
+		return
 	}
-	a.mu.Unlock()
 	if authCode == nil || time.Now().After(authCode.ExpiresAt) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "authorization code is invalid or expired")
 		return
@@ -496,7 +500,7 @@ func (a *authLoginService) handleMCPOAuthAuthorizationCodeToken(w http.ResponseW
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "code_verifier does not match code_challenge")
 		return
 	}
-	a.writeMCPOAuthTokenResponse(w, authCode.ClientID, authCode.Scope, authCode.Resource, authCode.Identity)
+	a.writeMCPOAuthTokenResponse(r.Context(), w, authCode.ClientID, authCode.Scope, authCode.Resource, authCode.Identity)
 }
 
 func (a *authLoginService) handleMCPOAuthRefreshToken(w http.ResponseWriter, r *http.Request) {
@@ -507,13 +511,11 @@ func (a *authLoginService) handleMCPOAuthRefreshToken(w http.ResponseWriter, r *
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "client_id, refresh_token, and resource are required")
 		return
 	}
-	a.mu.Lock()
-	rt := a.oauthRefreshTokens[refresh]
-	if rt != nil && time.Now().After(rt.ExpiresAt) {
-		delete(a.oauthRefreshTokens, refresh)
-		rt = nil
+	rt, err := a.state().getRefreshToken(r.Context(), refresh, time.Now())
+	if err != nil {
+		writeOAuthError(w, http.StatusInternalServerError, "server_error", "failed to load refresh token")
+		return
 	}
-	a.mu.Unlock()
 	if rt == nil || rt.ClientID != clientID {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "refresh_token is invalid or expired")
 		return
@@ -522,10 +524,10 @@ func (a *authLoginService) handleMCPOAuthRefreshToken(w http.ResponseWriter, r *
 		writeOAuthError(w, http.StatusBadRequest, "invalid_target", "resource does not match refresh token")
 		return
 	}
-	a.writeMCPOAuthTokenResponse(w, rt.ClientID, rt.Scope, rt.Resource, rt.Identity)
+	a.writeMCPOAuthTokenResponse(r.Context(), w, rt.ClientID, rt.Scope, rt.Resource, rt.Identity)
 }
 
-func (a *authLoginService) writeMCPOAuthTokenResponse(w http.ResponseWriter, clientID, scope, resource string, ident *oidc.Identity) {
+func (a *authLoginService) writeMCPOAuthTokenResponse(ctx context.Context, w http.ResponseWriter, clientID, scope, resource string, ident *oidc.Identity) {
 	if ident == nil {
 		writeOAuthError(w, http.StatusInternalServerError, "server_error", "missing identity")
 		return
@@ -556,15 +558,17 @@ func (a *authLoginService) writeMCPOAuthTokenResponse(w http.ResponseWriter, cli
 		writeOAuthError(w, http.StatusInternalServerError, "server_error", "failed to mint refresh token")
 		return
 	}
-	a.mu.Lock()
-	a.oauthRefreshTokens[refresh] = &mcpOAuthRefreshToken{
+	err = a.state().putRefreshToken(ctx, refresh, &mcpOAuthRefreshToken{
 		ClientID:  clientID,
 		Scope:     scope,
 		Resource:  resource,
 		Identity:  ident,
 		ExpiresAt: time.Now().Add(refreshTTL),
+	})
+	if err != nil {
+		writeOAuthError(w, http.StatusInternalServerError, "server_error", "failed to store refresh token")
+		return
 	}
-	a.mu.Unlock()
 	writeJSONStatus(w, http.StatusOK, map[string]any{
 		"access_token":  tok,
 		"token_type":    "Bearer",
@@ -575,22 +579,23 @@ func (a *authLoginService) writeMCPOAuthTokenResponse(w http.ResponseWriter, cli
 }
 
 func (a *authLoginService) resolveMCPOAuthClient(ctx context.Context, clientID string) (*mcpOAuthClient, error) {
-	a.mu.Lock()
-	client := a.oauthClients[clientID]
-	a.mu.Unlock()
+	client, err := a.state().getOAuthClient(ctx, clientID, time.Now())
+	if err != nil {
+		return nil, err
+	}
 	if client != nil {
 		return client, nil
 	}
 	if !a.mcpOAuth.ClientIDMetadataDocuments {
 		return nil, errors.New("unknown client_id and CIMD is disabled")
 	}
-	client, err := fetchClientIDMetadataDocument(ctx, clientID)
+	client, err = fetchClientIDMetadataDocument(ctx, clientID)
 	if err != nil {
 		return nil, err
 	}
-	a.mu.Lock()
-	a.oauthClients[clientID] = client
-	a.mu.Unlock()
+	if err := a.state().putOAuthClient(ctx, client, time.Now().Add(mcpOAuthCIMDCacheTTL)); err != nil {
+		return nil, err
+	}
 	return client, nil
 }
 

@@ -778,7 +778,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 
 	// Initialize built-in OIDC login (non-fatal if disabled)
 	if s.conf.AuthLogin.Enabled {
-		als, err := newAuthLoginService(context.Background(), s.conf)
+		als, err := s.initAuthLogin(context.Background())
 		if err != nil {
 			return nil, fmt.Errorf("auth_login: %w", err)
 		}

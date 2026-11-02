@@ -148,7 +148,27 @@ func (s *graphjinService) injectInternalStoreRole() {
 			})
 		}
 	}
+	// Login state holds credentials-derived rows that GraphJin reads with
+	// raw SQL only, so it is blocked for every role including the internal one.
+	blockAll := func(table, schema string) {
+		for _, role := range append([]string{graphjinInternalStoreRole}, blockRoles...) {
+			appendRuntimeRoleTable(coreConf, role, core.RoleTable{
+				Name:     table,
+				Schema:   schema,
+				Database: dbName,
+				Query:    &core.Query{Block: true},
+				Insert:   &core.Insert{Block: true},
+				Update:   &core.Update{Block: true},
+				Upsert:   &core.Upsert{Block: true},
+				Delete:   &core.Delete{Block: true},
+			})
+		}
+	}
 	addRevisionSignal()
+	if s.authStoreEnabled() {
+		root, schema, _ := s.internalStoreRoot(authStoreTable)
+		blockAll(root, schema)
+	}
 	if dbType == "postgres" || dbType == "" {
 		add("artifacts", cfg.Schema)
 		add("revisions", cfg.Schema)
