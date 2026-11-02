@@ -140,15 +140,15 @@ func watchScheduleResumeNextFire(row map[string]any, runnable bool) (string, boo
 
 // watchScheduleEventID is deterministic in (watch, fire time): every replica
 // that reaches the same tick derives the same event id, so the event row's
-// primary key is a second, Redis-free guard against firing a tick twice.
+// primary key is what lets exactly one of them fire it.
 func watchScheduleEventID(watchID string, due time.Time) (eventID, dataHash string) {
 	dataHash = hashString("schedule:" + formatWatchFireTime(due))
 	return watchEventID(watchID, dataHash), dataHash
 }
 
 // startWatchScheduleRunner starts the time-trigger sweep. It runs on every
-// replica that runs watches; the database compare-and-set on next_fire_at
-// decides which replica fires each tick, so no leader or Redis is required.
+// replica that runs watches; the event's primary key decides which replica
+// fires each tick, so no leader, lock, or Redis is required.
 func (s *graphjinService) startWatchScheduleRunner(parent context.Context) {
 	if s == nil || s.conf == nil || !s.watchesEnabled() || s.gj == nil {
 		return
@@ -266,7 +266,7 @@ func (s *graphjinService) sweepWatchSchedules(ctx context.Context, now time.Time
 		if !hasDue {
 			// Rows written before next_fire_at existed start their clock now.
 			next := sched.next(now)
-			if _, err := s.claimWatchScheduleTick(ctx, id, raw, time.Time{}, next); err != nil && firstErr == nil {
+			if _, err := s.advanceWatchSchedule(ctx, id, raw, time.Time{}, next); err != nil && firstErr == nil {
 				firstErr = err
 			}
 			noteNext(next)
@@ -291,8 +291,15 @@ func (s *graphjinService) sweepWatchSchedules(ctx context.Context, now time.Time
 	return out, firstErr
 }
 
-// fireWatchSchedule claims the due tick and, if this replica won it, records
-// the schedule event and hands it to the normal delivery path.
+// fireWatchSchedule records the due tick and then moves the schedule on.
+//
+// The event goes in first. Its id is deterministic in (watch, fire time) and
+// is the event row's primary key, so of all the replicas that reach this tick
+// exactly one insert succeeds and the rest find the row and write nothing.
+// Only then does next_fire_at move. A replica that dies between the two steps
+// leaves the tick due with its event already written; the next sweep, on any
+// replica, finds the event and only moves the clock on. A tick is neither lost
+// nor doubled, and no step holds a lock or needs Redis.
 func (s *graphjinService) fireWatchSchedule(
 	ctx context.Context,
 	row map[string]any,
@@ -302,9 +309,6 @@ func (s *graphjinService) fireWatchSchedule(
 ) (bool, time.Time, error) {
 	def := watchScheduleDefinition(s, row)
 	ownerCtx := s.watchOwnerContext(ctx, def)
-	// Resolve everything that can fail for non-storage reasons before the
-	// claim, so a claimed tick only fails on a store error and can be handed
-	// back below.
 	proposal, err := s.watchActionProposal(ownerCtx, "", "", def.VariablesJSON, def.EnrichJSON, def.DeliveryJSON, "")
 	if err != nil {
 		// Same treatment as a subscription watch whose action no longer
@@ -320,22 +324,31 @@ func (s *graphjinService) fireWatchSchedule(
 	def.ActionApproved = watchActionApproval(evidence, proposal) == watchReviewApproved
 	def.WorkflowSourceHash = proposal.WorkflowSourceHash
 
-	next := sched.next(now)
-	// Shutdown must not split a claim from its event: once claimed, the tick
-	// is either recorded or handed back.
+	// The ordering already makes an interrupted fire safe; this only keeps a
+	// shutdown from cutting the follow-up bookkeeping (enrichment, wake-ups)
+	// short once the event exists.
 	ctx = context.WithoutCancel(ctx)
-	claimed, err := s.claimWatchScheduleTick(ctx, def.ID, raw, due, next)
-	if err != nil || !claimed {
-		return false, next, err
-	}
 	inserted, err := s.insertWatchScheduleEvent(ctx, &def, proposal, sched, due, now)
 	if err != nil {
-		// Hand the tick back. The event id is deterministic, so whichever
-		// replica retries it cannot produce a second event for this tick.
-		if _, rollbackErr := s.claimWatchScheduleTick(ctx, def.ID, formatWatchFireTime(next), next, due); rollbackErr != nil {
-			s.recordWatchRunnerError("return watch schedule tick", rollbackErr, map[string]any{"watch_id": def.ID})
+		// Nothing has moved: the tick stays due and the next sweep retries it.
+		return false, time.Time{}, err
+	}
+	next := sched.next(now)
+	advanced, err := s.advanceWatchSchedule(ctx, def.ID, raw, due, next)
+	if err != nil {
+		return inserted, time.Time{}, err
+	}
+	if !inserted && !advanced {
+		// Another replica recorded this tick and moved the clock.
+		return false, next, nil
+	}
+	if !inserted {
+		// The event was written by a replica that stopped (or has not yet
+		// got) past the insert, so its delivery wake-up may never have been
+		// sent. A spare wake-up is harmless.
+		if err := s.bumpArtifactRevision(ctx, "watch_events"); err != nil {
+			return false, next, err
 		}
-		return false, due, err
 	}
 	nowText := now.Format(time.RFC3339Nano)
 	if _, err := s.internalStoreMutationRows(ctx, "watches", `where: { id: { eq: $id } }, update: $input`, watchStoreFields, map[string]any{
@@ -351,10 +364,10 @@ func (s *graphjinService) fireWatchSchedule(
 	return inserted, next, nil
 }
 
-// claimWatchScheduleTick moves next_fire_at from prev (as read, raw) to next
-// and reports whether this call made the move. Exactly one replica can win a
-// given tick.
-func (s *graphjinService) claimWatchScheduleTick(ctx context.Context, id, raw string, prev, next time.Time) (bool, error) {
+// advanceWatchSchedule moves next_fire_at from prev (as read, raw) to next and
+// reports whether this call made the move; of several replicas advancing the
+// same tick, exactly one does.
+func (s *graphjinService) advanceWatchSchedule(ctx context.Context, id, raw string, prev, next time.Time) (bool, error) {
 	db, dbType, watches, _, ok := s.watchDB()
 	if !ok {
 		return false, nil
@@ -362,7 +375,9 @@ func (s *graphjinService) claimWatchScheduleTick(ctx context.Context, id, raw st
 	// Direct SQL for the same reason as claimTaskVerification: the internal
 	// GraphQL mutation API cannot report the affected-row count, and a
 	// read-back cannot tell two replicas apart when both would write the same
-	// next fire time.
+	// next fire time. A plain conditional UPDATE is enough: the database
+	// re-checks the WHERE against the committed row, so a second writer
+	// matches nothing once the first has moved the clock.
 	nextFire := quoteStoreIdent(dbType, "next_fire_at")
 	args := []any{watchScheduleSQLTime(dbType, next), id}
 	match := nextFire + " IS NULL"
@@ -418,8 +433,9 @@ func watchScheduleDefinition(s *graphjinService, row map[string]any) watchRuntim
 	}
 }
 
-// insertWatchScheduleEvent writes the event for one claimed tick. It returns
-// false without error when the event already exists.
+// insertWatchScheduleEvent writes the event for one tick. It returns false
+// without error when the event already exists, which is how every replica but
+// one learns it lost the tick.
 func (s *graphjinService) insertWatchScheduleEvent(
 	ctx context.Context,
 	def *watchRuntimeDefinition,

@@ -276,7 +276,7 @@ func TestWatchScheduleTwoRunnersFireOncePerTick(t *testing.T) {
 		if got, want := storedWatchNextFire(t, db, id), formatWatchFireTime(sched.next(now)); got != want {
 			t.Fatalf("tick %d next_fire_at = %s, want %s", i, got, want)
 		}
-		// A sweep after the tick is claimed finds nothing due.
+		// A sweep after the tick has fired finds nothing due.
 		if sweep, err := replicas[1].sweepWatchSchedules(ctx, now); err != nil || sweep.Fired != 0 {
 			t.Fatalf("tick %d re-sweep fired=%d err=%v", i, sweep.Fired, err)
 		}
@@ -317,7 +317,7 @@ func TestWatchScheduleTwoRunnersFireOncePerTick(t *testing.T) {
 	}
 }
 
-func TestWatchScheduleClaimIsExclusive(t *testing.T) {
+func TestWatchScheduleAdvanceIsExclusive(t *testing.T) {
 	db, replicas := newScheduleWatchReplicas(t, 2)
 	ctx := artifactUserCtx("user_1")
 	row := insertScheduleWatch(t, replicas[0], ctx, "hourly", map[string]any{"cron": "0 * * * *"})
@@ -326,8 +326,8 @@ func TestWatchScheduleClaimIsExclusive(t *testing.T) {
 	next := due.Add(time.Hour)
 	setWatchNextFire(t, db, id, due)
 
-	// Every claimant read the same row and computed the same next fire time,
-	// which is exactly the case a read-back claim cannot tell apart.
+	// Every replica read the same row and computed the same next fire time,
+	// which is exactly the case a read-back check cannot tell apart.
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 	var mu sync.Mutex
@@ -338,9 +338,9 @@ func TestWatchScheduleClaimIsExclusive(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			ok, err := svc.claimWatchScheduleTick(ctx, id, formatWatchFireTime(due), due, next)
+			ok, err := svc.advanceWatchSchedule(ctx, id, formatWatchFireTime(due), due, next)
 			if err != nil {
-				t.Errorf("claim: %v", err)
+				t.Errorf("advance: %v", err)
 			}
 			if ok {
 				mu.Lock()
@@ -352,7 +352,7 @@ func TestWatchScheduleClaimIsExclusive(t *testing.T) {
 	close(start)
 	wg.Wait()
 	if wins != 1 {
-		t.Fatalf("claims won = %d, want exactly 1", wins)
+		t.Fatalf("advances won = %d, want exactly 1", wins)
 	}
 	if got := storedWatchNextFire(t, db, id); got != formatWatchFireTime(next) {
 		t.Fatalf("next_fire_at = %s, want %s", got, formatWatchFireTime(next))
@@ -698,5 +698,95 @@ func TestScheduleWatchWebhookActionReview(t *testing.T) {
 	row = mutate("update", map[string]any{"schedule": map[string]any{"cron": "* * * * *"}})
 	if row["action_approval"] != watchReviewPending || row["status"] != "paused" || row["enabled"] != false {
 		t.Fatalf("cadence change kept approval: %+v", row)
+	}
+}
+
+// A replica that dies after writing the event but before moving the clock
+// must not lose the tick or let another replica fire it again.
+func TestWatchScheduleRecoversFromCrashAfterInsert(t *testing.T) {
+	db, replicas := newScheduleWatchReplicas(t, 2)
+	crashed, survivor := replicas[0], replicas[1]
+	ctx := artifactUserCtx("user_1")
+	row := insertScheduleWatch(t, crashed, ctx, "crash_tick", map[string]any{"cron": "*/15 * * * *"})
+	id := stringFromAny(row["id"])
+	sched := mustWatchSchedule(t, "*/15 * * * *", "UTC")
+	due := time.Now().UTC().Truncate(15 * time.Minute)
+	setWatchNextFire(t, db, id, due)
+
+	// The crashed replica got exactly as far as the insert.
+	stored, err := crashed.internalWatchStoreRow(ctx, id)
+	if err != nil || stored == nil {
+		t.Fatalf("load watch: %v", err)
+	}
+	def := watchScheduleDefinition(crashed, stored)
+	if inserted, err := crashed.insertWatchScheduleEvent(context.Background(), &def, watchActionProposal{}, sched, due, due.Add(time.Second)); err != nil || !inserted {
+		t.Fatalf("crashed replica insert=%v err=%v", inserted, err)
+	}
+	if got := storedWatchNextFire(t, db, id); got != formatWatchFireTime(due) {
+		t.Fatalf("tick should still be due after the crash, next_fire_at = %s", got)
+	}
+	revisionBefore := sqliteRevision(t, db, "watch_events")
+
+	now := due.Add(5 * time.Second)
+	sweep, err := survivor.sweepWatchSchedules(ctx, now)
+	if err != nil {
+		t.Fatalf("survivor sweep: %v", err)
+	}
+	if sweep.Fired != 0 {
+		t.Fatalf("survivor fired %d new events for a tick that already has one", sweep.Fired)
+	}
+	if got, want := storedWatchNextFire(t, db, id), formatWatchFireTime(sched.next(now)); got != want {
+		t.Fatalf("survivor did not move the clock on: next_fire_at = %s, want %s", got, want)
+	}
+	if ids := watchEventIDs(t, db); len(ids) != 1 {
+		t.Fatalf("events after recovery = %v, want the crashed replica's one", ids)
+	}
+	if got := sqliteRevision(t, db, "watch_events"); got <= revisionBefore {
+		t.Fatalf("survivor did not wake delivery: watch_events revision %d -> %d", revisionBefore, got)
+	}
+	// The orphaned event still reaches delivery.
+	if err := survivor.processPendingWatchDeliveries(ctx); err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+	events, err := newWatchControlPlane(survivor).watchEventRows(ctx)
+	if err != nil || len(events) != 1 || events[0]["delivery_status"] != "delivered" {
+		t.Fatalf("recovered event = %+v err %v", events, err)
+	}
+}
+
+// If the event cannot be written, the clock must not move: the tick stays
+// due and fires on a later sweep instead of being dropped.
+func TestWatchScheduleFailedInsertLeavesTickDue(t *testing.T) {
+	db, replicas := newScheduleWatchReplicas(t, 1)
+	svc := replicas[0]
+	ctx := artifactUserCtx("user_1")
+	row := insertScheduleWatch(t, svc, ctx, "store_outage", map[string]any{"cron": "0 * * * *"})
+	id := stringFromAny(row["id"])
+	due := time.Now().UTC().Truncate(time.Hour)
+	setWatchNextFire(t, db, id, due)
+
+	if _, err := db.Exec(`ALTER TABLE "_graphjin_watch_events" RENAME TO "_graphjin_watch_events_away"`); err != nil {
+		t.Fatal(err)
+	}
+	sweep, err := svc.sweepWatchSchedules(ctx, due.Add(time.Second))
+	if err == nil || sweep.Fired != 0 {
+		t.Fatalf("sweep with the event table gone fired=%d err=%v, want an error", sweep.Fired, err)
+	}
+	if !sweep.Soonest.IsZero() {
+		t.Fatalf("a failed tick must not schedule a fast retry loop: soonest = %s", sweep.Soonest)
+	}
+	if got := storedWatchNextFire(t, db, id); got != formatWatchFireTime(due) {
+		t.Fatalf("failed insert moved next_fire_at to %s", got)
+	}
+
+	if _, err := db.Exec(`ALTER TABLE "_graphjin_watch_events_away" RENAME TO "_graphjin_watch_events"`); err != nil {
+		t.Fatal(err)
+	}
+	sweep, err = svc.sweepWatchSchedules(ctx, due.Add(time.Minute))
+	if err != nil || sweep.Fired != 1 {
+		t.Fatalf("retry sweep fired=%d err=%v", sweep.Fired, err)
+	}
+	if want, _ := watchScheduleEventID(id, due); !slices.Contains(watchEventIDs(t, db), want) {
+		t.Fatalf("retried tick events = %v, want %s", watchEventIDs(t, db), want)
 	}
 }
