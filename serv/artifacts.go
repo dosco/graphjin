@@ -621,6 +621,16 @@ func (s *graphjinService) ensureStoreTables() error {
 			}
 		}
 	}
+	if s.authStoreEnabled() {
+		for _, stmt := range authStoreDDL(dbType, s.conf.Core.EffectiveArtifactsConfig().Schema) {
+			if _, err := db.ExecContext(context.Background(), stmt); err != nil {
+				return err
+			}
+		}
+		if err := migrateAuthStoreSchema(context.Background(), db, dbType, s.conf.Core.EffectiveArtifactsConfig().Schema); err != nil {
+			return err
+		}
+	}
 	return s.migrateArtifactSchema(context.Background(), db, dbType, s.conf.Core.EffectiveArtifactsConfig().Schema)
 }
 

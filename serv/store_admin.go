@@ -137,6 +137,12 @@ func (s *graphjinService) storeStatus(ctx context.Context) (StoreStatus, error) 
 		table := artifactTableName(dbType, cfg.Schema, name)
 		st.Tables = append(st.Tables, StoreTable{Name: name, Exists: storeTableExists(ctx, db, table)})
 	}
+	// Login state is outside storeTableNames because no role, not even the
+	// internal one, may read it through GraphQL.
+	if s.authStoreEnabled() {
+		table := artifactTableName(dbType, cfg.Schema, authStoreTable)
+		st.Tables = append(st.Tables, StoreTable{Name: authStoreTable, Exists: storeTableExists(ctx, db, table)})
+	}
 	return st, nil
 }
 

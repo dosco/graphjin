@@ -42,17 +42,20 @@ const (
 	deviceStatusDenied                               // user rejected / allow-list blocked
 )
 
+// deviceSession is persisted as JSON by the shared auth store. The bearer
+// secrets (device code, user code, OIDC state) are row keys there and are
+// stored hashed, so they are excluded from the payload.
 type deviceSession struct {
-	DeviceCode  string
-	UserCode    string
+	DeviceCode  string `json:"-"`
+	UserCode    string `json:"-"`
 	CreatedAt   time.Time
 	ExpiresAt   time.Time
 	LastPollAt  time.Time
 	Status      deviceSessionStatus
-	Token       string // minted local JWT (set when Status == Completed)
+	Token       string `json:"-"` // pre-minted local JWT; minted at redemption when empty
 	TokenExp    time.Time
 	Identity    *oidc.Identity
-	OIDCState   string // opaque state tying OIDC callback back to this session
+	OIDCState   string `json:"-"` // opaque state tying OIDC callback back to this session
 	DeniedError string
 }
 
@@ -62,6 +65,10 @@ type authLoginService struct {
 	mcpOAuth MCPOAuthConfig
 	provider *oidc.Provider
 	issuer   *issuer.Issuer
+
+	// store holds login state shared across replicas. When nil the maps
+	// below are used instead (single-process fallback).
+	store authStateStore
 
 	mu       sync.Mutex
 	byDevice map[string]*deviceSession // keyed by device_code
@@ -74,9 +81,16 @@ type authLoginService struct {
 	oauthRefreshTokens map[string]*mcpOAuthRefreshToken
 }
 
-// newAuthLoginService validates config, builds the OIDC provider and JWT
-// issuer, and starts the background GC.
+// newAuthLoginService builds a login service that keeps its state in process
+// memory.
 func newAuthLoginService(ctx context.Context, conf *Config) (*authLoginService, error) {
+	return newAuthLoginServiceWithStore(ctx, conf, nil)
+}
+
+// newAuthLoginServiceWithStore validates config, builds the OIDC provider and
+// JWT issuer, and starts the background GC. A nil store selects the
+// in-memory fallback.
+func newAuthLoginServiceWithStore(ctx context.Context, conf *Config, store authStateStore) (*authLoginService, error) {
 	a := conf.AuthLogin
 	if !a.Enabled {
 		return nil, nil
@@ -140,6 +154,7 @@ func newAuthLoginService(ctx context.Context, conf *Config) (*authLoginService, 
 		mcpOAuth:           conf.MCP.OAuth,
 		provider:           prov,
 		issuer:             iss,
+		store:              store,
 		byDevice:           map[string]*deviceSession{},
 		byUser:             map[string]string{},
 		byState:            map[string]string{},
@@ -161,7 +176,8 @@ func firstNonEmpty(vs ...string) string {
 	return ""
 }
 
-// gc sweeps expired sessions.
+// gc sweeps expired sessions. With a shared store every replica sweeps;
+// the deletes are idempotent.
 func (a *authLoginService) gc(ctx context.Context) {
 	t := time.NewTicker(deviceCodeGCEvery)
 	defer t.Stop()
@@ -170,32 +186,7 @@ func (a *authLoginService) gc(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case now := <-t.C:
-			a.mu.Lock()
-			for dc, s := range a.byDevice {
-				if now.After(s.ExpiresAt) {
-					delete(a.byDevice, dc)
-					delete(a.byUser, s.UserCode)
-					if s.OIDCState != "" {
-						delete(a.byState, s.OIDCState)
-					}
-				}
-			}
-			for state, s := range a.oauthStates {
-				if now.After(s.ExpiresAt) {
-					delete(a.oauthStates, state)
-				}
-			}
-			for code, s := range a.oauthCodes {
-				if now.After(s.ExpiresAt) {
-					delete(a.oauthCodes, code)
-				}
-			}
-			for tok, s := range a.oauthRefreshTokens {
-				if now.After(s.ExpiresAt) {
-					delete(a.oauthRefreshTokens, tok)
-				}
-			}
-			a.mu.Unlock()
+			_ = a.state().sweep(ctx, now)
 		}
 	}
 }
@@ -248,10 +239,10 @@ func (a *authLoginService) handleDeviceStart(w http.ResponseWriter, r *http.Requ
 		ExpiresAt:  now.Add(deviceCodeTTL),
 		Status:     deviceStatusPending,
 	}
-	a.mu.Lock()
-	a.byDevice[dc] = session
-	a.byUser[uc] = dc
-	a.mu.Unlock()
+	if err := a.state().createDevice(r.Context(), session); err != nil {
+		http.Error(w, "failed to store device session", http.StatusInternalServerError)
+		return
+	}
 
 	base := publicBaseURL(r)
 	writeJSONStatus(w, http.StatusOK, map[string]any{
@@ -270,7 +261,7 @@ func (a *authLoginService) handleDevicePage(w http.ResponseWriter, r *http.Reque
 	// If ?user_code= is provided and valid, skip the form entirely and kick
 	// off OIDC directly.
 	if prefilled != "" {
-		if dc, ok := a.lookupUserCode(prefilled); ok {
+		if dc, ok := a.lookupUserCode(r.Context(), prefilled); ok {
 			a.redirectToOIDC(w, r, dc)
 			return
 		}
@@ -286,7 +277,7 @@ func (a *authLoginService) handleDeviceSubmit(w http.ResponseWriter, r *http.Req
 		return
 	}
 	uc := strings.ToUpper(strings.TrimSpace(r.FormValue("user_code")))
-	dc, ok := a.lookupUserCode(uc)
+	dc, ok := a.lookupUserCode(r.Context(), uc)
 	if !ok {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusBadRequest)
@@ -302,21 +293,14 @@ func (a *authLoginService) redirectToOIDC(w http.ResponseWriter, r *http.Request
 		http.Error(w, "failed to generate state", http.StatusInternalServerError)
 		return
 	}
-	a.mu.Lock()
-	s, ok := a.byDevice[dc]
-	if !ok || time.Now().After(s.ExpiresAt) {
-		a.mu.Unlock()
-		http.Error(w, "session expired", http.StatusBadRequest)
+	if err := a.state().bindDeviceState(r.Context(), dc, state, time.Now()); err != nil {
+		if errors.Is(err, errAuthSessionExpired) {
+			http.Error(w, "session expired", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "failed to update device session", http.StatusInternalServerError)
 		return
 	}
-	// Invalidate any previous state.
-	if s.OIDCState != "" {
-		delete(a.byState, s.OIDCState)
-	}
-	s.OIDCState = state
-	s.Status = deviceStatusVerified
-	a.byState[state] = dc
-	a.mu.Unlock()
 
 	redirectURI := publicBaseURL(r) + routeAuthCallback
 	http.Redirect(w, r, a.provider.AuthCodeURL(state, redirectURI), http.StatusFound)
@@ -330,7 +314,7 @@ func (a *authLoginService) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, routeAuthDevice, http.StatusFound)
 		return
 	}
-	dc, ok := a.lookupUserCode(uc)
+	dc, ok := a.lookupUserCode(r.Context(), uc)
 	if !ok {
 		http.Error(w, "unknown or expired code", http.StatusBadRequest)
 		return
@@ -350,54 +334,38 @@ func (a *authLoginService) handleCallback(w http.ResponseWriter, r *http.Request
 	if a.handleMCPOAuthCallback(w, r, state, code) {
 		return
 	}
-	a.mu.Lock()
-	dc, ok := a.byState[state]
-	if !ok {
-		a.mu.Unlock()
+	dc, err := a.state().deviceByState(r.Context(), state, time.Now())
+	switch {
+	case errors.Is(err, errAuthSessionUnknown):
 		http.Error(w, "unknown state", http.StatusBadRequest)
 		return
-	}
-	s := a.byDevice[dc]
-	if s == nil || time.Now().After(s.ExpiresAt) {
-		delete(a.byState, state)
-		a.mu.Unlock()
+	case errors.Is(err, errAuthSessionExpired):
 		http.Error(w, "session expired", http.StatusBadRequest)
 		return
+	case err != nil:
+		http.Error(w, "failed to load device session", http.StatusInternalServerError)
+		return
 	}
-	a.mu.Unlock()
 
 	redirectURI := publicBaseURL(r) + routeAuthCallback
 	ident, err := a.provider.Exchange(r.Context(), code, redirectURI)
 	if err != nil {
-		a.markDenied(dc, state, err.Error())
+		_ = a.state().denyDevice(r.Context(), dc, state, err.Error())
 		w.WriteHeader(http.StatusForbidden)
 		_ = doneTmpl.Execute(w, map[string]string{"Title": "Sign-in failed", "Body": html.EscapeString(err.Error())})
 		return
 	}
 
-	claims := map[string]any{
-		"sub":   ident.NamespacedSubject(),
-		"email": ident.Email,
-		"name":  ident.Name,
-	}
-	tok, err := a.issuer.Mint(claims)
-	if err != nil {
-		a.markDenied(dc, state, "mint token: "+err.Error())
-		http.Error(w, "failed to mint token", http.StatusInternalServerError)
+	// The local JWT is minted when the CLI redeems the session, so no live
+	// token ever sits in the shared store.
+	if err := a.state().completeDevice(r.Context(), dc, state, ident); err != nil {
+		if errors.Is(err, errAuthSessionUnknown) {
+			http.Error(w, "session was restarted; finish sign-in in the newest tab", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "failed to complete device session", http.StatusInternalServerError)
 		return
 	}
-
-	a.mu.Lock()
-	s = a.byDevice[dc]
-	if s != nil {
-		s.Status = deviceStatusCompleted
-		s.Token = tok
-		s.TokenExp = time.Now().Add(a.tokenTTL())
-		s.Identity = ident
-		delete(a.byState, state)
-		s.OIDCState = ""
-	}
-	a.mu.Unlock()
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = doneTmpl.Execute(w, map[string]string{
@@ -420,87 +388,66 @@ func (a *authLoginService) handleDeviceToken(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	a.mu.Lock()
-	s, ok := a.byDevice[req.DeviceCode]
-	if !ok {
-		a.mu.Unlock()
+	res, err := a.state().pollDevice(r.Context(), req.DeviceCode, time.Now())
+	if err != nil {
+		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
+		return
+	}
+	s := res.Session
+	switch res.Outcome {
+	case devicePollUnknown:
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "unknown_device_code"})
-		return
-	}
-	now := time.Now()
-	if now.After(s.ExpiresAt) {
-		delete(a.byDevice, req.DeviceCode)
-		delete(a.byUser, s.UserCode)
-		a.mu.Unlock()
+	case devicePollExpired:
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "expired_token"})
-		return
-	}
-	// Crude slow_down: enforce minimum interval between polls on the same
-	// session (RFC 8628 §3.5 says server MUST bump interval by 5s but in
-	// practice consumers just handle slow_down by waiting `interval` more).
-	if !s.LastPollAt.IsZero() && now.Sub(s.LastPollAt) < deviceCodeInterval {
-		a.mu.Unlock()
+	case devicePollSlowDown:
 		writeJSONStatus(w, http.StatusTooManyRequests, map[string]any{"error": "slow_down"})
-		return
-	}
-	s.LastPollAt = now
-
-	switch s.Status {
-	case deviceStatusPending, deviceStatusVerified:
-		a.mu.Unlock()
+	case devicePollPending:
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "authorization_pending"})
-	case deviceStatusCompleted:
-		tok := s.Token
-		exp := s.TokenExp
+	case devicePollCompleted:
+		tok, exp := s.Token, s.TokenExp
+		if tok == "" {
+			if s.Identity == nil {
+				writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
+				return
+			}
+			tok, err = a.issuer.Mint(map[string]any{
+				"sub":   s.Identity.NamespacedSubject(),
+				"email": s.Identity.Email,
+				"name":  s.Identity.Name,
+			})
+			if err != nil {
+				writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "server_error", "error_description": "failed to mint token"})
+				return
+			}
+			exp = time.Now().Add(a.tokenTTL())
+		}
 		email := ""
 		iss := ""
 		if s.Identity != nil {
 			email = s.Identity.Email
 			iss = s.Identity.Issuer
 		}
-		s.Status = deviceStatusRedeemed
-		a.mu.Unlock()
 		writeJSONStatus(w, http.StatusOK, map[string]any{
 			"token":      tok,
 			"expires_at": exp.Unix(),
 			"email":      email,
 			"issuer":     iss,
 		})
-	case deviceStatusRedeemed:
-		a.mu.Unlock()
+	case devicePollRedeemed:
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "access_denied", "error_description": "token already redeemed"})
-	case deviceStatusDenied:
-		msg := s.DeniedError
-		a.mu.Unlock()
-		writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": "access_denied", "error_description": msg})
+	case devicePollDenied:
+		writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": "access_denied", "error_description": s.DeniedError})
 	default:
-		a.mu.Unlock()
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
 	}
 }
 
-func (a *authLoginService) markDenied(dc, state, reason string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if s, ok := a.byDevice[dc]; ok {
-		s.Status = deviceStatusDenied
-		s.DeniedError = reason
-	}
-	delete(a.byState, state)
-}
-
-func (a *authLoginService) lookupUserCode(uc string) (string, bool) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	dc, ok := a.byUser[uc]
-	if !ok {
+func (a *authLoginService) lookupUserCode(ctx context.Context, uc string) (string, bool) {
+	dc, ok, err := a.state().lookupUserCode(ctx, uc, time.Now())
+	if err != nil {
 		return "", false
 	}
-	s, ok := a.byDevice[dc]
-	if !ok || time.Now().After(s.ExpiresAt) {
-		return "", false
-	}
-	return dc, true
+	return dc, ok
 }
 
 func (a *authLoginService) tokenTTL() time.Duration {
