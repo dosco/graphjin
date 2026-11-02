@@ -96,7 +96,13 @@ func (s *graphjinService) watchActionProposal(
 		querySource = strings.TrimSpace(details.Query)
 	}
 	if querySource == "" {
-		return watchActionProposal{}, fmt.Errorf("watch action hashing requires query content")
+		if strings.TrimSpace(query) != "" || strings.TrimSpace(savedQuery) != "" {
+			return watchActionProposal{}, fmt.Errorf("watch action hashing requires query content")
+		}
+		// Only schedule watches are stored without a query: time, not data,
+		// triggers the action. upsertWatch re-opens review when the cadence
+		// changes, since this hash cannot see it.
+		queryKind = "schedule"
 	}
 
 	var variables any = map[string]any{}
@@ -380,19 +386,23 @@ func (h watchControlPlane) reviewWatch(ctx context.Context, root core.ManagedMut
 	}
 
 	previousUpdatedAt := stringMapValue(watchRow, "updated_at")
+	input := map[string]any{
+		"evidence_json": nullableJSONString(mustMarshalString(evidence)),
+		"approval":      approval,
+		"status":        status,
+		"enabled":       enabled,
+		"updated_at":    now,
+	}
+	if next, ok := watchScheduleResumeNextFire(watchRow, approval == watchReviewApproved && status == "active" && enabled); ok {
+		input["next_fire_at"] = next
+	}
 	rows, err := h.service.internalStoreMutationRows(ctx, "watches",
 		`where: { id: { eq: $id }, updated_at: { eq: $expected_updated_at } }, update: $input`,
 		watchStoreFields,
 		map[string]any{
 			"id":                  watchID,
 			"expected_updated_at": previousUpdatedAt,
-			"input": map[string]any{
-				"evidence_json": nullableJSONString(mustMarshalString(evidence)),
-				"approval":      approval,
-				"status":        status,
-				"enabled":       enabled,
-				"updated_at":    now,
-			},
+			"input":               input,
 		})
 	if err != nil {
 		return nil, err

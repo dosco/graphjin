@@ -838,6 +838,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 		// project's standing questions.
 		s.seedOperatorWatches(context.Background())
 		s.startWatchRunner(context.Background())
+		s.startWatchScheduleRunner(context.Background())
 		s.startTaskVerifier(context.Background())
 		s.startThreadSweeper(context.Background())
 	}

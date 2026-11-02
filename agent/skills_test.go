@@ -204,7 +204,9 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		// the engine accepts count(column: id) and the alias keeps every
 		// aggregate detector and frozen method pattern matching.
 		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3*1024 + 128},
-		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 18*512 + 128},
+		// +192: watch_write's schedule clause (cron + IANA timezone, no query)
+		// so agents can create time-triggered watches.
+		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 18*512 + 128 + 192},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			definitions := allowedSkills(false, tc.profile)
