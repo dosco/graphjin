@@ -166,8 +166,9 @@ func (s *graphjinService) injectInternalStoreRole() {
 	}
 	addRevisionSignal()
 	if s.authStoreEnabled() {
-		root, schema, _ := s.internalStoreRoot(authStoreTable)
-		blockAll(root, schema)
+		if root, schema, ok := s.internalStoreRoot(authStoreTable); ok {
+			blockAll(root, schema)
+		}
 	}
 	prefix := strings.TrimSpace(cfg.Schema)
 	if prefix == "" {

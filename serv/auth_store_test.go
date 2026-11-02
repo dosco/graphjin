@@ -283,6 +283,62 @@ func TestAuthStoreRefreshTokenSurvivesRestart(t *testing.T) {
 	}
 }
 
+// The MCP authorize request and a registered client written on one replica
+// must come back intact on another; the request is consumed once.
+func TestAuthStoreMCPAuthorizeStateAcrossReplicas(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "store.db")
+	a, _ := openAuthStoreReplica(t, path)
+	b, _ := openAuthStoreReplica(t, path)
+	ctx := context.Background()
+	now := time.Now()
+
+	client := &mcpOAuthClient{
+		ClientID:                "dcr-client",
+		ClientName:              "Test Client",
+		RedirectURIs:            []string{"http://127.0.0.1/callback"},
+		TokenEndpointAuthMethod: "none",
+		IssuedAt:                now,
+	}
+	if err := a.state().putOAuthClient(ctx, client, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	gotClient, err := b.state().getOAuthClient(ctx, "dcr-client", now)
+	if err != nil || gotClient == nil {
+		t.Fatalf("client on second replica: %v, %v", gotClient, err)
+	}
+	if gotClient.ClientName != "Test Client" || len(gotClient.RedirectURIs) != 1 ||
+		gotClient.RedirectURIs[0] != "http://127.0.0.1/callback" || !gotClient.IssuedAt.Equal(now) {
+		t.Fatalf("client did not round-trip: %+v", gotClient)
+	}
+
+	req := &mcpOAuthAuthRequest{
+		ClientID:            "dcr-client",
+		RedirectURI:         "http://127.0.0.1/callback",
+		ClientState:         "client-state",
+		Scope:               "mcp",
+		Resource:            "https://graphjin.example.com/api/v1/mcp",
+		CodeChallenge:       "challenge",
+		CodeChallengeMethod: "S256",
+		CreatedAt:           now,
+		ExpiresAt:           now.Add(time.Minute),
+	}
+	if err := a.state().putOAuthRequest(ctx, "oidc-state", req); err != nil {
+		t.Fatal(err)
+	}
+	got, err := b.state().takeOAuthRequest(ctx, "oidc-state")
+	if err != nil || got == nil {
+		t.Fatalf("request on second replica: %v, %v", got, err)
+	}
+	if got.ClientID != req.ClientID || got.RedirectURI != req.RedirectURI || got.ClientState != req.ClientState ||
+		got.Scope != req.Scope || got.Resource != req.Resource || got.CodeChallenge != req.CodeChallenge ||
+		got.CodeChallengeMethod != req.CodeChallengeMethod || !got.ExpiresAt.Equal(req.ExpiresAt) {
+		t.Fatalf("request did not round-trip: %+v", got)
+	}
+	if again, err := a.state().takeOAuthRequest(ctx, "oidc-state"); err != nil || again != nil {
+		t.Fatalf("request consumed twice: %v, %v", again, err)
+	}
+}
+
 func TestAuthStoreSweepRemovesExpiredRows(t *testing.T) {
 	a, db := openAuthStoreReplica(t, filepath.Join(t.TempDir(), "store.db"))
 	ctx := context.Background()
