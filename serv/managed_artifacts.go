@@ -55,6 +55,11 @@ func (s *graphjinService) initManagedArtifactStore() error {
 	s.dbs[name] = db
 	s.managedArtifactDB = name
 	s.log.Infof("Managed artifact store ready: %s", path)
+	if s.conf.Core.Mode == "agentic" && s.threadsEnabled() {
+		// Threads, runs and watches are shared state; a private sqlite file
+		// gives every replica its own copy of them.
+		s.log.Warn("The managed artifact store is a local sqlite file, so agent threads are not shared between replicas. Point artifacts.source at a shared Postgres or MySQL source before running more than one replica.")
+	}
 	return nil
 }
 

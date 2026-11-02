@@ -33,6 +33,8 @@ func normalizeArtifactKind(kind string) string {
 		return artifactKindWorkflow
 	case "annotation", "annotations":
 		return artifactKindAnnotation
+	case "memory", "memories":
+		return artifactKindMemory
 	default:
 		if strings.TrimSpace(kind) == "" {
 			return "artifact"

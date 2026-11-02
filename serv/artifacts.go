@@ -397,6 +397,9 @@ func (h artifactControlPlane) upsertArtifact(ctx context.Context, root core.Mana
 	if requestedKind == artifactKindAnnotation || normalizeArtifactKind(stringMapValue(requestedExisting, "kind")) == artifactKindAnnotation {
 		return h.upsertAnnotation(ctx, root, requestedExisting)
 	}
+	if requestedKind == artifactKindMemory || normalizeArtifactKind(stringMapValue(requestedExisting, "kind")) == artifactKindMemory {
+		return h.upsertMemory(ctx, root, requestedExisting)
+	}
 	visibility := stringInput(root.Input, "visibility", "user")
 	if visibility == "global" {
 		s.recordRuntimeEvent(ctx, runtimeEvent{
@@ -572,6 +575,16 @@ func (s *graphjinService) initArtifactsBeforeCore() error {
 	if s == nil || s.conf == nil || !s.conf.Core.Artifacts.Enabled || !s.conf.Core.Artifacts.AutoInitEnabled() {
 		return nil
 	}
+	return s.ensureStoreTables()
+}
+
+// ensureStoreTables creates and migrates every control-plane store table,
+// regardless of auto_init. Serve startup reaches it through
+// initArtifactsBeforeCore; `graphjin db store init` calls it directly.
+func (s *graphjinService) ensureStoreTables() error {
+	if s == nil || s.conf == nil || !s.conf.Core.Artifacts.Enabled {
+		return nil
+	}
 	db, dbType, _, ok := s.artifactDB()
 	if !ok {
 		return fmt.Errorf("artifact store database is not configured")
@@ -599,6 +612,13 @@ func (s *graphjinService) initArtifactsBeforeCore() error {
 		}
 		if err := s.migrateTaskSchema(context.Background(), db, dbType, s.conf.Core.EffectiveArtifactsConfig().Schema); err != nil {
 			return err
+		}
+	}
+	if s.threadsEnabled() {
+		for _, stmt := range threadDDL(dbType, s.conf.Core.EffectiveArtifactsConfig().Schema) {
+			if _, err := db.ExecContext(context.Background(), stmt); err != nil {
+				return err
+			}
 		}
 	}
 	return s.migrateArtifactSchema(context.Background(), db, dbType, s.conf.Core.EffectiveArtifactsConfig().Schema)

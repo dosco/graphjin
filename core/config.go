@@ -407,6 +407,7 @@ func (c *Config) clone() *Config {
 	out.Artifacts = c.Artifacts.clone()
 	out.Watches = c.Watches.clone()
 	out.Tasks = c.Tasks.clone()
+	out.Threads = c.Threads.clone()
 	out.System = c.System.clone()
 	out.Workflows = c.Workflows.clone()
 
@@ -706,6 +707,24 @@ func (c *Config) normalizeTasksDefaults() {
 	}
 }
 
+func (c *Config) normalizeThreadsDefaults() {
+	if c == nil || !c.Threads.Enabled {
+		return
+	}
+	if c.Threads.HistoryTurns == 0 {
+		c.Threads.HistoryTurns = 12
+	}
+	if c.Threads.RunLeaseSeconds == 0 {
+		c.Threads.RunLeaseSeconds = 30
+	}
+	if c.Threads.MaxPerOwner == 0 {
+		c.Threads.MaxPerOwner = 500
+	}
+	if c.Threads.ResponseMaxBytes == 0 {
+		c.Threads.ResponseMaxBytes = 256 * 1024
+	}
+}
+
 func (c *Config) normalizeSourceAccessDefaults() {
 	if c == nil || !c.IsSourcesUsed() {
 		return
@@ -894,6 +913,8 @@ func (c WatchesConfig) clone() WatchesConfig {
 
 func (c TasksConfig) clone() TasksConfig { return c }
 
+func (c ThreadsConfig) clone() ThreadsConfig { return c }
+
 func (c ArtifactsConfig) AutoInitEnabled() bool {
 	return c.AutoInit == nil || *c.AutoInit
 }
@@ -1004,6 +1025,18 @@ func (c *Config) EffectiveTasksConfig() TasksConfig {
 	return tmp.Tasks
 }
 
+// EffectiveThreadsConfig returns thread config with defaults applied.
+func (c *Config) EffectiveThreadsConfig() ThreadsConfig {
+	if c == nil {
+		return ThreadsConfig{HistoryTurns: 12, RunLeaseSeconds: 30, MaxPerOwner: 500, ResponseMaxBytes: 256 * 1024}
+	}
+	tmp := &Config{Threads: c.Threads.clone()}
+	tmp.Threads.Enabled = true
+	tmp.normalizeThreadsDefaults()
+	tmp.Threads.Enabled = c.Threads.Enabled
+	return tmp.Threads
+}
+
 // EffectiveSourceAccess returns a source's access config with source-kind defaults.
 func (c *Config) EffectiveSourceAccess(source SourceConfig) SourceAccessConfig {
 	switch source.CanonicalKind() {
@@ -1029,6 +1062,7 @@ func (c *Config) NormalizeSources() error {
 	c.normalizeArtifactsDefaults()
 	c.normalizeWatchesDefaults()
 	c.normalizeTasksDefaults()
+	c.normalizeThreadsDefaults()
 	c.normalizeSourceAccessDefaults()
 
 	sqlSources := make([]string, 0, len(c.Sources))
@@ -1471,6 +1505,10 @@ type Config struct {
 	// Tasks configures owner-scoped declared goals and their immutable trail.
 	Tasks TasksConfig `mapstructure:"tasks" json:"tasks" yaml:"tasks" jsonschema:"title=Tasks"`
 
+	// Threads configures persistent agent conversations: threads, messages,
+	// runs and run events kept in the control-plane store.
+	Threads ThreadsConfig `mapstructure:"threads" json:"threads" yaml:"threads" jsonschema:"title=Threads"`
+
 	// OpenAPISpecsDir is the directory that GraphJin scans at startup for
 	// OpenAPI 3 specification files (*.yaml / *.yml). Each spec dropped in
 	// is parsed, classified, and exposed as remote-joinable fields and/or
@@ -1649,6 +1687,17 @@ type TasksConfig struct {
 	MaxEntriesPerTask   int  `mapstructure:"max_entries_per_task" json:"max_entries_per_task" yaml:"max_entries_per_task" jsonschema:"title=Max Entries Per Task,default=500,description=Maximum stored trail entries per task; oldest are pruned first"`
 	EntryRetentionHours int  `mapstructure:"entry_retention_hours" json:"entry_retention_hours" yaml:"entry_retention_hours" jsonschema:"title=Task Entry Retention Hours,default=168,description=Hours to keep task trail entries before prune-on-write and projection trimming"`
 	SnapshotMaxBytes    int  `mapstructure:"snapshot_max_bytes" json:"snapshot_max_bytes" yaml:"snapshot_max_bytes" jsonschema:"title=Task Snapshot Max Bytes,default=32768,description=Byte cap for task snapshot_json and task-entry detail_json"`
+}
+
+// ThreadsConfig declares GraphJin-managed persistent agent threads. Every
+// replica reads and writes them through the control-plane store, so a run
+// started on one replica can be resumed or cancelled from another.
+type ThreadsConfig struct {
+	Enabled          bool `mapstructure:"enabled" json:"enabled" yaml:"enabled" jsonschema:"title=Enable Threads,description=Enable persistent owner-scoped agent threads; parsed dev and agentic configs default to enabled when artifacts and the agent are enabled"`
+	HistoryTurns     int  `mapstructure:"history_turns" json:"history_turns" yaml:"history_turns" jsonschema:"title=History Turns,default=12,description=Prior messages loaded from the thread into each agent run"`
+	RunLeaseSeconds  int  `mapstructure:"run_lease_seconds" json:"run_lease_seconds" yaml:"run_lease_seconds" jsonschema:"title=Run Lease Seconds,default=30,description=How long a running agent run stays claimed without a heartbeat before another replica marks it failed"`
+	MaxPerOwner      int  `mapstructure:"max_per_owner" json:"max_per_owner" yaml:"max_per_owner" jsonschema:"title=Max Threads Per Owner,default=500,description=Maximum open threads per owner"`
+	ResponseMaxBytes int  `mapstructure:"response_max_bytes" json:"response_max_bytes" yaml:"response_max_bytes" jsonschema:"title=Response Max Bytes,default=262144,description=Byte cap for the agent response stored with each assistant message; larger responses drop data and trace"`
 }
 
 // SourceAccessConfig declares source-level access defaults plus table/root

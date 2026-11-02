@@ -152,6 +152,9 @@ type Serv struct {
 	// Server-side GraphJin discovery/answer agent configuration
 	Agent AgentConfig `mapstructure:"agent" jsonschema:"title=GraphJin Agent Configuration"`
 
+	// Persistent agent memory recalled into every agent run
+	Memory MemoryConfig `mapstructure:"memory" jsonschema:"title=Agent Memory"`
+
 	// Local encrypted secrets configuration
 	Secrets SecretsConfig `mapstructure:"secrets" jsonschema:"title=Secrets"`
 
@@ -485,6 +488,30 @@ type DiscoveryCacheConfig struct {
 
 func (c DiscoveryCacheConfig) enabled() bool {
 	return c.Enabled == nil || *c.Enabled
+}
+
+// MemoryConfig configures agent memory: short personal or team facts stored as
+// memory artifacts and recalled into each agent run. Recall ranks with the
+// catalog_search.semantic embedder when it is enabled and falls back to
+// keyword overlap otherwise.
+type MemoryConfig struct {
+	Enabled     bool `mapstructure:"enabled" jsonschema:"title=Enable Agent Memory,description=Parsed dev and agentic configs default to enabled when artifacts are enabled"`
+	RecallLimit int  `mapstructure:"recall_limit" jsonschema:"title=Recalled Memories Per Run,default=5"`
+	MaxPerOwner int  `mapstructure:"max_per_owner" jsonschema:"title=Max Memories Per Owner,default=200"`
+}
+
+func (c MemoryConfig) effectiveRecallLimit() int {
+	if c.RecallLimit <= 0 {
+		return 5
+	}
+	return c.RecallLimit
+}
+
+func (c MemoryConfig) effectiveMaxPerOwner() int {
+	if c.MaxPerOwner <= 0 {
+		return 200
+	}
+	return c.MaxPerOwner
 }
 
 // CatalogSearchConfig configures catalog retrieval extensions.
@@ -993,6 +1020,12 @@ func applyRuntimeModeDefaults(c *Config) {
 	}
 	if !c.settingExplicit("tasks.enabled") {
 		c.Core.Tasks.Enabled = c.Core.Artifacts.Enabled
+	}
+	if !c.settingExplicit("threads.enabled") {
+		c.Core.Threads.Enabled = c.Core.Artifacts.Enabled
+	}
+	if !c.settingExplicit("memory.enabled") {
+		c.Memory.Enabled = c.Core.Artifacts.Enabled
 	}
 
 	if !c.settingExplicit("agent.enabled") {

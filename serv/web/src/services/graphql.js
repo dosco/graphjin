@@ -75,7 +75,7 @@ export async function fetchJSON(url, options = {}) {
   }
 
   if (!response.ok) {
-    throw new RequestError(payload?.errors?.[0]?.message || payload?.message || `Request failed (${response.status})`, {
+    throw new RequestError(payload?.errors?.[0]?.message || payload?.message || payload?.error || `Request failed (${response.status})`, {
       status: response.status,
       kind: classifyHTTPStatus(response.status),
       errors: payload?.errors || [],

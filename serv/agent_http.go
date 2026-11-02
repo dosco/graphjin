@@ -60,6 +60,8 @@ type agentStatusResponse struct {
 	BlockedSystemRoots   []string                 `json:"blocked_system_roots,omitempty"`
 	EvalFingerprint      string                   `json:"eval_fingerprint,omitempty"`
 	Selection            *gjagent.SelectionConfig `json:"selection,omitempty"`
+	ThreadsEnabled       bool                     `json:"threads_enabled"`
+	MemoryEnabled        bool                     `json:"memory_enabled"`
 	Message              string                   `json:"message"`
 }
 
@@ -99,6 +101,8 @@ func (s1 *HttpService) apiV1AgentStatus(ns *string) http.Handler {
 		}
 
 		status := agentStatusFromConfig(agentConfigFromService(s.conf), ns, s.agentClientFactory != nil)
+		status.ThreadsEnabled = s.threadsEnabled()
+		status.MemoryEnabled = s.memoryEnabled()
 		if profile := s.agentCapabilityProfile(r.Context()); profile != nil {
 			status.RoleClass = profile.RoleClass
 			status.AllowedActions = append([]string(nil), profile.AllowedActions...)
@@ -148,10 +152,21 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 		}
 
 		var req gjagent.Request
+		// thread_id is a service-level field: it selects a persistent thread
+		// whose stored history replaces any history in the body.
+		var threadRef struct {
+			ThreadID string `json:"thread_id"`
+		}
 		body, err := io.ReadAll(io.LimitReader(r.Body, maxReadBytes))
 		if err == nil {
 			defer r.Body.Close() //nolint:errcheck
 			err = json.Unmarshal(body, &req)
+		}
+		if err == nil {
+			err = json.Unmarshal(body, &threadRef)
+		}
+		if err == nil && threadRef.ThreadID != "" && !s.threadsEnabled() {
+			err = errors.New("thread_id requires threads.enabled")
 		}
 		if err != nil {
 			spanError(span, err)
@@ -174,6 +189,11 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 		var runner graphjinAgentRunner
 		if err == nil {
 			runner, err = newGraphJinAgentRunner(s, agentConfigFromService(s.conf))
+			runner = s.withMemoryRecall(runner)
+		}
+		if err == nil && threadRef.ThreadID != "" {
+			s.agentThreadTurn(ctx, w, r, threadRef.ThreadID, req, taskWarm, runner, start)
+			return
 		}
 		if err == nil && isSSERequest(r) {
 			s.agentSSE(ctx, w, req, taskWarm, runner, start)
@@ -329,20 +349,7 @@ func (s *graphjinService) agentSSE(ctx context.Context, w http.ResponseWriter, r
 	req.Observer = func(event gjagent.ActionEvent) { writeEvent("action", event) }
 
 	resp, err := runner.Run(ctx, req)
-	if err != nil {
-		info, publicErr := agentPublicFailure(agentConf, err)
-		err = publicErr
-		resp = gjagent.Response{
-			Status: gjagent.StatusError,
-			Errors: []gjagent.ErrorInfo{info},
-		}
-	} else {
-		s.appendWatchNotices(ctx, &resp)
-		s.appendTaskNotices(ctx, req, &resp)
-		s.appendAnnotationNotices(ctx, &resp)
-		appendTaskContextNotice(taskWarm, &resp)
-		resp = sanitizeAgentResponse(agentConf, resp)
-	}
+	resp, err = s.settleAgentResponse(ctx, req, taskWarm, resp, err)
 	s.appendTaskTrailEntry(ctx, req, resp, time.Since(start), err)
 	recordAgentRuntimeEvent(s, ctx, req, resp, taskWarm, time.Since(start), err)
 	span := trace.SpanFromContext(ctx)

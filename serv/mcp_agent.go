@@ -55,6 +55,9 @@ func (ms *mcpServer) registerAgentTools() {
 				"required": []string{"role", "content"},
 			}),
 		),
+		mcp.WithString("thread_id",
+			mcp.Description("Persistent thread to continue. The thread's stored messages replace history, and this turn is recorded in it so any GraphJin replica or the console can show it."),
+		),
 		mcp.WithOutputSchema[gjagent.Response](),
 	), ms.handleAskGraphJinAgent)
 }
@@ -108,6 +111,10 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 		ms.service.appendTaskTrailEntry(ctx, agentReq, resp, time.Since(start), publicErr)
 		return ms.toolResultJSON(mcpToolAskGraphJinAgent, args, resp)
 	}
+	runner = ms.service.withMemoryRecall(runner)
+	if threadID := strings.TrimSpace(stringArg(args, "thread_id")); threadID != "" {
+		return ms.askAgentInThread(ctx, args, threadID, agentReq, taskWarm, runner, start)
+	}
 	resp, err = runner.Run(ctx, agentReq)
 	runErr := err
 	if err == nil {
@@ -131,6 +138,34 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 		resp = gjagent.Response{Status: gjagent.StatusError, Errors: []gjagent.ErrorInfo{info}}
 		return ms.toolResultJSON(mcpToolAskGraphJinAgent, args, resp)
 	}
+	return ms.toolResultJSON(mcpToolAskGraphJinAgent, args, resp)
+}
+
+// askAgentInThread runs one ask_graphjin_agent call as a turn of a persistent
+// thread, the MCP twin of POST /api/v1/agent with a thread_id.
+func (ms *mcpServer) askAgentInThread(ctx context.Context, args map[string]any, threadID string, agentReq gjagent.Request,
+	taskWarm taskWarmStart, runner graphjinAgentRunner, start time.Time,
+) (*mcp.CallToolResult, error) {
+	s := ms.service
+	if !s.threadsEnabled() {
+		return mcp.NewToolResultError("thread_id requires threads.enabled"), nil
+	}
+	run, err := s.prepareThreadRun(ctx, threadID, &agentReq)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	settle := func(ctx context.Context, resp gjagent.Response, err error) (gjagent.Response, error) {
+		return s.settleAgentResponse(ctx, agentReq, taskWarm, resp, err)
+	}
+	resp, err := run.execute(ctx, runner, agentReq, settle, nil)
+	agentConf := agentConfigFromService(s.conf)
+	recordAgentUsageObservability(s, trace.SpanFromContext(ctx), "mcp", agentConf, resp, time.Since(start))
+	recordAgentRuntimeEvent(s, ctx, agentReq, resp, taskWarm, time.Since(start), err)
+	s.appendTaskTrailEntry(ctx, agentReq, resp, time.Since(start), err)
+	resp.Notices = append(resp.Notices, gjagent.ResponseNotice{
+		Kind:    "thread_turn_recorded",
+		Message: fmt.Sprintf("Recorded in thread %s as run %s; pass the same thread_id to continue.", threadID, run.runID),
+	})
 	return ms.toolResultJSON(mcpToolAskGraphJinAgent, args, resp)
 }
 

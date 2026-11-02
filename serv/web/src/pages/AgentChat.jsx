@@ -1,5 +1,5 @@
 import React from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
@@ -10,18 +10,20 @@ import {
   CircleHelp,
   KeyRound,
   ListTodo,
+  MessageSquarePlus,
   Pin,
   PanelRightClose,
   Send,
   Settings2,
   Sparkles,
+  Square,
   Timer,
   User,
   X,
 } from "lucide-react";
 
 import { DataErrorState, LoadingState, StatusPill } from "../components/ui";
-import { agentStatus, askAgentStream } from "../services/agent";
+import { agentStatus, askAgentStream, cancelRun, createThread, fetchThread, followRun, listThreads } from "../services/agent";
 import { fetchMissionTask } from "../services/mission";
 import { operatorIdentityKey, useOperatorIdentity } from "../services/identity";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -69,13 +71,23 @@ const AgentChat = () => {
   const identityKey = operatorIdentityKey(identity);
   const [searchParams, setSearchParams] = useSearchParams();
   const linkedTaskID = searchParams.get("task_id") || "";
+  const threadID = searchParams.get("thread") || "";
+  const queryClient = useQueryClient();
   const statusQuery = useQuery({
     queryKey: ["agent-status", identityKey],
     queryFn: agentStatus,
     refetchInterval: 30000,
   });
   const status = statusQuery.data;
+  const threadsEnabled = status?.threads_enabled === true;
+  const threadsQuery = useQuery({
+    queryKey: ["agent-threads", identityKey],
+    queryFn: listThreads,
+    enabled: threadsEnabled,
+  });
   const [messages, setMessages] = React.useState(initialMessages);
+  const [activeRunID, setActiveRunID] = React.useState("");
+  const [resuming, setResuming] = React.useState(false);
   const [instruction, setInstruction] = React.useState("");
   const [returnTrace, setReturnTrace] = React.useState(false);
   const [maxSteps, setMaxSteps] = React.useState(8);
@@ -104,16 +116,90 @@ const AgentChat = () => {
     setPinnedTaskID(linkedTaskID);
   }, [linkedTaskID]);
 
+  // A thread in the URL is loaded from the store; a run still active on it
+  // (a reload mid-answer, or a run started elsewhere) is followed to its end.
+  const skipNextThreadLoad = React.useRef(false);
+  React.useEffect(() => {
+    if (!threadsEnabled || !threadID) {
+      return undefined;
+    }
+    if (skipNextThreadLoad.current) {
+      skipNextThreadLoad.current = false;
+      return undefined;
+    }
+    let cancelled = false;
+    async function load() {
+      const thread = await fetchThread(threadID);
+      if (cancelled || !thread) {
+        return;
+      }
+      setMessages(messagesFromThread(thread));
+      if (thread.active_run_id) {
+        setActiveRunID(thread.active_run_id);
+        setResuming(true);
+        setPendingActions([]);
+        try {
+          await followRun(thread.active_run_id, {
+            onAction: (action) => !cancelled && setPendingActions((current) => [...current, action]),
+          });
+        } catch {
+          // A lost run ends without a result; the reload below shows why.
+        }
+        if (cancelled) {
+          return;
+        }
+        setResuming(false);
+        setActiveRunID("");
+        setPendingActions([]);
+        const finished = await fetchThread(threadID);
+        if (!cancelled && finished) {
+          setMessages(messagesFromThread(finished));
+        }
+        void queryClient.invalidateQueries({ queryKey: ["agent-threads"] });
+      }
+    }
+    void load().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [threadID, threadsEnabled, queryClient]);
+
   const mutation = useMutation({
     mutationFn: (vars) =>
       askAgentStream(vars, {
         onAction: (action) => setPendingActions((current) => [...current, action]),
+        onRun: (run) => setActiveRunID(run?.run_id || ""),
       }),
   });
 
   const ready = status?.ready === true;
-  const inputDisabled = !ready || mutation.isPending;
-  const canSubmit = ready && !mutation.isPending && instruction.trim().length > 0;
+  const pending = mutation.isPending || resuming;
+  const inputDisabled = !ready || pending;
+  const canSubmit = ready && !pending && instruction.trim().length > 0;
+
+  function selectThread(nextID) {
+    const next = new URLSearchParams(searchParams);
+    if (nextID) {
+      next.set("thread", nextID);
+    } else {
+      next.delete("thread");
+    }
+    setSearchParams(next, { replace: false });
+    if (!nextID) {
+      setMessages(initialMessages);
+    }
+  }
+
+  async function stopRun() {
+    if (!activeRunID) {
+      return;
+    }
+    try {
+      await cancelRun(activeRunID);
+    } catch {
+      // The run may have just finished; its result arrives on the stream.
+    }
+  }
 
   async function submitInstruction() {
     const text = instruction.trim();
@@ -124,8 +210,22 @@ const AgentChat = () => {
     setInstruction("");
     // Prior turns become the request history so follow-ups and clarification
     // answers keep their conversation context (the agent still re-discovers
-    // its own evidence every run).
-    const history = historyFromMessages(messages);
+    // its own evidence every run). A thread carries its own stored history.
+    const history = threadsEnabled ? [] : historyFromMessages(messages);
+    let currentThreadID = threadID;
+    if (threadsEnabled && !currentThreadID) {
+      try {
+        const thread = await createThread();
+        currentThreadID = thread?.id || "";
+        if (currentThreadID) {
+          // The new thread's messages are already on screen.
+          skipNextThreadLoad.current = true;
+          selectThread(currentThreadID);
+        }
+      } catch {
+        currentThreadID = "";
+      }
+    }
     const userMessage = {
       id: messageID(),
       role: "user",
@@ -141,6 +241,7 @@ const AgentChat = () => {
         return_trace: returnTrace,
         history: history.length ? history : undefined,
         task_id: pinnedTaskID || undefined,
+        thread_id: currentThreadID || undefined,
       });
       setMessages((current) => [
         ...current,
@@ -168,6 +269,10 @@ const AgentChat = () => {
       ]);
     } finally {
       setPendingActions([]);
+      setActiveRunID("");
+      if (threadsEnabled) {
+        void queryClient.invalidateQueries({ queryKey: ["agent-threads"] });
+      }
     }
   }
 
@@ -215,12 +320,12 @@ const AgentChat = () => {
                 </MessageScrollerItem>
               ) : (
                 messages.map((message, index) => (
-                  <MessageScrollerItem key={message.id} scrollAnchor={index === messages.length - 1 && !mutation.isPending}>
+                  <MessageScrollerItem key={message.id} scrollAnchor={index === messages.length - 1 && !pending}>
                     <ChatMessage message={message} onPinTask={pinTask} onInspect={setInspection} />
                   </MessageScrollerItem>
                 ))
               )}
-              {mutation.isPending && (
+              {pending && (
                 <MessageScrollerItem scrollAnchor>
                   <ThinkingMessage actions={pendingActions} />
                 </MessageScrollerItem>
@@ -254,9 +359,15 @@ const AgentChat = () => {
                 </Button>
                 {returnTrace && <Badge variant="muted">Trace</Badge>}
               </div>
-              <Button type="submit" size="icon" className="rounded-xl" disabled={!canSubmit} aria-label="Send message">
-                <Send aria-hidden="true" />
-              </Button>
+              {pending && activeRunID ? (
+                <Button type="button" size="icon" variant="outline" className="rounded-xl" onClick={() => void stopRun()} aria-label="Stop the run">
+                  <Square aria-hidden="true" />
+                </Button>
+              ) : (
+                <Button type="submit" size="icon" className="rounded-xl" disabled={!canSubmit} aria-label="Send message">
+                  <Send aria-hidden="true" />
+                </Button>
+              )}
             </div>
           </div>
           {advancedOpen && (
@@ -284,12 +395,20 @@ const AgentChat = () => {
               <div className="min-w-0"><div className="flex items-center gap-2"><h1 className="truncate text-sm font-semibold">GraphJin Agent</h1><StatusPill status={ready ? "ready" : status?.status || "pending"} /></div><p className="hidden truncate text-xs text-muted-foreground sm:block">{ready ? "Governed by the current caller and catalog." : status?.message}</p></div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              {threadsEnabled && (
+                <Button type="button" variant="ghost" size="sm" onClick={() => selectThread("")} disabled={pending}>
+                  <MessageSquarePlus aria-hidden="true" />New chat
+                </Button>
+              )}
               <Badge variant="muted" className="hidden max-w-56 truncate md:inline-flex" title={providerLabel}><Sparkles aria-hidden="true" />{providerLabel}</Badge>
               {inspection && <Button type="button" variant="ghost" size="sm" className="hidden lg:inline-flex" onClick={() => setInspection(null)}><PanelRightClose aria-hidden="true" />Close inspector</Button>}
               <AgentStatusAction status={status} />
             </div>
           </div>
-          <div className="min-h-0 min-w-0 overflow-hidden">
+          <div className={cn("min-h-0 min-w-0 overflow-hidden", threadsEnabled && desktop && "grid grid-cols-[15rem_minmax(0,1fr)]")}>
+            {threadsEnabled && desktop && (
+              <ThreadList threads={threadsQuery.data || []} activeID={threadID} onSelect={selectThread} disabled={pending} />
+            )}
             {inspection && desktop ? (
               <ResizablePanelGroup orientation="horizontal" className="h-full">
                 <ResizablePanel defaultSize="65%" minSize="42%">{chatSurface}</ResizablePanel>
@@ -304,6 +423,47 @@ const AgentChat = () => {
     </div>
   );
 };
+
+function ThreadList({ threads, activeID, onSelect, disabled }) {
+  return (
+    <nav aria-label="Conversations" className="min-h-0 overflow-y-auto border-r bg-muted/30 p-2">
+      {threads.length === 0 ? (
+        <p className="px-2 py-3 text-xs text-muted-foreground">Conversations you start are kept here.</p>
+      ) : (
+        <ul className="grid gap-0.5">
+          {threads.map((thread) => (
+            <li key={thread.id}>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onSelect(thread.id)}
+                aria-current={thread.id === activeID ? "page" : undefined}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted disabled:opacity-60",
+                  thread.id === activeID && "bg-muted font-medium",
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate">{thread.title || "New conversation"}</span>
+                {thread.active_run_id && <Timer className="size-3.5 shrink-0 text-muted-foreground" aria-label="Running" />}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </nav>
+  );
+}
+
+// messagesFromThread maps stored thread messages onto chat messages.
+function messagesFromThread(thread) {
+  return (thread?.messages || []).map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.role === "assistant" && message.response ? displayAnswer(message.response) || message.content : message.content,
+    status: message.status || undefined,
+    response: message.response,
+  }));
+}
 
 function AgentInspector({ inspection, onClose, compact = false }) {
   const response = inspection?.response || {};

@@ -1,6 +1,7 @@
 import {
   Activity,
   Bot,
+  Brain,
   Braces,
   Code2,
   FileText,
@@ -25,6 +26,7 @@ export const workspaceDefinitions = {
       { path: "/user/tasks", label: "Tasks", icon: ListChecks, layout: "collection" },
       { path: "/user/watches", label: "Watches", icon: Radar, layout: "collection" },
       { path: "/user/artifacts", label: "Artifacts", icon: FileText, layout: "collection" },
+      { path: "/user/memory", label: "Memory", icon: Brain, layout: "collection" },
     ],
   },
   admin: {

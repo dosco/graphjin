@@ -11,7 +11,7 @@ import (
 func TestControlStoreDirectSQLIsNarrowlyGated(t *testing.T) {
 	allowed := map[string]map[string]bool{
 		"artifacts.go": {
-			"initArtifactsBeforeCore":         true,
+			"ensureStoreTables":               true,
 			"migrateArtifactSchema":           true,
 			"ensureArtifactAnnotationIndexes": true,
 			"ensureSQLColumn":                 true,
@@ -23,6 +23,11 @@ func TestControlStoreDirectSQLIsNarrowlyGated(t *testing.T) {
 		"tasks.go": {
 			"migrateTaskSchema": true,
 		},
+		"store_admin.go": {
+			// A zero-row probe reports whether a store table exists before
+			// the internal GraphQL roles that would compile against it do.
+			"storeTableExists": true,
+		},
 		"tasks_verify.go": {
 			// Verification fencing needs atomic affected-row counts, which the
 			// internal GraphQL mutation result cannot currently expose.
@@ -30,7 +35,7 @@ func TestControlStoreDirectSQLIsNarrowlyGated(t *testing.T) {
 			"completeTaskVerification": true,
 		},
 	}
-	for _, name := range []string{"artifacts.go", "watches.go", "tasks.go", "tasks_verify.go", "tasks_agent.go", "watch_runner.go", "watch_delivery.go", "projection_poll.go"} {
+	for _, name := range []string{"artifacts.go", "watches.go", "tasks.go", "tasks_verify.go", "tasks_agent.go", "watch_runner.go", "watch_delivery.go", "projection_poll.go", "threads.go", "threads_run.go", "threads_http.go", "memory.go", "store_admin.go"} {
 		path := filepath.Join(".", name)
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, path, nil, 0)

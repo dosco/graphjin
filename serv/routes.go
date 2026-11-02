@@ -10,6 +10,9 @@ const (
 	routeGraphQL           = "/api/v1/graphql"
 	routeAgent             = "/api/v1/agent"
 	routeAgentStatus       = "/api/v1/agent/status"
+	routeAgentThreads      = "/api/v1/agent/threads"
+	routeAgentRuns         = "/api/v1/agent/runs/"
+	routeAgentMemories     = "/api/v1/agent/memories"
 	routeConsoleBootstrap  = "/api/v1/console/bootstrap"
 	routeEvalReports       = "/api/v1/eval/reports"
 	routeEvalScore         = "/api/v1/eval/score"
@@ -75,6 +78,15 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 			mux.Handle(routeAgentStatus, s1.AgentStatus(ah))
 			if s.conf.agentEnabled() {
 				mux.Handle(routeAgent, s1.Agent(ah))
+				if s.threadsEnabled() {
+					mux.Handle(routeAgentThreads, s1.AgentThreads(ah))
+					mux.Handle(routeAgentThreads+"/", s1.AgentThreads(ah))
+					mux.Handle(routeAgentRuns, s1.AgentThreads(ah))
+				}
+				if s.memoryEnabled() {
+					mux.Handle(routeAgentMemories, s1.AgentMemories(ah))
+					mux.Handle(routeAgentMemories+"/", s1.AgentMemories(ah))
+				}
 			}
 			if s.watchesEnabled() {
 				mux.Handle(routeWatches, s1.Watches(ah))
@@ -98,6 +110,15 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 			mux.Handle(routeAgentStatus, s1.AgentStatusWithNS(ah, *ns))
 			if s.conf.agentEnabled() {
 				mux.Handle(routeAgent, s1.AgentWithNS(ah, *ns))
+				if s.threadsEnabled() {
+					mux.Handle(routeAgentThreads, s1.AgentThreadsWithNS(ah, *ns))
+					mux.Handle(routeAgentThreads+"/", s1.AgentThreadsWithNS(ah, *ns))
+					mux.Handle(routeAgentRuns, s1.AgentThreadsWithNS(ah, *ns))
+				}
+				if s.memoryEnabled() {
+					mux.Handle(routeAgentMemories, s1.AgentMemoriesWithNS(ah, *ns))
+					mux.Handle(routeAgentMemories+"/", s1.AgentMemoriesWithNS(ah, *ns))
+				}
 			}
 			if s.watchesEnabled() {
 				mux.Handle(routeWatches, s1.WatchesWithNS(ah, *ns))

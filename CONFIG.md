@@ -33,6 +33,7 @@ Run `graphjin config docs` (or `graphjin serve new`) for the annotated example t
 - [Agent Configuration](#agent-configuration)
 - [Agent Environment Configuration](#agent-environment-configuration)
 - [Task Configuration](#task-configuration)
+- [Thread and Memory Configuration](#thread-and-memory-configuration)
 - [Redis Configuration](#redis-configuration)
 - [Discovery Cache and Semantic Catalog Search](#discovery-cache-and-semantic-catalog-search)
 - [Caching Configuration](#caching-configuration)
@@ -1298,6 +1299,72 @@ to 1 minute through 30 days and the durable sweep runs every 30 seconds. A
 passing check closes the task; a failing check leaves it open and records a
 server-managed `verification` trail entry. Inline GraphQL and JavaScript
 conditions are not accepted.
+
+---
+
+## Thread and Memory Configuration
+
+Threads keep agent conversations in the control-plane store, so any replica can
+continue, resume or cancel them. Each turn is a run: the user message, the
+streamed run events and the answer are written as they happen, and only one
+run is active per thread. Parsed `dev` and `agentic` configs enable threads and
+memory whenever artifacts are enabled.
+
+```yaml
+threads:
+  enabled: true
+  history_turns: 12
+  run_lease_seconds: 30
+  max_per_owner: 500
+  response_max_bytes: 262144
+
+memory:
+  enabled: true
+  recall_limit: 5
+  max_per_owner: 200
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `threads.enabled` | boolean | dev/agentic: artifact setting; prod: `false` | Enable persistent threads, `thread_id` on `POST /api/v1/agent` and `ask_graphjin_agent`, and the thread/run endpoints |
+| `threads.history_turns` | integer | `12` | Prior messages loaded from the thread into each run; the thread's history replaces any `history` the caller sends |
+| `threads.run_lease_seconds` | integer | `30` | How long a run stays claimed without a heartbeat before another replica marks it failed |
+| `threads.max_per_owner` | integer | `500` | Maximum open threads per owner; archived threads do not count |
+| `threads.response_max_bytes` | integer | `262144` | Cap on the agent response stored with each answer; larger responses drop `data` and `trace` |
+| `memory.enabled` | boolean | dev/agentic: artifact setting; prod: `false` | Enable memory artifacts, recall into agent runs, and `/api/v1/agent/memories` |
+| `memory.recall_limit` | integer | `5` | Memories recalled into a run (also capped at 2 KB in total) |
+| `memory.max_per_owner` | integer | `200` | Maximum memories per owner |
+
+Thread endpoints (owner-scoped; admins may read any thread):
+
+| Method and path | Purpose |
+|-----------------|---------|
+| `GET /api/v1/agent/threads` | List the caller's open threads (`?archived=true` for all) |
+| `POST /api/v1/agent/threads` | Create a thread |
+| `GET /api/v1/agent/threads/{id}` | A thread with its messages |
+| `PATCH /api/v1/agent/threads/{id}` | Rename, archive (`status`) or set `profile` |
+| `DELETE /api/v1/agent/threads/{id}` | Delete a thread with its messages and runs |
+| `GET /api/v1/agent/runs/{id}` | A run's status and token usage |
+| `GET /api/v1/agent/runs/{id}/events` | Replay and follow a run as SSE (`Last-Event-ID` or `?after=N`) |
+| `POST /api/v1/agent/runs/{id}/cancel` | Cancel a run, whichever replica executes it |
+
+A run keeps going if the client disconnects. A run whose replica stops is
+marked `failed` by the lease sweep on any replica and is never re-executed,
+because it may already have written data. With the managed sqlite artifact
+store every replica has its own copy of these tables, so set
+`artifacts.source` to a shared Postgres or MySQL source before running more
+than one replica. `graphjin serve db store init` creates or migrates every
+control-plane table (artifacts, watches, tasks, threads) without starting the
+server, so production can run with `artifacts.auto_init: false`;
+`graphjin serve db store status` reports which tables exist.
+
+Memories are `memory` artifacts. A new memory is personal (`tier: observed`);
+publishing it (`tier: approved`) shares it with the owner's account, and
+editing a team memory makes it personal again. Before every agent run GraphJin
+recalls the caller's most relevant personal and team memories and gives them
+to the agent as standing preferences, never as evidence. Recall ranks with the
+`catalog_search.semantic` embedder when that is enabled and falls back to
+shared-word matching otherwise.
 
 ---
 

@@ -25,7 +25,7 @@ export function askAgent({ instruction, max_steps, return_trace, history, task_i
 // parses the SSE frames the agent endpoint emits: one `action` event per
 // executed tool call, then a final `result` event with the agent response.
 // Falls back to the blocking JSON contract when the server answers with JSON.
-export async function askAgentStream({ instruction, max_steps, return_trace, history, task_id }, { onAction } = {}) {
+export async function askAgentStream({ instruction, max_steps, return_trace, history, task_id, thread_id }, { onAction, onRun } = {}) {
   let response;
   try {
     response = await fetch("/api/v1/agent", {
@@ -36,7 +36,7 @@ export async function askAgentStream({ instruction, max_steps, return_trace, his
         Accept: "text/event-stream",
         ...operatorIdentityHeaders(),
       },
-      body: JSON.stringify({ instruction, max_steps, return_trace, history, task_id }),
+      body: JSON.stringify({ instruction, max_steps, return_trace, history, task_id, thread_id }),
     });
   } catch (error) {
     throw new RequestError(`Service unavailable: ${error.message}`, { kind: "unavailable" });
@@ -58,14 +58,19 @@ export async function askAgentStream({ instruction, max_steps, return_trace, his
       }
     }
     if (!response.ok) {
-      throw new RequestError(payload?.errors?.[0]?.message || payload?.message || `Request failed (${response.status})`, {
+      throw new RequestError(payload?.errors?.[0]?.message || payload?.message || payload?.error || `Request failed (${response.status})`, {
         status: response.status,
         errors: payload?.errors || [],
       });
     }
     return payload;
   }
+  return readAgentEvents(response, { onAction, onRun });
+}
 
+// readAgentEvents consumes an agent SSE stream: `run` names a threaded run,
+// `action` reports each tool call, `result` carries the final response.
+async function readAgentEvents(response, { onAction, onRun } = {}) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -83,7 +88,9 @@ export async function askAgentStream({ instruction, max_steps, return_trace, his
       if (!frame) {
         continue;
       }
-      if (frame.event === "action" && typeof onAction === "function") {
+      if (frame.event === "run" && typeof onRun === "function") {
+        onRun(frame.data);
+      } else if (frame.event === "action" && typeof onAction === "function") {
         onAction(frame.data);
       } else if (frame.event === "result") {
         result = frame.data;
@@ -114,4 +121,79 @@ function parseSSEFrame(frame) {
   } catch {
     return null;
   }
+}
+
+// Persistent threads (threads.enabled). A thread's stored messages are the
+// conversation history, so threaded requests send thread_id instead of
+// history, and a run can be resumed or cancelled after a reload.
+export function listThreads() {
+  return fetchJSON("/api/v1/agent/threads").then((payload) => payload?.data || []);
+}
+
+export function createThread({ title = "" } = {}) {
+  return fetchJSON("/api/v1/agent/threads", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  }).then((payload) => payload?.data);
+}
+
+export function fetchThread(threadID) {
+  return fetchJSON(`/api/v1/agent/threads/${encodeURIComponent(threadID)}`).then((payload) => payload?.data);
+}
+
+export function updateThread(threadID, patch) {
+  return fetchJSON(`/api/v1/agent/threads/${encodeURIComponent(threadID)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  }).then((payload) => payload?.data);
+}
+
+export function cancelRun(runID) {
+  return fetchJSON(`/api/v1/agent/runs/${encodeURIComponent(runID)}/cancel`, { method: "POST" }).then((payload) => payload?.data);
+}
+
+// followRun replays a run's stored events and follows it until it completes;
+// any GraphJin replica can serve it.
+export async function followRun(runID, { onAction, after = 0 } = {}) {
+  let response;
+  try {
+    response = await fetch(`/api/v1/agent/runs/${encodeURIComponent(runID)}/events?after=${after}`, {
+      credentials: "same-origin",
+      headers: { Accept: "text/event-stream", ...operatorIdentityHeaders() },
+    });
+  } catch (error) {
+    throw new RequestError(`Service unavailable: ${error.message}`, { kind: "unavailable" });
+  }
+  if (!response.ok || !response.body) {
+    throw new RequestError(`Run stream failed (${response.status})`, { status: response.status });
+  }
+  return readAgentEvents(response, { onAction });
+}
+
+// Memory (memory.enabled): personal facts the agent recalls in every run;
+// publishing one shares it with the caller's account as team memory.
+export function listMemories() {
+  return fetchJSON("/api/v1/agent/memories").then((payload) => payload?.data || []);
+}
+
+export function addMemory(content) {
+  return fetchJSON("/api/v1/agent/memories", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  }).then((payload) => payload?.data);
+}
+
+export function updateMemory(id, patch) {
+  return fetchJSON(`/api/v1/agent/memories/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  }).then((payload) => payload?.data);
+}
+
+export function deleteMemory(id) {
+  return fetchJSON(`/api/v1/agent/memories/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

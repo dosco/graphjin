@@ -839,6 +839,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 		s.seedOperatorWatches(context.Background())
 		s.startWatchRunner(context.Background())
 		s.startTaskVerifier(context.Background())
+		s.startThreadSweeper(context.Background())
 	}
 
 	s.state = servStarted

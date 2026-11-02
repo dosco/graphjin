@@ -112,6 +112,10 @@
 					"type": "integer",
 					"title": "Agent Catalog Default Limit",
 					"default": 20
+				},
+				"selection": {
+					"$ref": "#/$defs/SelectionConfig",
+					"title": "Agent Discovery Preparation"
 				}
 			},
 			"additionalProperties": false,
@@ -504,6 +508,10 @@
 						"other_table.id_column",
 						"users.id"
 					]
+				},
+				"merge_on_update": {
+					"type": "boolean",
+					"title": "Merge On Update"
 				}
 			},
 			"additionalProperties": false,
@@ -1258,6 +1266,12 @@
 					"title": "Workflow Timeout (seconds)",
 					"description": "WorkflowTimeout in seconds for JavaScript workflow execution.\nWorkflows that exceed this duration are interrupted. Default: 5",
 					"default": 5
+				},
+				"config_update_timeout": {
+					"type": "integer",
+					"title": "Config Update Timeout (seconds)",
+					"description": "ConfigUpdateTimeout in seconds bounds a gj_config mutation or an\nupdate_current_config call. An update that changes an API source\nrediscovers every database source, which on a large schema takes as\nlong as a restart. Default: 3600",
+					"default": 3600
 				}
 			},
 			"additionalProperties": false,
@@ -1333,6 +1347,28 @@
 			"additionalProperties": false,
 			"type": "object",
 			"description": "MCPOAuthConfig configures standards-compatible OAuth discovery and token handling for hosted MCP HTTP clients."
+		},
+		"MemoryConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"title": "Enable Agent Memory",
+					"description": "Parsed dev and agentic configs default to enabled when artifacts are enabled"
+				},
+				"recall_limit": {
+					"type": "integer",
+					"title": "Recalled Memories Per Run",
+					"default": 5
+				},
+				"max_per_owner": {
+					"type": "integer",
+					"title": "Max Memories Per Owner",
+					"default": 200
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "MemoryConfig configures agent memory: short personal or team facts stored as memory artifacts and recalled into each agent run."
 		},
 		"MetadataConfig": {
 			"properties": {
@@ -1613,6 +1649,53 @@
 			"additionalProperties": false,
 			"type": "object",
 			"description": "SecretsConfig configures secret storage for write-only config inputs."
+		},
+		"SelectionConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"default": false
+				},
+				"mode": {
+					"type": "string",
+					"enum": [
+						"both",
+						"catalog",
+						"skills"
+					],
+					"default": "both"
+				},
+				"provider": {
+					"type": "string"
+				},
+				"model": {
+					"type": "string"
+				},
+				"api_key_env": {
+					"type": "string"
+				},
+				"base_url": {
+					"type": "string"
+				},
+				"startup_budget_ms": {
+					"type": "integer",
+					"minimum": 1,
+					"default": 2000
+				},
+				"concurrency": {
+					"type": "integer",
+					"maximum": 16,
+					"minimum": 1,
+					"default": 4
+				},
+				"context_bytes": {
+					"type": "integer",
+					"minimum": 1024,
+					"default": 98304
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
 		},
 		"SemanticCatalogSearchConfig": {
 			"properties": {
@@ -2001,6 +2084,10 @@
 				},
 				"max_response_bytes": {
 					"type": "integer"
+				},
+				"document": {
+					"type": "string",
+					"title": "OpenAPI Document"
 				}
 			},
 			"additionalProperties": false,
@@ -2116,6 +2203,41 @@
 					"title": "Task Snapshot Max Bytes",
 					"description": "Byte cap for task snapshot_json and task-entry detail_json",
 					"default": 32768
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"ThreadsConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"title": "Enable Threads",
+					"description": "Enable persistent owner-scoped agent threads; parsed dev and agentic configs default to enabled when artifacts and the agent are enabled"
+				},
+				"history_turns": {
+					"type": "integer",
+					"title": "History Turns",
+					"description": "Prior messages loaded from the thread into each agent run",
+					"default": 12
+				},
+				"run_lease_seconds": {
+					"type": "integer",
+					"title": "Run Lease Seconds",
+					"description": "How long a running agent run stays claimed without a heartbeat before another replica marks it failed",
+					"default": 30
+				},
+				"max_per_owner": {
+					"type": "integer",
+					"title": "Max Threads Per Owner",
+					"description": "Maximum open threads per owner",
+					"default": 500
+				},
+				"response_max_bytes": {
+					"type": "integer",
+					"title": "Response Max Bytes",
+					"description": "Byte cap for the agent response stored with each assistant message; larger responses drop data and trace",
+					"default": 262144
 				}
 			},
 			"additionalProperties": false,
@@ -2431,6 +2553,10 @@
 			"$ref": "#/$defs/TasksConfig",
 			"title": "Tasks"
 		},
+		"threads": {
+			"$ref": "#/$defs/ThreadsConfig",
+			"title": "Threads"
+		},
 		"openapi_specs_dir": {
 			"type": "string",
 			"title": "OpenAPI Specs Directory",
@@ -2738,6 +2864,11 @@
 			"$ref": "#/$defs/AgentConfig",
 			"title": "GraphJin Agent Configuration",
 			"description": "Server-side GraphJin discovery/answer agent configuration"
+		},
+		"memory": {
+			"$ref": "#/$defs/MemoryConfig",
+			"title": "Agent Memory",
+			"description": "Persistent agent memory recalled into every agent run"
 		},
 		"secrets": {
 			"$ref": "#/$defs/SecretsConfig",

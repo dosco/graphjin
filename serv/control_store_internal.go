@@ -149,32 +149,16 @@ func (s *graphjinService) injectInternalStoreRole() {
 		}
 	}
 	addRevisionSignal()
-	if dbType == "postgres" || dbType == "" {
-		add("artifacts", cfg.Schema)
-		add("revisions", cfg.Schema)
-		if s.watchesEnabled() {
-			add("watches", cfg.Schema)
-			add("watch_events", cfg.Schema)
-		}
-		if s.tasksEnabled() {
-			add("tasks", cfg.Schema)
-			add("task_entries", cfg.Schema)
-		}
-		return
-	}
 	prefix := strings.TrimSpace(cfg.Schema)
 	if prefix == "" {
 		prefix = "_graphjin"
 	}
-	add(prefix+"_artifacts", "")
-	add(prefix+"_revisions", "")
-	if s.watchesEnabled() {
-		add(prefix+"_watches", "")
-		add(prefix+"_watch_events", "")
-	}
-	if s.tasksEnabled() {
-		add(prefix+"_tasks", "")
-		add(prefix+"_task_entries", "")
+	for _, table := range s.storeTableNames() {
+		if dbType == "postgres" || dbType == "" {
+			add(table, cfg.Schema)
+		} else {
+			add(prefix+"_"+table, "")
+		}
 	}
 }
 
