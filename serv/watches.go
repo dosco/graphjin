@@ -401,6 +401,9 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 			}
 		}
 	}
+	if deliveryJSON, err = s.resolveWatchRoutineProfile(ctx, deliveryJSON); err != nil {
+		return nil, fmt.Errorf("gj_watch %w", err)
+	}
 	deliveryJSON, _, _, err = normalizeWatchDeliveryJSON(deliveryJSON)
 	if err != nil {
 		return nil, fmt.Errorf("gj_watch %w", err)

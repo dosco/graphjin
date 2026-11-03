@@ -2,6 +2,7 @@ package serv
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -25,6 +26,9 @@ const (
 type watchAgentConfig struct {
 	Prompt   string
 	ThreadID string
+	// Profile names an agent_profile: the routine answers in the owner's home
+	// thread for that agent, with the agent's instructions.
+	Profile string
 }
 
 func parseWatchAgentConfig(m map[string]any) (watchAgentConfig, error) {
@@ -35,6 +39,7 @@ func parseWatchAgentConfig(m map[string]any) (watchAgentConfig, error) {
 	cfg := watchAgentConfig{
 		Prompt:   strings.TrimSpace(stringFromAny(src["prompt"])),
 		ThreadID: strings.TrimSpace(stringFromAny(src["thread_id"])),
+		Profile:  strings.TrimSpace(stringFromAny(src["profile"])),
 	}
 	if cfg.Prompt == "" {
 		cfg.Prompt = watchRoutineDefaultPrompt
@@ -63,6 +68,20 @@ func (s *graphjinService) watchRoutineThread(ownerCtx context.Context, def watch
 			return "", fmt.Errorf("agent delivery thread %s: %w", cfg.ThreadID, err)
 		}
 		return cfg.ThreadID, nil
+	}
+	if cfg.Profile != "" {
+		home, err := s.profileHomeThread(ownerCtx, cfg.Profile)
+		if err == nil {
+			return stringMapValue(home, "id"), nil
+		}
+		if !errors.Is(err, errProfileNotFound) {
+			return "", err
+		}
+		// The agent was deleted or unshared; answer in the watch's own thread
+		// rather than drop the routine.
+		if s.log != nil {
+			s.log.Warnf("watch %s: agent %s is gone; routine answers in the watch thread", def.ID, cfg.Profile)
+		}
 	}
 	id := watchRoutineThreadID(def.OwnerID, def.ID)
 	if row, err := s.threadStoreRow(ownerCtx, id); err != nil {
@@ -245,5 +264,60 @@ func watchRoutineThreadProjection(row map[string]any) string {
 	if cfg.Agent.ThreadID != "" {
 		return cfg.Agent.ThreadID
 	}
+	if cfg.Agent.Profile != "" {
+		return profileHomeThreadID(stringMapValue(row, "owner_id"), cfg.Agent.Profile)
+	}
 	return watchRoutineThreadID(stringMapValue(row, "owner_id"), stringMapValue(row, "id"))
+}
+
+// A thread run carries its thread's agent on the context, so a routine watch
+// created from an agent's chat answers back in that agent's home thread.
+
+type runThreadProfileKey struct{}
+
+func withRunThreadProfile(ctx context.Context, profile string) context.Context {
+	if profile = strings.TrimSpace(profile); profile == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, runThreadProfileKey{}, profile)
+}
+
+func runThreadProfile(ctx context.Context) string {
+	profile, _ := ctx.Value(runThreadProfileKey{}).(string)
+	return profile
+}
+
+// resolveWatchRoutineProfile fills an agent delivery's profile from the run's
+// thread when the delivery names neither a thread nor an agent, and checks
+// that a named agent is one the owner can see.
+func (s *graphjinService) resolveWatchRoutineProfile(ctx context.Context, deliveryJSON string) (string, error) {
+	cfg, enabled, err := parseWatchDeliveryConfig(deliveryJSON)
+	if err != nil || !enabled || cfg.Kind != "agent" || cfg.Agent.ThreadID != "" {
+		return deliveryJSON, err
+	}
+	profile := cfg.Agent.Profile
+	if profile == "" {
+		if profile = runThreadProfile(ctx); profile == "" {
+			return deliveryJSON, nil
+		}
+		m := mapFromAny(parseJSONValue(deliveryJSON))
+		if nested := mapFromAny(m["agent"]); nested != nil {
+			nested["profile"] = profile
+		} else {
+			m["profile"] = profile
+		}
+		raw, err := json.Marshal(m)
+		if err != nil {
+			return "", err
+		}
+		deliveryJSON = string(raw)
+	}
+	row, err := s.visibleProfileRow(ctx, profile)
+	if err != nil {
+		return "", err
+	}
+	if row == nil {
+		return "", fmt.Errorf("agent delivery profile %s not found", profile)
+	}
+	return deliveryJSON, nil
 }

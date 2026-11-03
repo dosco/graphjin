@@ -65,6 +65,9 @@ func normalizeWatchDeliveryJSON(raw string) (string, watchDeliveryConfig, bool, 
 		if cfg.Agent.ThreadID != "" {
 			value["thread_id"] = cfg.Agent.ThreadID
 		}
+		if cfg.Agent.Profile != "" {
+			value["profile"] = cfg.Agent.Profile
+		}
 	}
 	out, err := json.Marshal(value)
 	if err != nil {

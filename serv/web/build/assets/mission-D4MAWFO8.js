@@ -1,4 +1,4 @@
-import{C as e,tt as t}from"./index-C5gsapkW.js";var n=t(`book-open-check`,[[`path`,{d:`M12 21V7`,key:`gj6g52`}],[`path`,{d:`m16 12 2 2 4-4`,key:`mdajum`}],[`path`,{d:`M22 6V4a1 1 0 0 0-1-1h-5a4 4 0 0 0-4 4 4 4 0 0 0-4-4H3a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h6a3 3 0 0 1 3 3 3 3 0 0 1 3-3h6a1 1 0 0 0 1-1v-1.3`,key:`8arnkb`}]]),r=t(`plus`,[[`path`,{d:`M5 12h14`,key:`1ays0h`}],[`path`,{d:`M12 5v14`,key:`s699le`}]]),i=`query MissionTasks {
+import{C as e,tt as t}from"./index-IztBdFca.js";var n=t(`book-open-check`,[[`path`,{d:`M12 21V7`,key:`gj6g52`}],[`path`,{d:`m16 12 2 2 4-4`,key:`mdajum`}],[`path`,{d:`M22 6V4a1 1 0 0 0-1-1h-5a4 4 0 0 0-4 4 4 4 0 0 0-4-4H3a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h6a3 3 0 0 1 3 3 3 3 0 0 1 3-3h6a1 1 0 0 0 1-1v-1.3`,key:`8arnkb`}]]),r=t(`plus`,[[`path`,{d:`M5 12h14`,key:`1ays0h`}],[`path`,{d:`M12 5v14`,key:`s699le`}]]),i=`query MissionTasks {
   gj_task(order_by: { updated_at: desc }, limit: 100) {
     id goal status outcome snapshot_json verify_json verify_status verify_after
     verify_attempts owner_ref account_ref last_entry_at created_at updated_at closed_at
@@ -54,11 +54,11 @@ import{C as e,tt as t}from"./index-C5gsapkW.js";var n=t(`book-open-check`,[[`pat
       gj_artifacts(where: { id: { eq: $id } }, update: { tier: "observed" }) {
         ${l}
       }
-    }`,{id:t}))?.data?.gj_artifacts}function v(e){return e?.kind===`graphql`&&/\b(unknown|unsupported|disabled|not (?:available|configured|found)|cannot query)\b/i.test(e.message||``)}function y(e,t){return e?.data?.[t]||[]}var b=`id name query schedule next_fire_at metric metric_state delivery_json status enabled last_error last_fired_at`;async function x({id:t,name:n,query:r,schedule:i,metric:a,prompt:o}){let s={name:n,query:r,schedule:i,metric:a,delivery_json:o?.trim()?{kind:`agent`,prompt:o.trim()}:{kind:`inbox`}};return T((t?await e(`mutation MissionUpdateMetricWatch($id: String!, $input: gj_watchInput!) {
+    }`,{id:t}))?.data?.gj_artifacts}function v(e){return e?.kind===`graphql`&&/\b(unknown|unsupported|disabled|not (?:available|configured|found)|cannot query)\b/i.test(e.message||``)}function y(e,t){return e?.data?.[t]||[]}var b=`id name query schedule next_fire_at metric metric_state delivery_json status enabled last_error last_fired_at`;async function x({id:t,name:n,query:r,schedule:i,metric:a,prompt:o,profile:s}){let c={kind:`inbox`};(o?.trim()||s)&&(c={kind:`agent`},o?.trim()&&(c.prompt=o.trim()),s&&(c.profile=s));let l={name:n,query:r,schedule:i,metric:a,delivery_json:c};return T((t?await e(`mutation MissionUpdateMetricWatch($id: String!, $input: gj_watchInput!) {
           gj_watch(where: { id: { eq: $id } }, update: $input) { ${b} }
-        }`,{id:t,input:s}):await e(`mutation MissionCreateMetricWatch($input: gj_watchInput!) {
+        }`,{id:t,input:l}):await e(`mutation MissionCreateMetricWatch($input: gj_watchInput!) {
           gj_watch(insert: $input) { ${b} }
-        }`,{input:s}))?.data?.gj_watch)}async function S(t,n){return T((await e(`mutation MissionSetWatchEnabled($id: String!, $enabled: Boolean!) {
+        }`,{input:l}))?.data?.gj_watch)}async function S(t,n){return T((await e(`mutation MissionSetWatchEnabled($id: String!, $enabled: Boolean!) {
       gj_watch(where: { id: { eq: $id } }, update: { enabled: $enabled }) { id enabled status }
     }`,{id:t,enabled:n}))?.data?.gj_watch)}async function C(t){await e(`mutation MissionDeleteWatch($id: String!) {
       gj_watch(delete: true, where: { id: { eq: $id } }) { id }

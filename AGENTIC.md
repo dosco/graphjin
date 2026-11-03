@@ -1362,6 +1362,12 @@ the event, so a re-delivered event never runs the agent twice. Because it
 cannot write data, a routine needs no action review. `routine_thread_id` on
 the watch names the thread. Routines need agent threads enabled.
 
+`profile` names an agent instead: the routine answers in the owner's home
+thread for that agent, with the agent's instructions, so "my ops agent checks
+open tickets every hour" reads as one chat. A routine watch created from a turn
+in an agent's chat, naming no thread, gets that agent filled in. If the agent is
+later deleted or unshared, routines fall back to the watch's own thread.
+
 A flow verdict of `digest` queues the member instead of waking immediately.
 `delivery_json.digest.window` controls when GraphJin drains same-watch noise
 into one unseen `data_json.kind: "digest"` event without another model call;

@@ -1,8 +1,9 @@
 import React from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Activity, MessageSquare, Pause, Play, Plus, Trash2 } from "lucide-react";
 
+import { listProfiles } from "../../services/agent";
 import { deleteWatch, previewQuery, saveMetricWatch, setWatchEnabled } from "../../services/mission";
 import { parseJSON, relativeTime } from "../../services/graphql";
 import { DataErrorState } from "../../components/ui";
@@ -125,7 +126,7 @@ function Sparkline({ points, threshold, className }) {
   );
 }
 
-function MetricWatchCard({ watch, onEdit, onChanged }) {
+function MetricWatchCard({ watch, profiles, onEdit, onChanged }) {
   const metric = metricOf(watch);
   const state = stateOf(watch);
   const schedule = scheduleOf(watch);
@@ -185,7 +186,7 @@ function MetricWatchCard({ watch, onEdit, onChanged }) {
             <Button asChild type="button" size="sm" variant="ghost" title="Open the thread the agent answers in">
               <Link to={`/user/agent?thread=${encodeURIComponent(watch.routine_thread_id || delivery.thread_id || "")}`}>
                 <MessageSquare aria-hidden="true" />
-                Agent
+                {profiles.find((p) => p.id === delivery.profile)?.name || "Agent"}
               </Link>
             </Button>
           )}
@@ -215,6 +216,9 @@ export function MetricWatchGrid({ watches, identityKey }) {
   const [editing, setEditing] = React.useState(null);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["mission", "watches", identityKey] });
   const metricWatches = watches.filter(isMetricWatch);
+  // Agents are optional: without threads or a signed-in user the list is empty.
+  const profilesQuery = useQuery({ queryKey: ["agent-profiles", identityKey], queryFn: listProfiles, retry: false });
+  const profiles = profilesQuery.data || [];
 
   return (
     <div className="grid gap-3">
@@ -236,11 +240,11 @@ export function MetricWatchGrid({ watches, identityKey }) {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {metricWatches.map((watch) => (
-            <MetricWatchCard key={watch.id} watch={watch} onEdit={setEditing} onChanged={refresh} />
+            <MetricWatchCard key={watch.id} watch={watch} profiles={profiles} onEdit={setEditing} onChanged={refresh} />
           ))}
         </div>
       )}
-      <MetricWatchEditor watch={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh(); }} />
+      <MetricWatchEditor watch={editing} profiles={profiles} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh(); }} />
     </div>
   );
 }
@@ -281,6 +285,7 @@ const blankForm = {
   cron: "*/15 * * * *",
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   prompt: "",
+  profile: "",
 };
 
 function formFromWatch(watch) {
@@ -302,10 +307,11 @@ function formFromWatch(watch) {
     cron: schedule.cron || blankForm.cron,
     timezone: schedule.timezone || blankForm.timezone,
     prompt: delivery.kind === "agent" ? delivery.prompt || "" : "",
+    profile: delivery.kind === "agent" ? delivery.profile || "" : "",
   };
 }
 
-function MetricWatchEditor({ watch, onClose, onSaved }) {
+function MetricWatchEditor({ watch, profiles, onClose, onSaved }) {
   const [form, setForm] = React.useState(blankForm);
   const [preview, setPreview] = React.useState(null);
   React.useEffect(() => {
@@ -333,6 +339,7 @@ function MetricWatchEditor({ watch, onClose, onSaved }) {
         schedule: { cron: form.cron.trim(), timezone: form.timezone.trim() || "UTC" },
         metric,
         prompt: form.prompt,
+        profile: form.profile,
       });
     },
     onSuccess: onSaved,
@@ -433,9 +440,19 @@ function MetricWatchEditor({ watch, onClose, onSaved }) {
               <Input value={form.cron} onChange={set("cron")} className="font-mono text-xs" />
             </Field>
           )}
-          <Field label="When it fires, ask the agent (optional)" hint="Leave empty to only notify the inbox. The agent answers read-only in this watch's thread.">
+          <Field label="When it fires, ask the agent (optional)" hint="Leave both empty to only notify the inbox. The agent answers read-only.">
             <Textarea value={form.prompt} onChange={set("prompt")} rows={3} placeholder="Which customers are behind the spike?" />
           </Field>
+          {profiles.length > 0 && (
+            <Field label="Answer in">
+              <Select value={form.profile} onChange={set("profile")}>
+                <option value="">This watch's own thread</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}'s chat</option>
+                ))}
+              </Select>
+            </Field>
+          )}
           {save.error && <DataErrorState error={save.error} queryMessage="GraphJin did not save this watch." />}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>

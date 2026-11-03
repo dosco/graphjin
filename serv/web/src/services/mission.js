@@ -130,8 +130,15 @@ const watchFields = `id name query schedule next_fire_at metric metric_state del
 // saveMetricWatch creates or replaces a metric watch: a schedule, a plain
 // query, and the threshold its number is checked against on every tick.
 // Watches are keyed by owner and name, so saving an existing name updates it.
-export async function saveMetricWatch({ id, name, query, schedule, metric, prompt }) {
-  const delivery = prompt?.trim() ? { kind: "agent", prompt: prompt.trim() } : { kind: "inbox" };
+// A prompt or an agent makes it a routine; with an agent, the answer lands in
+// that agent's home thread.
+export async function saveMetricWatch({ id, name, query, schedule, metric, prompt, profile }) {
+  let delivery = { kind: "inbox" };
+  if (prompt?.trim() || profile) {
+    delivery = { kind: "agent" };
+    if (prompt?.trim()) delivery.prompt = prompt.trim();
+    if (profile) delivery.profile = profile;
+  }
   const input = { name, query, schedule, metric, delivery_json: delivery };
   const payload = id
     ? await graphqlRequest(
