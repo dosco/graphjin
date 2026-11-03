@@ -43,6 +43,7 @@ func (s *graphjinService) prepareThreadRun(ctx context.Context, threadID string,
 		return nil, err
 	}
 	req.History = history
+	req.Profile = s.requestProfile(ctx, thread)
 
 	run := &threadRun{s: s, thread: thread, threadID: threadID, runID: "run_" + taskRandomHex()}
 	if err := s.claimThreadRun(ctx, threadID, run.runID); err != nil {

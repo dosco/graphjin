@@ -400,6 +400,9 @@ func (h artifactControlPlane) upsertArtifact(ctx context.Context, root core.Mana
 	if requestedKind == artifactKindMemory || normalizeArtifactKind(stringMapValue(requestedExisting, "kind")) == artifactKindMemory {
 		return h.upsertMemory(ctx, root, requestedExisting)
 	}
+	if requestedKind == artifactKindAgentProfile || normalizeArtifactKind(stringMapValue(requestedExisting, "kind")) == artifactKindAgentProfile {
+		return h.upsertAgentProfile(ctx, root, requestedExisting)
+	}
 	visibility := stringInput(root.Input, "visibility", "user")
 	if visibility == "global" {
 		s.recordRuntimeEvent(ctx, runtimeEvent{
@@ -619,6 +622,9 @@ func (s *graphjinService) ensureStoreTables() error {
 			if _, err := db.ExecContext(context.Background(), stmt); err != nil {
 				return err
 			}
+		}
+		if err := migrateThreadSchema(context.Background(), db, dbType, s.conf.Core.EffectiveArtifactsConfig().Schema); err != nil {
+			return err
 		}
 	}
 	if s.authStoreEnabled() {

@@ -13,6 +13,7 @@ import {
   MessageSquarePlus,
   Pin,
   PanelRightClose,
+  Plus,
   Send,
   Settings2,
   Sparkles,
@@ -23,7 +24,19 @@ import {
 } from "lucide-react";
 
 import { DataErrorState, LoadingState, StatusPill } from "../components/ui";
-import { agentStatus, askAgentStream, cancelRun, createThread, fetchThread, followRun, listThreads } from "../services/agent";
+import {
+  agentStatus,
+  askAgentStream,
+  cancelRun,
+  createProfile,
+  createThread,
+  fetchThread,
+  followRun,
+  listProfiles,
+  listThreads,
+  markThreadSeen,
+  profileHomeThread,
+} from "../services/agent";
 import { fetchMissionTask } from "../services/mission";
 import { operatorIdentityKey, useOperatorIdentity } from "../services/identity";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -85,6 +98,15 @@ const AgentChat = () => {
     queryFn: listThreads,
     enabled: threadsEnabled,
   });
+  const profilesQuery = useQuery({
+    queryKey: ["agent-profiles", identityKey],
+    queryFn: listProfiles,
+    enabled: threadsEnabled,
+  });
+  const profiles = React.useMemo(() => profilesQuery.data || [], [profilesQuery.data]);
+  const threads = React.useMemo(() => threadsQuery.data || [], [threadsQuery.data]);
+  const activeProfile = profileForThread(threads.find((thread) => thread.id === threadID), profiles);
+  const [newAgentOpen, setNewAgentOpen] = React.useState(false);
   const [messages, setMessages] = React.useState(initialMessages);
   const [activeRunID, setActiveRunID] = React.useState("");
   const [resuming, setResuming] = React.useState(false);
@@ -116,6 +138,20 @@ const AgentChat = () => {
     setPinnedTaskID(linkedTaskID);
   }, [linkedTaskID]);
 
+  // The open thread is the one being read, so its answers never count as
+  // unread; the sidebar refreshes to clear its dot.
+  const markSeen = React.useCallback(async (id) => {
+    if (!id) {
+      return;
+    }
+    try {
+      await markThreadSeen(id);
+    } catch {
+      // Unread state is advisory; a failed mark only leaves the dot on.
+    }
+    void queryClient.invalidateQueries({ queryKey: ["agent-threads"] });
+  }, [queryClient]);
+
   // A thread in the URL is loaded from the store; a run still active on it
   // (a reload mid-answer, or a run started elsewhere) is followed to its end.
   const skipNextThreadLoad = React.useRef(false);
@@ -134,6 +170,9 @@ const AgentChat = () => {
         return;
       }
       setMessages(messagesFromThread(thread));
+      if (thread.unread) {
+        void markSeen(threadID);
+      }
       if (thread.active_run_id) {
         setActiveRunID(thread.active_run_id);
         setResuming(true);
@@ -155,14 +194,14 @@ const AgentChat = () => {
         if (!cancelled && finished) {
           setMessages(messagesFromThread(finished));
         }
-        void queryClient.invalidateQueries({ queryKey: ["agent-threads"] });
+        await markSeen(threadID);
       }
     }
     void load().catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [threadID, threadsEnabled, queryClient]);
+  }, [threadID, threadsEnabled, queryClient, markSeen]);
 
   const mutation = useMutation({
     mutationFn: (vars) =>
@@ -187,6 +226,28 @@ const AgentChat = () => {
     setSearchParams(next, { replace: false });
     if (!nextID) {
       setMessages(initialMessages);
+    }
+  }
+
+  // Opening an agent opens its home thread, created on first use.
+  async function selectProfile(profile) {
+    try {
+      const thread = await profileHomeThread(profile.id);
+      if (thread?.id) {
+        selectThread(thread.id);
+        void queryClient.invalidateQueries({ queryKey: ["agent-threads"] });
+      }
+    } catch {
+      // The thread list stays as it was; the agent can be opened again.
+    }
+  }
+
+  async function addAgent(input) {
+    const profile = await createProfile(input);
+    await queryClient.invalidateQueries({ queryKey: ["agent-profiles"] });
+    setNewAgentOpen(false);
+    if (profile?.id) {
+      await selectProfile(profile);
     }
   }
 
@@ -271,7 +332,8 @@ const AgentChat = () => {
       setPendingActions([]);
       setActiveRunID("");
       if (threadsEnabled) {
-        void queryClient.invalidateQueries({ queryKey: ["agent-threads"] });
+        // The answer arrived on screen, so the thread is already read.
+        await markSeen(currentThreadID);
       }
     }
   }
@@ -392,7 +454,7 @@ const AgentChat = () => {
           <div className="flex min-h-14 items-center justify-between gap-4 border-b px-4 py-2 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-full bg-muted", ready ? "text-foreground" : "text-muted-foreground")}><Bot className="size-4" aria-hidden="true" /></span>
-              <div className="min-w-0"><div className="flex items-center gap-2"><h1 className="truncate text-sm font-semibold">GraphJin Agent</h1><StatusPill status={ready ? "ready" : status?.status || "pending"} /></div><p className="hidden truncate text-xs text-muted-foreground sm:block">{ready ? "Governed by the current caller and catalog." : status?.message}</p></div>
+              <div className="min-w-0"><div className="flex items-center gap-2"><h1 className="truncate text-sm font-semibold">{activeProfile?.name || "GraphJin Agent"}</h1><StatusPill status={ready ? "ready" : status?.status || "pending"} /></div><p className="hidden truncate text-xs text-muted-foreground sm:block">{ready ? "Governed by the current caller and catalog." : status?.message}</p></div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {threadsEnabled && (
@@ -407,7 +469,15 @@ const AgentChat = () => {
           </div>
           <div className={cn("min-h-0 min-w-0 overflow-hidden", threadsEnabled && desktop && "grid grid-cols-[15rem_minmax(0,1fr)]")}>
             {threadsEnabled && desktop && (
-              <ThreadList threads={threadsQuery.data || []} activeID={threadID} onSelect={selectThread} disabled={pending} />
+              <ThreadList
+                threads={threads}
+                profiles={profiles}
+                activeID={threadID}
+                onSelect={selectThread}
+                onSelectProfile={(profile) => void selectProfile(profile)}
+                onNewAgent={() => setNewAgentOpen(true)}
+                disabled={pending}
+              />
             )}
             {inspection && desktop ? (
               <ResizablePanelGroup orientation="horizontal" className="h-full">
@@ -416,6 +486,7 @@ const AgentChat = () => {
                 <ResizablePanel defaultSize="35%" minSize="24%" maxSize="52%"><AgentInspector inspection={inspection} onClose={() => setInspection(null)} /></ResizablePanel>
               </ResizablePanelGroup>
             ) : chatSurface}
+            {threadsEnabled && <NewAgentDialog open={newAgentOpen} onOpenChange={setNewAgentOpen} onCreate={addAgent} />}
             {!desktop && <Sheet open={Boolean(inspection)} onOpenChange={(open) => !open && setInspection(null)}><SheetContent side="right" className="w-[min(96vw,42rem)] p-0 sm:w-[42rem]">{inspection && <AgentInspector inspection={inspection} onClose={() => setInspection(null)} compact />}</SheetContent></Sheet>}
           </div>
         </div>
@@ -424,33 +495,167 @@ const AgentChat = () => {
   );
 };
 
-function ThreadList({ threads, activeID, onSelect, disabled }) {
+// groupThreadsByAgent files threads under the agent profile they belong to.
+// Plain chats (and threads whose profile the caller can no longer see) come
+// first; every agent is listed even before its home thread exists.
+export function groupThreadsByAgent(threads = [], profiles = []) {
+  const known = new Set(profiles.map((profile) => profile.id));
+  const groups = [{ profile: null, threads: [] }, ...profiles.map((profile) => ({ profile, threads: [] }))];
+  const byProfile = new Map(groups.slice(1).map((group) => [group.profile.id, group]));
+  for (const thread of threads) {
+    const group = known.has(thread.profile) ? byProfile.get(thread.profile) : groups[0];
+    group.threads.push(thread);
+  }
+  return groups.map((group) => ({ ...group, unread: group.threads.some((thread) => thread.unread) }));
+}
+
+function profileForThread(thread, profiles) {
+  if (!thread?.profile) {
+    return null;
+  }
+  return profiles.find((profile) => profile.id === thread.profile) || null;
+}
+
+export function ThreadList({ threads, profiles = [], activeID, onSelect, onSelectProfile, onNewAgent, disabled }) {
+  const groups = groupThreadsByAgent(threads, profiles);
+  const [chats, ...agents] = groups;
   return (
-    <nav aria-label="Conversations" className="min-h-0 overflow-y-auto border-r bg-muted/30 p-2">
-      {threads.length === 0 ? (
-        <p className="px-2 py-3 text-xs text-muted-foreground">Conversations you start are kept here.</p>
-      ) : (
-        <ul className="grid gap-0.5">
-          {threads.map((thread) => (
-            <li key={thread.id}>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => onSelect(thread.id)}
-                aria-current={thread.id === activeID ? "page" : undefined}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted disabled:opacity-60",
-                  thread.id === activeID && "bg-muted font-medium",
-                )}
-              >
-                <span className="min-w-0 flex-1 truncate">{thread.title || "New conversation"}</span>
-                {thread.active_run_id && <Timer className="size-3.5 shrink-0 text-muted-foreground" aria-label="Running" />}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+    <nav aria-label="Conversations" className="grid min-h-0 content-start gap-3 overflow-y-auto border-r bg-muted/30 p-2">
+      <section aria-label="Agents" className="grid gap-0.5">
+        <div className="flex items-center justify-between gap-2 px-2 pt-1">
+          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Agents</h2>
+          {onNewAgent && (
+            <Button type="button" variant="ghost" size="icon-sm" onClick={onNewAgent} disabled={disabled} aria-label="New agent">
+              <Plus aria-hidden="true" />
+            </Button>
+          )}
+        </div>
+        {agents.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">Agents you create get their own home thread.</p>}
+        {agents.map((group) => (
+          <div key={group.profile.id} className="grid gap-0.5">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onSelectProfile?.(group.profile)}
+              aria-current={group.threads.some((thread) => thread.id === activeID) ? "true" : undefined}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium hover:bg-muted disabled:opacity-60",
+                group.threads.length === 1 && group.threads[0].id === activeID && "bg-muted",
+              )}
+            >
+              <Bot className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate">{group.profile.name}</span>
+              {!group.profile.mine && <span className="shrink-0 text-xs font-normal text-muted-foreground">team</span>}
+              {group.unread && <UnreadDot />}
+            </button>
+            {group.threads.length > 1 && (
+              <ThreadItems threads={group.threads} activeID={activeID} onSelect={onSelect} disabled={disabled} nested />
+            )}
+          </div>
+        ))}
+      </section>
+      <section aria-label="Chats" className="grid gap-0.5">
+        <h2 className="px-2 pt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Chats</h2>
+        {chats.threads.length === 0 ? (
+          <p className="px-2 py-1 text-xs text-muted-foreground">Conversations you start are kept here.</p>
+        ) : (
+          <ThreadItems threads={chats.threads} activeID={activeID} onSelect={onSelect} disabled={disabled} />
+        )}
+      </section>
     </nav>
+  );
+}
+
+function ThreadItems({ threads, activeID, onSelect, disabled, nested = false }) {
+  return (
+    <ul className={cn("grid gap-0.5", nested && "ml-4 border-l pl-1")}>
+      {threads.map((thread) => (
+        <li key={thread.id}>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onSelect(thread.id)}
+            aria-current={thread.id === activeID ? "page" : undefined}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted disabled:opacity-60",
+              thread.id === activeID && "bg-muted font-medium",
+            )}
+          >
+            <span className="min-w-0 flex-1 truncate">{thread.title || "New conversation"}</span>
+            {thread.active_run_id && <Timer className="size-3.5 shrink-0 text-muted-foreground" aria-label="Running" />}
+            {thread.unread && <UnreadDot />}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function UnreadDot() {
+  return <span role="status" aria-label="Unread" className="size-2 shrink-0 rounded-full bg-primary" />;
+}
+
+function NewAgentDialog({ open, onOpenChange, onCreate }) {
+  const [name, setName] = React.useState("");
+  const [instructions, setInstructions] = React.useState("");
+  const [error, setError] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (open) {
+      setName("");
+      setInstructions("");
+      setError("");
+    }
+  }, [open]);
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    if (!name.trim() || saving) {
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await onCreate({ name: name.trim(), instructions: instructions.trim() });
+    } catch (err) {
+      setError(err?.message || "The agent could not be created.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="grid w-[min(92vw,28rem)] content-start gap-5 sm:w-[28rem]">
+        <SheetHeader className="pr-8">
+          <SheetTitle className="flex items-center gap-2"><Bot className="size-4" aria-hidden="true" />New agent</SheetTitle>
+          <SheetDescription>An agent keeps its own conversation and follows your instructions on every answer. It only sees what you can see.</SheetDescription>
+        </SheetHeader>
+        <form className="grid gap-4" onSubmit={handleSubmit}>
+          <label className="grid gap-1.5 text-sm">
+            <span className="font-medium">Name</span>
+            <Input value={name} onChange={(event) => setName(event.target.value)} maxLength={80} placeholder="Finance" required />
+          </label>
+          <label className="grid gap-1.5 text-sm">
+            <span className="font-medium">Instructions</span>
+            <Textarea
+              value={instructions}
+              onChange={(event) => setInstructions(event.target.value)}
+              maxLength={2048}
+              rows={6}
+              placeholder="Focus on revenue and margin. Report amounts in EUR and compare against the prior month."
+            />
+            <span className="text-xs text-muted-foreground">{instructions.length} / 2048</span>
+          </label>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" disabled={!name.trim() || saving}>Create agent</Button>
+          </div>
+        </form>
+      </SheetContent>
+    </Sheet>
   );
 }
 

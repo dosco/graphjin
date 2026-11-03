@@ -130,11 +130,11 @@ export function listThreads() {
   return fetchJSON("/api/v1/agent/threads").then((payload) => payload?.data || []);
 }
 
-export function createThread({ title = "" } = {}) {
+export function createThread({ title = "", profile = "" } = {}) {
   return fetchJSON("/api/v1/agent/threads", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, profile }),
   }).then((payload) => payload?.data);
 }
 
@@ -148,6 +148,12 @@ export function updateThread(threadID, patch) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   }).then((payload) => payload?.data);
+}
+
+// markThreadSeen clears a thread's unread state (threads report unread when an
+// assistant message landed after the owner last looked).
+export function markThreadSeen(threadID) {
+  return updateThread(threadID, { seen: true });
 }
 
 export function cancelRun(runID) {
@@ -196,4 +202,35 @@ export function updateMemory(id, patch) {
 
 export function deleteMemory(id) {
   return fetchJSON(`/api/v1/agent/memories/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+// Agent profiles: named agents with standing instructions. Each has one home
+// thread per user, found or created on first open; sharing one (tier
+// approved) makes it available to the caller's account.
+export function listProfiles() {
+  return fetchJSON("/api/v1/agent/profiles").then((payload) => payload?.data || []);
+}
+
+export function createProfile({ name, instructions = "", icon = "" }) {
+  return fetchJSON("/api/v1/agent/profiles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, instructions, icon }),
+  }).then((payload) => payload?.data);
+}
+
+export function updateProfile(id, patch) {
+  return fetchJSON(`/api/v1/agent/profiles/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  }).then((payload) => payload?.data);
+}
+
+export function deleteProfile(id) {
+  return fetchJSON(`/api/v1/agent/profiles/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function profileHomeThread(id) {
+  return fetchJSON(`/api/v1/agent/profiles/${encodeURIComponent(id)}/thread`).then((payload) => payload?.data);
 }

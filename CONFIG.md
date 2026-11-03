@@ -1342,7 +1342,7 @@ Thread endpoints (owner-scoped; admins may read any thread):
 | `GET /api/v1/agent/threads` | List the caller's open threads (`?archived=true` for all) |
 | `POST /api/v1/agent/threads` | Create a thread |
 | `GET /api/v1/agent/threads/{id}` | A thread with its messages |
-| `PATCH /api/v1/agent/threads/{id}` | Rename, archive (`status`) or set `profile` |
+| `PATCH /api/v1/agent/threads/{id}` | Rename, archive (`status`), set `profile`, or mark read (`{"seen": true}`) |
 | `DELETE /api/v1/agent/threads/{id}` | Delete a thread with its messages and runs |
 | `GET /api/v1/agent/runs/{id}` | A run's status and token usage |
 | `GET /api/v1/agent/runs/{id}/events` | Replay and follow a run as SSE (`Last-Event-ID` or `?after=N`) |
@@ -1365,6 +1365,26 @@ recalls the caller's most relevant personal and team memories and gives them
 to the agent as standing preferences, never as evidence. Recall ranks with the
 `catalog_search.semantic` embedder when that is enabled and falls back to
 shared-word matching otherwise.
+
+Thread rows report `unread: true` when an assistant message landed after the
+owner last looked; the owner's own messages and `{"seen": true}` mark it read.
+
+Agents are `agent_profile` artifacts: a `name`, standing `instructions`
+(at most 2 KB) and an optional `icon`, enabled with threads. They follow the
+memory tiers: a new agent is personal, `tier: approved` shares it with the
+owner's account, and changing a shared agent's instructions makes it personal
+again. Every user gets one home thread per agent they can see, created on
+first open. A run on a thread whose `profile` names an agent the caller can
+see is given that agent's instructions; they shape focus and presentation and
+grant no access.
+
+| Method and path | Purpose |
+|-----------------|---------|
+| `GET /api/v1/agent/profiles` | The caller's agents and agents shared with their account |
+| `POST /api/v1/agent/profiles` | Create an agent `{name, instructions, icon}` |
+| `PATCH /api/v1/agent/profiles/{id}` | Edit, or share (`tier: approved`) / unshare (`tier: observed`) |
+| `DELETE /api/v1/agent/profiles/{id}` | Delete an agent (its threads stay, as plain chats) |
+| `GET /api/v1/agent/profiles/{id}/thread` | The caller's home thread for the agent, found or created |
 
 ---
 

@@ -23,6 +23,9 @@ func TestControlStoreDirectSQLIsNarrowlyGated(t *testing.T) {
 		"tasks.go": {
 			"migrateTaskSchema": true,
 		},
+		"threads.go": {
+			"migrateThreadSchema": true,
+		},
 		"store_admin.go": {
 			// A zero-row probe reports whether a store table exists before
 			// the internal GraphQL roles that would compile against it do.
@@ -35,7 +38,7 @@ func TestControlStoreDirectSQLIsNarrowlyGated(t *testing.T) {
 			"completeTaskVerification": true,
 		},
 	}
-	for _, name := range []string{"artifacts.go", "watches.go", "tasks.go", "tasks_verify.go", "tasks_agent.go", "watch_runner.go", "watch_delivery.go", "projection_poll.go", "threads.go", "threads_run.go", "threads_http.go", "memory.go", "store_admin.go"} {
+	for _, name := range []string{"artifacts.go", "watches.go", "tasks.go", "tasks_verify.go", "tasks_agent.go", "watch_runner.go", "watch_delivery.go", "projection_poll.go", "threads.go", "threads_run.go", "threads_http.go", "memory.go", "agent_profiles.go", "store_admin.go"} {
 		path := filepath.Join(".", name)
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, path, nil, 0)
