@@ -200,6 +200,9 @@ const (
 	CapabilityActionCodeWrite  = "code.write"
 	CapabilityActionAPIWrite   = "api.write"
 	CapabilityActionAPIDelete  = "api.delete"
+	// CapabilityActionMemoryWrite lets the agent save the caller's personal
+	// memories (gj_artifacts rows of kind memory).
+	CapabilityActionMemoryWrite = "memory.write"
 )
 
 type Response struct {

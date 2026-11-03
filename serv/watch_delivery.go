@@ -41,6 +41,7 @@ type watchDeliveryConfig struct {
 	Kind     string
 	Webhook  watchWebhookConfig
 	Workflow watchWorkflowConfig
+	Agent    watchAgentConfig
 	Digest   watchDigestConfig
 }
 
@@ -694,6 +695,11 @@ func (s *graphjinService) deliverWatchEvent(ctx context.Context, def watchRuntim
 			receipt, err = s.deliverWatchWebhook(ctx, def, event, cfg.Webhook)
 		case "workflow":
 			receipt, err = s.deliverWatchWorkflow(ctx, def, event, cfg.Workflow)
+		case "agent":
+			// An agent run is never retried: it costs a model run and the
+			// thread already shows what happened.
+			receipt, err = s.deliverWatchAgent(ctx, def, event, cfg.Agent)
+			return receipt, attempts, err
 		case "inbox":
 			return map[string]any{
 				"status":       "delivered",
@@ -1025,6 +1031,12 @@ func parseWatchDeliveryConfig(raw string) (watchDeliveryConfig, bool, error) {
 		cfg.Kind = "workflow"
 		cfg.Workflow = parseWatchWorkflowConfig(workflow)
 	}
+	if cfg.Kind == "agent" {
+		var err error
+		if cfg.Agent, err = parseWatchAgentConfig(m); err != nil {
+			return cfg, true, err
+		}
+	}
 	if digest, ok := m["digest"]; ok && digest != nil {
 		digestMap := mapFromAny(digest)
 		windowText := strings.TrimSpace(stringFromAny(digestMap["window"]))
@@ -1056,6 +1068,7 @@ func parseWatchDeliveryConfig(raw string) (watchDeliveryConfig, bool, error) {
 		if strings.TrimSpace(cfg.Workflow.Name) == "" {
 			return cfg, true, errors.New("workflow delivery requires name")
 		}
+	case "agent":
 	default:
 		return cfg, true, fmt.Errorf("unsupported watch delivery kind %q", cfg.Kind)
 	}

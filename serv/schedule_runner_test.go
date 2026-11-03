@@ -719,7 +719,7 @@ func TestWatchScheduleRecoversFromCrashAfterInsert(t *testing.T) {
 		t.Fatalf("load watch: %v", err)
 	}
 	def := watchScheduleDefinition(crashed, stored)
-	if inserted, err := crashed.insertWatchScheduleEvent(context.Background(), &def, watchActionProposal{}, sched, due, due.Add(time.Second)); err != nil || !inserted {
+	if inserted, err := crashed.insertWatchScheduleEvent(context.Background(), &def, watchActionProposal{}, sched, due, due.Add(time.Second), nil); err != nil || !inserted {
 		t.Fatalf("crashed replica insert=%v err=%v", inserted, err)
 	}
 	if got := storedWatchNextFire(t, db, id); got != formatWatchFireTime(due) {

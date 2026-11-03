@@ -69,7 +69,7 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 	start := time.Now()
 	agentConf := agentConfigFromService(ms.service.conf)
 	ctx = ms.effectiveContext(ctx)
-	ctx = ms.service.applyIdentityContext(ctx)
+	ctx = withWatchCreatedRecorder(ms.service.applyIdentityContext(ctx))
 	args := req.GetArguments()
 	agentReq := agentRequestFromArgs(args)
 	if strings.TrimSpace(agentReq.Instruction) == "" {

@@ -28,7 +28,20 @@ type threadRun struct {
 // threadRunEmit receives each streamed run event after it is persisted.
 type threadRunEmit func(seq int64, kind string, payload any)
 
+// threadRunOptions are for runs a person did not type. RunID, when set, is the
+// run's fixed id, so a second attempt at the same work fails on the insert
+// instead of running the agent again; Display replaces the instruction as the
+// user message the thread shows.
+type threadRunOptions struct {
+	RunID   string
+	Display string
+}
+
 func (s *graphjinService) prepareThreadRun(ctx context.Context, threadID string, req *gjagent.Request) (*threadRun, error) {
+	return s.prepareThreadRunWith(ctx, threadID, req, threadRunOptions{})
+}
+
+func (s *graphjinService) prepareThreadRunWith(ctx context.Context, threadID string, req *gjagent.Request, opts threadRunOptions) (*threadRun, error) {
 	thread, err := s.ownedThreadStoreRow(ctx, threadID)
 	if err != nil {
 		return nil, err
@@ -44,7 +57,11 @@ func (s *graphjinService) prepareThreadRun(ctx context.Context, threadID string,
 	}
 	req.History = history
 
-	run := &threadRun{s: s, thread: thread, threadID: threadID, runID: "run_" + taskRandomHex()}
+	runID := opts.RunID
+	if runID == "" {
+		runID = "run_" + taskRandomHex()
+	}
+	run := &threadRun{s: s, thread: thread, threadID: threadID, runID: runID}
 	if err := s.claimThreadRun(ctx, threadID, run.runID); err != nil {
 		return nil, err
 	}
@@ -53,8 +70,12 @@ func (s *graphjinService) prepareThreadRun(ctx context.Context, threadID string,
 		release()
 		return nil, err
 	}
+	shown := req.Instruction
+	if opts.Display != "" {
+		shown = opts.Display
+	}
 	if _, err := s.appendMessage(ctx, messageSpec{
-		ThreadID: threadID, Role: "user", Content: req.Instruction, RunID: run.runID,
+		ThreadID: threadID, Role: "user", Content: shown, RunID: run.runID,
 		AccountID: stringMapValue(thread, "account_id"), OwnerID: stringMapValue(thread, "owner_id"),
 	}); err != nil {
 		_ = s.finishRun(context.WithoutCancel(ctx), run.runID, runStatusFailed, err.Error(), gjagent.UsageTotals{})
@@ -63,7 +84,7 @@ func (s *graphjinService) prepareThreadRun(ctx context.Context, threadID string,
 	}
 	if stringMapValue(thread, "title") == "" {
 		_, _ = s.internalStoreMutationRows(ctx, "threads", `where: { id: { eq: $id } }, update: $input`, "id",
-			map[string]any{"id": threadID, "input": map[string]any{"title": threadTitleFrom(req.Instruction)}})
+			map[string]any{"id": threadID, "input": map[string]any{"title": threadTitleFrom(shown)}})
 	}
 	return run, nil
 }

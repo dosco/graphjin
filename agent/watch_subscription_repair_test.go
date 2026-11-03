@@ -181,3 +181,21 @@ func TestWatchNormalizationNoticeSurvivesAStructResult(t *testing.T) {
 		t.Fatalf("normalizing for the notice lost the rows: %#v", mapped)
 	}
 }
+
+// An aggregate watch rejected for its missing cursor must be steered to a
+// metric watch, not to a row subscription that would drop the number.
+func TestAggregateWatchRepairPointsToMetric(t *testing.T) {
+	out := map[string]any{"errors": []any{map[string]any{"message": "gj_watch subscription must use cursor pagination; aggregates and group-bys have no cursor"}}}
+	repaired := attachWatchQueryRepair(out, []string{"help:watches"}, []string{"customer_tickets"}, `subscription { customer_tickets(where: { status: { eq: "open" } }) { count_id } }`)
+	payload, _ := json.Marshal(repaired)
+	for _, want := range []string{"aggregate count_id", "plain query", `path: \"customer_tickets.0.count_id\"`, "schedule"} {
+		if !strings.Contains(string(payload), want) {
+			t.Fatalf("aggregate repair missing %q: %s", want, payload)
+		}
+	}
+	rows := attachWatchQueryRepair(out, []string{"help:watches"}, []string{"orders"}, `subscription { orders { id status } }`)
+	payload, _ = json.Marshal(rows)
+	if !strings.Contains(string(payload), "orders(first: 25, after: $cursor)") || strings.Contains(string(payload), "metric:") {
+		t.Fatalf("row watch repair should keep the cursor shape: %s", payload)
+	}
+}

@@ -53,7 +53,7 @@ func optionSkillIDs(t *testing.T, value ax.Value) []string {
 	return ids
 }
 
-func TestBuiltinSkillsAreTheOrderedFourteenFocusedGuides(t *testing.T) {
+func TestBuiltinSkillsAreTheOrderedFifteenFocusedGuides(t *testing.T) {
 	want := []string{
 		skillDataDiscovery,
 		skillDataAggregation,
@@ -65,6 +65,7 @@ func TestBuiltinSkillsAreTheOrderedFourteenFocusedGuides(t *testing.T) {
 		skillWorkflowWrite,
 		skillWatchRead,
 		skillWatchWrite,
+		skillMemoryWrite,
 		skillTaskRead,
 		skillTaskWrite,
 		skillAdminRead,
@@ -168,7 +169,7 @@ func TestAllowedSkillsCapabilityMatrix(t *testing.T) {
 		},
 		{
 			name:    "full admin",
-			profile: profileWithRoleAndRoots("admin", allRoots...),
+			profile: withMemoryWrite(profileWithRoleAndRoots("admin", allRoots...)),
 			want:    skillIDs(builtinSkills),
 		},
 	} {
@@ -206,7 +207,12 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3*1024 + 128},
 		// +192: watch_write's schedule clause (cron + IANA timezone, no query)
 		// so agents can create time-triggered watches.
-		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 18*512 + 128 + 192},
+		// +416: watch_write's metric clause (schedule + query + metric
+		// threshold) so agents can watch aggregates, which have no cursor,
+		// and select metric_state so the answer states the current number.
+		// +192: the read-only agent routine delivery (kind "agent").
+		// +480: memory_write, loaded when memory is enabled.
+		{name: "full admin", profile: withMemoryWrite(profileWithRoleAndRoots("admin", allRoots...)), max: 18*512 + 128 + 192 + 416 + 192 + 480},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			definitions := allowedSkills(false, tc.profile)
@@ -638,4 +644,30 @@ func BenchmarkSkillPromptConstruction(b *testing.B) {
 			"skills":        skillValues(definitions),
 		})
 	}
+}
+
+func TestMemoryWriteSkillLoadsOnlyWithTheCapability(t *testing.T) {
+	has := func(profile *CapabilityProfile, readOnly bool) bool {
+		for _, definition := range allowedSkills(readOnly, profile) {
+			if definition.id == skillMemoryWrite {
+				return true
+			}
+		}
+		return false
+	}
+	without := profileWithRoleAndRoots("user", systemRootArtifacts)
+	with := profileWithRoleAndRoots("user", systemRootArtifacts)
+	with.AllowedActions = append(with.AllowedActions, CapabilityActionMemoryWrite)
+	if has(without, false) || !has(with, false) || has(with, true) {
+		t.Fatalf("memory_write must load only with memory.write and never read-only")
+	}
+	// Loaded skills count against the payload budget; keep this one small.
+	if n := len(memoryWriteInstruction); n > 512 {
+		t.Fatalf("memory_write skill = %d bytes, max 512", n)
+	}
+}
+
+func withMemoryWrite(profile *CapabilityProfile) *CapabilityProfile {
+	profile.AllowedActions = append(profile.AllowedActions, CapabilityActionMemoryWrite)
+	return profile
 }

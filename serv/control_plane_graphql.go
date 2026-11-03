@@ -551,7 +551,7 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 		},
 		{
 			"name": "gj_watch.insert_update_delete", "kind": "watch", "enabled": watchEnabled,
-			"summary":          "Create, update, review, pause, and delete user-owned cursor-backed standing subscription watches, including absence detection, digests, and rollup watches. Watches are durable by default; ephemeral watches require an explicit lease_expires_at.",
+			"summary":          "Create, update, review, pause, and delete user-owned cursor-backed standing subscription watches, including absence detection, digests, and rollup watches, plus scheduled metric watches that fire when a number from an aggregate query crosses a threshold. Watches are durable by default; ephemeral watches require an explicit lease_expires_at.",
 			"graphql_mutation": `gj_watch(insert: { name: "...", lifecycle: "durable", query: "subscription { orders(where: {...}, first: 25, after: $cursor) { id status } orders_cursor }", delivery_json: {...} })`,
 			"details_json": mustMarshalString(map[string]any{
 				"root":            "gj_watch",
@@ -561,7 +561,8 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 				"query_type":      "subscription",
 				"lifecycle":       map[string]string{"durable": "default; never deleted because an MCP client unsubscribes", "ephemeral": "requires future lease_expires_at and expires to status expired/enabled false"},
 				"input_shape":     `gj_watch(insert: { name: "...", query: "subscription { <root>(where: {...}, first: 25, after: $cursor) { ... } <root>_cursor }", variables_json: {...}, enrich_json: {...}, delivery_json: { kind: "inbox", digest: { window: "1h" } }, absence_json: { enabled: true, window: "4h", repeat: false } }); gj_watch(where: { id: { eq: "..." } }, update: { flow_review_json: {...} | action_review_json: {...} })`,
-				"return_fields":   []string{"id", "name", "lifecycle", "lease_expires_at", "status", "approval", "enabled", "absence_json", "flow_hash", "flow_approval", "flow_preview_json", "action_hash", "action_approval", "evidence_json", "created_at", "updated_at"},
+				"metric_shape":    `schedule: { cron: "*/15 * * * *" }, query: "query { <root>(where: {...}) { count_id } }", metric: { path: "<root>.0.count_id", op: "gt|gte|lt|lte|eq|ne|changed|change_pct", threshold: 50, fire: "crossing|every_tick" }; grouped: metric: { path: "<root>", key: "<group column>", value: "<number column>", op, threshold }; variables_json values may be { "$time": "now-24h" | "today" | "week" | "month" | "year" }`,
+				"return_fields":   []string{"id", "name", "lifecycle", "metric", "metric_state", "lease_expires_at", "status", "approval", "enabled", "absence_json", "flow_hash", "flow_approval", "flow_preview_json", "action_hash", "action_approval", "evidence_json", "created_at", "updated_at"},
 				"rest":            []string{"GET /api/v1/watches", "POST /api/v1/watches", "PATCH /api/v1/watches/{id}", "DELETE /api/v1/watches/{id}", "POST /api/v1/watches/cleanup-preview", "POST /api/v1/watches/cleanup-apply"},
 				"mcp_resource":    WatchEventsUnseenResourceURI,
 			}),
@@ -572,6 +573,7 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 				// filter lives inside the subscription string, so its quotes are
 				// escaped — exactly the form the watch repair machinery emits.
 				{"name": "create durable filtered cursor-backed subscription watch", "query": `mutation { gj_watch(insert: { name: "failed_orders", query: "subscription { orders(where: { status: { eq: \"failed\" } }, first: 25, after: $cursor) { id status } orders_cursor }" }) { id name lifecycle status enabled evidence_json } }`},
+				{"name": "create metric watch on an aggregate (count, sum, avg) crossing a threshold", "query": `mutation { gj_watch(insert: { name: "open_tickets_over_50", schedule: { cron: "*/15 * * * *", timezone: "UTC" }, query: "query { customer_tickets(where: { status: { eq: \"open\" } }) { count_id } }", metric: { path: "customer_tickets.0.count_id", op: "gt", threshold: 50 }, delivery_json: { kind: "inbox" } }) { id metric metric_state next_fire_at status } }`},
 				{"name": "create filtered watch via a GraphQL variable (alternative when escaping the inline string is awkward)", "query": `mutation CreateWatch($name: String!, $query: String!) { gj_watch(insert: { name: $name, query: $query, delivery_json: { kind: "inbox", digest: { window: "1h" } } }) { id name status enabled delivery_json } }` + "  # variables: {\"name\": \"failed_orders\", \"query\": \"subscription { orders(where: {status: {eq: \\\"failed\\\"}}, first: 25, after: $cursor) { id status } orders_cursor }\"}"},
 				{"name": "create explicit ephemeral watch", "query": `mutation { gj_watch(insert: { name: "next_30m_orders", lifecycle: "ephemeral", lease_expires_at: "<future RFC3339 timestamp>", query: "subscription { orders(first: 25, after: $cursor) { id status updated_at } orders_cursor }" }) { id lifecycle lease_expires_at status } }`},
 				{"name": "create absence watch", "query": `mutation { gj_watch(insert: { name: "shipment_scan_silence", query: "subscription { shipment_scans(first: 25, after: $cursor) { id scanned_at } shipment_scans_cursor }", absence_json: { enabled: true, window: "4h", repeat: false } }) { id absence_json status enabled action_hash action_approval } }`},

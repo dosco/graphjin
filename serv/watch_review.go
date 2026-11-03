@@ -60,6 +60,11 @@ func normalizeWatchDeliveryJSON(raw string) (string, watchDeliveryConfig, bool, 
 		}
 	case "workflow":
 		value["name"] = cfg.Workflow.Name
+	case "agent":
+		value["prompt"] = cfg.Agent.Prompt
+		if cfg.Agent.ThreadID != "" {
+			value["thread_id"] = cfg.Agent.ThreadID
+		}
 	}
 	out, err := json.Marshal(value)
 	if err != nil {
@@ -76,7 +81,9 @@ func (s *graphjinService) watchActionProposal(
 	if err != nil {
 		return watchActionProposal{}, err
 	}
-	if !enabled || deliveryCfg.Kind == "inbox" {
+	// An agent routine runs read-only: it investigates and writes its answer
+	// to a thread, so like the inbox it takes no action that needs review.
+	if !enabled || deliveryCfg.Kind == "inbox" || deliveryCfg.Kind == "agent" {
 		return watchActionProposal{}, nil
 	}
 

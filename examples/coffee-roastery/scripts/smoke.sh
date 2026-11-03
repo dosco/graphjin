@@ -697,7 +697,54 @@ run_agent_eval_suite() {
     smoke_agent_watch \
     "subscription smoke_notice { production_orders(first: 25, after: \$cursor) { id status } production_orders_cursor }"
   run_task_agent_eval_suite
+  run_metric_watch_agent_eval
   run_admin_root_suite
+}
+
+# Capability: METRIC-WATCH-AGENT
+# Contract: A plain-language threshold on a count ("tell me when ... goes above
+# N"), with zero tool coaching, becomes a metric watch: a schedule, an
+# aggregate query and a metric threshold equal to the asked number, and the
+# answer states the current count the database computed. The threshold is
+# derived from the live count so the watch does not fire during the eval.
+# Deeper coverage: TestMetricWatchCreateValidation, TestAggregateWatchRepairPointsToMetric.
+run_metric_watch_agent_eval() {
+  local count_out count threshold out ok="" attempt watch_id watch_out
+  count_out="$(graphql metric-eval-count 'query { customer_tickets(where: { status: { eq: "open" } }) { count_id } }')"
+  count="$(jq -r '.data.customer_tickets[0].count_id' "$count_out")"
+  threshold=$((count + 10))
+  for attempt in 1 2; do
+    out="$(run_agent_rest_prompt "Tell me when the number of open customer tickets goes above ${threshold}.")"
+    watch_id="$(jq -r '[.notices[]? | select(.kind == "watch_created") | .watch_ids[]?][0] // empty' "$out")"
+    if [ -n "$watch_id" ]; then
+      COFFEE_ROUTE_WATCH_IDS+=("$watch_id")
+      watch_out="$(graphql metric-eval-watch "query { gj_watch(where: { id: { eq: \"${watch_id}\" } }) { id query schedule metric metric_state } }")"
+      if jq -e --argjson n "$count" --argjson t "$threshold" '
+          .data.gj_watch[0] as $w
+          | ($w.metric.op == "gt" or $w.metric.op == "gte")
+          and ($w.metric.threshold == $t or ($w.metric.op == "gte" and $w.metric.threshold == $t + 1))
+          and ($w.query | test("count_"))
+          and ($w.schedule.cron | length) > 0
+          and $w.metric_state.last_value == $n
+        ' "$watch_out" >/dev/null &&
+        jq -e --arg n "$count" '
+          .status == "answered"
+          and (.answer | test("(^|[^0-9])" + $n + "([^0-9]|$)"))
+          and ((.answer | test("cannot|unable|not supported|no cursor"; "i")) | not)
+        ' "$out" >/dev/null; then
+        ok=1
+        break
+      fi
+    fi
+  done
+  if [ -n "$ok" ]; then
+    pass "agent eval: natural-language count threshold became a metric watch stating the live count"
+  else
+    echo "assertion failed: agent eval: natural-language count threshold became a metric watch stating the live count" >&2
+    jq . "$out" >&2 || cat "$out" >&2
+    [ -n "${watch_out:-}" ] && jq . "$watch_out" >&2
+    return 1
+  fi
 }
 
 # --- base checks ---------------------------------------------------------------
@@ -792,6 +839,7 @@ assert_jq "$customer_workflow_out" '.data.gj_workflow_execution.status == "ok" a
 
 run_watch_lifecycle_suite "subscription smoke_watch { production_orders(first: 25, after: \$cursor) { id status } production_orders_cursor }"
 run_watch_fire_suite "subscription smoke_fire { production_orders(first: 25, after: \$cursor) { id status } production_orders_cursor }"
+run_metric_watch_suite 'query { customer_tickets(where: { status: { eq: "open" } }) { count_id } }' "customer_tickets.0.count_id"
 run_coffee_watch_session_routing_suite
 run_artifact_suite
 run_task_control_plane_suite

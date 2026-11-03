@@ -309,7 +309,7 @@ func (s *graphjinService) fireWatchSchedule(
 ) (bool, time.Time, error) {
 	def := watchScheduleDefinition(s, row)
 	ownerCtx := s.watchOwnerContext(ctx, def)
-	proposal, err := s.watchActionProposal(ownerCtx, "", "", def.VariablesJSON, def.EnrichJSON, def.DeliveryJSON, "")
+	proposal, err := s.watchActionProposal(ownerCtx, def.Query, "", def.VariablesJSON, def.EnrichJSON, def.DeliveryJSON, "")
 	if err != nil {
 		// Same treatment as a subscription watch whose action no longer
 		// resolves: park it for review instead of firing an unbound action.
@@ -328,10 +328,37 @@ func (s *graphjinService) fireWatchSchedule(
 	// shutdown from cutting the follow-up bookkeeping (enrichment, wake-ups)
 	// short once the event exists.
 	ctx = context.WithoutCancel(ctx)
-	inserted, err := s.insertWatchScheduleEvent(ctx, &def, proposal, sched, due, now)
+	var metricEvent map[string]any
+	var metricState *watchMetricState
+	if metric, metered := parseWatchMetricJSON(jsonMapString(row, "metric_json")); metered {
+		// A metric watch fires only when its number crosses. The event still
+		// goes in before the state and the clock move, so a replica that dies
+		// part-way re-reads the tick and the event id stops a second fire.
+		state, crossings, evalErr := s.evaluateWatchMetricTick(ownerCtx, row, def, metric, sched, now)
+		if evalErr != nil || len(crossings) == 0 {
+			if err := s.saveWatchMetricState(ctx, def.ID, state, evalErr); err != nil {
+				return false, time.Time{}, err
+			}
+			next := sched.next(now)
+			if _, err := s.advanceWatchSchedule(ctx, def.ID, raw, due, next); err != nil {
+				return false, time.Time{}, err
+			}
+			return false, next, nil
+		}
+		metricEvent = watchMetricEventPayload(metric, state, crossings)
+		metricState = &state
+	}
+	inserted, err := s.insertWatchScheduleEvent(ctx, &def, proposal, sched, due, now, metricEvent)
 	if err != nil {
 		// Nothing has moved: the tick stays due and the next sweep retries it.
 		return false, time.Time{}, err
+	}
+	if metricState != nil {
+		// Saved before the clock moves: a later tick must see this breach, or
+		// a value that stays over the threshold would fire again.
+		if err := s.saveWatchMetricState(ctx, def.ID, *metricState, nil); err != nil {
+			return inserted, time.Time{}, err
+		}
 	}
 	next := sched.next(now)
 	advanced, err := s.advanceWatchSchedule(ctx, def.ID, raw, due, next)
@@ -421,6 +448,7 @@ func watchScheduleDefinition(s *graphjinService, row map[string]any) watchRuntim
 	return watchRuntimeDefinition{
 		ID:             stringMapValue(row, "id"),
 		Name:           stringMapValue(row, "name"),
+		Query:          stringMapValue(row, "query"),
 		VariablesJSON:  jsonMapString(row, "variables_json"),
 		DeliveryJSON:   jsonMapString(row, "delivery_json"),
 		EnrichJSON:     jsonMapString(row, "enrich_json"),
@@ -442,6 +470,7 @@ func (s *graphjinService) insertWatchScheduleEvent(
 	proposal watchActionProposal,
 	sched watchSchedule,
 	due, now time.Time,
+	metricEvent map[string]any,
 ) (bool, error) {
 	eventID, dataHash := watchScheduleEventID(def.ID, due)
 	existing, err := s.internalWatchEventStoreRow(ctx, eventID)
@@ -462,6 +491,9 @@ func (s *graphjinService) insertWatchScheduleEvent(
 		"scheduled_for":       dueText,
 		"scheduled_for_local": due.In(sched.spec.Location).Format(time.RFC3339),
 		"fired_at":            nowText,
+	}
+	for key, value := range metricEvent {
+		payload[key] = value
 	}
 	dataBytes, err := json.Marshal(payload)
 	if err != nil {

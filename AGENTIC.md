@@ -1304,6 +1304,64 @@ window at startup, so downtime or failover cannot mass-fire old silence. Real
 data re-arms a non-repeating absence episode; `repeat: true` intentionally
 creates a standing pager.
 
+#### Metric watches: thresholds on aggregates
+
+A row subscription cannot watch a number: aggregates and group-bys have no
+cursor, so `gj_watch` rejects them as subscriptions. To watch a count, sum or
+average, give the watch a `schedule`, a plain `query`, and a `metric`
+condition. GraphJin runs the query on every tick as the owner, the database
+computes the aggregate, and the watch compares the number with its previous
+reading:
+
+```graphql
+mutation {
+  gj_watch(
+    insert: {
+      name: "open_tickets_over_50"
+      schedule: { cron: "*/15 * * * *", timezone: "America/New_York" }
+      query: "query { customer_tickets(where: { status: { eq: \"open\" } }) { count_id } }"
+      metric: { path: "customer_tickets.0.count_id", op: "gt", threshold: 50 }
+    }
+  ) {
+    id
+    metric_state
+  }
+}
+```
+
+- `op` is `gt`, `gte`, `lt`, `lte`, `eq`, `ne`, `changed`, or `change_pct`
+  (percent move between consecutive readings).
+- The default `fire: "crossing"` fires once when the condition starts holding
+  and re-arms when it clears, so a breach that persists fires once and a value
+  that recovers and breaches again fires again. `fire: "every_tick"` fires on
+  every tick that holds.
+- A grouped metric watches one number per group:
+  `metric: { path: "orders", key: "region", value: "avg_ship_hours", op: "gt", threshold: 48 }`
+  fires when any group crosses, and the event lists the groups that did.
+- `variables_json` values may be `{ "$time": "now-24h" }` or the start of
+  `today`, `week`, `month`, or `year` in the schedule's timezone, with an
+  optional offset such as `today-7d`. They are resolved on every tick, so
+  rolling windows work.
+- The insert runs the query once: a wrong path is reported with the keys the
+  result actually has, and `metric_state.last_value` is the current number.
+  A value that already meets the condition fires only after it clears and
+  crosses again.
+- Each firing is a `data_json.kind: "metric"` event with `value`, `previous`
+  and the condition. Ticks use the schedule runner's insert-first claim, so a
+  tick fires on exactly one replica, and the state is saved before the clock
+  moves, so a replica crash never reports the same breach twice.
+
+#### Agent routines
+
+`delivery_json: { kind: "agent", prompt: "Which customers are behind the
+spike?" }` turns a watch into a routine: each firing runs the prompt as the
+watch owner, **read-only**, and the answer lands in the watch's own agent
+thread (or `thread_id`). The run goes through the same thread run path as chat,
+so it can be resumed or cancelled from any replica, and its id is derived from
+the event, so a re-delivered event never runs the agent twice. Because it
+cannot write data, a routine needs no action review. `routine_thread_id` on
+the watch names the thread. Routines need agent threads enabled.
+
 A flow verdict of `digest` queues the member instead of waking immediately.
 `delivery_json.digest.window` controls when GraphJin drains same-watch noise
 into one unseen `data_json.kind: "digest"` event without another model call;

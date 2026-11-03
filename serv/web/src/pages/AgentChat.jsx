@@ -4,6 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   BellRing,
+  Radar,
   BookOpenCheck,
   Bot,
   CheckCircle2,
@@ -791,6 +792,15 @@ function AgentNotice({ notice, onPinTask }) {
   const taskIDs = Array.isArray(notice.task_ids) ? notice.task_ids.filter(Boolean) : [];
   const kind = notice.kind || "notice";
 
+  if (kind === "watch_created") {
+    return (
+      <NoticeFrame icon={Radar} title="Watch created" message={notice.message}>
+        <Button asChild variant="outline" size="sm">
+          <Link to="/user/watches">Open watches</Link>
+        </Button>
+      </NoticeFrame>
+    );
+  }
   if (kind === "watch_events_unseen") {
     return (
       <NoticeFrame icon={BellRing} title={`${notice.count || "New"} unseen watch ${notice.count === 1 ? "event" : "events"}`} message={notice.message}>

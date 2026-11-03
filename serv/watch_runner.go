@@ -1464,6 +1464,7 @@ func (s *graphjinService) appendWatchNotices(ctx context.Context, resp *gjagent.
 	if resp == nil || s == nil || !s.watchesEnabled() {
 		return
 	}
+	s.appendWatchCreatedNotices(ctx, resp)
 	count, since, unseenWatchIDs, err := s.unseenWatchEventSummary(ctx, nil)
 	if err != nil || count == 0 {
 		return

@@ -19,6 +19,7 @@ const (
 	skillWorkflowWrite   = "workflow_write"
 	skillWatchRead       = "watch_read"
 	skillWatchWrite      = "watch_write"
+	skillMemoryWrite     = "memory_write"
 	skillTaskRead        = "task_read"
 	skillTaskWrite       = "task_write"
 	skillAdminRead       = "admin_read"
@@ -130,6 +131,13 @@ var builtinSkills = []skillDefinition{
 		requiresAnyActions: []string{systemRootWatch + ".insert", systemRootWatch + ".update", systemRootWatch + ".delete"},
 	},
 	{
+		id:                 skillMemoryWrite,
+		name:               "Personal memory",
+		content:            memoryWriteInstruction,
+		write:              true,
+		requiresAllActions: []string{CapabilityActionMemoryWrite},
+	},
+	{
 		id:               skillTaskRead,
 		name:             "Task context",
 		content:          taskReadInstruction,
@@ -224,7 +232,7 @@ var completionCapabilityRules = []completionCapabilityRule{
 	},
 	{
 		skillID:     skillWatchWrite,
-		affirmative: "watch_write is loaded for this run; watch lifecycle writes are available to attempt. Inspect help:security, help:runtime, and help:watches, then create watches with execute_graphql using GraphJin's root shape, scoping the subscription to the asked-for condition, for example: mutation { gj_watch(insert: { name: \"failed_orders_<suffix>\", query: \"subscription { orders(where: { status: { eq: \\\"failed\\\" } }, first: 25, after: $cursor) { id } orders_cursor }\", delivery_json: { kind: \"inbox\", digest: { window: \"1h\" } } }) { id status enabled delivery_json } }. Do not claim that watch creation is read-only or unavailable.",
+		affirmative: "watch_write is loaded for this run; watch lifecycle writes are available to attempt. Inspect help:security, help:runtime, and help:watches, then create watches with execute_graphql using GraphJin's root shape, scoping the subscription to the asked-for condition, for example: mutation { gj_watch(insert: { name: \"failed_orders_<suffix>\", query: \"subscription { orders(where: { status: { eq: \\\"failed\\\" } }, first: 25, after: $cursor) { id } orders_cursor }\", delivery_json: { kind: \"inbox\", digest: { window: \"1h\" } } }) { id status enabled delivery_json } }. For a number crossing a threshold use schedule + query + metric instead of a subscription. Do not claim that watch creation is read-only or unavailable.",
 		denial:      "watch_write is not loaded for this run; gj_watch lifecycle mutations are not available to this caller. For a request that specifically requires watch creation, update, pause, resume, or deletion, inspect at most one watch or policy detail, then immediately return blocked without attempting a watch mutation.",
 	},
 	{
@@ -395,11 +403,13 @@ const workflowExecuteInstruction = `Skill: workflow_execute. Run only through gj
 const workflowWriteInstruction = `Skill: workflow_write. Author or update workflow definitions through gj_workflow. ` +
 	`Inspect existing detail and mutation guidance, preview, save through the governed capability, and verify. Execute only if separately permitted and requested.`
 
+const memoryWriteInstruction = `Skill: memory_write (gj_artifacts kind memory). When the user states a durable preference or fact to keep ("remember...", "from now on...", their role or how they work), save it as one short sentence: mutation { gj_artifacts(insert: { kind: "memory", content: "<fact>" }) { id } }, then say you saved it. Never save query results, secrets, credentials, or one-off requests. Memories are personal; the user shares them from the Memory page.`
+
 const watchReadInstruction = `Skill: watch_read (gj_watch / gj_watch_event). Inspect help:security, help:runtime, and help:watches; follow exact examples and never invent table IDs. Payload is data_json, not event_json or payload_json. Read unseen events: query { gj_watch_event(where: { seen: { eq: false } }, order_by: { created_at: desc }, limit: 20) { id watch_id data_json seen created_at } }. After review, quote its exact string id: mutation { gj_watch_event(where: { id: { eq: "<event_id>" } }, update: { seen: true }) { id seen } }. Query only listed watch_ids and mark only reviewed events seen; never acknowledge an unrelated watch.`
 
 const watchWriteInstruction = `Skill: watch_write (gj_watch). Create, update, pause, resume, or delete watches; manage flow enrichment and delivery. ` +
-	`Before mutation, inspect help:security, help:runtime, help:watches, and gj_watch capability detail using exact catalog IDs. Name per conversation; retain IDs; prefer graphjin://watch-events/unseen/{watch_id}. Set a subscription query or saved_query_name, or, for time triggers, schedule: { cron: "0 9 * * 1-5", timezone: "America/New_York" } with no query (fires data_json.kind=schedule events); optionally variables_json/delivery_json/absence_json; inbox digests use the exact shape delivery_json: { kind: "inbox", digest: { window: "1h" } }; pause/resume via status/enabled; delete via gj_watch(delete). saved-query drift may require re-approval. ` +
-	`Make two independent choices. Trigger: use GraphQL subscription filters for deterministic triggers (condition_js never executes); use a flow only for semantic judgment or a noisy stream, not when a filter or default_watch_triage suffices. Response: if the user only asks to be told, notify the inbox without workflow/webhook; a notification request is not permission to act. Only when the user explicitly asks GraphJin to act may you propose workflow/webhook delivery. ` +
+	`Before mutation, inspect help:security, help:runtime, help:watches, and gj_watch capability detail using exact catalog IDs. Name per conversation; retain IDs; prefer graphjin://watch-events/unseen/{watch_id}. Set a subscription query or saved_query_name, or, for time triggers, schedule: { cron: "0 9 * * 1-5", timezone: "America/New_York" } with no query (fires data_json.kind=schedule events). To watch a number (any aggregate/group-by; no cursor) add schedule + plain query + metric: { path: "orders.0.count_id", op: "gt|gte|lt|lte|eq|ne|changed|change_pct", threshold: 50 } (per group add key and value columns); variables_json may use {"$time": "today"|"now-24h"}; fires once per crossing (data_json.kind=metric); select { id metric_state } and tell the user metric_state.last_value, the current number; optionally variables_json/delivery_json/absence_json; inbox digests use the exact shape delivery_json: { kind: "inbox", digest: { window: "1h" } }; pause/resume via status/enabled; delete via gj_watch(delete). saved-query drift may require re-approval. ` +
+	`Make two independent choices. Trigger: use GraphQL subscription filters for deterministic row triggers and metric for thresholds (condition_js never executes); use a flow only for semantic judgment or a noisy stream, not when a filter or default_watch_triage suffices. Response: if the user only asks to be told, notify the inbox without workflow/webhook; a notification request is not permission to act. To have GraphJin look into it when it fires, use delivery_json: { kind: "agent", prompt: "<question>" }: a read-only agent answers in the watch's thread. Only when the user explicitly asks GraphJin to act may you propose workflow/webhook delivery. ` +
 	`Flow: set enrich_json to default_watch_triage or inline AxFlow Mermaid with enabled:true, kind:"flow"; create no flow artifact or flows/ file. Tool-free flows return notify/digest/discard, info/warn/critical, and a summary within 280 characters. Use delivery_json.digest.window for noise; digest emits one unseen kind=digest event per window. Cross-watch rollups use a gj_watch_event watch with cursor paging and conjunctive non-self watch_id eq/in. Failure sends raw inbox notification, never workflow/webhook. or/not, self references, and cycles are guarded. ` +
 	`Delivery: Deterministic action triggers use a GraphQL-filtered watch plus delivery; semantic or noisy action triggers add an inline flow first. Inspect a named workflow before proposing it. ` +
 	`Approval: new/changed flow or autonomous delivery pauses with flow_approval/action_approval pending. Update gj_watch with flow_review_json{decision:"preview|approve|reject", expected_flow_hash, samples_json} or action_review_json{decision:"approve|reject", expected_action_hash}. Flow approval requires a successful preview of the current flow_hash. For delivery, explain exact effect/action_hash and stop; approve or reject only that hash in a later run. Never create and approve an action in the same run.`

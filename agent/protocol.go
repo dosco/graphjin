@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -1561,7 +1562,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			if isWatchDefinitionMutation(query) && watchDefinitionExecutionFailed(out) {
 				ids := r.state.watchRepairCatalogIDs(query, args)
 				r.state.pendingFailedCatalogIDs = append([]string(nil), ids...)
-				out = attachWatchQueryRepair(out, ids, watchSubscriptionRoots(query, args))
+				out = attachWatchQueryRepair(out, ids, watchSubscriptionRoots(query, args), watchSubscriptionText(query, args))
 			} else {
 				out = attachExecutionRecovery(out, r.state, query)
 				var repairedMutation string
@@ -4561,7 +4562,7 @@ func (s *discoveryState) watchRepairCatalogIDs(query string, args map[string]any
 	return ids
 }
 
-func attachWatchQueryRepair(out any, ids []string, roots []string) any {
+func attachWatchQueryRepair(out any, ids []string, roots []string, subscription string) any {
 	value := cloneAnyMap(mapValue(normalizeValue(out)))
 	if value == nil {
 		return out
@@ -4573,6 +4574,11 @@ func attachWatchQueryRepair(out any, ids []string, roots []string) any {
 	// real root, the way every other repair names its arguments.
 	if shape := watchCursorShape(value, roots); shape != "" {
 		reason = "This watch subscription is not cursor-backed. Re-author it as " + shape + " then execute one distinct repaired gj_watch mutation."
+		// An aggregate can never be cursor-backed: steering it to the row
+		// shape would drop the number the user asked about.
+		if field := watchAggregateField(subscription); field != "" {
+			reason = "This watch selects the aggregate " + field + ", which has no cursor. Watch the number instead: keep the same selection as a plain query and add schedule: { cron: \"*/15 * * * *\" } plus metric: { path: \"" + watchMetricPathHint(roots, field) + "\", op: \"gt\", threshold: <n> } in one distinct repaired gj_watch mutation."
+		}
 	}
 	next := catalogRepairNext(map[string]any{"ids": ids}, reason)
 	for _, item := range anySlice(value["errors"]) {
@@ -4992,6 +4998,23 @@ func (r *protocolRuntime) supplyMutationEvidence(ctx context.Context, missing []
 // watchCursorShape returns the corrected cursor-backed subscription shape when a
 // watch probe rejected the query for missing cursor pagination. It substitutes
 // the watch's real root so the model does not have to translate a template.
+var watchAggregateFieldPattern = regexp.MustCompile(`\b(?:count|sum|avg|min|max|stddev|stddev_pop|stddev_samp|variance|var_pop|var_samp)_[A-Za-z0-9_]+\b`)
+
+// watchAggregateField returns the first aggregate field a watch subscription
+// selects, or "".
+func watchAggregateField(subscription string) string {
+	return watchAggregateFieldPattern.FindString(graphQLStructure(subscription))
+}
+
+func watchMetricPathHint(roots []string, field string) string {
+	for _, root := range roots {
+		if root != "" && !strings.HasPrefix(root, "gj_") {
+			return root + ".0." + field
+		}
+	}
+	return "<table>.0." + field
+}
+
 func watchCursorShape(value map[string]any, roots []string) string {
 	cursorFault := false
 	for _, item := range anySlice(value["errors"]) {

@@ -2,6 +2,7 @@ package serv
 
 import (
 	"context"
+	"slices"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
 )
@@ -24,14 +25,21 @@ func (s *graphjinService) agentCapabilityProfile(ctx context.Context) *gjagent.C
 	if mp == nil {
 		return nil
 	}
+	roots := systemRootNames(mp.AvailableRoots)
+	actions := mp.AllowedActions
+	// Memories are personal gj_artifacts rows, so a signed-in caller who can
+	// reach the artifact store may save them.
+	if _, signedIn := artifactUserID(ctx); signedIn && s.memoryEnabled() && slices.Contains(roots, artifactsRootTable) {
+		actions = append(append([]string(nil), actions...), gjagent.CapabilityActionMemoryWrite)
+	}
 	return &gjagent.CapabilityProfile{
 		RoleClass:             mp.RoleClass,
 		Authenticated:         mp.Authenticated,
 		Mode:                  mp.Mode,
 		CatalogRevision:       mp.CatalogRevision,
 		AvailableTools:        mp.AvailableTools,
-		AllowedActions:        mp.AllowedActions,
-		AvailableSystemRoots:  systemRootNames(mp.AvailableRoots),
+		AllowedActions:        actions,
+		AvailableSystemRoots:  roots,
 		BlockedSystemRoots:    systemRootNames(mp.BlockedRoots),
 		RecommendedEntrypoint: mp.RecommendedEntrypoint,
 		SafetyNotes:           mp.SafetyNotes,

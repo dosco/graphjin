@@ -33,6 +33,7 @@ import {
   useOperatorIdentity,
 } from "../services/identity";
 import { parseJSON, relativeTime } from "../services/graphql";
+import { MetricWatchGrid, isMetricWatch, metricEventSummary } from "./mission/MetricWatches";
 import { DataErrorState, EmptyState, LoadingState, PageHeader, Panel, StatusPill } from "../components/ui";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -466,7 +467,8 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
     mutationFn: markWatchEventSeen,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["mission", "watches", identityKey] }),
   });
-  const watchNames = React.useMemo(() => new Map(watches.map((watch) => [watch.id, watch.name])), [watches]);
+  const watchesByID = React.useMemo(() => new Map(watches.map((watch) => [watch.id, watch])), [watches]);
+  const otherWatches = watches.filter((watch) => !isMetricWatch(watch));
 
   return (
     <div className="grid gap-4">
@@ -492,13 +494,23 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
               </TableRow>
             </TableHeader>
             <TableBody>
-              {events.map((event) => (
+              {events.map((event) => {
+                const watch = watchesByID.get(event.watch_id);
+                const summary = metricEventSummary(parseJSON(event.data_json), watch);
+                const threadID = parseJSON(event.receipt_json)?.thread_id;
+                return (
                 <TableRow key={event.id}>
                   <TableCell className="min-w-56">
                     <button type="button" className="w-full text-left" onClick={() => onOpenEvent(event)}>
-                      <span className="block truncate font-medium">{watchNames.get(event.watch_id) || event.watch_id}</span>
-                      <span className="mt-1 block truncate font-mono text-xs text-muted-foreground">{event.id}</span>
+                      <span className="block truncate font-medium">{watch?.name || event.watch_id}</span>
+                      <span className={cn("mt-1 block truncate text-xs text-muted-foreground", !summary && "font-mono")}>{summary || event.id}</span>
                     </button>
+                    {threadID && (
+                      <Link className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline" to={`/user/agent?thread=${encodeURIComponent(threadID)}`}>
+                        <Bot aria-hidden="true" className="size-3" />
+                        Read the agent&apos;s answer
+                      </Link>
+                    )}
                   </TableCell>
                   <TableCell><StatusPill status={event.delivery_status || "inbox"} /></TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">{timeLabel(event.created_at)}</TableCell>
@@ -515,7 +527,8 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         )}
@@ -528,7 +541,9 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
 
       {!query.error && !query.isLoading && (
         <Panel title="Watches" description="Definition health and recent runner state.">
-          {watches.length === 0 ? (
+          <MetricWatchGrid watches={watches} identityKey={identityKey} />
+          <div className="mt-6" />
+          {otherWatches.length === 0 && watches.length > 0 ? null : otherWatches.length === 0 ? (
             <EmptyState title="No watches" message="No standing questions are visible for this operator.">
               <WatchStarterHint />
             </EmptyState>
@@ -544,7 +559,7 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {watches.map((watch) => {
+                {otherWatches.map((watch) => {
                   const linkedTask = tasks.find((task) => task.id === watch.task_id);
                   return (
                     <TableRow key={watch.id}>

@@ -21,7 +21,7 @@ const (
 	watchValidationProbeTimeout = 10 * time.Second
 )
 
-const watchStoreFields = `id name task_id description query saved_query_name variables_json condition_js delivery_json enrich_json absence_json schedule_cron schedule_tz next_fire_at evidence_json lifecycle lease_expires_at lease_owner_id status approval enabled account_id owner_id owner_role last_data_hash last_cursor_json last_fired_at last_error failure_count created_at updated_at`
+const watchStoreFields = `id name task_id description query saved_query_name variables_json condition_js delivery_json enrich_json absence_json schedule_cron schedule_tz next_fire_at metric_json metric_state_json evidence_json lifecycle lease_expires_at lease_owner_id status approval enabled account_id owner_id owner_role last_data_hash last_cursor_json last_fired_at last_error failure_count created_at updated_at`
 
 const watchEventStoreFields = `id watch_id data_hash data_json data_truncated evidence_json delivery_status delivery_attempts delivery_json receipt_json enrichment_json seen seen_at snoozed_until account_id owner_id created_at updated_at`
 
@@ -67,6 +67,9 @@ func watchColumns() []core.ManagedColumn {
 		cpCol("absence_json", "json", false),
 		cpCol("schedule", "json", false),
 		cpCol("next_fire_at", "text", false),
+		cpCol("metric", "json", false),
+		cpCol("metric_state", "json", false),
+		cpCol("routine_thread_id", "text", false),
 		cpCol("flow_review_json", "json", false),
 		cpCol("action_review_json", "json", false),
 		cpCol("flow_hash", "text", false),
@@ -298,6 +301,13 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 			return nil, fmt.Errorf("gj_watch %s is server-managed; use flow_review_json or action_review_json", field)
 		}
 	}
+	if root.Operation == "update" && strings.TrimSpace(stringInput(root.Input, "name", "")) == "" {
+		input, err := h.completeWatchUpdateInput(ctx, root, ownerID)
+		if err != nil {
+			return nil, err
+		}
+		root.Input = input
+	}
 	name := strings.TrimSpace(stringInput(root.Input, "name", ""))
 	if name == "" {
 		return nil, fmt.Errorf("gj_watch mutation requires name")
@@ -317,12 +327,28 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	if err != nil {
 		return nil, fmt.Errorf("gj_watch %w", err)
 	}
+	metric, metered, err := parseWatchMetricInput(root.Input["metric"])
+	if err != nil {
+		return nil, fmt.Errorf("gj_watch %w", err)
+	}
 	var evidence map[string]any
+	var metricState watchMetricState
+	if metered && !scheduled {
+		return nil, fmt.Errorf(`gj_watch metric watches check their query on a schedule; add schedule, e.g. {"cron": "*/15 * * * *"}`)
+	}
 	if scheduled {
-		if query != "" || savedQuery != "" {
-			return nil, fmt.Errorf("gj_watch schedule watches fire on time, not data changes; omit query and saved_query_name")
+		if savedQuery != "" || (query != "" && !metered) {
+			return nil, fmt.Errorf("gj_watch schedule watches fire on time, not data changes; omit query and saved_query_name, or add metric to check a number in the query result on every tick")
 		}
 		evidence = schedule.evidence()
+		if metered {
+			metricState, err = h.probeWatchMetric(ctx, query, variablesJSON, metric, schedule)
+			if err != nil {
+				return nil, err
+			}
+			evidence["operation"] = "metric"
+			evidence["probe"] = "ok"
+		}
 	} else {
 		evidence, err = h.validateWatchDefinition(ctx, id, query, savedQuery, variablesJSON)
 		if err != nil {
@@ -479,7 +505,8 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 			variablesJSON != jsonMapString(existing, "variables_json") ||
 			absenceJSON != jsonMapString(existing, "absence_json") ||
 			schedule.Cron != stringMapValue(existing, "schedule_cron") ||
-			schedule.Timezone != stringMapValue(existing, "schedule_tz")
+			schedule.Timezone != stringMapValue(existing, "schedule_tz") ||
+			watchMetricJSONText(metric, metered) != jsonMapString(existing, "metric_json")
 		_, existingEnrichCfg, existingEnrichEnabled, existingEnrichErr := normalizeWatchEnrichmentJSON(jsonMapString(existing, "enrich_json"))
 		existingFlowRequired := existingEnrichErr == nil && existingEnrichEnabled && existingEnrichCfg.Kind == "flow"
 		flowChanged = flowRequired != existingFlowRequired ||
@@ -536,7 +563,12 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	// (only the deterministic event id would then keep it from firing twice).
 	keepNextFire := scheduled && existing != nil && !definitionChanged &&
 		watchRowRunnable(existing) && stringMapValue(existing, "next_fire_at") != ""
+	metricJSON, metricStateJSON := watchMetricJSONText(metric, metered), ""
+	if metered {
+		metricStateJSON = mustMarshalString(metricState)
+	}
 	input := map[string]any{
+		"metric_json": nullableJSONString(metricJSON), "metric_state_json": nullableJSONString(metricStateJSON),
 		"id": id, "name": name, "task_id": taskID, "description": description, "query": query, "saved_query_name": savedQuery,
 		"variables_json": nullableJSONString(variablesJSON), "condition_js": conditionJS,
 		"delivery_json": nullableJSONString(deliveryJSON), "enrich_json": nullableJSONString(enrichJSON), "absence_json": nullableJSONString(absenceJSON), "evidence_json": nullableJSONString(evidenceJSON),
@@ -566,6 +598,10 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 		if keepNextFire {
 			delete(update, "next_fire_at")
 		}
+		if !definitionChanged {
+			// The schedule runner owns the state between definition changes.
+			delete(update, "metric_state_json")
+		}
 		rows, err = s.internalStoreMutationRows(ctx, "watches", `where: { id: { eq: $id } }, update: $input`, watchStoreFields, map[string]any{"id": id, "input": update})
 	}
 	if err != nil {
@@ -573,6 +609,9 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	}
 	if err := s.bumpArtifactRevision(ctx, "watches"); err != nil {
 		return nil, err
+	}
+	if existing == nil {
+		recordWatchCreated(ctx, id)
 	}
 	s.markWatchChanged("watch mutation")
 	s.publishWatchRunnerChanged(ctx)
@@ -589,6 +628,54 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 		return h.projectWatchRow(ctx, rows[0], admin), nil
 	}
 	return h.projectWatchRow(ctx, input, admin), nil
+}
+
+// completeWatchUpdateInput lets an update by id carry only the fields it
+// changes, such as { enabled: false } to pause or a new metric threshold: the
+// rest of the definition comes from the stored watch, so the update runs the
+// same validation and review as a full upsert.
+func (h watchControlPlane) completeWatchUpdateInput(ctx context.Context, root core.ManagedMutationRoot, ownerID string) (map[string]any, error) {
+	s := h.service
+	id := stringWhere(root.Where, "id")
+	if id == "" {
+		return nil, fmt.Errorf("gj_watch update requires name or where: { id: { eq: ... } }")
+	}
+	existing, err := s.internalWatchStoreRow(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil || (!s.identityRoleIsAdmin(ctx) && stringMapValue(existing, "owner_id") != ownerID) {
+		return nil, fmt.Errorf("gj_watch %s not found", id)
+	}
+	input := map[string]any{
+		"id":               id,
+		"name":             stringMapValue(existing, "name"),
+		"description":      stringMapValue(existing, "description"),
+		"query":            stringMapValue(existing, "query"),
+		"saved_query_name": stringMapValue(existing, "saved_query_name"),
+		"condition_js":     stringMapValue(existing, "condition_js"),
+		"lifecycle":        stringMapValue(existing, "lifecycle"),
+		"status":           stringMapValue(existing, "status"),
+		"enabled":          boolMapValue(existing, "enabled"),
+	}
+	if leaseExpiresAt := stringMapValue(existing, "lease_expires_at"); leaseExpiresAt != "" {
+		input["lease_expires_at"] = leaseExpiresAt
+	}
+	for _, field := range []string{"variables_json", "delivery_json", "enrich_json", "absence_json"} {
+		if text := jsonMapString(existing, field); text != "" {
+			input[field] = text
+		}
+	}
+	if schedule := watchScheduleProjection(existing); schedule != nil {
+		input["schedule"] = schedule
+	}
+	if text := jsonMapString(existing, "metric_json"); text != "" {
+		input["metric"] = text
+	}
+	for key, value := range root.Input {
+		input[key] = value
+	}
+	return input, nil
 }
 
 func (h watchControlPlane) deleteWatch(ctx context.Context, root core.ManagedMutationRoot) (map[string]any, error) {
@@ -759,7 +846,7 @@ func (h watchControlPlane) validateWatchDefinition(
 				return nil, fmt.Errorf("gj_watch subscription probe failed: %w", err)
 			}
 			if len(cursorVars) == 0 {
-				return nil, fmt.Errorf("gj_watch subscription must use cursor pagination")
+				return nil, fmt.Errorf("gj_watch subscription must use cursor pagination; %s", watchMetricHint)
 			}
 			watchedIDs, err := watchedWatchIDsForMember(member, effectiveWatchID)
 			if err != nil {
@@ -796,7 +883,7 @@ func (h watchControlPlane) validateWatchDefinition(
 		return nil, fmt.Errorf("gj_watch saved-query subscription probe failed: %w", err)
 	}
 	if len(cursorVars) == 0 {
-		return nil, fmt.Errorf("gj_watch saved_query_name subscription must use cursor pagination")
+		return nil, fmt.Errorf("gj_watch saved_query_name subscription must use cursor pagination; %s", watchMetricHint)
 	}
 	watchedIDs, err := watchedWatchIDsForMember(member, effectiveWatchID)
 	if err != nil {
@@ -1178,6 +1265,8 @@ absence_json JSONB,
 schedule_cron TEXT NOT NULL DEFAULT '',
 schedule_tz TEXT NOT NULL DEFAULT '',
 next_fire_at TIMESTAMPTZ,
+metric_json JSONB,
+metric_state_json JSONB,
 evidence_json JSONB,
 lifecycle TEXT NOT NULL DEFAULT 'durable',
 lease_expires_at TIMESTAMPTZ,
@@ -1239,6 +1328,8 @@ absence_json LONGTEXT,
 schedule_cron VARCHAR(255) NOT NULL DEFAULT '',
 schedule_tz VARCHAR(64) NOT NULL DEFAULT '',
 next_fire_at VARCHAR(64),
+metric_json LONGTEXT,
+metric_state_json LONGTEXT,
 evidence_json LONGTEXT,
 lifecycle VARCHAR(32) NOT NULL DEFAULT 'durable',
 lease_expires_at VARCHAR(64),
@@ -1295,6 +1386,8 @@ absence_json TEXT,
 schedule_cron TEXT NOT NULL DEFAULT '',
 schedule_tz TEXT NOT NULL DEFAULT '',
 next_fire_at TEXT,
+metric_json TEXT,
+metric_state_json TEXT,
 evidence_json TEXT,
 lifecycle TEXT NOT NULL DEFAULT 'durable',
 lease_expires_at TEXT,
@@ -1359,6 +1452,8 @@ func watchMigrationDDL(dbType, schema string) []string {
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS schedule_cron TEXT NOT NULL DEFAULT ''`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS schedule_tz TEXT NOT NULL DEFAULT ''`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS next_fire_at TIMESTAMPTZ`, watches),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS metric_json JSONB`, watches),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS metric_state_json JSONB`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS data_truncated BOOLEAN NOT NULL DEFAULT FALSE`, events),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS snoozed_until TIMESTAMPTZ`, events),
 	}
@@ -1435,6 +1530,15 @@ func (s *graphjinService) migrateWatchSchema(ctx context.Context, db *sql.DB, db
 	}
 	if err := ensureSQLColumn(ctx, db, dbType, watches, "next_fire_at", nextFireDef); err != nil {
 		return err
+	}
+	metricDef := "TEXT"
+	if dbType == "mysql" || dbType == "mariadb" {
+		metricDef = "LONGTEXT"
+	}
+	for _, column := range []string{"metric_json", "metric_state_json"} {
+		if err := ensureSQLColumn(ctx, db, dbType, watches, column, metricDef); err != nil {
+			return err
+		}
 	}
 	events := artifactTableName(dbType, schema, "watch_events")
 	dataTruncatedDef := "INTEGER NOT NULL DEFAULT 0"
@@ -1636,37 +1740,40 @@ func watchStoreRow(row map[string]any, rawIDs bool) map[string]any {
 	accountID := stringMapValue(row, "account_id")
 	ownerID := stringMapValue(row, "owner_id")
 	out := map[string]any{
-		"id":               stringMapValue(row, "id"),
-		"name":             stringMapValue(row, "name"),
-		"task_id":          stringMapValue(row, "task_id"),
-		"description":      stringMapValue(row, "description"),
-		"query":            stringMapValue(row, "query"),
-		"saved_query_name": stringMapValue(row, "saved_query_name"),
-		"variables_json":   row["variables_json"],
-		"condition_js":     stringMapValue(row, "condition_js"),
-		"delivery_json":    row["delivery_json"],
-		"enrich_json":      row["enrich_json"],
-		"absence_json":     row["absence_json"],
-		"schedule":         watchScheduleProjection(row),
-		"next_fire_at":     stringMapValue(row, "next_fire_at"),
-		"evidence_json":    row["evidence_json"],
-		"lifecycle":        watchLifecycle(stringMapValue(row, "lifecycle")),
-		"lease_expires_at": stringMapValue(row, "lease_expires_at"),
-		"lease_owner_id":   safeArtifactIdentity(stringMapValue(row, "lease_owner_id"), rawIDs),
-		"status":           watchStatus(stringMapValue(row, "status")),
-		"approval":         watchApproval(stringMapValue(row, "approval")),
-		"enabled":          boolMapValue(row, "enabled"),
-		"account_id":       safeArtifactIdentity(accountID, rawIDs),
-		"owner_id":         safeArtifactIdentity(ownerID, rawIDs),
-		"owner_role":       trustedWatchOwnerRole(stringMapValue(row, "owner_role"), rawIDs),
-		"account_ref":      safeArtifactIdentity(accountID, false),
-		"owner_ref":        safeArtifactIdentity(ownerID, false),
-		"last_data_hash":   stringMapValue(row, "last_data_hash"),
-		"last_fired_at":    stringMapValue(row, "last_fired_at"),
-		"last_error":       stringMapValue(row, "last_error"),
-		"failure_count":    int64MapValue(row, "failure_count"),
-		"created_at":       stringMapValue(row, "created_at"),
-		"updated_at":       stringMapValue(row, "updated_at"),
+		"id":                stringMapValue(row, "id"),
+		"name":              stringMapValue(row, "name"),
+		"task_id":           stringMapValue(row, "task_id"),
+		"description":       stringMapValue(row, "description"),
+		"query":             stringMapValue(row, "query"),
+		"saved_query_name":  stringMapValue(row, "saved_query_name"),
+		"variables_json":    row["variables_json"],
+		"condition_js":      stringMapValue(row, "condition_js"),
+		"delivery_json":     row["delivery_json"],
+		"enrich_json":       row["enrich_json"],
+		"absence_json":      row["absence_json"],
+		"schedule":          watchScheduleProjection(row),
+		"next_fire_at":      stringMapValue(row, "next_fire_at"),
+		"metric":            watchMetricProjection(row),
+		"metric_state":      watchMetricStateProjection(row),
+		"routine_thread_id": watchRoutineThreadProjection(row),
+		"evidence_json":     row["evidence_json"],
+		"lifecycle":         watchLifecycle(stringMapValue(row, "lifecycle")),
+		"lease_expires_at":  stringMapValue(row, "lease_expires_at"),
+		"lease_owner_id":    safeArtifactIdentity(stringMapValue(row, "lease_owner_id"), rawIDs),
+		"status":            watchStatus(stringMapValue(row, "status")),
+		"approval":          watchApproval(stringMapValue(row, "approval")),
+		"enabled":           boolMapValue(row, "enabled"),
+		"account_id":        safeArtifactIdentity(accountID, rawIDs),
+		"owner_id":          safeArtifactIdentity(ownerID, rawIDs),
+		"owner_role":        trustedWatchOwnerRole(stringMapValue(row, "owner_role"), rawIDs),
+		"account_ref":       safeArtifactIdentity(accountID, false),
+		"owner_ref":         safeArtifactIdentity(ownerID, false),
+		"last_data_hash":    stringMapValue(row, "last_data_hash"),
+		"last_fired_at":     stringMapValue(row, "last_fired_at"),
+		"last_error":        stringMapValue(row, "last_error"),
+		"failure_count":     int64MapValue(row, "failure_count"),
+		"created_at":        stringMapValue(row, "created_at"),
+		"updated_at":        stringMapValue(row, "updated_at"),
 	}
 	evidence := mapFromAny(parseJSONValue(jsonMapString(row, "evidence_json")))
 	if evidence == nil {

@@ -146,6 +146,7 @@ assert_jq "$dunning_out" '.data.gj_workflow_execution.status == "ok" and (.data.
 
 run_watch_lifecycle_suite "subscription smoke_watch { support_tickets(first: 25, after: \$cursor) { id status } support_tickets_cursor }"
 run_watch_fire_suite "subscription smoke_fire { support_tickets(first: 25, after: \$cursor) { id status } support_tickets_cursor }"
+run_metric_watch_suite 'query { support_tickets { count_id } }' "support_tickets.0.count_id"
 run_artifact_suite
 
 log "checking MCP discovery surfaces"

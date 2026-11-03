@@ -100,6 +100,9 @@ func truncateUTF8(value string, maxBytes int) string {
 // --- threads -----------------------------------------------------------------
 
 type threadSpec struct {
+	// ID, when set, makes creation idempotent: callers that race to create
+	// the same thread all end up with the one row the insert keeps.
+	ID         string
 	Title      string
 	Profile    string
 	Channel    string
@@ -124,7 +127,7 @@ func (s *graphjinService) createThread(ctx context.Context, spec threadSpec) (ma
 	}
 	now := storeNow()
 	input := map[string]any{
-		"id":    "th_" + taskRandomHex(),
+		"id":    threadSpecID(spec),
 		"title": truncateUTF8(strings.TrimSpace(spec.Title), maxThreadTitleBytes),
 		// profile names an agent_profile artifact; empty means the default agent.
 		"profile":       strings.TrimSpace(spec.Profile),
@@ -893,4 +896,11 @@ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 			idx("idx_graphjin_run_events_run_seq", events, "run_id, seq"),
 		}
 	}
+}
+
+func threadSpecID(spec threadSpec) string {
+	if id := strings.TrimSpace(spec.ID); id != "" {
+		return id
+	}
+	return "th_" + taskRandomHex()
 }

@@ -27,8 +27,9 @@ const taskEntriesQuery = `query MissionTaskEntries($task_id: String!) {
 
 const watchesQuery = `query MissionWatches {
   gj_watch(order_by: { updated_at: desc }, limit: 100) {
-    id name task_id description lifecycle status approval enabled last_fired_at
-    last_error failure_count delivery_json created_at updated_at
+    id name task_id description query lifecycle status approval enabled last_fired_at
+    last_error failure_count delivery_json schedule next_fire_at metric metric_state
+    routine_thread_id created_at updated_at
   }
   gj_watch_event(
     where: { seen: { eq: false } }
@@ -122,4 +123,58 @@ export function isFeatureUnavailable(error) {
 
 function dataRows(payload, root) {
   return payload?.data?.[root] || [];
+}
+
+const watchFields = `id name query schedule next_fire_at metric metric_state delivery_json status enabled last_error last_fired_at`;
+
+// saveMetricWatch creates or replaces a metric watch: a schedule, a plain
+// query, and the threshold its number is checked against on every tick.
+// Watches are keyed by owner and name, so saving an existing name updates it.
+export async function saveMetricWatch({ id, name, query, schedule, metric, prompt }) {
+  const delivery = prompt?.trim() ? { kind: "agent", prompt: prompt.trim() } : { kind: "inbox" };
+  const input = { name, query, schedule, metric, delivery_json: delivery };
+  const payload = id
+    ? await graphqlRequest(
+        `mutation MissionUpdateMetricWatch($id: String!, $input: gj_watchInput!) {
+          gj_watch(where: { id: { eq: $id } }, update: $input) { ${watchFields} }
+        }`,
+        { id, input }
+      )
+    : await graphqlRequest(
+        `mutation MissionCreateMetricWatch($input: gj_watchInput!) {
+          gj_watch(insert: $input) { ${watchFields} }
+        }`,
+        { input }
+      );
+  return firstRow(payload?.data?.gj_watch);
+}
+
+export async function setWatchEnabled(id, enabled) {
+  const payload = await graphqlRequest(
+    `mutation MissionSetWatchEnabled($id: String!, $enabled: Boolean!) {
+      gj_watch(where: { id: { eq: $id } }, update: { enabled: $enabled }) { id enabled status }
+    }`,
+    { id, enabled }
+  );
+  return firstRow(payload?.data?.gj_watch);
+}
+
+export async function deleteWatch(id) {
+  await graphqlRequest(
+    `mutation MissionDeleteWatch($id: String!) {
+      gj_watch(delete: true, where: { id: { eq: $id } }) { id }
+    }`,
+    { id }
+  );
+}
+
+// previewQuery runs a read once so the editor can offer the numbers in its
+// result as metric paths.
+export async function previewQuery(query) {
+  const payload = await graphqlRequest(query);
+  return payload?.data ?? null;
+}
+
+function firstRow(value) {
+  return Array.isArray(value) ? value[0] || null : value || null;
 }

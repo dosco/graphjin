@@ -179,7 +179,7 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 			req.Namespace = *ns
 		}
 
-		ctx = s.applyIdentityContext(ctx)
+		ctx = withWatchCreatedRecorder(s.applyIdentityContext(ctx))
 		// Capabilities is server-derived and json:"-", so it is never taken from the
 		// request body; set it from the caller's identity context.
 		req.Capabilities = s.agentCapabilityProfile(ctx)

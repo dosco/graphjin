@@ -114,9 +114,17 @@ smoke_parse_args() {
   AUTH_HEADERS=("${AUTH_ARGS[@]}")
 }
 
+# Watches created by shared suites, deleted on exit under the same identity.
+SMOKE_METRIC_WATCH_IDS=()
+
 # Demos can append cleanup commands (e.g. kill background mock servers) by
 # defining smoke_extra_cleanup before sourcing or after.
 smoke_cleanup() {
+  local metric_watch_id
+  for metric_watch_id in "${SMOKE_METRIC_WATCH_IDS[@]-}"; do
+    [ -n "$metric_watch_id" ] || continue
+    graphql metric-watch-trap-cleanup "mutation { gj_watch(delete: true, where: { id: { eq: \"${metric_watch_id}\" } }) { id } }" >/dev/null 2>&1 || true
+  done
   if declare -F mcp_stop_all_session_streams >/dev/null; then
     mcp_stop_all_session_streams
   fi
@@ -969,6 +977,55 @@ run_watch_fire_suite() {
   post_json "${BASE_URL%/}/api/v1/watch-events/${ev_id}/seen" '{}' "$seen_out"
   assert_jq "$seen_out" '.data.seen == true' "watch event marked seen through REST"
   graphql watch-fire-cleanup "mutation { gj_watch(delete: true, where: { id: { eq: \"${fire_id}\" } }) { id } }" >/dev/null
+}
+
+# Capability: METRIC-WATCH
+# Contract: A schedule + query + metric watch over an aggregate (which has no
+# cursor and cannot be a row subscription) reads the current number at create
+# time, fires a data_json.kind="metric" event on its next tick carrying that
+# number, and an aggregate subscription watch is refused with a pointer to
+# schedule + metric.
+# Deeper coverage: TestMetricWatchFiresOnceOnCrossingAcrossReplicas,
+# TestMetricWatchRecoversFromCrashBeforeStateSave, TestWatchMetricEvaluateOps.
+# Args: <aggregate query> <metric path to the number in its result>.
+run_metric_watch_suite() {
+  local agg_query="$1"
+  local metric_path="$2"
+  local name="smoke_metric_$(date +%s)_$$"
+  local escaped create_out id value ev_out fired refused_out
+  log "checking metric watch on an aggregate (schedule + query + metric)"
+  escaped="${agg_query//\"/\\\"}"
+  # every_tick with a threshold the number always meets fires on the first
+  # minute tick, so the suite does not depend on changing demo data.
+  create_out="$(graphql metric-watch-create "mutation { gj_watch(insert: { name: \"${name}\", schedule: { cron: \"* * * * *\" }, query: \"${escaped}\", metric: { path: \"${metric_path}\", op: \"gte\", threshold: 0, fire: \"every_tick\" }, delivery_json: { kind: \"inbox\" } }) { id metric metric_state status } }")"
+  id="$(jq -r '[.data.gj_watch] | flatten | .[0].id // empty' "$create_out")"
+  if [ -z "$id" ]; then
+    fail "metric watch was not created: $(jq -c '.errors // .' "$create_out")"
+  fi
+  SMOKE_METRIC_WATCH_IDS+=("$id")
+  assert_jq "$create_out" '([.data.gj_watch] | flatten | .[0]) as $w | $w.status == "active" and $w.metric_state.has_value == true and ($w.metric_state.last_value | type) == "number"' "metric watch reads the current number at create time"
+  value="$(jq -r '[.data.gj_watch] | flatten | .[0].metric_state.last_value' "$create_out")"
+
+  refused_out="$(graphql_expect_error metric-watch-agg-subscription "mutation { gj_watch(insert: { name: \"${name}_sub\", query: \"subscription smoke_agg ${escaped#query }\" }) { id } }")"
+  assert_jq "$refused_out" '([.errors[]?.message] | join(" ")) | test("schedule \\+ metric")' "aggregate subscription watch is refused with a pointer to schedule + metric"
+
+  fired=""
+  for _ in $(seq 1 30); do
+    ev_out="$(graphql metric-watch-poll "query { gj_watch_event(where: { watch_id: { eq: \"${id}\" } }, limit: 5) { id data_json delivery_status } }")"
+    if jq -e '(.data.gj_watch_event | length) > 0' "$ev_out" >/dev/null; then
+      fired=1
+      break
+    fi
+    sleep 5
+  done
+  if [ -z "$fired" ]; then
+    fail "metric watch did not fire within 150s"
+  fi
+  assert_jq_args "$ev_out" "metric event carries the aggregate value the database computed" --argjson v "$value" '
+    (.data.gj_watch_event[0].data_json | if type == "string" then fromjson else . end) as $d
+    | $d.kind == "metric" and $d.value == $v and $d.metric.path != null
+  '
+  graphql metric-watch-delete "mutation { gj_watch(delete: true, where: { id: { eq: \"${id}\" } }) { id } }" >/dev/null || true
 }
 
 # Agent-driven watch: the agent must actually create the watch (retried); then a

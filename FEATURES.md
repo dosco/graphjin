@@ -1649,7 +1649,13 @@ only that panel.
   declared expectation with the observed saved-query result.
 - **Watch inbox** joins unseen `gj_watch_event` rows to their watch names,
   exposes bounded payload and delivery evidence, and lets the owner mark an
-  event seen.
+  event seen. Metric events read as one line ("57 (was 44) · count_id > 50")
+  and link to the routine's answer when an agent looked into them.
+- **Metric watches** show each threshold watch's current value, whether it is
+  over the line, and a sparkline of recent readings. The editor runs a query,
+  offers the numbers in its result as the value to watch, and sets the
+  condition, cadence and an optional agent routine prompt; cards pause,
+  resume and delete.
 - **Annotations** is the human review queue. It quotes an observed draft before
   approval publishes it to the account, displays author/approver attribution,
   and lets admins demote approved notes.
