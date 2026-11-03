@@ -13,6 +13,7 @@ const (
 	routeAgentThreads      = "/api/v1/agent/threads"
 	routeAgentRuns         = "/api/v1/agent/runs/"
 	routeAgentMemories     = "/api/v1/agent/memories"
+	routeAgentProfiles     = "/api/v1/agent/profiles"
 	routeConsoleBootstrap  = "/api/v1/console/bootstrap"
 	routeEvalReports       = "/api/v1/eval/reports"
 	routeEvalScore         = "/api/v1/eval/score"
@@ -82,6 +83,8 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 					mux.Handle(routeAgentThreads, s1.AgentThreads(ah))
 					mux.Handle(routeAgentThreads+"/", s1.AgentThreads(ah))
 					mux.Handle(routeAgentRuns, s1.AgentThreads(ah))
+					mux.Handle(routeAgentProfiles, s1.AgentProfiles(ah))
+					mux.Handle(routeAgentProfiles+"/", s1.AgentProfiles(ah))
 				}
 				if s.memoryEnabled() {
 					mux.Handle(routeAgentMemories, s1.AgentMemories(ah))
@@ -114,6 +117,8 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 					mux.Handle(routeAgentThreads, s1.AgentThreadsWithNS(ah, *ns))
 					mux.Handle(routeAgentThreads+"/", s1.AgentThreadsWithNS(ah, *ns))
 					mux.Handle(routeAgentRuns, s1.AgentThreadsWithNS(ah, *ns))
+					mux.Handle(routeAgentProfiles, s1.AgentProfilesWithNS(ah, *ns))
+					mux.Handle(routeAgentProfiles+"/", s1.AgentProfilesWithNS(ah, *ns))
 				}
 				if s.memoryEnabled() {
 					mux.Handle(routeAgentMemories, s1.AgentMemoriesWithNS(ah, *ns))

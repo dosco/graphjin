@@ -56,6 +56,7 @@ func (s *graphjinService) prepareThreadRunWith(ctx context.Context, threadID str
 		return nil, err
 	}
 	req.History = history
+	req.Profile = s.requestProfile(ctx, thread)
 
 	runID := opts.RunID
 	if runID == "" {

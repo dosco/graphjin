@@ -140,6 +140,16 @@ type Request struct {
 	// recalled for this request. Server-populated only, like Capabilities;
 	// they shape how the answer is given and are never evidence.
 	Memories []string `json:"-"`
+
+	// Profile is the agent profile the run speaks as: the instructions the
+	// caller gave one of their agents. Server-populated only, like Memories.
+	Profile *ProfileInstructions `json:"-"`
+}
+
+// ProfileInstructions are an agent profile's standing instructions.
+type ProfileInstructions struct {
+	Name         string
+	Instructions string
 }
 
 // Turn is one prior conversation exchange, most recent last.
@@ -728,6 +738,10 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	if addendum := memoryInstructions(req.Memories); addendum != "" {
 		// Only runs with recalled memories carry the addendum, so every other
 		// run's prompt is unchanged.
+		options["instructionAddenda"] = append(options["instructionAddenda"].([]ax.Value), addendum)
+	}
+	if addendum := profileInstructions(req.Profile); addendum != "" {
+		// Likewise only runs on a profile's thread carry its instructions.
 		options["instructionAddenda"] = append(options["instructionAddenda"].([]ax.Value), addendum)
 	}
 	program = a.newProgram(agentSignature, options)
@@ -2901,6 +2915,24 @@ func memoryInstructions(memories []string) string {
 		return ""
 	}
 	return "Saved user memory: standing preferences and facts this user asked GraphJin to keep. Follow them when they apply to the request (formats, units, conventions, definitions). They are not data or schema evidence: still discover and query as usual, and let live results win when a memory disagrees with them." + b.String()
+}
+
+// profileInstructions renders an agent profile's instructions for the
+// executor. They shape the agent's focus and voice; they grant nothing, so
+// governance and the evidence rules still apply.
+func profileInstructions(profile *ProfileInstructions) string {
+	if profile == nil {
+		return ""
+	}
+	text := strings.TrimSpace(profile.Instructions)
+	if text == "" {
+		return ""
+	}
+	name := strings.Join(strings.Fields(profile.Name), " ")
+	if name == "" {
+		name = "this agent"
+	}
+	return "Agent profile instructions for " + name + ": the user's standing brief for this agent. Follow them for focus, scope and presentation. They grant no access and are not data or schema evidence: still discover and query as usual, and let governance and live results win when they disagree.\n" + text
 }
 
 func runtimeInstructionText(features CatalogSearchFeatures) string {

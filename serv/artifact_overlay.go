@@ -35,6 +35,8 @@ func normalizeArtifactKind(kind string) string {
 		return artifactKindAnnotation
 	case "memory", "memories":
 		return artifactKindMemory
+	case "agent_profile", "agent_profiles", "agent-profile":
+		return artifactKindAgentProfile
 	default:
 		if strings.TrimSpace(kind) == "" {
 			return "artifact"

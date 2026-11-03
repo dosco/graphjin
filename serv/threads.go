@@ -24,7 +24,7 @@ import (
 // thread's message sequence.
 
 const (
-	threadStoreFields   = `id title profile status channel channel_ref active_run_id account_id owner_id owner_role last_message_at created_at updated_at`
+	threadStoreFields   = `id title profile status channel channel_ref active_run_id account_id owner_id owner_role last_message_at last_seen_at created_at updated_at`
 	messageStoreFields  = `id thread_id seq role content status run_id catalog_ids response_json account_id owner_id created_at`
 	runStoreFields      = `id thread_id status lease_until_ms replica tokens_in tokens_out error account_id owner_id created_at updated_at finished_at`
 	runEventStoreFields = `id run_id seq kind payload created_at`
@@ -100,8 +100,8 @@ func truncateUTF8(value string, maxBytes int) string {
 // --- threads -----------------------------------------------------------------
 
 type threadSpec struct {
-	// ID, when set, makes creation idempotent: callers that race to create
-	// the same thread all end up with the one row the insert keeps.
+	// ID is set for threads with a derived id (a profile's home thread);
+	// empty means a new random id.
 	ID         string
 	Title      string
 	Profile    string
@@ -125,9 +125,13 @@ func (s *graphjinService) createThread(ctx context.Context, spec threadSpec) (ma
 	if channel == "" {
 		channel = "web"
 	}
+	id := strings.TrimSpace(spec.ID)
+	if id == "" {
+		id = "th_" + taskRandomHex()
+	}
 	now := storeNow()
 	input := map[string]any{
-		"id":    threadSpecID(spec),
+		"id":    id,
 		"title": truncateUTF8(strings.TrimSpace(spec.Title), maxThreadTitleBytes),
 		// profile names an agent_profile artifact; empty means the default agent.
 		"profile":       strings.TrimSpace(spec.Profile),
@@ -138,8 +142,11 @@ func (s *graphjinService) createThread(ctx context.Context, spec threadSpec) (ma
 		"account_id":    accountID,
 		"owner_id":      ownerID,
 		"owner_role":    runtimeRoleClass(ctx),
-		"created_at":    now,
-		"updated_at":    now,
+		// A new thread has nothing unread; only a stored-null last_seen_at
+		// marks a thread from before the column existed.
+		"last_seen_at": now,
+		"created_at":   now,
+		"updated_at":   now,
 	}
 	rows, err := s.internalStoreMutationRows(ctx, "threads", `insert: $input`, threadStoreFields, map[string]any{"input": input})
 	if err != nil {
@@ -242,7 +249,7 @@ func (s *graphjinService) updateThread(ctx context.Context, id string, input map
 	update := map[string]any{"updated_at": storeNow()}
 	for field := range input {
 		switch field {
-		case "title", "status", "profile":
+		case "title", "status", "profile", "seen":
 		default:
 			return nil, fmt.Errorf("thread %s is not editable", field)
 		}
@@ -252,6 +259,9 @@ func (s *graphjinService) updateThread(ctx context.Context, id string, input map
 	}
 	if v, ok := input["profile"].(string); ok {
 		update["profile"] = strings.TrimSpace(v)
+	}
+	if seen, ok := input["seen"].(bool); ok && seen {
+		update["last_seen_at"] = storeNow()
 	}
 	if v, ok := input["status"].(string); ok {
 		switch v {
@@ -307,10 +317,24 @@ func threadAPIRow(row map[string]any) map[string]any {
 		"channel":         stringMapValue(row, "channel"),
 		"active_run_id":   stringMapValue(row, "active_run_id"),
 		"last_message_at": stringMapValue(row, "last_message_at"),
+		"last_seen_at":    stringMapValue(row, "last_seen_at"),
+		"unread":          threadUnread(row),
 		"created_at":      stringMapValue(row, "created_at"),
 		"updated_at":      stringMapValue(row, "updated_at"),
 		"owner_ref":       safeArtifactIdentity(stringMapValue(row, "owner_id"), false),
 	}
+}
+
+// threadUnread reports a message newer than the owner last saw. The owner's
+// own messages mark the thread seen as they are written, so only assistant
+// messages (answers, and watch posts to a home thread) can make it unread.
+func threadUnread(row map[string]any) bool {
+	last, ok := parseWatchTime(stringMapValue(row, "last_message_at"))
+	if !ok {
+		return false
+	}
+	seen, ok := parseWatchTime(stringMapValue(row, "last_seen_at"))
+	return ok && last.After(seen)
 }
 
 // --- messages ----------------------------------------------------------------
@@ -432,8 +456,12 @@ func (s *graphjinService) appendMessage(ctx context.Context, spec messageSpec) (
 	if err != nil {
 		return nil, err
 	}
+	threadUpdate := map[string]any{"last_message_at": now, "updated_at": now}
+	if spec.Role == "user" {
+		threadUpdate["last_seen_at"] = now
+	}
 	if _, err := s.internalStoreMutationRows(ctx, "threads", `where: { id: { eq: $id } }, update: $input`, "id",
-		map[string]any{"id": spec.ThreadID, "input": map[string]any{"last_message_at": now, "updated_at": now}}); err != nil {
+		map[string]any{"id": spec.ThreadID, "input": threadUpdate}); err != nil {
 		return nil, err
 	}
 	if len(rows) == 0 {
@@ -723,6 +751,7 @@ account_id TEXT NOT NULL DEFAULT '',
 owner_id TEXT NOT NULL DEFAULT '',
 owner_role TEXT NOT NULL DEFAULT 'user',
 last_message_at TIMESTAMPTZ,
+last_seen_at TIMESTAMPTZ,
 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )`, threads),
@@ -784,6 +813,7 @@ account_id VARCHAR(191) NOT NULL DEFAULT '',
 owner_id VARCHAR(191) NOT NULL DEFAULT '',
 owner_role VARCHAR(64) NOT NULL DEFAULT 'user',
 last_message_at VARCHAR(64),
+last_seen_at VARCHAR(64),
 created_at VARCHAR(64) NOT NULL DEFAULT '',
 updated_at VARCHAR(64) NOT NULL DEFAULT '',
 KEY idx_graphjin_threads_owner (owner_id, status),
@@ -848,6 +878,7 @@ account_id TEXT NOT NULL DEFAULT '',
 owner_id TEXT NOT NULL DEFAULT '',
 owner_role TEXT NOT NULL DEFAULT 'user',
 last_message_at TEXT,
+last_seen_at TEXT,
 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`, threads),
@@ -898,9 +929,22 @@ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 	}
 }
 
-func threadSpecID(spec threadSpec) string {
-	if id := strings.TrimSpace(spec.ID); id != "" {
-		return id
+// migrateThreadSchema brings a thread store created by an older build up to
+// date. Threads from before last_seen_at count as seen up to their last
+// message; new threads always write last_seen_at, so the backfill touches
+// only those old rows however often it runs.
+func migrateThreadSchema(ctx context.Context, db *sql.DB, dbType, schema string) error {
+	threads := artifactTableName(dbType, schema, "threads")
+	definition := "TEXT"
+	switch dbType {
+	case "postgres", "":
+		definition = "TIMESTAMPTZ"
+	case "mysql", "mariadb":
+		definition = "VARCHAR(64)"
 	}
-	return "th_" + taskRandomHex()
+	if err := ensureSQLColumn(ctx, db, dbType, threads, "last_seen_at", definition); err != nil {
+		return err
+	}
+	_, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET last_seen_at = COALESCE(last_message_at, created_at) WHERE last_seen_at IS NULL", threads))
+	return err
 }
