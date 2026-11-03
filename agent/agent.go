@@ -107,6 +107,8 @@ type Config struct {
 	// CatalogDefaultLimit is the default row limit for model-issued catalog queries.
 	CatalogDefaultLimit int             `mapstructure:"catalog_default_limit" jsonschema:"title=Agent Catalog Default Limit,default=20"`
 	Selection           SelectionConfig `mapstructure:"selection" json:"selection" jsonschema:"title=Agent Discovery Preparation"`
+	// Lead is the conversational agent that delegates questions to this one.
+	Lead LeadConfig `mapstructure:"lead" json:"lead" jsonschema:"title=Lead Agent"`
 }
 
 type Request struct {
@@ -173,6 +175,10 @@ type ActionEvent struct {
 	Summary   map[string]any `json:"summary,omitempty"`
 	Error     string         `json:"error,omitempty"`
 	ElapsedMS int64          `json:"elapsed_ms"`
+	// Delegate is the 1-based delegated question an event belongs to when a
+	// lead runs workers; Question is set on the lead's own event for it.
+	Delegate int    `json:"delegate,omitempty"`
+	Question string `json:"question,omitempty"`
 }
 
 // CapabilityProfile is an opaque, caller-derived snapshot of what this request is

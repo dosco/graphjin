@@ -189,7 +189,9 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 		var runner graphjinAgentRunner
 		if err == nil {
 			runner, err = newGraphJinAgentRunner(s, agentConfigFromService(s.conf))
-			runner = s.withMemoryRecall(runner)
+		}
+		if err == nil && threadRef.ThreadID != "" {
+			runner, err = s.threadAgentRunner(agentConfigFromService(s.conf), runner)
 		}
 		if err == nil && threadRef.ThreadID != "" {
 			s.agentThreadTurn(ctx, w, r, threadRef.ThreadID, req, taskWarm, runner, start)

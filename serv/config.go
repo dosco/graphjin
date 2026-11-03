@@ -1134,6 +1134,9 @@ func normalizeAgentConfig(c *Config) error {
 	if err := c.Agent.Selection.Validate(); err != nil {
 		return err
 	}
+	if err := c.Agent.ValidateLead(); err != nil {
+		return err
+	}
 	// Resolve the deprecated alias once, here, so every downstream reader sees a
 	// single canonical mode and never has to re-derive precedence.
 	c.Agent.StructuredOutputMode = gjagent.EffectiveStructuredOutputMode(c.Agent.StructuredOutputMode, c.Agent.ResponseFormat)
@@ -1305,6 +1308,12 @@ func newViperWithDefaults() *viper.Viper {
 	vi.BindEnv("agent.api_key_env", "GJ_AGENT_API_KEY_ENV", "SG_AGENT_API_KEY_ENV", "SJ_AGENT_API_KEY_ENV")                                                                             //nolint:errcheck
 	vi.BindEnv("agent.rate_limit.requests_per_minute", "GJ_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE", "SG_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE", "SJ_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE") //nolint:errcheck
 	vi.BindEnv("agent.rate_limit.tokens_per_minute", "GJ_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE", "SG_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE", "SJ_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE")         //nolint:errcheck
+	vi.BindEnv("agent.lead.provider", "GJ_AGENT_LEAD_PROVIDER", "SG_AGENT_LEAD_PROVIDER", "SJ_AGENT_LEAD_PROVIDER")                                                                     //nolint:errcheck
+	vi.BindEnv("agent.lead.model", "GJ_AGENT_LEAD_MODEL", "SG_AGENT_LEAD_MODEL", "SJ_AGENT_LEAD_MODEL")                                                                                 //nolint:errcheck
+	vi.BindEnv("agent.lead.api_key_env", "GJ_AGENT_LEAD_API_KEY_ENV", "SG_AGENT_LEAD_API_KEY_ENV", "SJ_AGENT_LEAD_API_KEY_ENV")                                                         //nolint:errcheck
+	vi.BindEnv("agent.lead.base_url", "GJ_AGENT_LEAD_BASE_URL", "SG_AGENT_LEAD_BASE_URL", "SJ_AGENT_LEAD_BASE_URL")                                                                     //nolint:errcheck
+	vi.BindEnv("agent.lead.reasoning", "GJ_AGENT_LEAD_REASONING", "SG_AGENT_LEAD_REASONING", "SJ_AGENT_LEAD_REASONING")                                                                 //nolint:errcheck
+	vi.BindEnv("agent.lead.max_parallel", "GJ_AGENT_LEAD_MAX_PARALLEL", "SG_AGENT_LEAD_MAX_PARALLEL", "SJ_AGENT_LEAD_MAX_PARALLEL")                                                     //nolint:errcheck
 	vi.BindEnv("mcp.include_tools_with_agent", "GJ_MCP_INCLUDE_TOOLS_WITH_AGENT", "SG_MCP_INCLUDE_TOOLS_WITH_AGENT", "SJ_MCP_INCLUDE_TOOLS_WITH_AGENT")                                 //nolint:errcheck
 
 	// Local encrypted keystore defaults.

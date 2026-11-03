@@ -52,8 +52,16 @@ func withScriptedAgentRunner(t *testing.T, runner *scriptedAgentRunner) {
 		runner.opts = len(opts)
 		return runner, nil
 	}
+	// Thread turns run a lead over the worker. These tests are about what the
+	// thread layer hands its top runner, so the scripted runner stands in for
+	// the lead as well; the lead's own behaviour has its own tests.
+	prevLead := newGraphJinLeadRunner
+	newGraphJinLeadRunner = func(_ *graphjinService, _ gjagent.Config, worker graphjinAgentRunner) (graphjinAgentRunner, error) {
+		return worker, nil
+	}
 	t.Cleanup(func() {
 		newGraphJinAgentRunner = prev
+		newGraphJinLeadRunner = prevLead
 	})
 }
 

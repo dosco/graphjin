@@ -70,6 +70,8 @@ export async function askAgentStream({ instruction, max_steps, return_trace, his
 
 // readAgentEvents consumes an agent SSE stream: `run` names a threaded run,
 // `action` reports each tool call, `result` carries the final response.
+// Action payloads pass through whole: a lead run's actions carry `delegate`
+// (the 1-based delegated question) and `question`, which the trail groups on.
 async function readAgentEvents(response, { onAction, onRun } = {}) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

@@ -111,9 +111,12 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 		ms.service.appendTaskTrailEntry(ctx, agentReq, resp, time.Since(start), publicErr)
 		return ms.toolResultJSON(mcpToolAskGraphJinAgent, args, resp)
 	}
-	runner = ms.service.withMemoryRecall(runner)
 	if threadID := strings.TrimSpace(stringArg(args, "thread_id")); threadID != "" {
-		return ms.askAgentInThread(ctx, args, threadID, agentReq, taskWarm, runner, start)
+		lead, err := ms.service.threadAgentRunner(agentConf, runner)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return ms.askAgentInThread(ctx, args, threadID, agentReq, taskWarm, lead, start)
 	}
 	resp, err = runner.Run(ctx, agentReq)
 	runErr := err

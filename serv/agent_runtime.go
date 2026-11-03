@@ -3,6 +3,7 @@ package serv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -58,20 +59,11 @@ var newGraphJinAgentRunner = func(s *graphjinService, conf gjagent.Config, opts 
 	if err != nil {
 		return nil, err
 	}
-	agentOpts := []gjagent.Option{gjagent.WithRuntime(rt)}
-	limiter, err := s.providerAgentRateLimiter(conf.RateLimit)
+	modelOpts, err := s.agentModelOptions(conf)
 	if err != nil {
 		return nil, err
 	}
-	if limiter != nil {
-		agentOpts = append(agentOpts, gjagent.WithProviderRateLimiter(limiter))
-	}
-	if s.agentClientFactory != nil {
-		agentOpts = append(agentOpts, gjagent.WithClientFactory(s.agentClientFactory))
-	}
-	if s.agentNow != nil {
-		agentOpts = append(agentOpts, gjagent.WithNow(s.agentNow))
-	}
+	agentOpts := append([]gjagent.Option{gjagent.WithRuntime(rt)}, modelOpts...)
 	if s.semantic != nil {
 		agentOpts = append(agentOpts, gjagent.WithCatalogSearchFeatures(gjagent.CatalogSearchFeatures{
 			SemanticRecall: true,
@@ -80,6 +72,75 @@ var newGraphJinAgentRunner = func(s *graphjinService, conf gjagent.Config, opts 
 	}
 	agentOpts = append(agentOpts, opts...)
 	return gjagent.New(s.gj, conf, agentOpts...)
+}
+
+// agentModelOptions are the model-client options the worker and the lead
+// share: one rate limiter, the injected client factory, and the clock.
+func (s *graphjinService) agentModelOptions(conf gjagent.Config) ([]gjagent.Option, error) {
+	var opts []gjagent.Option
+	limiter, err := s.providerAgentRateLimiter(conf.RateLimit)
+	if err != nil {
+		return nil, err
+	}
+	if limiter != nil {
+		opts = append(opts, gjagent.WithProviderRateLimiter(limiter))
+	}
+	if s.agentClientFactory != nil {
+		opts = append(opts, gjagent.WithClientFactory(s.agentClientFactory))
+	}
+	if s.agentNow != nil {
+		opts = append(opts, gjagent.WithNow(s.agentNow))
+	}
+	return opts, nil
+}
+
+// threadAgentRunner is what a thread turn runs: the lead, holding the
+// conversation and the caller's memories, over the given worker. The worker
+// itself stays stateless; it only ever sees the lead's questions.
+func (s *graphjinService) threadAgentRunner(conf gjagent.Config, worker graphjinAgentRunner) (graphjinAgentRunner, error) {
+	lead, err := newGraphJinLeadRunner(s, conf, worker)
+	if err != nil {
+		return nil, err
+	}
+	return s.withMemoryRecall(lead), nil
+}
+
+var newGraphJinLeadRunner = func(s *graphjinService, conf gjagent.Config, worker graphjinAgentRunner) (graphjinAgentRunner, error) {
+	if worker == nil {
+		return nil, errors.New("lead needs a worker")
+	}
+	if err := conf.ValidateLead(); err != nil {
+		return nil, err
+	}
+	opts, err := s.agentModelOptions(conf)
+	if err != nil {
+		return nil, err
+	}
+	return leadRunner{conf: conf, worker: worker, opts: opts}, nil
+}
+
+type leadRunner struct {
+	conf   gjagent.Config
+	worker graphjinAgentRunner
+	opts   []gjagent.Option
+}
+
+func (r leadRunner) Run(ctx context.Context, req gjagent.Request) (gjagent.Response, error) {
+	// Each question runs as the caller, with the caller's capabilities and
+	// namespace and nothing from the conversation.
+	delegate := func(ctx context.Context, d gjagent.DelegateRequest) (gjagent.Response, error) {
+		return r.worker.Run(ctx, gjagent.Request{
+			Instruction:  d.Question,
+			Namespace:    req.Namespace,
+			Capabilities: req.Capabilities,
+			Observer:     d.Observer,
+		})
+	}
+	lead, err := gjagent.NewLead(r.conf, delegate, r.opts...)
+	if err != nil {
+		return gjagent.Response{}, err
+	}
+	return lead.Run(ctx, req)
 }
 
 // providerAgentRateLimiter returns the one process-local limiter shared by all

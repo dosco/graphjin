@@ -131,13 +131,16 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 	agentConf := agentConfigFromService(s.conf)
 	agentConf.ReadOnly = true
 	runner, err := newGraphJinAgentRunner(s, agentConf)
+	if err == nil {
+		runner, err = s.threadAgentRunner(agentConf, runner)
+	}
 	if err != nil {
 		// The run row exists; record the failure in the thread rather than
 		// leaving it for the lease sweep.
 		run.execute(ownerCtx, failingAgentRunner{err: err}, req, s.watchRoutineSettle(req), nil) //nolint:errcheck
 		return receipt, err
 	}
-	resp, err := run.execute(ownerCtx, s.withMemoryRecall(runner), req, s.watchRoutineSettle(req), nil)
+	resp, err := run.execute(ownerCtx, runner, req, s.watchRoutineSettle(req), nil)
 	receipt["answer_status"] = resp.Status
 	if err != nil {
 		return receipt, err

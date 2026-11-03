@@ -258,6 +258,46 @@ Provider errors, strict-dimension failures, warming indexes, and the query
 deadline return lexical groups. The private `searches` argument is absent from
 public MCP, configuration, direct core, and lexical-only agent prompts.
 
+### Lead And Worker
+
+Two agents share this work. The **worker** is everything above: one data
+question in, a governed, database-computed, grounded answer out. It is meant to
+run on a small, fast model and stays stateless — direct `POST /api/v1/agent` and
+the MCP `ask_graphjin_agent` tool without a `thread_id` call it as is.
+
+The **lead** runs every thread turn: console chat, MCP calls with a `thread_id`,
+and watch routines. It holds the conversation — thread history, the caller's
+recalled memories, and the agent profile's instructions — and none of that
+reaches a worker. It answers by sending self-contained questions to workers
+through one `ask_graphjin` tool: it resolves "that customer" or "last month"
+from the conversation first, and questions sent together run in parallel
+(`agent.lead.max_parallel`, default 4). It never computes aggregates itself; it
+asks a worker, which computes them in the database.
+
+The lead's reply is grounded the same way a worker's is: an identifier no
+delegated question returned triggers one restatement, then a
+`ungrounded_answer_fields` refusal. Changes such as creating a watch or saving
+a memory are delegated as explicit instructions after the user asked or
+confirmed, and a routine's lead and workers are read-only.
+
+Configure the lead under `agent.lead`; unset, it runs on the worker's model.
+A typical split is a capable lead over a fast worker:
+
+```yaml
+agent:
+  provider: google-gemini
+  model: gemini-3.5-flash
+  api_key_env: GOOGLE_API_KEY
+  lead:
+    model: gemini-3.5-pro
+```
+
+Run events carry `delegate` (the question's 1-based index) on every worker step
+and `question` on the lead's own start and finish events, so a client can group
+a turn's trail by question. The response's `data.delegations` lists each
+question with its status, answer, and data, and `usage` counts the lead and all
+of its workers.
+
 ### Structured Refusals
 
 When the agent blocks an action it does not return prose — the response carries

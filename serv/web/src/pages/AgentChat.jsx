@@ -11,6 +11,7 @@ import {
   CircleHelp,
   KeyRound,
   ListTodo,
+  Loader2,
   MessageSquarePlus,
   Pin,
   PanelRightClose,
@@ -671,17 +672,19 @@ function messagesFromThread(thread) {
   }));
 }
 
-function AgentInspector({ inspection, onClose, compact = false }) {
+export function AgentInspector({ inspection, onClose, compact = false }) {
   const response = inspection?.response || {};
+  const delegations = responseDelegations(response);
   const payloads = React.useMemo(() => [
     { id: "data", label: "Data", value: response.data },
+    { id: "questions", label: "Questions", value: delegations },
     { id: "evidence", label: "Evidence", value: response.evidence },
     { id: "actions", label: "Actions", value: response.actions },
     { id: "next", label: "Next", value: response.next },
     { id: "usage", label: "Usage", value: response.usage },
     { id: "trace", label: "Trace", value: response.trace },
     { id: "errors", label: "Errors", value: response.errors },
-  ].filter((item) => hasValue(item.value)), [response]);
+  ].filter((item) => hasValue(item.value)), [response, delegations]);
   const preferred = payloads.some((item) => item.id === inspection?.tab) ? inspection.tab : payloads[0]?.id;
   const [tab, setTab] = React.useState(preferred || "data");
 
@@ -711,10 +714,26 @@ function AgentInspector({ inspection, onClose, compact = false }) {
         {selected ? (
           selected.id === "actions" && Array.isArray(selected.value) ? (
             <ol className="divide-y">
-              {selected.value.map((action, index) => (
-                <li key={`${action?.index ?? index}-${action?.tool || "action"}`} className="grid gap-1 py-3 first:pt-0">
-                  <div className="flex items-center justify-between gap-3"><span className="font-mono text-sm font-medium">{action?.tool || `Action ${index + 1}`}</span><StatusPill status={action?.status || "completed"} /></div>
-                  {action?.args && <pre className="overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/55 p-3 text-xs leading-5"><code>{JSON.stringify(action.args, null, 2)}</code></pre>}
+              {groupActionsByDelegate(selected.value, delegations).map((entry, index) => entry.kind === "question" ? (
+                <li key={`question-${entry.delegate}`} className="grid gap-2 py-3 first:pt-0">
+                  <div className="flex items-start justify-between gap-3"><span className="min-w-0 break-words text-sm font-medium">{entry.question || `Question ${entry.delegate}`}</span><StatusPill status={entry.status} /></div>
+                  {entry.actions.length > 0 && (
+                    <ol className="grid gap-3 border-l pl-3">
+                      {entry.actions.map((action, actionIndex) => <InspectorAction key={`${entry.delegate}-${action?.index ?? actionIndex}-${action?.tool || "action"}`} action={action} index={actionIndex} />)}
+                    </ol>
+                  )}
+                </li>
+              ) : (
+                <InspectorAction key={`${entry.action?.index ?? index}-${entry.action?.tool || "action"}`} action={entry.action} index={index} className="py-3 first:pt-0" />
+              ))}
+            </ol>
+          ) : selected.id === "questions" ? (
+            <ol className="divide-y">
+              {selected.value.map((delegation, index) => (
+                <li key={`delegation-${index}`} className="grid gap-2 py-3 first:pt-0">
+                  <div className="flex items-start justify-between gap-3"><span className="min-w-0 break-words text-sm font-medium">{delegation?.question || `Question ${index + 1}`}</span><StatusPill status={delegation?.status || "unknown"} /></div>
+                  {hasValue(delegation?.answer) && <MarkdownContent value={String(delegation.answer)} className="text-sm" />}
+                  {hasValue(delegation?.data) && <pre className="overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/55 p-3 text-xs leading-5"><code>{JSON.stringify(delegation.data, null, 2)}</code></pre>}
                 </li>
               ))}
             </ol>
@@ -724,6 +743,15 @@ function AgentInspector({ inspection, onClose, compact = false }) {
         ) : <p className="text-sm text-muted-foreground">No structured payload is available for this response.</p>}
       </div>
     </aside>
+  );
+}
+
+function InspectorAction({ action, index, className }) {
+  return (
+    <li className={cn("grid gap-1", className)}>
+      <div className="flex items-center justify-between gap-3"><span className="font-mono text-sm font-medium">{action?.tool || `Action ${index + 1}`}</span><StatusPill status={action?.status || "completed"} /></div>
+      {action?.args && <pre className="overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/55 p-3 text-xs leading-5"><code>{JSON.stringify(action.args, null, 2)}</code></pre>}
+    </li>
   );
 }
 
@@ -773,7 +801,8 @@ function EmptyAgentState({ ready, onSelectPrompt }) {
   );
 }
 
-function ThinkingMessage({ actions = [] }) {
+export function ThinkingMessage({ actions = [] }) {
+  const entries = groupActionsByDelegate(actions);
   return (
     <Message role="assistant">
       <MessageAvatar className="text-primary"><Bot className="size-4" /></MessageAvatar>
@@ -785,17 +814,23 @@ function ThinkingMessage({ actions = [] }) {
         <Bubble variant="muted" className="w-fit max-w-full">
           <BubbleContent>
           <span>GraphJin is working</span>
-          {actions.length > 0 && (
+          {entries.length > 0 && (
             <ol className="mt-2 grid gap-1 border-t pt-2 font-mono text-xs text-muted-foreground">
-              {actions.map((action) => (
-                <li key={`${action.index}-${action.tool}`} className="flex items-center gap-2">
-                  {action.status === "error" ? (
-                    <AlertTriangle className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
-                  ) : (
-                    <CheckCircle2 className="size-3.5 shrink-0 text-emerald-600" aria-hidden="true" />
+              {entries.map((entry) => entry.kind === "question" ? (
+                <li key={`question-${entry.delegate}`} className="grid gap-1">
+                  <div className="flex items-start gap-2 font-sans text-foreground">
+                    <QuestionStatusIcon status={entry.status} />
+                    <span className="min-w-0 break-words">{entry.question || `Question ${entry.delegate}`}</span>
+                  </div>
+                  {entry.status === "error" && entry.error && <p className="ml-5 font-sans text-destructive">{entry.error}</p>}
+                  {entry.actions.length > 0 && (
+                    <ol className="ml-[0.4rem] grid gap-1 border-l pl-3">
+                      {entry.actions.map((action) => <TrailAction key={`${entry.delegate}-${action.index}-${action.tool}`} action={action} />)}
+                    </ol>
                   )}
-                  <span className="truncate">{actionLabel(action)}</span>
                 </li>
+              ) : (
+                <TrailAction key={`${entry.action.index}-${entry.action.tool}`} action={entry.action} />
               ))}
             </ol>
           )}
@@ -804,6 +839,101 @@ function ThinkingMessage({ actions = [] }) {
       </MessageContent>
     </Message>
   );
+}
+
+function TrailAction({ action }) {
+  return (
+    <li className="flex items-center gap-2">
+      {action.status === "error" ? (
+        <AlertTriangle className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
+      ) : (
+        <CheckCircle2 className="size-3.5 shrink-0 text-emerald-600" aria-hidden="true" />
+      )}
+      <span className="truncate">{actionLabel(action)}</span>
+    </li>
+  );
+}
+
+function QuestionStatusIcon({ status }) {
+  if (questionRunning(status)) {
+    return <Loader2 className="mt-0.5 size-3.5 shrink-0 animate-spin text-muted-foreground" aria-label="Running" role="img" />;
+  }
+  if (questionFailed(status)) {
+    return <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" aria-label="Failed" role="img" />;
+  }
+  return <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-600" aria-label="Done" role="img" />;
+}
+
+function questionRunning(status) {
+  return !status || status === "running" || status === "pending";
+}
+
+function questionFailed(status) {
+  return status === "error" || status === "failed" || status === "blocked";
+}
+
+// isDelegationAction reports the lead's own record of a delegated question: one
+// ask_graphjin action per question (running, then done or error). The worker's
+// actions for that question carry the same delegate index.
+function isDelegationAction(action) {
+  return action?.delegate != null && action.source === "lead" && action.tool === "ask_graphjin";
+}
+
+// groupActionsByDelegate folds actions carrying a delegate index under the
+// question they answer. Questions run in parallel, so their events interleave;
+// the questions sit together where the first delegated action arrived, ordered
+// by delegate index. Actions without a delegate pass through unchanged, so a
+// plain run yields one entry per action. A response's data.delegations fill in
+// the question and final status.
+export function groupActionsByDelegate(actions = [], delegations = []) {
+  const entries = [];
+  const groups = new Map();
+  let slot = -1;
+  for (const action of actions || []) {
+    const delegate = action?.delegate;
+    if (delegate == null) {
+      entries.push({ kind: "action", action });
+      continue;
+    }
+    if (slot < 0) {
+      slot = entries.length;
+      entries.push(null);
+    }
+    let group = groups.get(delegate);
+    if (!group) {
+      group = { kind: "question", delegate, question: "", status: "", error: "", actions: [] };
+      groups.set(delegate, group);
+    }
+    if (action.question) {
+      group.question = action.question;
+    }
+    if (isDelegationAction(action)) {
+      group.status = action.status || group.status;
+      group.error = action.error || "";
+    } else {
+      group.actions.push(action);
+    }
+  }
+  if (slot < 0) {
+    return entries;
+  }
+  const questions = [...groups.values()]
+    .sort((a, b) => a.delegate - b.delegate)
+    .map((group) => {
+      const delegation = Array.isArray(delegations) ? delegations[group.delegate - 1] : null;
+      return {
+        ...group,
+        question: group.question || delegation?.question || "",
+        status: delegation?.status || group.status || "running",
+      };
+    });
+  entries.splice(slot, 1, ...questions);
+  return entries;
+}
+
+function responseDelegations(response) {
+  const delegations = response?.data?.delegations;
+  return Array.isArray(delegations) ? delegations : null;
 }
 
 // actionLabel renders one streamed ActionEvent as a compact progress line,
@@ -938,14 +1068,22 @@ function ChatMessage({ message, onPinTask, onInspect }) {
   );
 }
 
-function ResponseSummaryBadges({ response, onInspect }) {
-  const actionCount = Array.isArray(response.actions) ? response.actions.length : 0;
+export function ResponseSummaryBadges({ response, onInspect }) {
+  const delegations = responseDelegations(response);
+  // A lead's ask_graphjin actions are the questions themselves, so they are
+  // counted as questions rather than actions.
+  const actionCount = Array.isArray(response.actions) ? response.actions.filter((action) => !isDelegationAction(action)).length : 0;
   const noticeCount = Array.isArray(response.notices) ? response.notices.length : 0;
+  const actionText = `${actionCount} ${actionCount === 1 ? "action" : "actions"}`;
   return (
     <>
       {hasValue(response.data) && <Button type="button" variant="ghost" size="sm" onClick={() => onInspect({ response, tab: "data", title: "Agent result" })}>Data</Button>}
       {hasValue(response.evidence) && <Button type="button" variant="ghost" size="sm" onClick={() => onInspect({ response, tab: "evidence", title: "Evidence" })}>Evidence</Button>}
-      {actionCount > 0 && <Button type="button" variant="ghost" size="sm" onClick={() => onInspect({ response, tab: "actions", title: "Actions" })}>{actionCount} {actionCount === 1 ? "action" : "actions"}</Button>}
+      {delegations ? (
+        <Button type="button" variant="ghost" size="sm" onClick={() => onInspect({ response, tab: delegations.length > 0 ? "questions" : "actions", title: "Questions" })}>
+          {delegations.length} {delegations.length === 1 ? "question" : "questions"} · {actionText}
+        </Button>
+      ) : actionCount > 0 && <Button type="button" variant="ghost" size="sm" onClick={() => onInspect({ response, tab: "actions", title: "Actions" })}>{actionText}</Button>}
       {noticeCount > 0 && <Badge variant="warning">{noticeCount} {noticeCount === 1 ? "notice" : "notices"}</Badge>}
       {response.trace_id && (
         <button type="button" className="inline-flex max-w-48 items-center truncate rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground" title={response.trace_id} onClick={() => onInspect({ response, tab: hasValue(response.trace) ? "trace" : "usage", title: "Run details" })}>

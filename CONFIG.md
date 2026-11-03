@@ -1164,6 +1164,15 @@ they inherit that deployment's capabilities rather than OpenAI's.
 | `agent.return_trace` | boolean | `false` | Include agent action/trace data in responses |
 | `agent.seed_limit` | integer | `40` | Initial `query_catalog(search: instruction)` seed row cap |
 | `agent.catalog_default_limit` | integer | `20` | Default row limit for model-issued catalog queries |
+| `agent.lead.provider` | string | `agent.provider` | Deployment profile for the lead agent that runs thread turns (console chat, MCP `thread_id`, routines). Unset runs the lead on the worker's model. Env `GJ_AGENT_LEAD_PROVIDER` |
+| `agent.lead.model` | string | `agent.model` | Lead model, typically stronger than the worker. Env `GJ_AGENT_LEAD_MODEL` |
+| `agent.lead.api_key_env` | string | `agent.api_key_env` | Env var holding the lead provider's key; required when `agent.lead.provider` differs from `agent.provider`. Env `GJ_AGENT_LEAD_API_KEY_ENV` |
+| `agent.lead.base_url` | string | - | Lead provider base URL. Env `GJ_AGENT_LEAD_BASE_URL` |
+| `agent.lead.reasoning` | string | `agent.reasoning` | Lead thinking effort. Env `GJ_AGENT_LEAD_REASONING` |
+| `agent.lead.max_steps` | integer | `6` | Lead model calls per turn |
+| `agent.lead.max_parallel` | integer | `4` | Delegated questions running at once (max 16). Env `GJ_AGENT_LEAD_MAX_PARALLEL` |
+| `agent.lead.max_questions` | integer | `8` | Delegated questions per turn |
+| `agent.lead.timeout_seconds` | integer | `120` | Whole-turn timeout for the lead, including its questions |
 
 What a provider actually does with a temperature varies more than the key
 suggests: some adaptive models never receive it, some manage sampling

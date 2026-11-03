@@ -66,21 +66,7 @@ var groundingVocabulary = strings.ToLower(strings.Join([]string{
 // are serialized and lowercased; once the corpus would exceed its bound the
 // check degrades to disabled instead of risking false blocks.
 func (s *discoveryState) addGrounding(values ...any) {
-	if s.groundingOverflow {
-		return
-	}
-	for _, value := range values {
-		text := stringify(normalizeValue(value))
-		if text == "" {
-			continue
-		}
-		if s.groundingCorpus.Len()+len(text) > maxGroundingCorpusBytes {
-			s.groundingOverflow = true
-			return
-		}
-		s.groundingCorpus.WriteString(strings.ToLower(text))
-		s.groundingCorpus.WriteByte('\n')
-	}
+	addGroundingText(&s.groundingCorpus, &s.groundingOverflow, values...)
 }
 
 // ungroundedAnswerTokens returns field-shaped identifiers cited in an answer
@@ -91,11 +77,54 @@ func (s *discoveryState) ungroundedAnswerTokens(answer string) []string {
 	if s.groundingOverflow {
 		return nil
 	}
+	return ungroundedTokens(s.groundingCorpus.String(), answer)
+}
+
+// GroundingCorpus is the same answer-grounding check for a caller that
+// gathers its evidence outside a worker run: the lead grounds its answer in
+// what its delegated questions returned.
+type GroundingCorpus struct {
+	corpus   strings.Builder
+	overflow bool
+}
+
+// Add records observed evidence.
+func (g *GroundingCorpus) Add(values ...any) {
+	addGroundingText(&g.corpus, &g.overflow, values...)
+}
+
+// Ungrounded returns field-shaped identifiers in answer that no recorded
+// evidence contains. It returns nil once the corpus overflowed its bound.
+func (g *GroundingCorpus) Ungrounded(answer string) []string {
+	if g.overflow {
+		return nil
+	}
+	return ungroundedTokens(g.corpus.String(), answer)
+}
+
+func addGroundingText(corpus *strings.Builder, overflow *bool, values ...any) {
+	if *overflow {
+		return
+	}
+	for _, value := range values {
+		text := stringify(normalizeValue(value))
+		if text == "" {
+			continue
+		}
+		if corpus.Len()+len(text) > maxGroundingCorpusBytes {
+			*overflow = true
+			return
+		}
+		corpus.WriteString(strings.ToLower(text))
+		corpus.WriteByte('\n')
+	}
+}
+
+func ungroundedTokens(corpus, answer string) []string {
 	answer = strings.TrimSpace(answer)
 	if answer == "" {
 		return nil
 	}
-	corpus := s.groundingCorpus.String()
 	seen := map[string]bool{}
 	var out []string
 	for _, pattern := range answerFieldTokenPatterns {
