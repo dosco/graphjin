@@ -107,6 +107,7 @@ type graphjinService struct {
 	agentRateLimiter       *gjagent.ProviderRateLimiter
 	watchSubscribeForTest  func(context.Context, watchRuntimeDefinition, json.RawMessage) (*core.Member, error)
 	operatorSeed           *OperatorSeed
+	demoSignIn             *DemoSignIn
 	srv                    *http.Server
 	srvMu                  sync.Mutex // guards srv: written by startHTTP, read by Shutdown
 	fs                     core.FS

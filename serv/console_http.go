@@ -22,6 +22,12 @@ type consoleBootstrapIdentity struct {
 	// browser has none. Advisory only: every authorization decision is still
 	// made from the request's own credentials.
 	Suggested *consoleSuggestedIdentity `json:"suggested,omitempty"`
+	// SignIn lists how the console can start a session on a server that
+	// only trusts JWTs, offered while the caller has none.
+	SignIn *consoleSignIn `json:"sign_in,omitempty"`
+	// Session is true when the caller is signed in by the console session
+	// cookie, so the console can offer to sign out.
+	Session bool `json:"session,omitempty"`
 }
 
 type consoleSuggestedIdentity struct {
@@ -103,8 +109,13 @@ func (s1 *HttpService) apiV1ConsoleBootstrap(ns *string) http.Handler {
 		}
 		if userID := ctx.Value(core.UserIDKey); userID != nil {
 			identity.DisplayName = fmt.Sprint(userID)
+			if name := auth.UserName(ctx); name != "" {
+				identity.DisplayName = name
+			}
+			identity.Session = consoleSessionsEnabled(s.conf) && usesConsoleSession(r)
 		} else {
 			identity.Suggested = s.consoleSuggestedIdentity()
+			identity.SignIn = s.consoleSignInMethods()
 		}
 		scope := consoleBootstrapScope{Environment: effectiveMode(s.conf)}
 		if ns != nil {

@@ -198,6 +198,7 @@ func (a *authLoginService) routes(mux Mux) {
 	mux.Handle(routeAuthDeviceToken, http.HandlerFunc(a.handleDeviceToken))
 	mux.Handle(routeAuthLogin, http.HandlerFunc(a.handleLogin))
 	mux.Handle(routeAuthCallback, http.HandlerFunc(a.handleCallback))
+	mux.Handle(routeAuthConsoleLogin, http.HandlerFunc(a.handleConsoleLogin))
 	if a.mcpOAuthEnabledBuiltin() {
 		mux.Handle(routeMCPOAuthAuthorize, http.HandlerFunc(a.handleMCPOAuthAuthorize))
 		mux.Handle(routeMCPOAuthToken, http.HandlerFunc(a.handleMCPOAuthToken))
@@ -372,6 +373,52 @@ func (a *authLoginService) handleCallback(w http.ResponseWriter, r *http.Request
 		"Title": "Sign-in complete",
 		"Body":  "You can close this tab and return to your terminal.",
 	})
+}
+
+// handleConsoleLogin: GET /api/v1/auth/console?next=/path — browser sign-in
+// for the console. The OIDC state is a single-use request in the shared store,
+// so the callback can land on any replica.
+func (a *authLoginService) handleConsoleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	state, err := randomURLToken(24)
+	if err != nil {
+		http.Error(w, "failed to generate state", http.StatusInternalServerError)
+		return
+	}
+	now := time.Now()
+	if err := a.state().putOAuthRequest(r.Context(), state, &mcpOAuthAuthRequest{
+		ConsoleNext: consoleNextPath(r.URL.Query().Get("next")),
+		CreatedAt:   now,
+		ExpiresAt:   now.Add(mcpOAuthRequestTTL),
+	}); err != nil {
+		http.Error(w, "failed to store sign-in request", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, a.provider.AuthCodeURL(state, publicBaseURL(r)+routeAuthCallback), http.StatusFound)
+}
+
+// finishConsoleLogin mints the same claims a CLI sign-in gets, holds the token
+// in the console session cookie, and returns the browser to the console.
+func (a *authLoginService) finishConsoleLogin(w http.ResponseWriter, r *http.Request, ident *oidc.Identity, next string) {
+	exp := time.Now().Add(consoleSessionTTL)
+	if ttl := a.tokenTTL(); ttl < consoleSessionTTL {
+		exp = time.Now().Add(ttl)
+	}
+	tok, err := a.issuer.Mint(map[string]any{
+		"sub":   ident.NamespacedSubject(),
+		"email": ident.Email,
+		"name":  ident.Name,
+		"exp":   exp.Unix(),
+	})
+	if err != nil {
+		http.Error(w, "failed to mint session", http.StatusInternalServerError)
+		return
+	}
+	setConsoleSessionCookie(w, r, tok, exp)
+	http.Redirect(w, r, consoleNextPath(next), http.StatusFound)
 }
 
 // handleDeviceToken: POST /api/v1/auth/device/token — CLI polls for the token.

@@ -62,6 +62,12 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		if s.conf.Auth.Development {
 			s.log.Warn("api: auth.development=true this allows clients to bypass authentication")
 		}
+		if consoleSessionsEnabled(s.conf) {
+			// The console holds its JWT in a session cookie; sign-in verifies
+			// a token with the plain handler before it becomes a session.
+			mux.Handle(routeAuthSession, s1.AuthSession(ah))
+			ah = withConsoleSession(ah)
+		}
 
 		if s.conf.WebUI {
 			mux.Handle("/", s1.WebUI("/", routeGraphQL))

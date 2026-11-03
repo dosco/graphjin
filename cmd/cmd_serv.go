@@ -143,6 +143,9 @@ func cmdServ(cmd *cobra.Command, args []string) {
 	if seedOpt, ok := demoWatchSeedOption(demo, cpath); ok {
 		opt = append(opt, seedOpt)
 	}
+	if signIn := demoSignInOption(demo, cpath); signIn != nil {
+		opt = append(opt, signIn)
+	}
 	// if deployActive {
 	// 	opt = append(opt, serv.OptionDeployActive())
 	// }

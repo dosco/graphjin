@@ -52,8 +52,11 @@ type mcpOAuthAuthRequest struct {
 	Resource            string
 	CodeChallenge       string
 	CodeChallengeMethod string
-	CreatedAt           time.Time
-	ExpiresAt           time.Time
+	// ConsoleNext is set when the request started a console sign-in rather
+	// than an MCP client authorization; it is where the browser goes after.
+	ConsoleNext string `json:",omitempty"`
+	CreatedAt   time.Time
+	ExpiresAt   time.Time
 }
 
 type mcpOAuthCode struct {
@@ -415,6 +418,17 @@ func (a *authLoginService) handleMCPOAuthCallback(w http.ResponseWriter, r *http
 
 	redirectURI := publicBaseURL(r) + routeAuthCallback
 	ident, err := a.provider.Exchange(r.Context(), providerCode, redirectURI)
+	if req.ConsoleNext != "" {
+		// A person is looking at this response, not an OAuth client.
+		if err != nil {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusForbidden)
+			_ = doneTmpl.Execute(w, map[string]string{"Title": "Sign-in failed", "Body": err.Error()})
+			return true
+		}
+		a.finishConsoleLogin(w, r, ident, req.ConsoleNext)
+		return true
+	}
 	if err != nil {
 		writeOAuthError(w, http.StatusForbidden, "access_denied", err.Error())
 		return true

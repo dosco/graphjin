@@ -47,7 +47,9 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useTheme } from "@/components/theme-provider";
+import { signInState } from "@/services/session";
 import { useConsole } from "./console-context";
+import SignInPanel from "./SignInPanel";
 
 const lastRouteKey = (workspaceID) => `graphjin-console-last-route:${workspaceID}`;
 
@@ -65,6 +67,8 @@ const Header = () => {
   const workspace = workspaceDefinitions[workspaceID];
   const workspaces = availableWorkspaces(bootstrap);
   const scopeLabel = bootstrap?.scope?.environment || bootstrap?.scope?.source || "local";
+  const session = signInState(bootstrap);
+  const promptedSignIn = React.useRef(false);
 
   React.useEffect(() => {
     if (workspaceDefinitions[workspaceID]) {
@@ -77,6 +81,15 @@ const Header = () => {
       setDraft(identity);
     }
   }, [identity, identityOpen]);
+
+  // A JWT-only server shows nothing until the console has a session, so ask
+  // once instead of leaving every page to fail with 401.
+  React.useEffect(() => {
+    if (session.required && !session.signedIn && !promptedSignIn.current) {
+      promptedSignIn.current = true;
+      setIdentityOpen(true);
+    }
+  }, [session.required, session.signedIn]);
 
   React.useEffect(() => {
     const handleKeyDown = (event) => {
@@ -107,6 +120,12 @@ const Header = () => {
     writeOperatorIdentity(draft);
     void queryClient.invalidateQueries();
     setIdentityOpen(false);
+  }
+
+  function sessionChanged() {
+    // Every cached query belongs to the previous identity.
+    queryClient.clear();
+    window.location.reload();
   }
 
   function clearIdentity() {
@@ -178,25 +197,35 @@ const Header = () => {
                 variant="ghost"
                 size="sm"
                 className="max-w-48"
-                aria-label={hasOperatorIdentity(identity) ? `Identity: ${identity.userId}` : "Set operator identity"}
+                aria-label={session.required
+                  ? (session.signedIn ? `Signed in as ${session.name}` : "Sign in")
+                  : (hasOperatorIdentity(identity) ? `Identity: ${identity.userId}` : "Set operator identity")}
               >
-                {hasOperatorIdentity(identity) ? <UserRoundCheck aria-hidden="true" /> : <UserRound aria-hidden="true" />}
-                <span className="hidden max-w-28 truncate lg:inline">{identity.userId || bootstrap?.identity?.role || "Identity"}</span>
+                {(session.required ? session.signedIn : hasOperatorIdentity(identity)) ? <UserRoundCheck aria-hidden="true" /> : <UserRound aria-hidden="true" />}
+                <span className="hidden max-w-28 truncate lg:inline">
+                  {session.required
+                    ? (session.signedIn ? session.name : "Sign in")
+                    : (identity.userId || bootstrap?.identity?.role || "Identity")}
+                </span>
                 <ChevronDown className="hidden size-3 lg:block" aria-hidden="true" />
               </Button>
             </SheetTrigger>
             <SheetContent side="right" className="grid w-[min(92vw,26rem)] grid-rows-[auto_1fr] sm:w-[26rem]">
               <SheetHeader className="pr-8">
-                <SheetTitle>Operator identity</SheetTitle>
-                <SheetDescription>Development headers for owner-scoped console data. Authenticated deployments continue using their same-origin session.</SheetDescription>
+                <SheetTitle>{session.required ? (session.signedIn ? "Session" : "Sign in") : "Operator identity"}</SheetTitle>
+                <SheetDescription>
+                  {session.required
+                    ? "Your console session on this server."
+                    : "Development headers for owner-scoped console data. Authenticated deployments continue using their same-origin session."}
+                </SheetDescription>
               </SheetHeader>
-              <form className="grid content-start gap-4 overflow-y-auto py-5" onSubmit={saveIdentity}>
+              {session.required ? <SignInPanel state={session} onChange={sessionChanged} /> : <form className="grid content-start gap-4 overflow-y-auto py-5" onSubmit={saveIdentity}>
                 <label className="grid gap-1.5 text-sm"><span className="font-medium">User ID</span><Input value={draft.userId} onChange={(event) => setDraft((current) => ({ ...current, userId: event.target.value }))} placeholder="operator-1" autoComplete="off" /></label>
                 <label className="grid gap-1.5 text-sm"><span className="font-medium">Role</span><Select value={draft.role} onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value }))}><option value="">Default role</option><option value="user">User</option><option value="operator">Operator</option><option value="admin">Admin</option></Select></label>
                 <label className="grid gap-1.5 text-sm"><span className="font-medium">Account ID</span><Input value={draft.accountId} onChange={(event) => setDraft((current) => ({ ...current, accountId: event.target.value }))} placeholder="account-1" autoComplete="off" /></label>
                 <div className="rounded-lg bg-muted p-3 text-xs leading-5 text-muted-foreground">Stored in this browser and sent only as development identity headers.</div>
                 <div className="flex items-center justify-between gap-3"><Button type="button" variant="ghost" onClick={clearIdentity} disabled={!hasOperatorIdentity(identity)}>Clear</Button><Button type="submit" disabled={!draft.userId.trim()}>Use identity</Button></div>
-              </form>
+              </form>}
             </SheetContent>
           </Sheet>
         </div>

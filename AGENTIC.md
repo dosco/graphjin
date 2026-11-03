@@ -70,8 +70,24 @@ Owner-scoped roots require an identity. In development auth, the header's
 operator-identity control persists a user, role, and account in the browser and
 sends `X-User-ID`, `X-User-Role`, and `X-Account-ID`. With no development
 identity, Mission Control reports that state explicitly rather than mistaking an
-empty owner scope for an empty workload. Real authentication continues through
-the existing same-origin session cookie.
+empty owner scope for an empty workload.
+
+A server that only trusts JWTs (`auth.type: jwt`, which agentic mode requires)
+ignores those headers, so the console signs in instead. The identity control
+becomes a sign-in sheet that opens on its own when you have no session:
+
+- **Single sign-on**, when `auth_login` is enabled: the browser goes through
+  your OIDC provider and comes back to the page it started on.
+- **Demo operator**, only under `graphjin serve --demo`: one click signs in as
+  the demo's seeded operator (or a local admin when the demo seeds none).
+- **Access token**: paste any JWT the API already accepts.
+
+The server checks the token with the same handler every API request uses and
+keeps it in an HttpOnly, SameSite=Strict cookie scoped to `/api/v1/`. Page
+scripts never read it, other sites' requests never carry it, and any replica
+verifies it, so no session state is stored. A session lasts at most 12 hours
+and never outlives its token. A bearer header a client sends itself always wins
+over the cookie.
 
 ## Words This Document Uses
 

@@ -97,6 +97,10 @@ curl -sS http://localhost:8080/api/v1/graphql \
 (Sending both the bearer token and the dev headers makes the same request work
 against either mode.)
 
+The web console needs no token: under `graphjin serve --demo` its sign-in sheet
+offers **Sign in as the demo operator**, which mints a session from the same
+demo secret.
+
 ## Command-Line Smoke Suite
 
 Run the packaged smoke suite from a second terminal while the demo server is running:

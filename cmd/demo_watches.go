@@ -158,3 +158,20 @@ func demoWatchSeedOption(demo *DemoRuntime, configPath string) (serv.Option, boo
 	}
 	return serv.OptionSetOperatorSeed(seed), true
 }
+
+// demoSignInOption lets the console sign in with one click on a demo whose
+// config only trusts JWTs. It signs in as the seeded operator when the demo
+// declares one, so the console opens on the work seeded under that owner, and
+// otherwise as a local admin operator.
+func demoSignInOption(demo *DemoRuntime, configPath string) serv.Option {
+	if demo == nil {
+		return nil
+	}
+	identity := serv.DemoSignIn{UserID: "demo-operator", Role: "admin"}
+	if seed, ok, err := loadDemoWatchSeeds(configPath); err == nil && ok {
+		identity.UserID = seed.UserID
+		identity.AccountID = seed.AccountID
+		identity.Role = firstNonEmptyValue(seed.ConsoleRole, seed.Role, identity.Role)
+	}
+	return serv.OptionSetDemoSignIn(identity)
+}

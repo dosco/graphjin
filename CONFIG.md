@@ -236,6 +236,13 @@ mcp:
     scopes: ["mcp"]
 ```
 
+With `auth_login` enabled, the web console also signs in through the same OIDC
+provider: `GET /api/v1/auth/console?next=/user/agent` starts the flow, and the
+callback keeps the minted token in an HttpOnly session cookie instead of handing
+it to a CLI. The provider must allow `<server>/api/v1/auth/callback` as a
+redirect URI. Without `auth_login` the console still accepts a pasted JWT; see
+the console sign-in section of `AGENTIC.md`.
+
 Claude's SSE transport is for legacy/custom MCP servers, not GraphJin's
 `/api/v1/mcp` endpoint:
 
