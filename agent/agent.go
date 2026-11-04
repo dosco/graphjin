@@ -1491,7 +1491,21 @@ func (a *Agent) finalizeWithGroundedRewrite(ctx context.Context, client ax.AICli
 	if protocol == nil || protocol.state == nil {
 		return resp
 	}
-	return a.reportRankingTies(ctx, client, protocol, cfg, req, a.finalizeGrounded(ctx, client, protocol, cfg, req, resp, rateLimiter), rateLimiter)
+	resp = a.reportRankingTies(ctx, client, protocol, cfg, req, a.finalizeGrounded(ctx, client, protocol, cfg, req, resp, rateLimiter), rateLimiter)
+	resp.Answer = unescapeAnswerNewlines(resp.Answer)
+	return resp
+}
+
+// unescapeAnswerNewlines repairs markdown a model escaped twice: an answer
+// with literal \n sequences and not one real line break renders as a single
+// line of backslashes, which flash-tier models were observed to emit for
+// tables. An answer that already has real line breaks is left alone, so one
+// that shows an escape sequence on purpose is never rewritten.
+func unescapeAnswerNewlines(answer string) string {
+	if strings.Contains(answer, "\n") || !strings.Contains(answer, `\n`) {
+		return answer
+	}
+	return strings.ReplaceAll(answer, `\n`, "\n")
 }
 
 // reportRankingTies makes an answer that crowns part of a tied ranking name
