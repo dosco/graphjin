@@ -190,7 +190,7 @@ func TestShiftDuckDBFileDates(t *testing.T) {
 	tables := map[string][]core.TemporalColumn{
 		"roast_batches": {{Name: "started_at"}, {Name: "roast_day", DateOnly: true}},
 	}
-	n, err := shiftDuckDBFileDates(context.Background(), path, tables, 10)
+	n, err := shiftDuckDBFileDates(context.Background(), path, tables, 10, "warehouse", nil)
 	if err != nil {
 		t.Fatalf("shiftDuckDBFileDates: %v", err)
 	}

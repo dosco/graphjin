@@ -86,6 +86,12 @@ type demoState struct {
 	// ShiftDays is how many whole days the reused demo data lags behind
 	// today; date columns are shifted forward by this much on startup.
 	ShiftDays int
+	// Owed is, per source, the days an earlier boot failed to shift; that
+	// source moves ShiftDays plus this.
+	Owed map[string]int
+	// Lagging is, per source whose shift failed this boot, the anchor its data
+	// still sits on. The manifest records it so the lag survives the restamp.
+	Lagging map[string]string
 }
 
 type demoManifest struct {
@@ -100,6 +106,9 @@ type demoManifest struct {
 type demoManifestItem struct {
 	Type   string `json:"type"`
 	Status string `json:"status"`
+	// DataAnchor is set only when this source's data is not on the manifest's
+	// anchor because its date shift failed; the next boot makes up the gap.
+	DataAnchor string `json:"data_anchor,omitempty"`
 }
 
 // StartDemo starts demo backing services, syncs schema, and seeds first-run data.
@@ -171,8 +180,12 @@ func StartDemo(ctx context.Context, dbFlags []string, statusOut io.Writer) (*Dem
 	status.Emit("seed", "seeding", "loading first-run data")
 	runDemoSeed()
 
-	if state.ShiftDays != 0 {
-		status.Emit("refresh", "shifting", fmt.Sprintf("moving demo dates %+d day(s)", state.ShiftDays))
+	if state.shiftPending() {
+		message := "moving lagging sources' demo dates"
+		if state.ShiftDays != 0 {
+			message = fmt.Sprintf("moving demo dates %+d day(s)", state.ShiftDays)
+		}
+		status.Emit("refresh", "shifting", message)
 		shiftDemoDates(ctx, runtime.Databases, state)
 	}
 
@@ -316,6 +329,10 @@ func initDemoState(status demoStatus) (*demoState, error) {
 	status.Emit("state", "reused", "manifest verified")
 	state := &demoState{Dir: stateDir, Manifest: manifest, Status: status}
 	state.ShiftDays = demoDataShiftDays(manifest, time.Now())
+	state.Owed = demoOwedDays(manifest)
+	for name, days := range state.Owed {
+		status.Emit(name, "lagging", fmt.Sprintf("an earlier date refresh failed; this source also makes up %+d day(s)", days))
+	}
 	// An evaluation resuming an incomplete run pins the anchor its finished
 	// episodes were graded against, and the data is moved to meet it. Holding
 	// still is the common case (the run started today and the clock has since
@@ -390,15 +407,22 @@ func (s *demoState) writeManifest(dbs map[string]*sql.DB) error {
 	if s.Manifest.Sources == nil {
 		s.Manifest.Sources = make(map[string]demoManifestItem)
 	}
+	// A source whose shift failed keeps the anchor its data is really on.
+	lagging := func(name string) string {
+		if anchor := s.Lagging[name]; anchor != s.Manifest.DataAnchor {
+			return anchor
+		}
+		return ""
+	}
 	for name, dbConf := range conf.Databases {
 		status := "verified"
 		if _, ok := dbs[name]; !ok {
 			status = "skipped"
 		}
-		s.Manifest.Sources[name] = demoManifestItem{Type: dbConf.Type, Status: status}
+		s.Manifest.Sources[name] = demoManifestItem{Type: dbConf.Type, Status: status, DataAnchor: lagging(name)}
 	}
 	if len(conf.Databases) == 0 && conf.DB.Type != "" {
-		s.Manifest.Sources[core.DefaultDBName] = demoManifestItem{Type: conf.DB.Type, Status: "verified"}
+		s.Manifest.Sources[core.DefaultDBName] = demoManifestItem{Type: conf.DB.Type, Status: "verified", DataAnchor: lagging(core.DefaultDBName)}
 	}
 	if err := os.MkdirAll(s.Dir, 0o755); err != nil {
 		return err
@@ -1075,15 +1099,15 @@ func startWarehouseSimDemo(ctx context.Context, name string, dbConf core.Databas
 
 	dbPath := filepath.Join(dataDir, "warehouse.duckdb")
 	initialized := warehouseSimulatorInitialized(dbPath)
-	if initialized && state.ShiftDays != 0 {
+	if days := state.shiftFor(name); initialized && days != 0 {
 		// Reused simulator state: shift its dates in the file now, while it
 		// is still closed — DuckDB allows a single read-write handle.
 		if tables, err := demoTemporalColumns(name); err != nil {
 			status.Emit(name, "skipped", fmt.Sprintf("date refresh needs schema DDL: %s", err))
-		} else if n, err := shiftDuckDBFileDates(ctx, dbPath, tables, state.ShiftDays); err != nil {
-			status.Emit(name, "failed", fmt.Sprintf("date refresh failed (%s); delete %s to reseed", err, state.Dir))
+		} else if n, err := shiftDuckDBFileDates(ctx, dbPath, tables, days, name, state); err != nil {
+			state.shiftFailed(name, err)
 		} else if n > 0 {
-			status.Emit(name, "refreshed", fmt.Sprintf("%d date column(s) moved %+d day(s)", n, state.ShiftDays))
+			status.Emit(name, "refreshed", fmt.Sprintf("%d date column(s) moved %+d day(s)", n, days))
 		}
 	}
 	connector := hostedemu.NewConnector(hostedemu.Config{

@@ -87,7 +87,7 @@ func demoTemporalColumns(source string) (map[string][]core.TemporalColumn, error
 // simulator locks them. Failures never block startup: each failed source is
 // reported with the reset path and skipped.
 func shiftDemoDates(ctx context.Context, dbs map[string]*sql.DB, state *demoState) {
-	if state == nil || state.ShiftDays == 0 || len(dbs) == 0 {
+	if state == nil || !state.shiftPending() || len(dbs) == 0 {
 		return
 	}
 	names := make([]string, 0, len(dbs))
@@ -106,20 +106,72 @@ func shiftDemoDates(ctx context.Context, dbs map[string]*sql.DB, state *demoStat
 			state.Status.Emit(name, "skipped", fmt.Sprintf("date refresh is not supported for %s", dbType))
 			continue
 		}
+		days := state.shiftFor(name)
+		if days == 0 {
+			continue
+		}
 		tables, err := demoTemporalColumns(name)
 		if err != nil {
 			state.Status.Emit(name, "skipped", fmt.Sprintf("date refresh needs schema DDL: %s", err))
 			continue
 		}
-		n, err := shiftDemoConnDates(ctx, dbs[name], dbType, tables, state.ShiftDays)
+		tables, err = presentTemporalColumns(ctx, dbs[name], dbType, tables, name, state)
 		if err != nil {
-			state.Status.Emit(name, "failed", fmt.Sprintf("date refresh failed (%s); delete %s to reseed", err, state.Dir))
+			state.shiftFailed(name, err)
+			continue
+		}
+		n, err := shiftDemoConnDates(ctx, dbs[name], dbType, tables, days)
+		if err != nil {
+			state.shiftFailed(name, err)
 			continue
 		}
 		if n > 0 {
-			state.Status.Emit(name, "refreshed", fmt.Sprintf("%d date column(s) moved forward %d day(s)", n, state.ShiftDays))
+			state.Status.Emit(name, "refreshed", fmt.Sprintf("%d date column(s) moved %+d day(s)", n, days))
 		}
 	}
+}
+
+// presentTemporalColumns drops the DDL's date columns that the database does
+// not have.
+//
+// Reused demo state keeps the schema it was provisioned with, while the
+// project's DDL moves on. Shifting runs in one transaction, so a single column
+// the DDL gained since then used to roll back every column, every boot — and
+// the manifest still advanced its anchor, so the demo silently froze on the
+// day it was seeded. Each column is probed with the shape the shift runs, a
+// zero-row self-assignment, which is the same statement on every supported
+// dialect. Not a select: SQLite reads a double-quoted name that matches no
+// column as a string literal, so selecting a missing column succeeds, while an
+// assignment target must be a real column. A failed ping is a failure,
+// not a database with no columns: reading it as the latter would shift
+// nothing, report success, and advance the anchor over unshifted data.
+func presentTemporalColumns(ctx context.Context, conn *sql.DB, dbType string, tables map[string][]core.TemporalColumn, source string, state *demoState) (map[string][]core.TemporalColumn, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("no open database connection")
+	}
+	if err := conn.PingContext(ctx); err != nil {
+		return nil, err
+	}
+	present := make(map[string][]core.TemporalColumn, len(tables))
+	var missing []string
+	for table, cols := range tables {
+		for _, col := range cols {
+			c := seedQuoteIdent(dbType, col.Name)
+			probe := fmt.Sprintf("UPDATE %s SET %s = %s WHERE 1 = 0", seedQuoteIdent(dbType, table), c, c)
+			if _, err := conn.ExecContext(ctx, probe); err != nil {
+				missing = append(missing, table+"."+col.Name)
+				continue
+			}
+			present[table] = append(present[table], col)
+		}
+	}
+	if len(missing) != 0 && state != nil {
+		sort.Strings(missing)
+		state.Status.Emit(source, "warning", fmt.Sprintf(
+			"the schema DDL has %d date column(s) this demo database lacks (%s); they are not shifted. Delete %s to reseed with the current schema",
+			len(missing), strings.Join(missing, ", "), state.Dir))
+	}
+	return present, nil
 }
 
 // demoSourceDBType resolves the configured database type for a demo source,
@@ -247,11 +299,84 @@ WHERE %[2]s IS NOT NULL AND %[2]s GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-
 // read-write handle per file and per process. The duckdb driver is registered
 // by the hostedemu package in CGO builds; without it sql.Open fails and the
 // caller reports the source as skipped.
-func shiftDuckDBFileDates(ctx context.Context, path string, tables map[string][]core.TemporalColumn, days int) (int, error) {
+func shiftDuckDBFileDates(ctx context.Context, path string, tables map[string][]core.TemporalColumn, days int, source string, state *demoState) (int, error) {
 	db, err := sql.Open("duckdb", path)
 	if err != nil {
 		return 0, fmt.Errorf("duckdb driver unavailable: %w", err)
 	}
 	defer db.Close() //nolint:errcheck
+	if tables, err = presentTemporalColumns(ctx, db, "duckdb", tables, source, state); err != nil {
+		return 0, err
+	}
 	return shiftDemoConnDates(ctx, db, "duckdb", tables, days)
+}
+
+// shiftPending reports whether any source has dates to move this boot.
+func (s *demoState) shiftPending() bool {
+	if s.ShiftDays != 0 {
+		return true
+	}
+	for _, days := range s.Owed {
+		if days != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// shiftFor is the whole-day move one source needs: the boot's shift plus
+// whatever an earlier failed boot left it owing.
+func (s *demoState) shiftFor(source string) int {
+	return s.ShiftDays + s.Owed[source]
+}
+
+// shiftFailed reports a source whose dates did not move and remembers the
+// anchor its data still sits on, so the manifest does not claim the source
+// is current and the next boot shifts it by the full lag. One manifest
+// anchor cannot say this for a single source: holding it back would shift
+// every source that did succeed a second time.
+func (s *demoState) shiftFailed(source string, err error) {
+	s.Status.Emit(source, "failed", fmt.Sprintf("date refresh failed (%s); the next start retries it, or delete %s to reseed", err, s.Dir))
+	if s.Lagging == nil {
+		s.Lagging = map[string]string{}
+	}
+	s.Lagging[source] = s.sourceAnchor(source)
+}
+
+// sourceAnchor is the day a source's data is anchored to before this boot's
+// shift: its own recorded lag, else the manifest's anchor, else (for manifests
+// older than anchors, and for a fresh provision) the creation day.
+func (s *demoState) sourceAnchor(source string) string {
+	if anchor := strings.TrimSpace(s.Manifest.Sources[source].DataAnchor); anchor != "" {
+		return anchor
+	}
+	if anchor := strings.TrimSpace(s.Manifest.DataAnchor); anchor != "" {
+		return anchor
+	}
+	if created, err := time.Parse(time.RFC3339, s.Manifest.CreatedAt); err == nil {
+		return created.UTC().Format(demoDataAnchorLayout)
+	}
+	return time.Now().UTC().Format(demoDataAnchorLayout)
+}
+
+// demoOwedDays reads each source's recorded lag as days owed beyond the
+// manifest's own anchor.
+func demoOwedDays(m demoManifest) map[string]int {
+	base := strings.TrimSpace(m.DataAnchor)
+	if base == "" {
+		return nil
+	}
+	var owed map[string]int
+	for name, item := range m.Sources {
+		if strings.TrimSpace(item.DataAnchor) == "" {
+			continue
+		}
+		if days, err := demoAnchorDelta(item.DataAnchor, base); err == nil && days != 0 {
+			if owed == nil {
+				owed = map[string]int{}
+			}
+			owed[name] = days
+		}
+	}
+	return owed
 }
