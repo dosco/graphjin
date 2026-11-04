@@ -49,7 +49,26 @@ type dataEvalCase struct {
 	Method            methodRule        `json:"method"`
 	Budget            *caseBudget       `json:"budget,omitempty"`
 	SanityHint        *float64          `json:"sanity_hint,omitempty"`
+	// Route "thread" asks the way the console does: in a fresh thread, so the
+	// lead answers, with Turns sent through it first for real history. The
+	// default asks the endpoint directly, which the stateless worker answers.
+	Route string   `json:"route,omitempty"`
+	Turns []string `json:"turns,omitempty"`
+	// Parts scores a question that asks several things at once. Every part has
+	// its own oracle and method rule and must match; Oracle, Answer and Method
+	// are then unused.
+	Parts []dataPart `json:"parts,omitempty"`
 }
+
+// dataPart is one thing a multi-part question asks for.
+type dataPart struct {
+	Label  string     `json:"label"`
+	Oracle dataOracle `json:"oracle"`
+	Answer answerRule `json:"answer"`
+	Method methodRule `json:"method"`
+}
+
+const routeThread = "thread"
 
 type dataOracle struct {
 	Query            string         `json:"query"`
@@ -147,14 +166,49 @@ func validateDataCases(cases []dataEvalCase) error {
 			return fmt.Errorf("duplicate data case id %q", c.ID)
 		}
 		seen[c.ID] = true
-		if strings.TrimSpace(c.Oracle.Query) == "" {
-			return fmt.Errorf("data case %q needs oracle.query", c.ID)
+		if c.Route != "" && c.Route != routeThread {
+			return fmt.Errorf("data case %q has unknown route %q", c.ID, c.Route)
 		}
-		if strings.TrimSpace(c.Oracle.Extract) == "" && c.Oracle.PickMax == nil {
-			return fmt.Errorf("data case %q needs oracle.extract or oracle.pick_max", c.ID)
+		if len(c.Turns) != 0 && c.Route != routeThread {
+			return fmt.Errorf("data case %q has turns but no thread route to carry them", c.ID)
+		}
+		if len(c.Parts) == 0 {
+			if err := validateOracle(c.ID, c.Oracle); err != nil {
+				return err
+			}
+			continue
+		}
+		labels := map[string]bool{}
+		for _, part := range c.Parts {
+			if part.Label == "" || labels[part.Label] {
+				return fmt.Errorf("data case %q needs a unique label on every part", c.ID)
+			}
+			labels[part.Label] = true
+			if err := validateOracle(c.ID+"/"+part.Label, part.Oracle); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+func validateOracle(id string, oracle dataOracle) error {
+	if strings.TrimSpace(oracle.Query) == "" {
+		return fmt.Errorf("data case %q needs oracle.query", id)
+	}
+	if strings.TrimSpace(oracle.Extract) == "" && oracle.PickMax == nil {
+		return fmt.Errorf("data case %q needs oracle.extract or oracle.pick_max", id)
+	}
+	return nil
+}
+
+// scoredParts is what a case asks for, one entry per thing to check: the
+// case's own oracle for an ordinary question, its parts otherwise.
+func (c dataEvalCase) scoredParts() []dataPart {
+	if len(c.Parts) != 0 {
+		return c.Parts
+	}
+	return []dataPart{{Oracle: c.Oracle, Answer: c.Answer, Method: c.Method}}
 }
 
 type dataTask struct {
@@ -373,20 +427,47 @@ func runDataOne(client *http.Client, item dataTask, order int) runResult {
 		ExpectedStatus: testCase.ExpectedStatus,
 	}
 
-	oracleValue, oracleDimension, oracleErr := resolveOracle(client, item.profile, testCase.Oracle, time.Now())
-	if oracleErr != nil {
-		result.OracleError = oracleErr.Error()
-	} else {
-		result.OracleValue = oracleValue
-		result.OracleDimension = oracleDimension
-		if testCase.SanityHint != nil {
-			if oracleNumber, ok := numberFromString(oracleValue); !ok || relativeDelta(oracleNumber, *testCase.SanityHint) > 0.001 {
-				result.OracleWarning = fmt.Sprintf("oracle value %s disagrees with sanity hint %v; seed or oracle drift", oracleValue, *testCase.SanityHint)
+	parts := testCase.scoredParts()
+	values := make([]string, len(parts))
+	dimensions := make([]string, len(parts))
+	for index, part := range parts {
+		value, dimension, err := resolveOracle(client, item.profile, part.Oracle, time.Now())
+		if err != nil {
+			result.OracleError = labelled(part.Label, err.Error())
+			break
+		}
+		values[index], dimensions[index] = value, dimension
+	}
+	if result.OracleError == "" {
+		var shownValues, shownDimensions []string
+		for index, part := range parts {
+			shownValues = append(shownValues, labelled(part.Label, values[index]))
+			if dimensions[index] != "" {
+				shownDimensions = append(shownDimensions, labelled(part.Label, dimensions[index]))
 			}
+		}
+		result.OracleValue = strings.Join(shownValues, "; ")
+		result.OracleDimension = strings.Join(shownDimensions, "; ")
+		if testCase.SanityHint != nil && len(parts) == 1 {
+			if oracleNumber, ok := numberFromString(values[0]); !ok || relativeDelta(oracleNumber, *testCase.SanityHint) > 0.001 {
+				result.OracleWarning = fmt.Sprintf("oracle value %s disagrees with sanity hint %v; seed or oracle drift", values[0], *testCase.SanityHint)
+			}
+		}
+		if warning := collidingParts(parts, values); warning != "" {
+			result.OracleWarning = warning
 		}
 	}
 
-	agentResponse, httpStatus, latencyMS, err := postAgent(client, item.profile, testCase.Prompt)
+	var agentResponse *gjagent.Response
+	var httpStatus int
+	var latencyMS int64
+	var err error
+	if testCase.Route == routeThread {
+		result.Route = routeThread
+		agentResponse, httpStatus, latencyMS, err = runThreadCase(client, item.profile, testCase, &result)
+	} else {
+		agentResponse, httpStatus, latencyMS, err = postAgent(client, item.profile, testCase.Prompt)
+	}
 	result.HTTPStatus = httpStatus
 	result.LatencyMS = latencyMS
 	if err != nil {
@@ -411,17 +492,148 @@ func runDataOne(client *http.Client, item dataTask, order int) runResult {
 		}
 	}
 
-	methodPass := evaluateMethod(testCase.Method, testCase.Answer, queries, okTools, agentResponse.Answer)
+	if data, ok := agentResponse.Data.(map[string]any); ok {
+		for _, raw := range toSlice(data["delegations"]) {
+			result.Delegations++
+			if delegation, ok := raw.(map[string]any); ok {
+				question, _ := delegation["question"].(string)
+				result.Delegated = append(result.Delegated, question)
+			}
+		}
+	}
+
+	methodPass := true
+	for _, part := range parts {
+		if !evaluateMethod(part.Method, part.Answer, queries, okTools, agentResponse.Answer) {
+			methodPass = false
+		}
+	}
 	result.MethodPass = &methodPass
 
 	if result.OracleError == "" {
-		pass, detail := evaluateGroundTruth(testCase, oracleValue, oracleDimension, agentResponse)
+		pass := true
+		var details []string
+		for index, part := range parts {
+			scored := testCase
+			scored.Answer = part.Answer
+			partPass, detail := evaluateGroundTruth(scored, values[index], dimensions[index], agentResponse)
+			if partPass {
+				result.PartsPassed++
+			} else {
+				pass = false
+				details = append(details, labelled(part.Label, detail))
+			}
+		}
+		result.PartsTotal = len(parts)
 		result.GroundTruthPass = &pass
-		result.GroundTruthDetail = detail
+		result.GroundTruthDetail = strings.Join(details, "; ")
 	}
 
 	result.FailureBucket = classifyFailure(testCase, result, agentResponse)
 	return result
+}
+
+func labelled(label, text string) string {
+	if label == "" {
+		return text
+	}
+	return label + ": " + text
+}
+
+// collidingParts warns when two numeric parts resolve to the same value at
+// some accepted scale. Every number in the answer is a candidate for every
+// part, so one right number would then pass for two.
+func collidingParts(parts []dataPart, values []string) string {
+	for i := range parts {
+		for j := i + 1; j < len(parts); j++ {
+			if !numericAnswer(parts[i].Answer) || !numericAnswer(parts[j].Answer) {
+				continue
+			}
+			a, okA := numberFromString(values[i])
+			b, okB := numberFromString(values[j])
+			if !okA || !okB {
+				continue
+			}
+			for _, scale := range scalesOf(parts[i].Answer) {
+				if matchWithScales(a*scale, b, scalesOf(parts[j].Answer), 1e-9) {
+					return fmt.Sprintf("parts %s and %s share the value %s; one number in the answer can pass for both", parts[i].Label, parts[j].Label, values[i])
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func numericAnswer(rule answerRule) bool { return rule.Kind == "" || rule.Kind == "number" }
+
+func scalesOf(rule answerRule) []float64 {
+	if len(rule.AcceptScales) == 0 {
+		return []float64{1}
+	}
+	return rule.AcceptScales
+}
+
+// runThreadCase asks a case the way the console does. It opens a fresh
+// thread, sends the case's earlier turns through it so the history is real,
+// asks the scored prompt, and deletes the thread whatever happened: thread
+// rows are owner-scoped, and an eval that leaks them pollutes the demo it
+// measures. Latency, tokens and the budget are the scored turn's alone; the
+// earlier turns are setup.
+func runThreadCase(client *http.Client, profile endpointProfile, testCase dataEvalCase, result *runResult) (*gjagent.Response, int, int64, error) {
+	threadsURL := strings.TrimRight(profile.URL, "/") + "/threads"
+	raw, status, err := postJSON(client, threadsURL, profile.Headers, map[string]any{
+		"title": fmt.Sprintf("eval_%s_%d", testCase.ID, time.Now().UnixNano()),
+	})
+	if err != nil {
+		return nil, status, 0, fmt.Errorf("create thread: %w", err)
+	}
+	var created struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &created); err != nil || created.Data.ID == "" {
+		return nil, status, 0, fmt.Errorf("create thread: no id in %s", truncateText(string(raw), 200))
+	}
+	threadID := created.Data.ID
+	defer deleteThread(client, threadsURL+"/"+threadID, profile.Headers)
+
+	for _, turn := range testCase.Turns {
+		response, status, _, err := postThreadTurn(client, profile, threadID, turn)
+		if err != nil {
+			return nil, status, 0, fmt.Errorf("earlier turn: %w", err)
+		}
+		result.TurnStatuses = append(result.TurnStatuses, response.Status)
+	}
+	return postThreadTurn(client, profile, threadID, testCase.Prompt)
+}
+
+func postThreadTurn(client *http.Client, profile endpointProfile, threadID, prompt string) (*gjagent.Response, int, int64, error) {
+	body, _ := json.Marshal(map[string]any{"instruction": prompt, "thread_id": threadID})
+	raw, status, latency, err := postJSONTimed(client, profile.URL, profile.Headers, body)
+	if err != nil {
+		return nil, status, latency, err
+	}
+	var response gjagent.Response
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return nil, status, latency, fmt.Errorf("decode HTTP %d response: %w", status, err)
+	}
+	return &response, status, latency, nil
+}
+
+func deleteThread(client *http.Client, url string, headers map[string]string) {
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodDelete, url, nil)
+	if err != nil {
+		return
+	}
+	for key, value := range headers {
+		request.Header.Set(key, value)
+	}
+	if response, err := client.Do(request); err == nil {
+		response.Body.Close() //nolint:errcheck
+	} else {
+		fmt.Fprintf(os.Stderr, "WARNING: could not delete eval thread %s: %v\n", url, err)
+	}
 }
 
 // postAgent posts one instruction to the agent endpoint.
@@ -800,6 +1012,13 @@ type dataMetrics struct {
 	FailureBuckets           map[string]int     `json:"failure_buckets,omitempty"`
 	MeanConsistency          float64            `json:"mean_consistency"`
 	OracleErrorRuns          int                `json:"oracle_error_runs,omitempty"`
+	// Mechanism, read from every run rather than the majority verdicts: how
+	// many asked parts were answered right, what one question costs, and (for
+	// thread runs) how many worker questions the lead asked for it.
+	PartRecall        float64 `json:"part_recall,omitempty"`
+	MedianLatencyMS   int64   `json:"median_latency_ms,omitempty"`
+	MedianTotalTokens int64   `json:"median_total_tokens,omitempty"`
+	MedianDelegations float64 `json:"median_delegations,omitempty"`
 }
 
 func calculateDataMetrics(verdicts []dataCaseVerdict, results []runResult) dataMetrics {
@@ -838,7 +1057,38 @@ func calculateDataMetrics(verdicts []dataCaseVerdict, results []runResult) dataM
 	if len(buckets) != 0 {
 		out.FailureBuckets = buckets
 	}
+	var partsPassed, partsTotal int
+	var latencies, tokens, delegations []float64
+	for _, result := range results {
+		partsPassed += result.PartsPassed
+		partsTotal += result.PartsTotal
+		if result.Error != "" {
+			continue
+		}
+		latencies = append(latencies, float64(result.LatencyMS))
+		tokens = append(tokens, float64(result.Tokens.Total))
+		if result.Route == routeThread {
+			delegations = append(delegations, float64(result.Delegations))
+		}
+	}
+	out.PartRecall = ratio(partsPassed, partsTotal)
+	out.MedianLatencyMS = int64(median(latencies))
+	out.MedianTotalTokens = int64(median(tokens))
+	out.MedianDelegations = median(delegations)
 	return out
+}
+
+func median(values []float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	sorted := append([]float64(nil), values...)
+	sort.Float64s(sorted)
+	middle := len(sorted) / 2
+	if len(sorted)%2 == 1 {
+		return sorted[middle]
+	}
+	return (sorted[middle-1] + sorted[middle]) / 2
 }
 
 // applyDataAcceptance folds data gates into the acceptance verdict as a

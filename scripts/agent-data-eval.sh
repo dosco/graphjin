@@ -15,6 +15,11 @@
 #
 # Candidate phase exits 2 when a hard gate fails: ground-truth or method
 # recall regressing vs the baseline. Below-target recall (< 0.90) warns.
+#
+# --corpus lead scores the lead agent instead of the worker: every case runs
+# as a console thread turn (follow-ups replay their earlier turns), and
+# multi-part questions pass only when every part matches its oracle. Compare
+# lead reports only with lead reports.
 set -euo pipefail
 
 INVOKE_DIR="$PWD"
@@ -34,8 +39,9 @@ DEFAULT_LIMIT=10
 WEAK_ARM=""
 ALLOW_WEAK=0
 JWT_SECRET="saas-ops-demo-jwt-secret"
+CORPUS="worker"
 
-usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -49,6 +55,7 @@ while [ $# -gt 0 ]; do
     --port) PORT="$2"; shift 2 ;;
     --demo-path) DEMO_PATH="$2"; shift 2 ;;
     --default-limit) DEFAULT_LIMIT="$2"; shift 2 ;;
+    --corpus) CORPUS="$2"; shift 2 ;;
     --weak-arm) WEAK_ARM="$2"; shift 2 ;;
     --allow-weak) ALLOW_WEAK=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -127,6 +134,11 @@ abspath() {
 }
 BASELINE="$(abspath "$BASELINE")"
 REPORT="$(abspath "$REPORT")"
+# Lead and worker reports measure different things; keep their trend lines
+# apart unless the caller chose a ledger.
+if [ "$CORPUS" = "lead" ] && [ "$LEDGER" = "$ROOT/.graphjin-evals" ]; then
+  LEDGER="$ROOT/.graphjin-evals/lead"
+fi
 LEDGER="$(abspath "$LEDGER")"
 if [ -n "$BASELINE" ] && [ ! -f "$BASELINE" ]; then
   echo "baseline report not found: $BASELINE" >&2
@@ -229,7 +241,7 @@ run_eval() {
   }' >"$profiles"
 
   local args=(
-    -live -corpus "" -data-corpus "$ROOT/agent/testdata/data_eval_cases.json"
+    -live -corpus "" -data-corpus "$DATA_CORPUS"
     -prompt-registry "$ROOT/agent/skills.go,$ROOT/agent/agent.go"
     -profiles "$profiles" -phase "$phase" -model "$model"
     -graphjin-commit "$(git rev-parse HEAD)" -repeats "$REPEATS"
@@ -244,6 +256,7 @@ run_eval() {
     jq -r '"ground-truth recall: \(.data_metrics.ground_truth_recall // "n/a")  method recall: \(.data_metrics.method_recall // "n/a")",
       "by group: \(.data_metrics.ground_truth_recall_by_group // {} | to_entries | map("\(.key)=\(.value)") | join(" "))",
       "failure buckets: \(.data_metrics.failure_buckets // {} | to_entries | map("\(.key)=\(.value)") | join(" "))",
+      "part recall: \(.data_metrics.part_recall // "n/a")  median latency: \(.data_metrics.median_latency_ms // "n/a")ms  median tokens: \(.data_metrics.median_total_tokens // "n/a")  median delegations: \(.data_metrics.median_delegations // "n/a")",
       "hard pass: \(.acceptance.hard_pass)"' "$report"
   fi
   if [ "$gating" = "gating" ]; then
@@ -251,6 +264,12 @@ run_eval() {
   fi
   return 0
 }
+
+case "$CORPUS" in
+  worker) DATA_CORPUS="$ROOT/agent/testdata/data_eval_cases.json" ;;
+  lead) DATA_CORPUS="$ROOT/agent/testdata/lead_eval_cases.json" ;;
+  *) echo "--corpus must be worker or lead, got $CORPUS" >&2; exit 1 ;;
+esac
 
 echo "==> building server and eval runner"
 GOTOOLCHAIN=auto go build -o "$SERVER_BIN" ./cmd

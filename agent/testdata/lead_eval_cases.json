@@ -1,0 +1,464 @@
+[
+  {
+    "id": "lead-single-open-tickets",
+    "group": "single",
+    "route": "thread",
+    "prompt": "How many support tickets are currently open?",
+    "capability_profile": {
+      "role_class": "user",
+      "read_only": false,
+      "available_system_roots": []
+    },
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { support_tickets(where: {status: {eq: \"open\"}}) { count_id } }",
+      "extract": "support_tickets.0.count_id"
+    },
+    "answer": {
+      "kind": "number"
+    },
+    "method": {
+      "require_query_match": [
+        "count_"
+      ]
+    },
+    "budget": {
+      "max_actor_turns": 24,
+      "max_total_tokens": 400000
+    }
+  },
+  {
+    "id": "lead-single-soonest-renewal",
+    "group": "single",
+    "route": "thread",
+    "prompt": "Which account has the soonest upcoming renewal, and when is it?",
+    "capability_profile": {
+      "role_class": "user",
+      "read_only": false,
+      "available_system_roots": []
+    },
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { accounts(where: {status: {in: [\"active\", \"churn_risk\"]}}, order_by: {renewal_date: asc}, limit: 1) { name renewal_date } }",
+      "extract": "accounts.0.renewal_date",
+      "dimension_extract": "accounts.0.name"
+    },
+    "answer": {
+      "kind": "date"
+    },
+    "method": {
+      "require_query_match": [
+        "order_by"
+      ]
+    },
+    "budget": {
+      "max_actor_turns": 24,
+      "max_total_tokens": 400000
+    }
+  },
+  {
+    "id": "lead-multi-mrr-tickets-renewal",
+    "group": "multi",
+    "route": "thread",
+    "prompt": "What's our total monthly recurring revenue across all accounts, how many support tickets are open, and which account renews soonest?",
+    "capability_profile": {
+      "role_class": "user",
+      "read_only": false,
+      "available_system_roots": []
+    },
+    "expected_status": "answered",
+    "parts": [
+      {
+        "label": "mrr",
+        "oracle": {
+          "query": "query { accounts { sum_mrr_cents } }",
+          "extract": "accounts.0.sum_mrr_cents"
+        },
+        "answer": {
+          "kind": "number",
+          "accept_scales": [
+            1,
+            0.01
+          ]
+        },
+        "method": {
+          "require_query_match": [
+            "sum_mrr_cents"
+          ]
+        }
+      },
+      {
+        "label": "open_tickets",
+        "oracle": {
+          "query": "query { support_tickets(where: {status: {eq: \"open\"}}) { count_id } }",
+          "extract": "support_tickets.0.count_id"
+        },
+        "answer": {
+          "kind": "number"
+        },
+        "method": {
+          "require_query_match": [
+            "count_"
+          ]
+        }
+      },
+      {
+        "label": "soonest_renewal",
+        "oracle": {
+          "query": "query { accounts(where: {status: {in: [\"active\", \"churn_risk\"]}}, order_by: {renewal_date: asc}, limit: 1) { name renewal_date } }",
+          "extract": "accounts.0.renewal_date",
+          "dimension_extract": "accounts.0.name"
+        },
+        "answer": {
+          "kind": "date"
+        },
+        "method": {
+          "require_query_match": [
+            "order_by"
+          ]
+        }
+      }
+    ],
+    "budget": {
+      "max_actor_turns": 24,
+      "max_total_tokens": 400000
+    }
+  },
+  {
+    "id": "lead-multi-failed-usage",
+    "group": "multi",
+    "route": "thread",
+    "prompt": "How much money is tied up in failed invoices, and how many usage events have we recorded?",
+    "capability_profile": {
+      "role_class": "user",
+      "read_only": false,
+      "available_system_roots": []
+    },
+    "expected_status": "answered",
+    "parts": [
+      {
+        "label": "failed_invoices",
+        "oracle": {
+          "query": "query { invoices(where: {status: {eq: \"failed\"}}) { sum_amount_cents } }",
+          "extract": "invoices.0.sum_amount_cents"
+        },
+        "answer": {
+          "kind": "number",
+          "accept_scales": [
+            1,
+            0.01
+          ]
+        },
+        "method": {
+          "require_query_match": [
+            "sum_amount_cents"
+          ]
+        }
+      },
+      {
+        "label": "usage_events",
+        "oracle": {
+          "query": "query { usage_events { count_id } }",
+          "extract": "usage_events.0.count_id"
+        },
+        "answer": {
+          "kind": "number"
+        },
+        "method": {
+          "require_query_match": [
+            "count_"
+          ]
+        }
+      }
+    ],
+    "budget": {
+      "max_actor_turns": 24,
+      "max_total_tokens": 400000
+    }
+  },
+  {
+    "id": "lead-multi-top-and-churn",
+    "group": "multi",
+    "route": "thread",
+    "prompt": "Which account brings in the most monthly recurring revenue, and among churn-risk accounts, which one has the most revenue at stake?",
+    "capability_profile": {
+      "role_class": "user",
+      "read_only": false,
+      "available_system_roots": []
+    },
+    "expected_status": "answered",
+    "parts": [
+      {
+        "label": "top_account",
+        "oracle": {
+          "query": "query { accounts(order_by: {mrr_cents: desc}, limit: 1) { name mrr_cents } }",
+          "extract": "accounts.0.mrr_cents",
+          "dimension_extract": "accounts.0.name"
+        },
+        "answer": {
+          "kind": "number",
+          "accept_scales": [
+            1,
+            0.01
+          ]
+        },
+        "method": {
+          "require_query_match": [
+            "order_by"
+          ]
+        }
+      },
+      {
+        "label": "top_churn_risk",
+        "oracle": {
+          "query": "query { accounts(where: {status: {eq: \"churn_risk\"}}, order_by: {mrr_cents: desc}, limit: 1) { name mrr_cents } }",
+          "extract": "accounts.0.mrr_cents",
+          "dimension_extract": "accounts.0.name"
+        },
+        "answer": {
+          "kind": "number",
+          "accept_scales": [
+            1,
+            0.01
+          ]
+        },
+        "method": {
+          "require_query_match": [
+            "order_by"
+          ]
+        }
+      }
+    ],
+    "budget": {
+      "max_actor_turns": 24,
+      "max_total_tokens": 400000
+    }
+  },
+  {
+    "id": "lead-multi-snapshot",
+    "group": "multi",
+    "route": "thread",
+    "prompt": "Give me a quick snapshot: total MRR across all accounts, number of open support tickets, total amount of failed invoices, and total usage quantity.",
+    "capability_profile": {
+      "role_class": "user",
+      "read_only": false,
+      "available_system_roots": []
+    },
+    "expected_status": "answered",
+    "parts": [
+      {
+        "label": "mrr",
+        "oracle": {
+          "query": "query { accounts { sum_mrr_cents } }",
+          "extract": "accounts.0.sum_mrr_cents"
+        },
+        "answer": {
+          "kind": "number",
+          "accept_scales": [
+            1,
+            0.01
+          ]
+        },
+        "method": {
+          "require_query_match": [
+            "sum_mrr_cents"
+          ]
+        }
+      },
+      {
+        "label": "open_tickets",
+        "oracle": {
+          "query": "query { support_tickets(where: {status: {eq: \"open\"}}) { count_id } }",
+          "extract": "support_tickets.0.count_id"
+        },
+        "answer": {
+          "kind": "number"
+        },
+        "method": {
+          "require_query_match": [
+            "count_"
+          ]
+        }
+      },
+      {
+        "label": "failed_invoices",
+        "oracle": {
+          "query": "query { invoices(where: {status: {eq: \"failed\"}}) { sum_amount_cents } }",
+          "extract": "invoices.0.sum_amount_cents"
+        },
+        "answer": {
+          "kind": "number",
+          "accept_scales": [
+            1,
+            0.01
+          ]
+        },
+        "method": {
+          "require_query_match": [
+            "sum_amount_cents"
+          ]
+        }
+      },
+      {
+        "label": "usage_quantity",
+        "oracle": {
+          "query": "query { usage_events { sum_quantity } }",
+          "extract": "usage_events.0.sum_quantity"
+        },
+        "answer": {
+          "kind": "number"
+        },
+        "method": {
+          "require_query_match": [
+            "sum_quantity"
+          ]
+        }
+      }
+    ],
+    "budget": {
+      "max_actor_turns": 24,
+      "max_total_tokens": 400000
+    }
+  },
+  {
+    "id": "lead-followup-churn-combined",
+    "group": "followup",
+    "route": "thread",
+    "turns": [
+      "Which accounts are at churn risk right now?"
+    ],
+    "prompt": "What is their combined monthly recurring revenue?",
+    "capability_profile": {
+      "role_class": "user",
+      "read_only": false,
+      "available_system_roots": []
+    },
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { accounts(where: {status: {eq: \"churn_risk\"}}) { sum_mrr_cents } }",
+      "extract": "accounts.0.sum_mrr_cents"
+    },
+    "answer": {
+      "kind": "number",
+      "accept_scales": [
+        1,
+        0.01
+      ]
+    },
+    "method": {
+      "require_query_match": [
+        "sum_mrr_cents"
+      ]
+    },
+    "budget": {
+      "max_actor_turns": 24,
+      "max_total_tokens": 400000
+    }
+  },
+  {
+    "id": "lead-followup-renewal-failed",
+    "group": "followup",
+    "route": "thread",
+    "turns": [
+      "Which account has the soonest upcoming renewal?"
+    ],
+    "prompt": "What is the total amount of their failed invoices?",
+    "capability_profile": {
+      "role_class": "user",
+      "read_only": false,
+      "available_system_roots": []
+    },
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { invoices(where: {and: [{status: {eq: \"failed\"}}, {account_id: {eq: 1}}]}) { sum_amount_cents } }",
+      "extract": "invoices.0.sum_amount_cents"
+    },
+    "answer": {
+      "kind": "number",
+      "accept_scales": [
+        1,
+        0.01
+      ]
+    },
+    "method": {
+      "require_query_match": [
+        "sum_amount_cents"
+      ]
+    },
+    "budget": {
+      "max_actor_turns": 24,
+      "max_total_tokens": 400000
+    }
+  },
+  {
+    "id": "lead-followup-plan-average",
+    "group": "followup",
+    "route": "thread",
+    "turns": [
+      "Which plan tier brings in the most total monthly recurring revenue?"
+    ],
+    "prompt": "What is the average monthly recurring revenue of the accounts on that plan?",
+    "capability_profile": {
+      "role_class": "user",
+      "read_only": false,
+      "available_system_roots": []
+    },
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { accounts(where: {plan: {eq: \"enterprise\"}}) { avg_mrr_cents } }",
+      "extract": "accounts.0.avg_mrr_cents"
+    },
+    "answer": {
+      "kind": "number",
+      "tolerance_pct": 0.01,
+      "accept_scales": [
+        1,
+        0.01
+      ]
+    },
+    "method": {
+      "require_query_match": [
+        "avg_mrr_cents|sum_mrr_cents"
+      ]
+    },
+    "budget": {
+      "max_actor_turns": 24,
+      "max_total_tokens": 400000
+    }
+  },
+  {
+    "id": "lead-followup-top3-combined",
+    "group": "followup",
+    "route": "thread",
+    "turns": [
+      "Who are our three biggest accounts by monthly recurring revenue?"
+    ],
+    "prompt": "What's their combined monthly recurring revenue?",
+    "capability_profile": {
+      "role_class": "user",
+      "read_only": false,
+      "available_system_roots": []
+    },
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { accounts(where: {id: {in: [1, 2, 3]}}) { sum_mrr_cents } }",
+      "extract": "accounts.0.sum_mrr_cents"
+    },
+    "answer": {
+      "kind": "number",
+      "accept_scales": [
+        1,
+        0.01
+      ]
+    },
+    "method": {
+      "require_query_match": [
+        "sum_mrr_cents"
+      ]
+    },
+    "budget": {
+      "max_actor_turns": 24,
+      "max_total_tokens": 400000
+    }
+  }
+]

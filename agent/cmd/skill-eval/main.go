@@ -108,6 +108,14 @@ type runResult struct {
 	ExecutedQueries   []string `json:"executed_queries,omitempty"`
 	BudgetExceeded    bool     `json:"budget_exceeded,omitempty"`
 	FailureBucket     string   `json:"failure_bucket,omitempty"`
+	// Thread-route fields. TurnStatuses are the earlier turns' outcomes;
+	// Delegations is how many questions the lead handed to workers.
+	Route        string   `json:"route,omitempty"`
+	TurnStatuses []string `json:"turn_statuses,omitempty"`
+	Delegations  int      `json:"delegations,omitempty"`
+	Delegated    []string `json:"delegated_questions,omitempty"`
+	PartsPassed  int      `json:"parts_passed,omitempty"`
+	PartsTotal   int      `json:"parts_total,omitempty"`
 }
 
 type metrics struct {
