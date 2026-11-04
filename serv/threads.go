@@ -396,10 +396,6 @@ func (s *graphjinService) threadHistory(ctx context.Context, threadID string, tu
 		turn := gjagent.Turn{Role: role, Content: content}
 		if role == "assistant" {
 			turn.Status = stringMapValue(row, "status")
-			var ids []string
-			if raw := jsonMapString(row, "catalog_ids"); raw != "" && json.Unmarshal([]byte(raw), &ids) == nil {
-				turn.CatalogIDs = ids
-			}
 		}
 		history = append(history, turn)
 	}

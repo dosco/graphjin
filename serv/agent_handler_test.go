@@ -1011,7 +1011,7 @@ func TestAskGraphJinAgentMCPHistoryArg(t *testing.T) {
 	if len(runner.req.History) != 2 {
 		t.Fatalf("history turns = %d, want 2", len(runner.req.History))
 	}
-	if runner.req.History[1].Role != "assistant" || len(runner.req.History[1].CatalogIDs) != 1 {
+	if runner.req.History[1].Role != "assistant" || runner.req.History[1].Status != "answered" {
 		t.Fatalf("assistant turn malformed: %+v", runner.req.History[1])
 	}
 	if runner.req.Observer != nil {

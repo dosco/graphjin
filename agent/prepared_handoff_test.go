@@ -117,7 +117,6 @@ func TestPreparedHandoffEligibility(t *testing.T) {
 		empty      bool
 		unchecked  bool
 	}{
-		{name: "history", req: Request{History: []Turn{{Role: "user", Content: "previous request"}}}},
 		{name: "caller context", req: Request{Context: map[string]any{"report": "interpret me"}}},
 		{name: "changed revision", invalidate: true},
 		{name: "no prepared roots", empty: true},

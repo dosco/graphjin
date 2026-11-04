@@ -150,9 +150,6 @@ func TestGraphJinRuntimeCarriesDistillerPayloadAcrossAxStagePatch(t *testing.T) 
 	session, err := runtime.CreateSession(map[string]ax.Value{
 		"inputs": map[string]any{
 			"instruction": "inventory saved queries",
-			"history": []any{
-				map[string]any{"role": "assistant", "content": "FIRST-TRAIL-123"},
-			},
 		},
 	}, map[string]ax.Value{
 		"reservedNames": []any{"inputs", "executorRequest", "distilledContext"},
@@ -177,7 +174,7 @@ func TestGraphJinRuntimeCarriesDistillerPayloadAcrossAxStagePatch(t *testing.T) 
 		},
 	}, nil)
 	visible := mapValue(session.Inspect(nil))
-	for _, key := range []string{runtimeDistilledContextKey, runtimeExecutorRequestKey, runtimeHistoryKey} {
+	for _, key := range []string{runtimeDistilledContextKey, runtimeExecutorRequestKey} {
 		if got := fmt.Sprint(visible[key]); got != runtimeHandoffRedaction(key) {
 			t.Fatalf("runtime inspection %s = %q, want redacted handoff metadata", key, got)
 		}
@@ -186,7 +183,7 @@ func TestGraphJinRuntimeCarriesDistillerPayloadAcrossAxStagePatch(t *testing.T) 
 		t.Fatalf("distilled callback = %+v, want model-narrowed evidence", distilled)
 	}
 
-	step := mapValue(session.Execute(`await final(graphjinExecutorRequest, {ids: graphjinDistilledContext.saved_query_ids, trail: graphjinHistory[0].content});`, nil))
+	step := mapValue(session.Execute(`await final(graphjinExecutorRequest, {ids: graphjinDistilledContext.saved_query_ids});`, nil))
 	payload := step
 	if normalized := mapValue(step["completion_payload"]); normalized != nil {
 		payload = normalized
@@ -196,7 +193,7 @@ func TestGraphJinRuntimeCarriesDistillerPayloadAcrossAxStagePatch(t *testing.T) 
 		t.Fatalf("runtime step = %+v", step)
 	}
 	evidence := mapValue(args[1])
-	if len(anySlice(evidence["ids"])) != 1 || strings.TrimSpace(fmt.Sprint(evidence["trail"])) != "FIRST-TRAIL-123" {
+	if len(anySlice(evidence["ids"])) != 1 {
 		t.Fatalf("runtime step = %+v", step)
 	}
 }
@@ -410,41 +407,6 @@ func TestGraphJinRuntimeRunsNarrowSavedQueryContinuationBeforeFinal(t *testing.T
 	}
 	if runtimeCompletionType(resumed) == "final" || !strings.Contains(fmt.Sprint(normalizeValue(resumed)), "Northstar") {
 		t.Fatalf("continuation result = %+v, want live execution evidence returned to the next actor step", resumed)
-	}
-}
-
-func TestGraphJinRuntimeRequiresCodeReadForHistoryDependentFollowUp(t *testing.T) {
-	runtime := newGraphJinCodeRuntime(nil, nil, nil, nil)
-	session, err := runtime.CreateSession(map[string]ax.Value{
-		"inputs": map[string]any{
-			"instruction": "What is its amount?",
-			"history": []any{
-				map[string]any{"role": "assistant", "content": "FIRST-TRAIL-RUNTIME-ONLY"},
-			},
-		},
-	}, map[string]ax.Value{
-		"reservedNames": []any{"inputs", "executorRequest", "distilledContext"},
-	})
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	defer session.Close()
-
-	session.Execute(`await final("continue the prior task", {});`, nil)
-	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
-
-	guarded := mapValue(session.Execute(`await final("missing trail", {});`, nil))
-	guardResult := mapValue(guarded["result"])
-	if stringFromMap(guardResult, "graphjin_protocol") != "history_read_required" {
-		t.Fatalf("history-blind executor step = %+v, want history_read_required", guarded)
-	}
-	history := anySlice(guardResult["history"])
-	if len(history) != 1 || stringFromMap(mapValue(history[0]), "content") != "FIRST-TRAIL-RUNTIME-ONLY" {
-		t.Fatalf("automatic history recovery = %+v", guardResult)
-	}
-	accepted := mapValue(session.Execute(`await final("repeat marker", {marker: "FIRST-TRAIL-RUNTIME-ONLY"});`, nil))
-	if runtimeCompletionType(accepted) != "final" {
-		t.Fatalf("history-grounded executor final = %+v, want final", accepted)
 	}
 }
 

@@ -37,12 +37,10 @@ func TestProgramExamplesBudget(t *testing.T) {
 }
 
 // TestProgramExamplesAreValidPrograms pins each example's javascriptCode to
-// the runtime's actual contract: it compiles under goja, reaches final(), and
-// the multi-turn one reads inputs.history — the exact behavior the
-// history_read_required guard demands of real programs.
+// the runtime's actual contract: it compiles under goja and reaches final().
+// The worker has no conversation, so no example may read inputs.history.
 func TestProgramExamplesAreValidPrograms(t *testing.T) {
 	examples := executorTrajectoryExamples()
-	sawHistory := false
 	for index, raw := range examples {
 		example, _ := raw.(map[string]any)
 		output, _ := example["output"].(map[string]any)
@@ -58,7 +56,7 @@ func TestProgramExamplesAreValidPrograms(t *testing.T) {
 			t.Fatalf("example %d never finalizes", index)
 		}
 		if strings.Contains(code, "inputs.history") {
-			sawHistory = true
+			t.Fatalf("example %d reads inputs.history, which the worker no longer has", index)
 		}
 		input, _ := example["input"].(map[string]any)
 		for _, key := range []string{"input", "executorRequest", "contextMetadata", "actionLog"} {
@@ -73,9 +71,6 @@ func TestProgramExamplesAreValidPrograms(t *testing.T) {
 				t.Fatalf("example %d names benchmark table %q", index, forbidden)
 			}
 		}
-	}
-	if !sawHistory {
-		t.Fatal("no example demonstrates reading inputs.history")
 	}
 }
 

@@ -194,9 +194,6 @@ type discoveryState struct {
 	// full repair explanation, so a looping model gets the corrected query
 	// without the paragraph a second time.
 	remoteJoinRepairOffered map[string]bool
-	// referentRewriteNoticed keeps the referent-binding violation record to one
-	// per query identity; the rewrite itself repeats freely.
-	referentRewriteNoticed map[string]bool
 	// remoteJoinNoticed keeps the violation record to one per root; the
 	// interception itself repeats, because the intercepted call cannot succeed.
 	remoteJoinNoticed map[string]bool
@@ -213,23 +210,8 @@ type discoveryState struct {
 	// refusal on the mismatch itself makes the third attempt land regardless of
 	// phrasing, which is what "two corrections, then the caller decides" meant.
 	observedValueStrikes map[string]int
-	// historyReferentRejected records the operations already refused for not
-	// scoping to the retained subject, by identity.
-	//
-	// A one-shot flag was wrong here. It let the next attempt through whatever it
-	// contained, and the measured behaviour was the model re-sending the identical
-	// unscoped query and answering the unscoped question — the escape hatch became
-	// the default path. Keying on identity keeps the hatch for a genuinely different
-	// operation while refusing a byte-identical retry, which is the same standard
-	// the duplicate-query guards already apply.
-	historyReferentRejected map[string]int
-	// history is bounded, untrusted caller/task context. It never satisfies a
-	// discovery guard, but an explicit request to repeat a prior answered turn
-	// can safely recover from an actor-loop failure after this run has performed
-	// its own model-driven discovery.
-	history []Turn
 	// groundingCorpus accumulates this run's observed evidence (instruction,
-	// history, tool arguments, tool results) for the answer-grounding check.
+	// tool arguments, tool results) for the answer-grounding check.
 	groundingCorpus   strings.Builder
 	groundingOverflow bool
 }
@@ -347,7 +329,7 @@ func newDiscoveryState(instruction string) *discoveryState {
 
 func (r *protocolRuntime) Seed(ctx context.Context) (any, error) {
 	args := map[string]any{
-		"search":  seedSearchText(r.state.instruction, r.state.history),
+		"search":  r.state.instruction,
 		"explain": true,
 		"limit":   r.seedLimit,
 	}
@@ -595,42 +577,6 @@ func attachCatalogIDRepairNotice(out any, repairs map[string]string) any {
 		"resolved":    served,
 	}
 	return result
-}
-
-// attachConfirmationReadNotice rides a successful saved-query result when the
-// run's whole instruction is a bare confirmation ("Yes, go ahead and set that
-// up.") and no write has happened yet. Recorded runs answered such turns with
-// the saved-query shortcut the instructions advertise — and finalized a ticket
-// count as proof of a watch that was never created: every confirmation episode
-// that reached for a saved query failed, every one that authored the mutation
-// passed. The notice is not a violation and blocks nothing, for the same
-// registry reason as the watch normalization below — and because a
-// confirmation can legitimately confirm a proposed read, which a "mutation
-// required" gate would deadlock.
-func attachConfirmationReadNotice(out any) any {
-	instruction := `This turn is a bare confirmation of an earlier proposal, and a saved query is a read. If the proposal was an action — creating a watch, changing data — this read has not performed it: author the proposed mutation with execute_graphql and execute it before finalizing. If the proposal was this read itself, final from these rows.`
-	recovery := map[string]any{
-		"kind":        "confirmation_read",
-		"code":        "confirmation_read",
-		"instruction": instruction,
-	}
-	switch res := out.(type) {
-	case executeResult:
-		res.Recovery = recovery
-		res.Guidance = instruction
-		return res
-	case *executeResult:
-		res.Recovery = recovery
-		res.Guidance = instruction
-		return res
-	case map[string]any:
-		res = cloneAnyMap(res)
-		res["recovery"] = recovery
-		res["guidance"] = instruction
-		return res
-	default:
-		return attachNoticeToForeignResult(out, recovery, instruction)
-	}
 }
 
 // attachNoticeToForeignResult is every notice switch's default branch: the
@@ -963,29 +909,6 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 		r.state.finishAction(action, "execute_saved_query", args, nil, err)
 		return nil, err
 	}
-	// A saved metric carries its own fixed scope. When the follow-up inherits a
-	// subject from prior turns and neither the saved query nor the supplied
-	// variables bind it, running it answers a broader question than the one asked —
-	// and unlike raw GraphQL the caller cannot narrow it by editing the query, so
-	// the repair has to point at authoring instead.
-	// The strike cap exists so a run is never stranded on a guard that guessed
-	// wrong. But when the retained subject names a table this run knows, the
-	// scoped raw query the refusal asks for actually exists — and the cap's
-	// let-through was measured trading it for a wrong answer: same-invoice
-	// episodes ran the unscoped saved query on the third try and reported the
-	// whole table's total as invoice 10's amount. A bindable subject keeps the
-	// refusal standing, the same way a clear-winner value repair does.
-	if refs := unresolvedHistoryReferent(r.state.instruction, r.state.savedQueryGraphQLFor(name), args, r.state.history); len(refs) != 0 &&
-		(r.state.referentBindableToKnownTable(refs) || r.state.refuseUnscopedReferent("saved:"+strings.ToLower(strings.TrimSpace(name)))) {
-		r.state.recordReferentRejection("saved:" + strings.ToLower(strings.TrimSpace(name)))
-		described := describeEntityReferences(refs)
-		err := fmt.Errorf("this call did NOT execute: this follow-up is scoped to %s, but saved query %q does not filter on it and a saved query cannot be narrowed at call time. Author a query scoped to %s with execute_graphql and execute it once", described, name, described)
-		details := map[string]any{"retained_subject": refs, "name": name, "fault": "unscoped_saved_query_for_referent"}
-		r.state.addViolation("history_referent_unresolved", err.Error(), "execute_saved_query", true, details)
-		action := r.state.startAction("model", "execute_saved_query", args)
-		r.state.finishAction(action, "execute_saved_query", args, nil, err)
-		return nil, err
-	}
 	executionKey := savedQueryExecutionKey(args)
 	if cached, ok := r.state.cachedExecution(executionKey); ok {
 		if _, rejected := pendingCachedExecutionRejection(r.state, "", true); rejected {
@@ -1009,9 +932,6 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 	// rides the return value but not the action trail reaches the model and
 	// leaves no evidence it ever fired, which cost a whole benchmark run to
 	// discover.
-	if err == nil && instructionCarriesNoSubject(r.state.instruction) && !r.state.mutationSucceeded {
-		out = attachConfirmationReadNotice(out)
-	}
 	r.state.finishAction(action, "execute_saved_query", args, out, err)
 	if err == nil {
 		r.state.recordExecution("execute_saved_query", args, out)
@@ -1027,11 +947,6 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 			}
 			r.state.emptySearchStreak = 0
 			r.state.emptyDetailStreak = 0
-			// The retained-subject guard fires on this path too, so it has to be
-			// dischargeable here. Discharge lived only in the raw-GraphQL path, which
-			// meant a follow-up correctly rescoped through a saved query stayed blocked
-			// on a requirement it had already met.
-			r.state.resolveSuccessfulSavedQueryViolations()
 		}
 		// A rejected out-of-order attempt is recoverable inside the same actor
 		// run. Once the model has inspected the exact detail and the governed
@@ -1065,7 +980,6 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	}
 	normalizedWatchQuery := ""
 	rewrittenJoinQuery, rewrittenJoinRoot, rewrittenJoinParent := "", "", ""
-	boundReferentQuery, boundReferent := "", referentBinding{}
 	if r.state.hasPolicyFinalBlockingViolation() {
 		out := r.state.policyFinalExecutionResult()
 		action := r.state.startAction("model", "execute_graphql", args)
@@ -1256,52 +1170,6 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 				offerErr := fmt.Errorf("%s", thrown)
 				r.state.finishAction(action, "execute_graphql", args, nil, offerErr)
 				return nil, offerErr
-			}
-		}
-		// A follow-up that points at "it" or "that account" has to inherit its
-		// subject from prior turns. When the retained subject is known and the
-		// authored query binds none of it, the answer will describe the whole table
-		// instead of the one row asked about. Name the subject once; which filter
-		// path reaches it is the model's decision, not this guard's.
-		if refs := unresolvedHistoryReferent(r.state.instruction, query, args, r.state.history); len(refs) != 0 {
-			if rewritten, binding, ok := r.referentScopedRewrite(ctx, query, refs); ok {
-				// The binding is mechanical — the subject and id are the user's
-				// own words, the column is the catalog's — so the scoped query
-				// executes instead of being described. The refusal was measured
-				// on this exact shape and lost: its "execute the unscoped query
-				// again and it will run" escape hatch is the first thing a weak
-				// model reaches for, and the let-through's whole-table number
-				// was then reported as the subject's in four of six stable
-				// multi-turn losses.
-				identity := normalizeGraphQLIdentity(query)
-				if !r.state.referentRewriteNoticed[identity] {
-					if r.state.referentRewriteNoticed == nil {
-						r.state.referentRewriteNoticed = map[string]bool{}
-					}
-					r.state.referentRewriteNoticed[identity] = true
-					err := fmt.Errorf("protocol violation: this follow-up inherits its subject from prior turns, which retained %s, but the query filtered on none of it. It executed re-scoped to %s via %s.%s as: %s", describeEntityReferences(refs), binding.Ref.String(), binding.Root, binding.Column, rewritten)
-					r.state.addViolation("history_referent_unresolved", err.Error(), "execute_graphql", true,
-						map[string]any{"retained_subject": refs, "fault": "unresolved_history_referent", "repaired_query": rewritten})
-				}
-				query = rewritten
-				args = cloneAnyMap(args)
-				args["query"] = rewritten
-				boundReferentQuery, boundReferent = rewritten, binding
-			} else if r.state.refuseUnscopedReferent(normalizeGraphQLIdentity(query)) {
-				// Thrown, and the strike-cap escape hatch is no longer
-				// advertised in the text — "execute it again and it will run"
-				// was measured as the first thing weak models did, and the
-				// let-through's whole-table number was then reported as the
-				// subject's. The cap itself survives so an inapplicable
-				// subject cannot strand the run.
-				r.state.recordReferentRejection(normalizeGraphQLIdentity(query))
-				described := describeEntityReferences(refs)
-				err := fmt.Errorf("this query did NOT execute: this follow-up inherits its subject from prior turns, which retained %s, but the query filters on none of it. Add the where clause that scopes this query to %s, then execute it once", described, described)
-				details := map[string]any{"retained_subject": refs, "fault": "unresolved_history_referent"}
-				r.state.addViolation("history_referent_unresolved", err.Error(), "execute_graphql", true, details)
-				action := r.state.startAction("model", "execute_graphql", args)
-				r.state.finishAction(action, "execute_graphql", args, nil, err)
-				return nil, err
 			}
 		}
 	}
@@ -1612,9 +1480,6 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	}
 	if rewrittenJoinQuery != "" && err == nil && !executionFailed(out) {
 		out = attachRemoteJoinRewriteNotice(out, rewrittenJoinQuery, rewrittenJoinRoot, rewrittenJoinParent)
-	}
-	if boundReferentQuery != "" && err == nil && !executionFailed(out) {
-		out = attachReferentBindingNotice(out, boundReferentQuery, boundReferent)
 	}
 	// An engine failure that produced no usable data is thrown: the query ran
 	// and returned nothing but errors, and a {data, errors} value is read as
@@ -2670,18 +2535,6 @@ func (s *discoveryState) requiredSavedQueryExecution() (name string, explicit bo
 	if name == "" {
 		name = s.unambiguousSavedQueryForLiveData()
 	}
-	// A follow-up that inherits its subject from prior turns cannot be served
-	// by a saved query that does not bind that subject: the referent guard
-	// refuses exactly that execution, so demanding it here wedged runs between
-	// two contradictory requirements. Episode same-invoice-amount rep3 authored
-	// the correct scoped query and was blocked five times by this demand for a
-	// saved query the other guard would never let run.
-	if name != "" && !explicit {
-		if refs := unresolvedHistoryReferent(s.instruction, "-", nil, s.history); len(refs) != 0 &&
-			!queryBindsReference(s.savedQueryGraphQLFor(name), nil, refs) {
-			return "", false
-		}
-	}
 	return name, explicit
 }
 
@@ -3182,24 +3035,6 @@ func (s *discoveryState) resolveSavedQueryDetailViolation(name string) {
 	}
 }
 
-// resolveSuccessfulSavedQueryViolations discharges the guards a governed
-// saved-query execution genuinely satisfies. It is deliberately narrower than the
-// raw-GraphQL list: a saved query succeeding does not retroactively justify raw
-// GraphQL authored without discovery.
-func (s *discoveryState) resolveSuccessfulSavedQueryViolations() {
-	for i := range s.violations {
-		violation := &s.violations[i]
-		if violation.Code != "history_referent_unresolved" {
-			continue
-		}
-		violation.Blocking = false
-		if violation.Details == nil {
-			violation.Details = map[string]any{}
-		}
-		violation.Details["resolved"] = true
-	}
-}
-
 func (s *discoveryState) resolveSuccessfulExecutionViolations() {
 	for i := range s.violations {
 		violation := &s.violations[i]
@@ -3211,7 +3046,7 @@ func (s *discoveryState) resolveSuccessfulExecutionViolations() {
 			// blocked at finalization. That is what took multi-turn from 1/21 to 0/21
 			// between two runs of the same suite — the guard was right about the
 			// defect and wrong about being unrecoverable.
-			"history_referent_unresolved", "watch_query_invalid", "observed_value_mismatch", "remote_join_path_required",
+			"watch_query_invalid", "observed_value_mismatch", "remote_join_path_required",
 			// The corrected read is handed over with the guard, so a caller
 			// that executes it has done exactly what was asked. Without this
 			// the run would satisfy the guard, read the file, and still be
@@ -3241,7 +3076,6 @@ func (s *discoveryState) finalize(resp Response) Response {
 	resp = s.recoverResolvedTerminalRefusalResponse(resp)
 	resp = s.recoverCompletionLatchResponse(resp)
 	resp = s.recoverLostExecutionResponse(resp)
-	resp = s.recoverLostHistoryResponse(resp)
 	if resp.Status == StatusAnswered {
 		switch {
 		case !s.seedOK:
@@ -3375,50 +3209,6 @@ func (s *discoveryState) recoverCompletionLatchResponse(resp Response) Response 
 	return resp
 }
 
-// recoverLostHistoryResponse handles a narrow RLM terminal failure: the user
-// explicitly asks to repeat a prior answered turn, this run re-established
-// model-driven catalog evidence, but the actor loops before forwarding the
-// already-loaded trail to the responder. Prior turns remain context rather
-// than protocol evidence; this only returns their content verbatim and never
-// authorizes a query or side effect.
-func (s *discoveryState) recoverLostHistoryResponse(resp Response) Response {
-	if s == nil || resp.Status != StatusError || !s.seedOK || !s.modelDiscoveryAction ||
-		s.hasBlockingViolation() || resp.Refusal != nil || !explicitHistoryRepeatRequest(s.instruction) ||
-		!onlyActorLoopError(resp.Errors) {
-		return resp
-	}
-	for i := len(s.history) - 1; i >= 0; i-- {
-		turn := s.history[i]
-		if !strings.EqualFold(strings.TrimSpace(turn.Role), "assistant") || strings.TrimSpace(turn.Content) == "" {
-			continue
-		}
-		if status := strings.TrimSpace(turn.Status); status != "" && status != StatusAnswered {
-			continue
-		}
-		resp.Status = StatusAnswered
-		resp.Answer = strings.TrimSpace(turn.Content)
-		resp.Errors = nil
-		resp.Refusal = nil
-		resp.Next = nil
-		return resp
-	}
-	return resp
-}
-
-func explicitHistoryRepeatRequest(instruction string) bool {
-	lower := strings.ToLower(strings.TrimSpace(instruction))
-	repeat := strings.Contains(lower, "repeat") || strings.Contains(lower, "restate") || strings.Contains(lower, "echo")
-	if !repeat {
-		return false
-	}
-	for _, phrase := range []string{"prior", "previous", "earlier", "recent trail", "task trail", "history", "last turn", "prior agent run"} {
-		if strings.Contains(lower, phrase) {
-			return true
-		}
-	}
-	return false
-}
-
 func onlyActorLoopError(errors []ErrorInfo) bool {
 	if len(errors) != 1 {
 		return false
@@ -3512,45 +3302,6 @@ func blockResponse(resp Response) Response {
 		resp.Answer = "I could not answer because the required GraphJin discovery protocol was not completed."
 	}
 	return resp
-}
-
-// refuseUnscopedReferent decides whether an operation that ignores the retained
-// subject is refused.
-//
-// The first one always is. A byte-identical retry is refused again, because
-// repeating the same omission is not a decision to query every row — measured
-// behaviour was exactly that retry, answering the unscoped question. A genuinely
-// different operation is allowed through after the first refusal: re-authoring is
-// evidence the message was considered, and the sampled subject could be wrong, so
-// the run must never be left with no way forward.
-// maxUnscopedReferentRefusals bounds how often one operation may be refused for
-// ignoring the retained subject.
-//
-// Refusing an identical retry indefinitely was worse than letting it through.
-// Measured over a run, the guard fired 31 times across 7 episodes — the model
-// resent the same unscoped query until the step budget was gone, so a wrong answer
-// became a guaranteed timeout with nothing to show. Being told twice is the useful
-// part; a third refusal only spends the caller's remaining steps.
-const maxUnscopedReferentRefusals = 2
-
-func (s *discoveryState) refuseUnscopedReferent(identity string) bool {
-	if s == nil {
-		return false
-	}
-	if identity != "" && s.historyReferentRejected[identity] > 0 {
-		return s.historyReferentRejected[identity] < maxUnscopedReferentRefusals
-	}
-	return len(s.historyReferentRejected) == 0
-}
-
-func (s *discoveryState) recordReferentRejection(identity string) {
-	if s == nil || identity == "" {
-		return
-	}
-	if s.historyReferentRejected == nil { // count, so the refusal can be bounded
-		s.historyReferentRejected = map[string]int{}
-	}
-	s.historyReferentRejected[identity]++
 }
 
 // recordObservedValueLookup captures enough to localise a silent lookup without

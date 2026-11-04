@@ -12,7 +12,7 @@ import (
 // ran" and "the conclusion is true". A failed execution steers the model back
 // onto catalog discovery and approved saved queries inside the same run, and an
 // answered response may cite field-shaped identifiers only when they appeared
-// in this run's observed tool evidence (instruction, history, arguments, and
+// in this run's observed tool evidence (instruction, arguments, and
 // results). Both are deterministic server-side guards, not prompt guidance.
 
 const (

@@ -11,7 +11,6 @@ const (
 	runtimeLastExecutionKey    = "graphjinLastExecution"
 	runtimeDistilledContextKey = "graphjinDistilledContext"
 	runtimeExecutorRequestKey  = "graphjinExecutorRequest"
-	runtimeHistoryKey          = "graphjinHistory"
 )
 
 const runtimeResultRecoveryInstructions = `Number.toLocaleString and Intl formatting are unsupported in this Goja runtime. For currency, use (Number(cents) / 100).toFixed(2) and let the answer stage render it. If a query succeeds but later JavaScript fails, its actual result remains at globalThis.graphjinLastExecution.result.data. Read that result and finalize without another catalog lookup or query. Never substitute a placeholder number for unavailable data.`
@@ -102,7 +101,6 @@ func (r *graphJinCodeRuntime) CreateSession(globals map[string]ax.Value, options
 		clarificationNudge:     r.clarificationNudge,
 		originalInstruction:    stringFromMap(inputs, "instruction"),
 		seedContext:            normalizeValue(context[protocolContextKey]),
-		originalHistory:        normalizeValue(inputs["history"]),
 	}, nil
 }
 
@@ -117,43 +115,23 @@ type graphJinCodeSession struct {
 	clarificationNudge     func() string
 	originalInstruction    string
 	seedContext            any
-	originalHistory        any
 	executorRequest        any
 	distilledContext       any
 	explicitHandoff        bool
 	executorStage          bool
 	handoffReadRequired    bool
 	handoffRead            bool
-	historyReadRequired    bool
-	historyRead            bool
 }
 
 func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) ax.Value {
-	readsHistory := referencesRuntimeHistory(code)
 	readsHandoff := referencesRuntimeHandoff(code)
 	usesGraphJinCallable := referencesGraphJinCallable(code)
-	if s.executorStage && s.historyReadRequired && !s.historyRead && !readsHistory {
-		// The condition and the safe recovery are both known in Go. Surface the
-		// bounded prior turns once, mark the prerequisite satisfied, and let the
-		// next actor step use the returned value. Requiring a weak model to spell a
-		// magic global name merely turns a deterministic handoff into a retry loop.
-		s.historyRead = true
-		return map[string]any{
-			"kind": "result",
-			"result": map[string]any{
-				"graphjin_protocol": "history_read_required",
-				"message":           "This follow-up depends on prior turns. GraphJin supplied the bounded history below; use its most recent relevant content, then re-establish this run's catalog evidence.",
-				"history":           normalizeValue(s.originalHistory),
-				"next":              "Resolve the referenced entity from history, inspect its exact catalog detail, and execute the required query.",
-			},
-		}
-	}
 	if s.executorStage && s.handoffReadRequired && !s.handoffRead && !readsHandoff && (!usesGraphJinCallable || s.explicitHandoff) {
 		return map[string]any{
 			"kind": "result",
 			"result": map[string]any{
 				"graphjin_protocol": "runtime_handoff_read_required",
-				"message":           "GraphJin handoff evidence is available only in the JavaScript runtime. Read and narrow globalThis.graphjinDistilledContext (or the relevant graphjinHistory/graphjinLastExecution binding) before calling tools or finalizing.",
+				"message":           "GraphJin handoff evidence is available only in the JavaScript runtime. Read and narrow globalThis.graphjinDistilledContext (or the graphjinLastExecution binding) before calling tools or finalizing.",
 				"next":              "Use the runtime-only handoff to choose the exact catalog id, then perform this run's required GraphJin discovery and execution calls.",
 			},
 		}
@@ -164,9 +142,6 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 	// step instead of requiring another catalog lookup or query. Snapshot and
 	// inspection redaction keep the rows out of staged prompts.
 	s.refreshLastExecutionBinding(options)
-	if readsHistory {
-		s.historyRead = true
-	}
 	if readsHandoff {
 		s.handoffRead = true
 	}
@@ -299,7 +274,6 @@ func (s *graphJinCodeSession) SnapshotGlobals(options map[string]ax.Value) ax.Va
 
 func (s *graphJinCodeSession) PatchGlobals(snapshot ax.Value, options map[string]ax.Value) ax.Value {
 	s.executorStage = true
-	s.historyReadRequired = hasRuntimeHandoffValue(s.originalHistory)
 	distilled := runtimeBindingFromSnapshot(snapshot, "distilledContext")
 	if distilled == nil {
 		distilled = s.distilledContext
@@ -314,9 +288,6 @@ func (s *graphJinCodeSession) PatchGlobals(snapshot ax.Value, options map[string
 	if request != nil {
 		snapshot = snapshotWithRuntimeBinding(snapshot, runtimeExecutorRequestKey, normalizeValue(request))
 	}
-	if hasRuntimeHandoffValue(s.originalHistory) {
-		snapshot = snapshotWithRuntimeBinding(snapshot, runtimeHistoryKey, s.originalHistory)
-	}
 	if s.lastExecution != nil {
 		if execution := s.lastExecution(); execution != nil {
 			snapshot = snapshotWithRuntimeBinding(snapshot, runtimeLastExecutionKey, normalizeValue(execution))
@@ -330,16 +301,11 @@ func (s *graphJinCodeSession) PatchGlobals(snapshot ax.Value, options map[string
 	return redactRuntimeHandoffBindings(s.base.PatchGlobals(snapshot, options))
 }
 
-func referencesRuntimeHistory(code string) bool {
-	return strings.Contains(code, runtimeHistoryKey) || strings.Contains(code, "inputs.history")
-}
-
 func referencesRuntimeHandoff(code string) bool {
 	for _, name := range []string{
 		"inputs.context",
 		runtimeLastExecutionKey,
 		runtimeDistilledContextKey,
-		runtimeHistoryKey,
 	} {
 		if strings.Contains(code, name) {
 			return true
@@ -385,20 +351,6 @@ func referencesCallableInvocation(code, name string) bool {
 
 func isJavaScriptIdentifierByte(value byte) bool {
 	return value == '_' || value == '$' || value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9'
-}
-
-func instructionNeedsHistory(instruction string) bool {
-	lower := strings.ToLower(strings.TrimSpace(instruction))
-	for _, phrase := range []string{
-		"continue", "follow up", "follow-up", "repeat", "again",
-		"recent trail", "prior trail", "previous", "earlier",
-		"since then", "what changed", "last time",
-	} {
-		if strings.Contains(lower, phrase) {
-			return true
-		}
-	}
-	return false
 }
 
 func runtimeCompletionType(value any) string {
@@ -564,7 +516,6 @@ func redactRuntimeHandoffBindings(snapshot ax.Value) ax.Value {
 		runtimeLastExecutionKey,
 		runtimeDistilledContextKey,
 		runtimeExecutorRequestKey,
-		runtimeHistoryKey,
 	}
 	for _, key := range hidden {
 		if _, ok := out[key]; ok {

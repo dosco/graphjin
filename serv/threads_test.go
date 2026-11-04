@@ -84,8 +84,7 @@ func TestThreadTurnsPersistHistoryAndScope(t *testing.T) {
 	}
 	history := runner.req.History
 	if len(history) != 2 || history[0].Role != "user" || history[0].Content != "What was revenue last month?" ||
-		history[1].Role != "assistant" || history[1].Status != "answered" ||
-		len(history[1].CatalogIDs) != 1 || history[1].CatalogIDs[0] != "table:orders" {
+		history[1].Role != "assistant" || history[1].Status != "answered" {
 		t.Fatalf("second turn history = %+v", history)
 	}
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -167,5 +168,53 @@ func TestThreadTurnRunsTheLeadOverStatelessWorkers(t *testing.T) {
 	// Each question: lead start, worker step, lead finish.
 	if len(delegates) != 2 || delegates[1] != 3 || delegates[2] != 3 {
 		t.Fatalf("action events per question = %v", delegates)
+	}
+}
+
+// One self-contained question runs the worker alone; a request that carries
+// history is a conversation and runs the lead, whose workers never see it.
+func TestStatelessRequestsRouteHistoryToTheLead(t *testing.T) {
+	worker := &statelessWorker{answers: map[string]string{
+		"How many orders does Harbor Cafe have?": "Harbor Cafe has 3 orders",
+		"how many customers?":                    "There are 4 customers",
+	}}
+	prev := newGraphJinAgentRunner
+	newGraphJinAgentRunner = func(*graphjinService, gjagent.Config, ...gjagent.Option) (graphjinAgentRunner, error) {
+		return worker, nil
+	}
+	t.Cleanup(func() { newGraphJinAgentRunner = prev })
+	model := &leadModelClient{responses: []ax.Value{
+		leadAsks("How many orders does Harbor Cafe have?"),
+		leadAnswers("Harbor Cafe has 3 orders."),
+	}}
+	hs := newAgentHTTPTestService(&Config{Serv: Serv{Agent: AgentConfig{Enabled: true}}})
+	hs.Load().(*graphjinService).agentClientFactory = func(gjagent.Config) (ax.AIClient, error) { return model, nil }
+	post := func(body string) map[string]any {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		hs.Agent(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, routeAgent, strings.NewReader(body)))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+		}
+		var out map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return out
+	}
+
+	plain := post(`{"instruction":"how many customers?"}`)
+	if plain["answer"] != "There are 4 customers" || len(model.requests) != 0 {
+		t.Fatalf("plain question = %v after %d lead calls, want the worker alone", plain, len(model.requests))
+	}
+
+	followUp := post(`{"instruction":"how many orders do they have?","history":[{"role":"user","content":"Tell me about Harbor Cafe"},{"role":"assistant","content":"Harbor Cafe is a customer since 2024."}]}`)
+	if followUp["answer"] != "Harbor Cafe has 3 orders." || len(model.requests) == 0 {
+		t.Fatalf("follow-up = %v, want the lead's answer", followUp)
+	}
+	if !strings.Contains(model.requests[0], "Harbor Cafe is a customer since 2024") {
+		t.Fatal("the caller's history never reached the lead")
+	}
+	last := worker.requests[len(worker.requests)-1]
+	if last.Instruction != "How many orders does Harbor Cafe have?" || len(last.History) != 0 {
+		t.Fatalf("worker request = %+v, want the lead's self-contained question and no history", last)
 	}
 }

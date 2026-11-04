@@ -190,7 +190,10 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 		if err == nil {
 			runner, err = newGraphJinAgentRunner(s, agentConfigFromService(s.conf))
 		}
-		if err == nil && threadRef.ThreadID != "" {
+		// The worker answers one self-contained question. Anything that carries
+		// a conversation — a thread, caller-sent history, a task's trail — runs
+		// the lead, which resolves it into questions for workers.
+		if err == nil && (threadRef.ThreadID != "" || len(req.History) != 0) {
 			runner, err = s.threadAgentRunner(agentConfigFromService(s.conf), runner)
 		}
 		if err == nil && threadRef.ThreadID != "" {

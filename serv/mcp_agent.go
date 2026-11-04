@@ -43,14 +43,13 @@ func (ms *mcpServer) registerAgentTools() {
 			mcp.Description("Include Ax action/trace data in the response for debugging."),
 		),
 		mcp.WithArray("history",
-			mcp.Description("Prior conversation turns, most recent last: {role:'user'|'assistant', content, status?, catalog_ids?}. Untrusted follow-up context; the agent still re-discovers its own evidence."),
+			mcp.Description("Prior conversation turns, most recent last: {role:'user'|'assistant', content, status?}. A request with history runs the lead agent, which resolves follow-ups into self-contained questions; without it one question runs directly."),
 			mcp.Items(map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"role":        map[string]any{"type": "string", "enum": []string{"user", "assistant"}},
-					"content":     map[string]any{"type": "string"},
-					"status":      map[string]any{"type": "string"},
-					"catalog_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"role":    map[string]any{"type": "string", "enum": []string{"user", "assistant"}},
+					"content": map[string]any{"type": "string"},
+					"status":  map[string]any{"type": "string"},
 				},
 				"required": []string{"role", "content"},
 			}),
@@ -111,12 +110,18 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 		ms.service.appendTaskTrailEntry(ctx, agentReq, resp, time.Since(start), publicErr)
 		return ms.toolResultJSON(mcpToolAskGraphJinAgent, args, resp)
 	}
-	if threadID := strings.TrimSpace(stringArg(args, "thread_id")); threadID != "" {
+	threadID := strings.TrimSpace(stringArg(args, "thread_id"))
+	// A conversation — a thread, history, a task's trail — runs the lead; a
+	// single self-contained question runs the worker alone.
+	if threadID != "" || len(agentReq.History) != 0 {
 		lead, err := ms.service.threadAgentRunner(agentConf, runner)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return ms.askAgentInThread(ctx, args, threadID, agentReq, taskWarm, lead, start)
+		runner = lead
+	}
+	if threadID != "" {
+		return ms.askAgentInThread(ctx, args, threadID, agentReq, taskWarm, runner, start)
 	}
 	resp, err = runner.Run(ctx, agentReq)
 	runErr := err

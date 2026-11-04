@@ -9,23 +9,10 @@ import (
 	ax "github.com/ax-llm/ax/packages/go"
 )
 
-func TestProfileInstructionsOnlyWhenSet(t *testing.T) {
-	if got := profileInstructions(nil); got != "" {
-		t.Fatalf("no profile must add no instructions, got %q", got)
-	}
-	if got := profileInstructions(&ProfileInstructions{Name: "Finance", Instructions: "  "}); got != "" {
-		t.Fatalf("blank instructions must add no instructions, got %q", got)
-	}
-	got := profileInstructions(&ProfileInstructions{Name: "Finance\nbot", Instructions: "Answer in EUR."})
-	if !strings.Contains(got, "for Finance bot:") || !strings.HasSuffix(got, "\nAnswer in EUR.") || !strings.Contains(got, "grant no access") {
-		t.Fatalf("profile addendum = %q", got)
-	}
-}
-
-// The profile reaches the executor's instruction addenda, and a run without
-// one keeps exactly the default addenda.
-func TestRunAddsProfileInstructionsToExecutorAddenda(t *testing.T) {
-	addenda := func(req Request) []any {
+// Conversation state belongs to the lead. A worker handed history, memories or
+// a profile anyway runs exactly the program it would have run without them.
+func TestWorkerDropsConversationState(t *testing.T) {
+	run := func(req Request) *fakeProgram {
 		t.Helper()
 		program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
 		runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
@@ -41,24 +28,23 @@ func TestRunAddsProfileInstructionsToExecutorAddenda(t *testing.T) {
 		if _, err := runner.Run(context.Background(), req); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
-		out, _ := normalizeValue(program.options["instructionAddenda"]).([]any)
-		return out
+		return program
 	}
 
-	plain := addenda(Request{Instruction: "show products"})
-	withProfile := addenda(Request{Instruction: "show products", Profile: &ProfileInstructions{Name: "Ops", Instructions: "Focus on late shipments."}})
-	if len(withProfile) != len(plain)+1 {
-		t.Fatalf("profile addenda = %d entries, want %d", len(withProfile), len(plain)+1)
+	plain := run(Request{Instruction: "show products"})
+	stateful := run(Request{
+		Instruction: "show products",
+		History:     []Turn{{Role: "user", Content: "Harbor Cafe orders"}, {Role: "assistant", Content: "Harbor Cafe has 3 orders"}},
+		Memories:    []string{"Always answer in metric units"},
+		Profile:     &ProfileInstructions{Name: "Ops", Instructions: "Focus on late shipments."},
+	})
+	if fmt.Sprint(normalizeValue(plain.options["instructionAddenda"])) != fmt.Sprint(normalizeValue(stateful.options["instructionAddenda"])) {
+		t.Fatal("conversation state changed the worker's instruction addenda")
 	}
-	for i := range plain {
-		if fmt.Sprint(plain[i]) != fmt.Sprint(withProfile[i]) {
-			t.Fatalf("addendum %d changed with a profile", i)
+	seen := fmt.Sprint(normalizeValue(stateful.options), normalizeValue(stateful.forwardValues))
+	for _, leaked := range []string{"Harbor Cafe", "metric units", "late shipments"} {
+		if strings.Contains(seen, leaked) {
+			t.Fatalf("worker program received conversation state %q", leaked)
 		}
-	}
-	if last := fmt.Sprint(withProfile[len(withProfile)-1]); !strings.Contains(last, "Focus on late shipments.") {
-		t.Fatalf("profile addendum missing: %q", last)
-	}
-	if strings.Contains(fmt.Sprint(plain), "Agent profile instructions") {
-		t.Fatalf("run without a profile carries profile instructions: %v", plain)
 	}
 }

@@ -73,8 +73,7 @@ func (s *graphjinService) resolveAgentTaskContext(ctx context.Context, req *gjag
 		turn := gjagent.Turn{Role: role, Content: "[task " + origin + "] " + content}
 		if origin == "agent_run" {
 			turn.Status = stringMapValue(row, "status")
-			turn.CatalogIDs = taskEntryCatalogDetailIDs(jsonMapString(row, "detail_json"))
-			warmStart.CatalogHints += len(turn.CatalogIDs)
+			warmStart.CatalogHints += len(taskEntryCatalogDetailIDs(jsonMapString(row, "detail_json")))
 		}
 		warm = append(warm, turn)
 	}

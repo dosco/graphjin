@@ -180,8 +180,8 @@ func TestTaskAgentTrailDedupesAndWarmStarts(t *testing.T) {
 			break
 		}
 	}
-	if agentTurn == nil || !reflect.DeepEqual(agentTurn.CatalogIDs, []string{"table:app:main.orders"}) {
-		t.Fatalf("agent trail catalog hints were not restored: %+v", agentTurn)
+	if agentTurn == nil || agentTurn.Role != "assistant" {
+		t.Fatalf("agent trail entry was not restored as an assistant turn: %+v", agentTurn)
 	}
 	if _, err := svc.resolveAgentTaskContext(artifactUserCtx("user_2"), &gjagent.Request{TaskID: taskID}); !errors.Is(err, errTaskNotFoundOrClosed) {
 		t.Fatalf("foreign warm start error = %v", err)

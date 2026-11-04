@@ -6,8 +6,8 @@ import ax "github.com/ax-llm/ax/packages/go"
 // channel that shows a whole program rather than a query shape (catalog
 // examples) or a rule (skills). They target the two families where weak
 // models fail at trajectory assembly rather than at any single query:
-// follow-up turns that must be read from inputs.history, and answers that
-// span two sources in one execution.
+// writes that must be authored and executed rather than described, and
+// answers that span two sources in one execution.
 //
 // Discipline, in order of importance:
 //   - Generic domain only (orders/status/policies) — never a benchmark
@@ -21,25 +21,21 @@ import ax "github.com/ax-llm/ax/packages/go"
 //
 // Element shape is the ax contract: {input: {<executor fields>}, output:
 // {javascriptCode}}. The executor's inputs are NOT the agent signature —
-// history and context arrive only as contextMetadata prose plus runtime
-// globals, which is exactly what the first example demonstrates reading.
+// context arrives only as contextMetadata prose plus runtime globals.
 func executorTrajectoryExamples() []ax.Value {
 	return []ax.Value{
 		map[string]ax.Value{
 			"input": map[string]ax.Value{
 				"input": map[string]ax.Value{
-					"instruction":  "Yes, go ahead and set that up.",
+					"instruction":  "Create a standing watch named failed_orders over orders with status failed, delivering an hourly inbox digest.",
 					"current_date": "2026-01-14",
 				},
-				"executorRequest": "Execute the watch the prior turn proposed and confirm it.",
-				"contextMetadata": "- history: list loaded in the runtime as inputs.history (2 items) — read and narrow it with code; never retype its contents; item keys: role, content",
+				"executorRequest": "Create the requested watch and confirm it.",
+				"contextMetadata": "- context: object loaded in the runtime as inputs.context — catalog seed only, not live rows",
 				"actionLog":       "query_catalog: help:security, help:runtime, help:watches, table detail for orders read",
 			},
 			"output": map[string]ax.Value{
-				"javascriptCode": `const history = inputs.history || [];
-const proposal = [...history].reverse().find(t => t.role === "assistant" && t.content.includes("watch"));
-if (!proposal) { await final({status: "needs_clarification", answer: "No watch proposal found in the conversation to confirm."}); }
-// The proposal named the watch, its filter, and hourly inbox digests; quotes
+				"javascriptCode": `// The request names the watch, its filter, and hourly inbox digests; quotes
 // inside the subscription string must be escaped as \".
 const res = await execute_graphql({query: 'mutation { gj_watch(insert: { name: "failed_orders", query: "subscription { orders(where: { status: { eq: \\"failed\\" } }, first: 25, after: $cursor) { id status } orders_cursor }", delivery_json: { kind: "inbox", digest: { window: "1h" } } }) { id status enabled } }'});
 const watch = res.data && res.data.gj_watch;

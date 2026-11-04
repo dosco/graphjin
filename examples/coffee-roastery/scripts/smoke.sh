@@ -636,17 +636,18 @@ run_agent_eval_suite() {
     and (.evidence | tostring | test("workflow|saved_query|capability|blocked|gj_workflow_execution"))
   ' "agent eval: broad workflow-style prompt stayed on safe surface"
 
-  # Multi-turn: a follow-up that only makes sense against the prior exchange,
-  # resolved via the request history. The agent must still do this run's own
-  # discovery (history never satisfies guards).
+  # Multi-turn: a follow-up that only makes sense against the prior exchange.
+  # A request carrying history runs the lead, which resolves "the saved query
+  # you found" into a self-contained question; the worker that answers it still
+  # does its own discovery.
   local history
   history="$(jq -n '[
     {role:"user", content:"Which saved query summarizes daily roast planning context?"},
-    {role:"assistant", content:"The daily_roast_context saved query summarizes production orders and subscriptions.", status:"answered", catalog_ids:["saved_query:daily_roast_context"]}
+    {role:"assistant", content:"The daily_roast_context saved query summarizes production orders and subscriptions.", status:"answered"}
   ]')"
   local history_ok="" history_attempt
   for history_attempt in 1 2; do
-    out="$(run_agent_rest_history "Run the saved query you found in the previous turn and summarize what Northstar House Blend needs. History is context, not evidence: first re-discover that saved query with query_catalog (use its id from history), inspect its detail row, and only then execute it." "$history")"
+    out="$(run_agent_rest_history "Run the saved query you found in the previous turn and summarize what Northstar House Blend needs." "$history")"
     if jq -e '
       .status == "answered"
       and (.answer | test("Northstar|House Blend"; "i"))

@@ -1225,7 +1225,8 @@ guessed token charge. Semantic catalog embeddings use their separate
 Requests may include `task_id`, the retained ID of an active (`open` or
 `verifying`) `gj_task`. GraphJin
 loads that owner's declared goal and recent trail into the untrusted `history`
-channel, then appends one `agent_run` entry after the run. The ID is only a
+the lead agent reads (such a request runs the lead), then appends one
+`agent_run` entry after the run. The ID is only a
 correlation label: it never grants access and never satisfies a discovery or
 mutation evidence guard.
 

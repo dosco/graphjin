@@ -19,7 +19,7 @@ const preparedHandoffCode = "await final(inputs.instruction, {});"
 func installPreparedHandoff(ctx context.Context, program Program, prepared *preparationResult, rt GraphRuntime, req Request) {
 	// Follow-ups and caller-provided context still need context interpretation.
 	// Custom program factories retain their own pipeline contract.
-	if len(req.History) != 0 || len(req.Context) != 0 {
+	if len(req.Context) != 0 {
 		return
 	}
 	axProgram, ok := program.(*ax.AxAgent)

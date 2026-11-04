@@ -105,10 +105,9 @@ func (r *successfulExecutionRuntime) ExecuteSavedQuery(_ context.Context, args m
 // structGraphQLRuntime re-shapes an inner fake's successful execute_graphql
 // maps into a struct, mirroring the serv result contract: the policy annotator
 // returns a map only when it rewrites a policy error, so results otherwise
-// arrive as whatever struct the override built. structResultRuntime
-// (history_referent_repair_test.go) pins the saved-query half of that
-// contract, where the drop shipped; this wrapper pins the execute_graphql half
-// for the notices that ride successful executions. The inner fake keeps its
+// arrive as whatever struct the override built. This wrapper pins the
+// execute_graphql half of that contract for the notices that ride successful
+// executions. The inner fake keeps its
 // checking behavior — only the shape changes.
 type structGraphQLRuntime struct {
 	GraphRuntime
@@ -446,9 +445,9 @@ func TestAgentSignatureIsAcceptedByAx(t *testing.T) {
 		}
 	}()
 	// contextFields must name signature input fields; ax fails construction on
-	// drift ("context field not found"), so this guards both code-only inputs.
+	// drift ("context field not found"), so this guards the code-only input.
 	_ = ax.NewAgent(agentSignature, map[string]ax.Value{
-		"contextFields": []ax.Value{"history", "context"},
+		"contextFields": []ax.Value{"context"},
 	})
 }
 
@@ -510,10 +509,6 @@ func TestRunRejectsSavedQueryExecutionBeforeDetailLookup(t *testing.T) {
 	resp, err := runner.Run(context.Background(), Request{
 		Instruction: "run saved query",
 		TaskID:      "task:correlation-only",
-		History: []Turn{{
-			Role: "assistant", Content: "The saved query was inspected in a prior run.",
-			CatalogIDs: []string{"saved_query:daily_roast_context"},
-		}},
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -1521,42 +1516,6 @@ func TestFinalizeDoesNotRecoverLostResultClaimAcrossBlockingViolation(t *testing
 	}
 }
 
-func TestFinalizeRecoversExplicitHistoryRepeatAfterActorLoop(t *testing.T) {
-	state := newDiscoveryState("Continue the prior task and repeat the exact marker from the recent trail.")
-	state.seedOK = true
-	state.modelDiscoveryAction = true
-	state.history = []Turn{
-		{Role: "user", Content: "Declared task goal"},
-		{Role: "assistant", Content: "Evidence checked. FIRST-TRAIL-123", Status: StatusAnswered},
-	}
-	state.addGrounding(historyValue(state.history))
-
-	resp := state.finalize(Response{
-		Status: StatusError,
-		Errors: []ErrorInfo{{Message: "agent actor loop exceeded max steps"}},
-	})
-	if resp.Status != StatusAnswered || !strings.Contains(resp.Answer, "FIRST-TRAIL-123") {
-		t.Fatalf("history recovery = %+v, want prior answered marker", resp)
-	}
-	if len(resp.Errors) != 0 || resp.Refusal != nil {
-		t.Fatalf("history recovery retained error metadata: %+v", resp)
-	}
-}
-
-func TestFinalizeDoesNotRecoverHistoryWithoutSameRunDiscovery(t *testing.T) {
-	state := newDiscoveryState("Repeat the exact marker from the prior task trail.")
-	state.seedOK = true
-	state.history = []Turn{{Role: "assistant", Content: "FIRST-TRAIL-123", Status: StatusAnswered}}
-
-	resp := state.finalize(Response{
-		Status: StatusError,
-		Errors: []ErrorInfo{{Message: "agent actor loop exceeded max steps"}},
-	})
-	if resp.Status != StatusError {
-		t.Fatalf("history recovered without model discovery: %+v", resp)
-	}
-}
-
 func TestExplicitlyRequiredSavedQueryName(t *testing.T) {
 	tests := []struct {
 		instruction string
@@ -1752,7 +1711,9 @@ func TestNormalizeHistoryBounds(t *testing.T) {
 	}
 }
 
-func TestRunPassesHistoryAndSeedAsContextFields(t *testing.T) {
+// The worker answers one self-contained question: prior turns a caller sends
+// never reach its program, and the seed travels as the one context field.
+func TestRunPassesSeedAsTheOnlyContextField(t *testing.T) {
 	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
 	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
 		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
@@ -1769,7 +1730,7 @@ func TestRunPassesHistoryAndSeedAsContextFields(t *testing.T) {
 		Instruction: "what did we find last time",
 		History: []Turn{
 			{Role: "user", Content: "show products"},
-			{Role: "assistant", Content: "found 3 products", Status: StatusAnswered, CatalogIDs: []string{"table:db:public.products"}},
+			{Role: "assistant", Content: "found 3 products", Status: StatusAnswered},
 		},
 	})
 	if err != nil {
@@ -1779,8 +1740,8 @@ func TestRunPassesHistoryAndSeedAsContextFields(t *testing.T) {
 		t.Fatalf("status = %s: %+v", resp.Status, resp)
 	}
 	fields, ok := normalizeValue(program.options["contextFields"]).([]any)
-	if !ok || len(fields) != 2 || fields[0] != "history" || fields[1] != "context" {
-		t.Fatalf("contextFields = %+v, want [history context]", program.options["contextFields"])
+	if !ok || len(fields) != 1 || fields[0] != "context" {
+		t.Fatalf("contextFields = %+v, want [context]", program.options["contextFields"])
 	}
 	if program.options["directResponse"] != "off" {
 		t.Fatalf("directResponse = %+v, want off so discovery cannot bypass the executor", program.options["directResponse"])
@@ -1789,13 +1750,8 @@ func TestRunPassesHistoryAndSeedAsContextFields(t *testing.T) {
 	if !ok || len(addenda) != 2 || !strings.Contains(fmt.Sprint(addenda[0]), "graphjinLastExecution.result.data") || !strings.Contains(fmt.Sprint(addenda[1]), "Governed per-run capability facts") {
 		t.Fatalf("instructionAddenda = %+v, want executor handoff and capability-denial rules", program.options["instructionAddenda"])
 	}
-	turns, ok := normalizeValue(program.forwardValues["history"]).([]any)
-	if !ok || len(turns) != 2 {
-		t.Fatalf("forward history = %+v, want 2 turns", program.forwardValues["history"])
-	}
-	turn, _ := turns[1].(map[string]any)
-	if turn["role"] != "assistant" || turn["status"] != StatusAnswered {
-		t.Fatalf("assistant turn malformed: %+v", turn)
+	if _, ok := program.forwardValues["history"]; ok {
+		t.Fatalf("forward values carry history: %+v", program.forwardValues["history"])
 	}
 	contextValue, ok := normalizeValue(program.forwardValues["context"]).(map[string]any)
 	if !ok {

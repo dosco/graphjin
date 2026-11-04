@@ -19,7 +19,7 @@ func TestRecoverableProtocolFailureDerivesTextFromReason(t *testing.T) {
 	// Direct unit call: the read-path guards that used to vehicle this test now
 	// throw, so the derivation contract is pinned on the helper itself, the
 	// same way its generic-text sibling below is.
-	out := recoverableProtocolFailure("history_referent_unresolved", "protocol violation: unscoped follow-up", "history_referent_unresolved",
+	out := recoverableProtocolFailure("observed_value_mismatch", "protocol violation: unscoped follow-up", "observed_value_mismatch",
 		map[string]any{
 			"recommended_tool": toolExecuteGraphQL,
 			"reason":           "Add the where clause that scopes this query to widget 9, then execute it once.",

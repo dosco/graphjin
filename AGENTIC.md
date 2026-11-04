@@ -212,12 +212,11 @@ requirements remain in force. Ax `used(...)` reports the guides that actually
 influenced a run through the plural `skills` response field. The deprecated
 singular `skill` field is the first used skill for v3 compatibility.
 
-Requests may also carry `history` — prior conversation turns `{role, content,
-status?, catalog_ids?}` — to resolve follow-ups. History is untrusted model
-context (an RLM context field, readable by runtime code as `inputs.history`):
-it never satisfies a protocol guard, so every run still re-discovers its own
-evidence, using the prior turns' `catalog_ids` only as warm-start hints for
-batched detail lookups (`query_catalog({ids: [...]})`). Progress is observable
+The agent described here answers one self-contained question and carries no
+conversation: it never reads prior turns, memories or an agent profile. A
+request that carries `history` — prior turns `{role, content, status?}` — is a
+conversation, so it runs the lead (see Lead And Worker below), which resolves
+the follow-up into questions for this agent. Progress is observable
 per action: MCP callers that send a `_meta.progressToken` receive
 `notifications/progress` events, and the REST endpoint streams `action`/
 `result` SSE frames when called with `Accept: text/event-stream`. Seed and
@@ -237,9 +236,10 @@ Semantic catalog embeddings remain governed by `catalog_search.semantic`.
 
 Requests may carry a retained `task_id` for an explicitly created open
 `gj_task`. GraphJin prepends the owner-scoped declared goal and up to five recent
-trail entries to `history`, then appends one server-written `agent_run` entry.
-This provides cross-session warm-start and auditability without changing the
-guard contract: `task_id` is only correlation, never authorization or evidence.
+trail entries to `history` — so the request runs the lead — then appends one
+server-written `agent_run` entry. This provides cross-session warm-start and
+auditability without changing the guard contract: `task_id` is only
+correlation, never authorization or evidence.
 
 When service semantic catalog search initializes successfully, the built-in
 agent also receives a private semantic-search profile. Its required seed stays
@@ -263,10 +263,11 @@ public MCP, configuration, direct core, and lexical-only agent prompts.
 Two agents share this work. The **worker** is everything above: one data
 question in, a governed, database-computed, grounded answer out. It is meant to
 run on a small, fast model and stays stateless — direct `POST /api/v1/agent` and
-the MCP `ask_graphjin_agent` tool without a `thread_id` call it as is.
+the MCP `ask_graphjin_agent` tool call it as is when the request carries no
+`thread_id`, `history` or `task_id`.
 
-The **lead** runs every thread turn: console chat, MCP calls with a `thread_id`,
-and watch routines. It holds the conversation — thread history, the caller's
+The **lead** runs every conversation: console chat and other thread turns,
+REST and MCP requests that carry `history` or a `task_id`, and watch routines. It holds the conversation — thread history, the caller's
 recalled memories, and the agent profile's instructions — and none of that
 reaches a worker. It answers by sending self-contained questions to workers
 through one `ask_graphjin` tool: it resolves "that customer" or "last month"
@@ -1272,8 +1273,9 @@ GraphJin writes `agent_run` entries for embedded-agent calls and
 entries when a declared outcome check runs; origins, trace IDs,
 watch IDs, status, owner, and timestamps are server-managed. An open task can
 warm-start `ask_graphjin_agent` through its `task_id` argument. The goal and up
-to five recent entries become untrusted history hints, so the run must still
-perform its own catalog discovery and satisfy every mutation guard.
+to five recent entries become the lead's untrusted history; the questions it
+sends still perform their own catalog discovery and satisfy every mutation
+guard.
 
 Close a completed task with `status: "closed"` and an `outcome`. To require
 proof, add `verify_json` with an owner-resolvable `saved_query_name`, optional
