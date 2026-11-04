@@ -205,5 +205,20 @@
     "answer": {"kind": "number", "accept_scales": [1, 0.01]},
     "method": {"require_query_match": ["order_by"]},
     "budget": {"max_actor_turns": 10, "max_total_tokens": 400000}
+  },
+  {
+    "id": "rank-tied-plan-accounts",
+    "group": "ranking",
+    "prompt": "Which plan tier has the most accounts?",
+    "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { accounts(order_by: {count_id: desc}, limit: 1) { plan count_id } }",
+      "extract": "accounts.0.count_id",
+      "dimension_extract": "accounts.0.plan"
+    },
+    "answer": {"kind": "number"},
+    "method": {"require_query_match": ["order_by"]},
+    "budget": {"max_actor_turns": 10, "max_total_tokens": 400000}
   }
 ]

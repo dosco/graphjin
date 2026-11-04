@@ -1491,6 +1491,48 @@ func (a *Agent) finalizeWithGroundedRewrite(ctx context.Context, client ax.AICli
 	if protocol == nil || protocol.state == nil {
 		return resp
 	}
+	return a.reportRankingTies(ctx, client, protocol, cfg, req, a.finalizeGrounded(ctx, client, protocol, cfg, req, resp, rateLimiter), rateLimiter)
+}
+
+// reportRankingTies makes an answer that crowns part of a tied ranking name
+// every tied row: one tool-less restatement, then a plain note of the tie if
+// the restatement still leaves a row out.
+func (a *Agent) reportRankingTies(ctx context.Context, client ax.AIClient, protocol *protocolRuntime, cfg Config, req Request, resp Response, rateLimiter ax.AxRateLimiter) Response {
+	state := protocol.state
+	if resp.Status != StatusAnswered || state.rankingTieRewriteUsed || len(state.rankingTies) == 0 {
+		return resp
+	}
+	ties := unreportedRankingTies(resp.Answer, state.rankingTies)
+	if len(ties) == 0 {
+		return resp
+	}
+	state.rankingTieRewriteUsed = true
+	if a != nil && a.newFinalizer != nil && client != nil {
+		rows := make([]any, 0, len(ties))
+		for _, tie := range ties {
+			rows = append(rows, map[string]any{"root": tie.Root, "rows": tie.Rows})
+		}
+		if finalizer := a.newFinalizer(rankingTieRewriteSignature, map[string]ax.Value{}); finalizer != nil {
+			out, err := finalizer.Forward(ctx, client, map[string]ax.Value{
+				"instruction":  strings.TrimSpace(req.Instruction),
+				"draft_answer": resp.Answer,
+				"tied_rows":    stringify(rows),
+			}, modelForwardOptions(cfg, rateLimiter))
+			resp.Usage = mergedUsage(resp.Usage, usageSummary(finalizer))
+			if err == nil {
+				answer := strings.TrimSpace(stringValue(mapValue(normalizeValue(out))["answer"]))
+				if answer != "" && len(state.ungroundedAnswerTokens(answer)) == 0 && len(unreportedRankingTies(answer, ties)) == 0 {
+					resp.Answer = answer
+					return resp
+				}
+			}
+		}
+	}
+	resp.Answer += rankingTieNote(ties)
+	return resp
+}
+
+func (a *Agent) finalizeGrounded(ctx context.Context, client ax.AIClient, protocol *protocolRuntime, cfg Config, req Request, resp Response, rateLimiter ax.AxRateLimiter) Response {
 	draft := resp
 	finalized := protocol.state.finalize(resp)
 	if finalized.Status != StatusBlocked ||

@@ -11,8 +11,8 @@ func TestImportFrozenCorpora(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tasks) != 74 {
-		t.Fatalf("imported %d tasks, want 74", len(tasks))
+	if len(tasks) != 75 {
+		t.Fatalf("imported %d tasks, want 75", len(tasks))
 	}
 	suite := Suite{Name: "imported", Generator: GeneratorMeta{Version: GeneratorVersion, Seed: 23, Scale: len(tasks)}, Tasks: tasks}
 	if err := suite.Normalize(); err != nil {
