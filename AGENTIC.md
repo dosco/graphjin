@@ -199,6 +199,11 @@ permitted guides. Fresh requests with a scope-matched prepared root enter core-m
 through a local request handoff; follow-ups and caller context retain model
 distillation. Missing guides remain discoverable during execution. Selection is
 disabled by default; see the [server agent configuration](https://graphjin.com/agentic/server-agent/).
+Without it, a plain question (no caller context) still skips distillation: the
+executor receives a compact `seed_digest` in `catalog_facets` — the seed's top
+tables with their real column names and types, plus seed saved queries and
+workflows by id — and inspects and executes in its first step. A simple count
+is then two model calls, one to execute and one to answer.
 Read-only posture removes all write guides; workflow,
 watch, and admin guides require their governed roots, and admin guides also
 require the admin role.

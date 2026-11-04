@@ -149,6 +149,13 @@ func TestUnreportedRankingTies(t *testing.T) {
 			t.Errorf("%q: unreported = %v, want %v", answer, got, want)
 		}
 	}
+	// A row whose id equals the tied value is still told apart by its field.
+	ordersTie := []rankingTie{{Root: "production_orders", Rows: []map[string]any{
+		{"customer_id": 3.0, "count_id": 1.0}, {"customer_id": 2.0, "count_id": 1.0}, {"customer_id": 9.0, "count_id": 1.0},
+	}}}
+	if len(rankingTieLabels(ordersTie[0])) != 3 || len(unreportedRankingTies("Customer 3 placed the most orders.", ordersTie)) == 0 {
+		t.Fatal("a tie told apart by customer_id must be judged")
+	}
 	// Rows told apart only by ids are matched as whole numbers.
 	idTie := []rankingTie{{Root: "users", Rows: []map[string]any{{"id": 4.0, "account_id": 1.0}, {"id": 14.0, "account_id": 1.0}}}}
 	if len(unreportedRankingTies("User 14 is first.", idTie)) == 0 || len(unreportedRankingTies("Users 4 and 14 tie.", idTie)) != 0 {

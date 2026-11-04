@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -285,34 +286,53 @@ func unreportedRankingTies(answer string, ties []rankingTie) []rankingTie {
 	return out
 }
 
-// rankingTieLabels returns, per tied row, the values that identify it: leaf
-// values (one level of nesting) no other tied row shares. Text labels are
-// preferred; numbers are used only when no row has a text label.
+// rankingTieLabels returns, per tied row, the values that identify it: the
+// leaf fields (one level of nesting) whose values differ across the tied
+// rows. Fields are compared by path, so a customer_id of 1 still names its row
+// when the tied count is also 1. Text fields are preferred; numbers are used
+// only when no distinguishing field holds text.
 func rankingTieLabels(tie rankingTie) [][]string {
-	values := make([][]string, len(tie.Rows))
-	count := map[string]int{}
+	flat := make([]map[string]string, len(tie.Rows))
+	paths := map[string]bool{}
 	for i, row := range tie.Rows {
-		seen := map[string]bool{}
-		collectLeafValues(row, 0, func(v string) {
-			if !seen[v] {
-				seen[v] = true
-				values[i] = append(values[i], v)
-				count[v]++
-			}
+		flat[i] = map[string]string{}
+		collectLeafValues(row, "", 0, func(path, v string) {
+			flat[i][path] = v
+			paths[path] = true
 		})
 	}
+	var distinguishing []string
 	textual := false
-	for _, row := range values {
-		for _, v := range row {
-			if count[v] == 1 && !isNumericLabel(v) && len(v) >= 3 {
+	for path := range paths {
+		seen := map[string]bool{}
+		unique := true
+		for _, row := range flat {
+			v, ok := row[path]
+			if !ok || seen[v] {
+				unique = false
+				break
+			}
+			seen[v] = true
+		}
+		if !unique {
+			continue
+		}
+		distinguishing = append(distinguishing, path)
+		for _, row := range flat {
+			if !isNumericLabel(row[path]) && len(row[path]) >= 3 {
 				textual = true
 			}
 		}
 	}
-	labels := make([][]string, len(values))
-	for i, row := range values {
-		for _, v := range row {
-			if count[v] != 1 || (textual && (isNumericLabel(v) || len(v) < 3)) {
+	if len(distinguishing) == 0 {
+		return nil
+	}
+	sort.Strings(distinguishing)
+	labels := make([][]string, len(flat))
+	for i, row := range flat {
+		for _, path := range distinguishing {
+			v := row[path]
+			if textual && (isNumericLabel(v) || len(v) < 3) {
 				continue
 			}
 			labels[i] = append(labels[i], v)
@@ -324,21 +344,21 @@ func rankingTieLabels(tie rankingTie) [][]string {
 	return labels
 }
 
-func collectLeafValues(value any, depth int, add func(string)) {
+func collectLeafValues(value any, path string, depth int, add func(path, value string)) {
 	switch v := value.(type) {
 	case map[string]any:
 		if depth > 1 {
 			return
 		}
-		for _, child := range v {
-			collectLeafValues(child, depth+1, add)
+		for key, child := range v {
+			collectLeafValues(child, path+"."+key, depth+1, add)
 		}
 	case string:
 		if s := strings.ToLower(strings.TrimSpace(v)); s != "" {
-			add(s)
+			add(path, s)
 		}
 	case float64, int, int64, json.Number:
-		add(strings.ToLower(stringify(v)))
+		add(path, strings.ToLower(stringify(v)))
 	}
 }
 

@@ -571,7 +571,7 @@ func (s *discoveryState) catalogIDsForQueryRoots(query string) []any {
 
 func (s *discoveryState) pendingDatabaseComputation() string {
 	needsAggregate, needsAggregateOrder := databaseComputationIntent(s.instruction)
-	if !needsAggregate {
+	if !needsAggregate || s.databaseComputationWaived {
 		return ""
 	}
 	allowsRankedRows := databaseOrderedRowIntent(s.instruction)

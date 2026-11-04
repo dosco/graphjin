@@ -148,3 +148,41 @@ func TestPreparedHandoffEligibility(t *testing.T) {
 		})
 	}
 }
+
+func TestSeedDigestGroupsColumnsUnderTheirTables(t *testing.T) {
+	seed := map[string]any{"cards": []any{
+		map[string]any{"id": "column:roast_warehouse:.roast_batches.batch_code", "kind": "column", "table_name": "roast_batches", "column_name": "batch_code", "summary": "string, not null"},
+		map[string]any{"id": "saved_query:daily_roast_context", "kind": "saved_query", "title": "daily_roast_context", "summary": "long prose that stays out"},
+		map[string]any{"id": "column:roast_warehouse:.roast_batches.final_temp_c", "kind": "column", "table_name": "roast_batches", "column_name": "final_temp_c", "summary": "float64"},
+		map[string]any{"id": "table:ops:public.customer_tickets", "kind": "table", "table_name": "customer_tickets"},
+		map[string]any{"id": "help:discovery", "kind": "help"},
+	}}
+	got := seedDigest(seed)
+	if len(got) != 3 {
+		t.Fatalf("digest = %v, want two tables and one saved query", got)
+	}
+	first := mapValue(got[0])
+	if first["id"] != "table:roast_warehouse:.roast_batches" || strings.Join(anyStrings(first["columns"]), ",") != "batch_code:string,final_temp_c:float64" {
+		t.Fatalf("first table = %v", first)
+	}
+	if mapValue(got[1])["id"] != "table:ops:public.customer_tickets" || mapValue(got[2])["id"] != "saved_query:daily_roast_context" {
+		t.Fatalf("digest order = %v", got)
+	}
+	if strings.Contains(stringify(got), "long prose") {
+		t.Fatal("card summaries must stay out of the digest")
+	}
+}
+
+func anyStrings(value any) []string {
+	switch v := value.(type) {
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			out = append(out, stringValue(item))
+		}
+		return out
+	}
+	return nil
+}

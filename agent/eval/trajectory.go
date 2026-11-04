@@ -6,6 +6,8 @@ import (
 	"io"
 	"sort"
 	"strings"
+
+	gjagent "github.com/dosco/graphjin/agent/v3"
 )
 
 const TrajectorySchemaVersion = "graphjin.eval.trajectory/v1"
@@ -149,7 +151,9 @@ func BuildTrajectory(episode Episode, opts TrajectoryOptions) (Trajectory, error
 			if named := stageFromComponent(valueString(event["component_id"])); named != "" {
 				stage = named
 			}
-			if kind == "stage_response" {
+			// A stage output GraphJin supplied itself is recorded like a
+			// provider call but asked no model, so it has no prompt to find.
+			if kind == "stage_response" && toMap(toMap(event["payload"])["output"])[gjagent.LocalHandoffOutputKey] != true {
 				calls[stage]++
 			}
 			continue

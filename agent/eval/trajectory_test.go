@@ -1,6 +1,8 @@
 package eval
 
 import (
+	gjagent "github.com/dosco/graphjin/agent/v3"
+
 	"bytes"
 	"encoding/json"
 	"strings"
@@ -327,5 +329,35 @@ func TestTrajectoryReportsWhenTheTraceDisagreesWithItself(t *testing.T) {
 	}
 	if !strings.Contains(trajectory.TraceNotes[0], "executor") {
 		t.Fatalf("the note must name the stage: %v", trajectory.TraceNotes)
+	}
+}
+
+// A distiller turn GraphJin supplied itself is recorded as a stage request and
+// response like any provider call, but no model was asked and nothing was
+// logged. It must not be counted as a call missing its prompt — while a real
+// distiller call that lost its prompt still is.
+func TestTrajectoryDoesNotCountALocalHandoffAsAModelCall(t *testing.T) {
+	build := func(output map[string]any) Trajectory {
+		t.Helper()
+		episode := traceEpisode(true, "one", "two")
+		trace := episode.Response.(map[string]any)["trace"].(map[string]any)
+		trace["events"] = append([]any{
+			map[string]any{"kind": "stage_request", "component_id": "agent.stage.distiller"},
+			map[string]any{"kind": "stage_response", "component_id": "agent.stage.distiller",
+				"payload": map[string]any{"component_id": "agent.stage.distiller", "output": output}},
+		}, trace["events"].([]any)...)
+		trajectory, err := BuildTrajectory(episode, TrajectoryOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return trajectory
+	}
+	local := build(map[string]any{"javascriptCode": "await final(inputs.instruction, {});", gjagent.LocalHandoffOutputKey: true})
+	if len(local.TraceNotes) != 0 {
+		t.Fatalf("a local handoff is not a model call: %v", local.TraceNotes)
+	}
+	asked := build(map[string]any{"javascriptCode": "await final(inputs.instruction, {});"})
+	if len(asked.TraceNotes) == 0 || !strings.Contains(asked.TraceNotes[0], "distiller") {
+		t.Fatalf("a distiller call with no recorded prompt must still be reported: %v", asked.TraceNotes)
 	}
 }

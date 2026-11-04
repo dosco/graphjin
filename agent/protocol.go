@@ -215,6 +215,12 @@ type discoveryState struct {
 	rankingTies []rankingTie
 	// rankingTieRewriteUsed latches the one restatement a tie may cost.
 	rankingTieRewriteUsed bool
+	// databaseComputationRefusals counts finals the database-computation
+	// requirement refused since execution count databaseComputationSeen; once
+	// it is waived the requirement stays off for the run.
+	databaseComputationRefusals int
+	databaseComputationSeen     int
+	databaseComputationWaived   bool
 	// groundingCorpus accumulates this run's observed evidence (instruction,
 	// tool arguments, tool results) for the answer-grounding check.
 	groundingCorpus   strings.Builder
@@ -2385,6 +2391,36 @@ func (s *discoveryState) pendingRequiredFinalization() string {
 	return s.pendingDatabaseComputation()
 }
 
+// maxDatabaseComputationRefusals bounds how often a final is refused for
+// lacking database-side computation with no new execution in between.
+//
+// The requirement matches the ranked column against the request's words, and
+// words are not columns: "which lot has the most kilograms in stock" ranked
+// correctly by remaining_kg was refused every time, and the run spent its whole
+// step budget resubmitting the right answer. Being told twice is the useful
+// part; after that the caller decides, as with the other refusal caps.
+const maxDatabaseComputationRefusals = 2
+
+// gateFinalization is the runtime's final gate: the pending requirement, with
+// the database-computation requirement waived once it has been refused
+// repeatedly against unchanged evidence.
+func (s *discoveryState) gateFinalization() string {
+	message := s.pendingRequiredFinalization()
+	if !strings.HasPrefix(message, "database_computation_required:") {
+		return message
+	}
+	if len(s.executions) != s.databaseComputationSeen {
+		s.databaseComputationSeen = len(s.executions)
+		s.databaseComputationRefusals = 0
+	}
+	if s.databaseComputationRefusals >= maxDatabaseComputationRefusals {
+		s.databaseComputationWaived = true
+		return s.pendingRequiredFinalization()
+	}
+	s.databaseComputationRefusals++
+	return message
+}
+
 func (s *discoveryState) pendingRequiredFinalizationContinuation() string {
 	if s.pendingFailedQueryKey != "" {
 		if len(s.pendingFailedCatalogIDs) == 0 {
@@ -3545,6 +3581,12 @@ func (s *discoveryState) mergeEvidence(model any) any {
 	// one that passed the check.
 	if s.groundingOverflow {
 		protocol["grounding_disabled"] = true
+	}
+	// Likewise an answer let through after the database-computation
+	// requirement gave up on it was never shown to be computed in the
+	// database.
+	if s.databaseComputationWaived {
+		protocol["database_computation_waived"] = true
 	}
 	if model == nil {
 		return protocol

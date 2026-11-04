@@ -657,7 +657,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 			protocol.state.addGrounding(narrowed)
 			protocol.state.recordDistilledSourceIDs(narrowed)
 		},
-		protocol.state.pendingRequiredFinalization,
+		protocol.state.gateFinalization,
 		protocol.state.pendingRequiredFinalizationContinuation,
 		protocol.state.completionContinuation,
 	)
@@ -742,6 +742,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	if prepared != nil {
 		installPreparedHandoff(ctx, program, prepared, a.runtime, req)
 	}
+	seedHandoff := installSeedHandoff(program, req)
 	// Ax resolves both portable controls against the deployment profile and
 	// model rules, and rejects unsupported explicit values before transport.
 	// GraphJin only carries the operator's choices through.
@@ -753,6 +754,12 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		digest := cloneAnyMap(mapValue(facets))
 		digest["prepared_details"] = prepared.digest()
 		facets = digest
+	} else if seedHandoff {
+		if tables := seedDigest(seed); len(tables) != 0 {
+			digest := cloneAnyMap(mapValue(facets))
+			digest["seed_digest"] = tables
+			facets = digest
+		}
 	}
 	output, err := program.Forward(ctx, client, map[string]ax.Value{
 		"instruction":    strings.TrimSpace(req.Instruction),
@@ -2918,7 +2925,7 @@ func skipGraphQLString(query string, i int) int {
 const agentSignature = `"GraphJin-owned catalog-first discovery agent. Answer only from observed GraphJin catalog evidence, validations, or safe execution results."
 instruction:string "The user's goal. GraphJin has already seeded context._graphjin_discovery with query_catalog(search: instruction).",
 context?:json "Code-addressable caller context plus catalog metadata at inputs.context._graphjin_discovery. This is not live row data or authoritative schema evidence.",
-catalog_facets?:json "Small catalog kind counts and optional prepared_details references ranked by relevance. The preferred priority-1 reference includes real column names when available. Start from that schema while preserving the user's entity, measure, filters, and scope; supporting alternatives must not replace the requested entity. Author the query and call query_catalog({id:...}) in the same code block as execution; these lookups reuse verified prefetched facts locally. Avoid a separate turn printing the hidden seed to find IDs or known columns. Otherwise inspect seed cards through inputs.context._graphjin_discovery.",
+catalog_facets?:json "Small catalog kind counts and optional prepared_details references ranked by relevance, or seed_digest: the seed's top tables with their real column names and types, plus seed saved queries and workflows, by catalog id. The preferred priority-1 reference includes real column names when available. Start from that schema while preserving the user's entity, measure, filters, and scope; supporting alternatives must not replace the requested entity. Author the query and call query_catalog({id:...}) in the same code block as execution; these lookups reuse verified prefetched facts locally. Avoid a separate turn printing the hidden seed to find IDs or known columns. Otherwise inspect seed cards through inputs.context._graphjin_discovery.",
 namespace?:string "Optional GraphJin namespace.",
 current_date?:string "Server current UTC date YYYY-MM-DD. Anchor relative time windows on this plus live max_<date_col> query evidence, never on memory or sample rows."
 -> status:class "answered, needs_clarification, blocked, error", answer:string "Concise, evidence-backed answer in GitHub-flavored markdown: use a markdown table for tabular or multi-row results, bullet lists for enumerations, and fenced code blocks for queries or code; plain prose otherwise. Keep it tight.", data?:json "Rows/results from safe execution, usually execute_saved_query result.data.", evidence?:json "Catalog ids, detail rows, validations, execution names, and policy/capability evidence.", actions?:json "Ordered actions actually performed.", next?:json "Safe follow-up options or missing capability."`

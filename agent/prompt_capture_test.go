@@ -167,8 +167,14 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 	if !markdownReached {
 		t.Error("markdown answer-formatting guidance reached no stage — the responder answer-field guidance regressed")
 	}
-	if strings.Contains(rendered.String(), seedID) || strings.Contains(rendered.String(), seedSummary) {
+	// The seed itself stays on inputs.context. A plain question skips the
+	// distiller, so its executor gets the compact seed_digest instead — card
+	// ids and column names, never card content.
+	if strings.Contains(rendered.String(), seedSummary) {
 		t.Error("catalog seed card content leaked into a staged prompt instead of staying on inputs.context")
+	}
+	if !strings.Contains(rendered.String(), "seed_digest") || !strings.Contains(rendered.String(), seedID) {
+		t.Error("the seed digest did not reach the executor of a plain question")
 	}
 	if !strings.Contains(rendered.String(), "catalog_facets") || !strings.Contains(rendered.String(), facetKindAudit) {
 		t.Error("the small catalog facet digest did not reach a staged prompt")
@@ -199,8 +205,11 @@ func TestCapabilityCompletionGuidanceIsExecutorOnly(t *testing.T) {
 		WithClientFactory(func(Config) (ax.AIClient, error) { return rec, nil }),
 	)
 
+	// Caller context keeps the distiller stage, which this test inspects; a
+	// plain question would skip straight to the executor.
 	_, _ = runner.Run(context.Background(), Request{
 		Instruction:  "create a payment watch and record the matching payment",
+		Context:      map[string]any{"ticket": "PAY-7"},
 		Capabilities: profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent),
 	})
 	if len(rec.calls) < 2 {
