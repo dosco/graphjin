@@ -91,7 +91,7 @@ const Dashboard = () => {
         />
       ) : (
         <>
-          <section className="grid gap-6 border-y py-6 xl:grid-cols-[1.25fr_0.75fr] xl:items-stretch" aria-label="Runtime summary">
+          <section className="grid gap-6 py-6 xl:grid-cols-[1.25fr_0.75fr] xl:items-stretch" aria-label="Runtime summary">
               <div className="flex min-h-48 flex-col justify-center gap-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusPill status={status?.status} severity={status?.severity} />
@@ -99,7 +99,7 @@ const Dashboard = () => {
                   {status?.store && <Badge variant="secondary">{status.store}</Badge>}
                 </div>
                 <div className="grid gap-3">
-                  <h2 className="max-w-3xl text-2xl font-semibold leading-tight tracking-normal md:text-4xl">
+                  <h2 className="max-w-3xl text-2xl font-extrabold leading-tight tracking-[-0.03em] md:text-4xl">
                     {status?.summary || "Runtime status is not available."}
                   </h2>
                   <p className="max-w-3xl text-sm leading-6 text-muted-foreground md:text-base">
@@ -107,11 +107,11 @@ const Dashboard = () => {
                   </p>
                 </div>
               </div>
-              <div className="grid gap-px bg-border sm:grid-cols-2">
-                <Metric className="rounded-none bg-background" label="Sources" value={compactNumber(sources.length)} detail={`${readySources} ready`} tone={degradedSources ? "warn" : "good"} />
-                <Metric className="rounded-none bg-background" label="Tables" value={compactNumber(status?.table_count)} detail={status?.schema_ready ? "schema ready" : "schema pending"} />
-                <Metric className="rounded-none bg-background" label="Catalog" value={status?.catalog_revision ? "Ready" : "Pending"} detail={status?.active_database || "no active database"} />
-                <Metric className="rounded-none bg-background" label="Runtime Read" value={runtimeRead ? "On" : "Limited"} detail="current node" tone={runtimeRead ? "good" : "warn"} />
+              <div className="grid gap-x-8 sm:grid-cols-2">
+                <Metric label="Sources" value={compactNumber(sources.length)} detail={`${readySources} ready`} tone={degradedSources ? "warn" : "good"} />
+                <Metric label="Tables" value={compactNumber(status?.table_count)} detail={status?.schema_ready ? "schema ready" : "schema pending"} />
+                <Metric label="Catalog" value={status?.catalog_revision ? "Ready" : "Pending"} detail={status?.active_database || "no active database"} />
+                <Metric label="Runtime Read" value={runtimeRead ? "On" : "Limited"} detail="current node" tone={runtimeRead ? "good" : "warn"} />
               </div>
           </section>
 
@@ -121,7 +121,7 @@ const Dashboard = () => {
                 <div className="divide-y">
                   {sources.map((source) => (
                     <div className="grid gap-3 py-3 first:pt-0 last:pb-0 sm:grid-cols-[2.25rem_minmax(0,1fr)_auto] sm:items-center" key={source.id || source.source}>
-                      <div className="flex size-9 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                      <div className="flex size-9 items-center justify-center text-muted-foreground">
                         <Database size={17} aria-hidden="true" />
                       </div>
                       <div className="min-w-0">
@@ -155,7 +155,7 @@ const Dashboard = () => {
               ) : (
                 <div className="grid gap-4">
                   <div className="flex gap-3 border-b pb-4">
-                    <ShieldCheck className="mt-0.5 size-5 text-emerald-700" aria-hidden="true" />
+                    <ShieldCheck className="mt-0.5 size-5 text-success" aria-hidden="true" />
                     <div>
                       <strong className="text-sm font-medium">{securitySummary?.title || securitySummary?.summary || "Security summary"}</strong>
                       <p className="mt-1 text-sm leading-6 text-muted-foreground">{summaryText(securitySummary)}</p>

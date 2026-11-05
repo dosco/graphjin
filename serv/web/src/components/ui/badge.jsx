@@ -4,17 +4,17 @@ import { cva } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const badgeVariants = cva(
-  "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] [&_svg]:size-3",
+  "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-sm border px-1.5 py-px font-mono text-[0.6875rem] font-medium leading-[1.125rem] whitespace-nowrap transition-colors [&_svg]:size-3",
   {
     variants: {
       variant: {
-        default: "border-transparent bg-primary text-primary-foreground",
-        secondary: "border-border bg-card text-secondary-foreground",
-        destructive: "border-transparent bg-destructive text-white",
-        outline: "border-border bg-card text-foreground",
-        success: "border-emerald-300 bg-card text-emerald-700",
-        warning: "border-amber-300 bg-card text-amber-800",
-        muted: "border-border bg-card text-muted-foreground",
+        default: "border-transparent bg-brand/15 text-brand",
+        secondary: "border-transparent bg-secondary text-secondary-foreground",
+        destructive: "border-transparent bg-destructive/14 text-destructive",
+        outline: "border-border bg-transparent text-foreground",
+        success: "border-transparent bg-success/12 text-success",
+        warning: "border-transparent bg-warning/12 text-warning",
+        muted: "border-transparent bg-accent text-muted-foreground",
       },
     },
     defaultVariants: {

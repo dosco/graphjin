@@ -7,15 +7,30 @@
       name="viewport"
       content="width=device-width, initial-scale=1, shrink-to-fit=no"
     />
-    <meta name="theme-color" content="#f5f6f8" />
+    <meta name="theme-color" content="#000000" />
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("graphjin-console-appearance");
+          var legacy = localStorage.getItem("graphjin-console-theme");
+          var theme = stored || (legacy === "light" || legacy === "dark" ? legacy : "dark");
+          if (theme === "system") {
+            theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          }
+          document.documentElement.classList.add(theme);
+        } catch (error) {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
     <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
     <title>GraphJin Console</title>
-    <script type="module" crossorigin src="/assets/index-D3h7GpNq.js"></script>
+    <script type="module" crossorigin src="/assets/index-B5MeC0_0.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-CNC7AqOf.js">
     <link rel="modulepreload" crossorigin href="/assets/graphiql-D05UQ1BV.js">
     <link rel="modulepreload" crossorigin href="/assets/react-vendor-CIMexeMC.js">
     <link rel="stylesheet" crossorigin href="/assets/graphiql-BPlhVtTc.css">
-    <link rel="stylesheet" crossorigin href="/assets/index-fU8GYTDe.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-CkIS7dSb.css">
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

@@ -49,7 +49,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { CopyButton, MarkdownContent } from "@/components/ui/markdown-content";
 import { Marker } from "@/components/ui/marker";
-import { Message, MessageAvatar, MessageContent } from "@/components/ui/message";
+import { Message, MessageContent } from "@/components/ui/message";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -373,7 +373,7 @@ const AgentChat = () => {
   const desktop = useDesktopLayout();
 
   const chatSurface = (
-    <div className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto] bg-background">
+    <div className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto]">
       <MessageScrollerProvider>
         <MessageScroller className="min-h-0">
           <MessageScrollerViewport>
@@ -400,13 +400,13 @@ const AgentChat = () => {
         </MessageScroller>
       </MessageScrollerProvider>
 
-      <form className="min-w-0 border-t bg-background/96 px-3 py-3 backdrop-blur sm:px-6" onSubmit={handleSubmit}>
+      <form className="min-w-0 px-3 pb-4 pt-2 sm:px-6 sm:pb-6" onSubmit={handleSubmit}>
         <div className="mx-auto grid w-full min-w-0 max-w-3xl gap-2.5">
           {!ready && <AgentDisabledAlert status={status} />}
           {pinnedTaskID && (
             <PinnedTask taskID={pinnedTaskID} task={pinnedTaskQuery.data} isLoading={pinnedTaskQuery.isLoading} onClear={clearPinnedTask} />
           )}
-          <div className="min-w-0 overflow-hidden rounded-2xl border bg-card shadow-[0_10px_35px_rgba(15,23,42,0.08)] transition focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20">
+          <div className="min-w-0 overflow-hidden rounded-lg bg-card/85 shadow-[0_0_0_1px_var(--border),0_24px_60px_-24px_var(--glow)] backdrop-blur-xl transition-shadow focus-within:shadow-[0_0_0_1px_var(--glow-edge),0_0_32px_-6px_var(--glow)]">
             <Textarea
               value={instruction}
               onChange={(event) => setInstruction(event.target.value)}
@@ -424,18 +424,18 @@ const AgentChat = () => {
                 {returnTrace && <Badge variant="muted">Trace</Badge>}
               </div>
               {pending && activeRunID ? (
-                <Button type="button" size="icon" variant="outline" className="rounded-xl" onClick={() => void stopRun()} aria-label="Stop the run">
+                <Button type="button" size="icon" variant="outline" onClick={() => void stopRun()} aria-label="Stop the run">
                   <Square aria-hidden="true" />
                 </Button>
               ) : (
-                <Button type="submit" size="icon" className="rounded-xl" disabled={!canSubmit} aria-label="Send message">
+                <Button type="submit" size="icon" disabled={!canSubmit} aria-label="Send message">
                   <Send aria-hidden="true" />
                 </Button>
               )}
             </div>
           </div>
           {advancedOpen && (
-            <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl bg-muted/55 px-3 py-2.5">
+            <div className="flex flex-wrap items-end justify-between gap-3 rounded-md bg-accent px-3 py-2.5">
               <label className="flex items-center gap-2 text-sm"><span className="font-medium">Steps</span><Input type="number" min="1" max="24" value={maxSteps} onChange={(event) => setMaxSteps(event.target.value)} className="h-8 w-20 bg-background" disabled={inputDisabled} /></label>
               <label className="flex h-8 items-center gap-2 text-sm font-medium"><Checkbox checked={returnTrace} onCheckedChange={(checked) => setReturnTrace(checked === true)} disabled={inputDisabled} />Return trace</label>
             </div>
@@ -446,22 +446,21 @@ const AgentChat = () => {
   );
 
   return (
-    <div className="h-[calc(100dvh-6.25rem)] min-h-[38rem] overflow-hidden bg-background">
+    <div className="h-[calc(100dvh-var(--chrome-top)-var(--chrome-bottom))] min-h-[38rem] overflow-hidden">
       {statusQuery.isLoading ? (
         <div className="p-6"><LoadingState label="Checking agent status" /></div>
       ) : statusQuery.error ? (
         <div className="p-6"><DataErrorState error={statusQuery.error} permissionMessage="Agent status is authenticated through the current GraphJin session. Open the console with an operator/admin identity." unavailableMessage="The agent status endpoint could not be reached from /api/v1/agent/status." /></div>
       ) : (
         <div className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)]">
-          <div className="flex min-h-14 items-center justify-between gap-4 border-b px-4 py-2 sm:px-6">
+          <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-2 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
-              <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-full bg-muted", ready ? "text-foreground" : "text-muted-foreground")}><Bot className="size-4" aria-hidden="true" /></span>
-              <div className="min-w-0"><div className="flex items-center gap-2"><h1 className="truncate text-sm font-semibold">{activeProfile?.name || "GraphJin Agent"}</h1><StatusPill status={ready ? "ready" : status?.status || "pending"} /></div><p className="hidden truncate text-xs text-muted-foreground sm:block">{ready ? "Governed by the current caller and catalog." : status?.message}</p></div>
+              <div className="min-w-0 overflow-hidden"><div className="flex items-center gap-2"><h1 className="truncate text-[0.9375rem] font-extrabold tracking-tight">{activeProfile?.name || "GraphJin Agent"}</h1><StatusPill status={ready ? "ready" : status?.status || "pending"} /></div><p className="hidden truncate text-xs text-muted-foreground sm:block">{ready ? "Governed by the current caller and catalog." : status?.message}</p></div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {threadsEnabled && (
                 <Button type="button" variant="ghost" size="sm" onClick={() => selectThread("")} disabled={pending}>
-                  <MessageSquarePlus aria-hidden="true" />New chat
+                  <MessageSquarePlus aria-hidden="true" /><span className="sr-only sm:not-sr-only">New chat</span>
                 </Button>
               )}
               <Badge variant="muted" className="hidden max-w-56 truncate md:inline-flex" title={providerLabel}><Sparkles aria-hidden="true" />{providerLabel}</Badge>
@@ -522,10 +521,10 @@ export function ThreadList({ threads, profiles = [], activeID, onSelect, onSelec
   const groups = groupThreadsByAgent(threads, profiles);
   const [chats, ...agents] = groups;
   return (
-    <nav aria-label="Conversations" className="grid min-h-0 content-start gap-3 overflow-y-auto border-r bg-muted/30 p-2">
-      <section aria-label="Agents" className="grid gap-0.5">
+    <nav aria-label="Conversations" className="grid min-h-0 grid-cols-[minmax(0,1fr)] content-start gap-5 overflow-y-auto overflow-x-hidden p-3">
+      <section aria-label="Agents" className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
         <div className="flex items-center justify-between gap-2 px-2 pt-1">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Agents</h2>
+          <h2 className="hud-label">Agents</h2>
           {onNewAgent && (
             <Button type="button" variant="ghost" size="icon-sm" onClick={onNewAgent} disabled={disabled} aria-label="New agent">
               <Plus aria-hidden="true" />
@@ -541,12 +540,11 @@ export function ThreadList({ threads, profiles = [], activeID, onSelect, onSelec
               onClick={() => onSelectProfile?.(group.profile)}
               aria-current={group.threads.some((thread) => thread.id === activeID) ? "true" : undefined}
               className={cn(
-                "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium hover:bg-muted disabled:opacity-60",
-                group.threads.length === 1 && group.threads[0].id === activeID && "bg-muted",
+                "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium transition-colors hover:bg-accent disabled:opacity-60",
+                group.threads.length === 1 && group.threads[0].id === activeID && "font-bold",
               )}
             >
-              <Bot className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-              <span className="min-w-0 flex-1 truncate">{group.profile.name}</span>
+                            <span className="min-w-0 flex-1 truncate">{group.profile.name}</span>
               {!group.profile.mine && <span className="shrink-0 text-xs font-normal text-muted-foreground">team</span>}
               {group.unread && <UnreadDot />}
             </button>
@@ -556,8 +554,8 @@ export function ThreadList({ threads, profiles = [], activeID, onSelect, onSelec
           </div>
         ))}
       </section>
-      <section aria-label="Chats" className="grid gap-0.5">
-        <h2 className="px-2 pt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Chats</h2>
+      <section aria-label="Chats" className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
+        <h2 className="hud-label px-2 pt-1">Chats</h2>
         {chats.threads.length === 0 ? (
           <p className="px-2 py-1 text-xs text-muted-foreground">Conversations you start are kept here.</p>
         ) : (
@@ -570,7 +568,7 @@ export function ThreadList({ threads, profiles = [], activeID, onSelect, onSelec
 
 function ThreadItems({ threads, activeID, onSelect, disabled, nested = false }) {
   return (
-    <ul className={cn("grid gap-0.5", nested && "ml-4 border-l pl-1")}>
+    <ul className={cn("grid grid-cols-[minmax(0,1fr)] gap-0.5", nested && "ml-4 border-l pl-1")}>
       {threads.map((thread) => (
         <li key={thread.id}>
           <button
@@ -579,8 +577,8 @@ function ThreadItems({ threads, activeID, onSelect, disabled, nested = false }) 
             onClick={() => onSelect(thread.id)}
             aria-current={thread.id === activeID ? "page" : undefined}
             className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted disabled:opacity-60",
-              thread.id === activeID && "bg-muted font-medium",
+              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60",
+              thread.id === activeID && "font-bold text-foreground",
             )}
           >
             <span className="min-w-0 flex-1 truncate">{thread.title || "New conversation"}</span>
@@ -594,7 +592,7 @@ function ThreadItems({ threads, activeID, onSelect, disabled, nested = false }) 
 }
 
 function UnreadDot() {
-  return <span role="status" aria-label="Unread" className="size-2 shrink-0 rounded-full bg-primary" />;
+  return <span role="status" aria-label="Unread" className="size-1.5 shrink-0 bg-brand" />;
 }
 
 function NewAgentDialog({ open, onOpenChange, onCreate }) {
@@ -700,7 +698,7 @@ export function AgentInspector({ inspection, onClose, compact = false }) {
     <aside className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] bg-background" aria-label="Agent result inspector">
       <div className={cn("flex items-start justify-between gap-4 border-b px-4 py-4", compact && "pr-12")}>
         <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Inspector</p>
+          <p className="hud-label">Inspector</p>
           <h2 className="mt-1 truncate text-base font-semibold">{inspection?.title || "Run details"}</h2>
           {response.trace_id && <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{response.trace_id}</p>}
         </div>
@@ -773,26 +771,21 @@ function EmptyAgentState({ ready, onSelectPrompt }) {
   return (
     <div className="flex min-h-[18rem] items-center justify-center p-4 md:min-h-[26rem] md:p-6">
       <div className="grid max-w-2xl justify-items-center gap-4 text-center md:gap-5">
-        <div className={cn(
-          "flex size-12 items-center justify-center rounded-full bg-muted",
-          ready ? "text-foreground" : "text-muted-foreground"
-        )}>
-          <Bot className="size-5" aria-hidden="true" />
-        </div>
+        <p className={cn("hud-label", ready && "text-brand")}>{ready ? "Agent online" : "Agent offline"}</p>
         <div className="grid gap-1">
-          <p className="text-base font-semibold text-foreground">{ready ? "Ready for governed work" : "Agent unavailable"}</p>
+          <p className="text-[2rem] font-extrabold leading-tight tracking-[-0.03em] text-foreground">{ready ? "Ready for governed work" : "Agent unavailable"}</p>
           <p className="text-sm leading-6 text-muted-foreground">
             {ready ? "Catalog, runtime, and security context are available." : "Readiness details are available."}
           </p>
         </div>
-        <div className="w-full divide-y border-y text-left">
+        <div className="grid w-full gap-1 text-left">
           {promptStarters.map((prompt) => (
             <button
               type="button"
               key={prompt.label}
               disabled={!ready}
               onClick={() => onSelectPrompt(prompt.text)}
-              className="group grid w-full gap-0.5 px-2 py-3 text-left text-sm transition hover:bg-muted/55 disabled:cursor-not-allowed disabled:opacity-50 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-baseline sm:gap-4"
+              className="group grid w-full gap-0.5 rounded-md px-3 py-3 text-left text-sm transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-baseline sm:gap-4"
             >
               <span className="font-semibold text-foreground">{prompt.label}</span>
               <span className="text-xs leading-5 text-muted-foreground group-hover:text-foreground/75">{prompt.text}</span>
@@ -808,7 +801,6 @@ export function ThinkingMessage({ actions = [] }) {
   const entries = groupActionsByDelegate(actions);
   return (
     <Message role="assistant">
-      <MessageAvatar className="text-primary"><Bot className="size-4" /></MessageAvatar>
       <MessageContent>
         <div className="flex items-center gap-2">
           <Marker status="loading" label="working" />
@@ -850,7 +842,7 @@ function TrailAction({ action }) {
       {action.status === "error" ? (
         <AlertTriangle className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
       ) : (
-        <CheckCircle2 className="size-3.5 shrink-0 text-emerald-600" aria-hidden="true" />
+        <CheckCircle2 className="size-3.5 shrink-0 text-success" aria-hidden="true" />
       )}
       <span className="truncate">{actionLabel(action)}</span>
     </li>
@@ -864,7 +856,7 @@ function QuestionStatusIcon({ status }) {
   if (questionFailed(status)) {
     return <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" aria-label="Failed" role="img" />;
   }
-  return <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-600" aria-label="Done" role="img" />;
+  return <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-success" aria-label="Done" role="img" />;
 }
 
 function questionRunning(status) {
@@ -957,15 +949,14 @@ function actionLabel(action) {
 function AgentStatusAction({ status }) {
   return (
     <>
-      <StatusPill status={status.status} />
+      <span className="hidden md:inline-flex"><StatusPill status={status.status} /></span>
       <Sheet>
         <SheetTrigger asChild>
-          <Button type="button" variant="outline" size="sm">
-            <CircleHelp className="size-4" aria-hidden="true" />
+          <Button type="button" variant="ghost" size="sm">
             Details
           </Button>
         </SheetTrigger>
-        <SheetContent side="right" className="grid w-[min(92vw,28rem)] grid-rows-[auto_1fr] border-white/70 bg-background/88 sm:w-[28rem]">
+        <SheetContent side="right" className="grid w-[min(92vw,28rem)] grid-rows-[auto_1fr] sm:w-[28rem]">
           <SheetHeader className="pr-8">
             <SheetTitle className="flex items-center gap-2">
               <Bot className="size-4" aria-hidden="true" />
@@ -995,7 +986,7 @@ function AgentStatusDetails({ status }) {
         <StatusRow icon={Bot} label="MCP tool" value={status.mcp_tool || "ask_graphjin_agent"} />
         <StatusRow icon={Timer} label="Timeout" value={`${status.timeout_seconds || 50}s`} />
       </dl>
-      <div className="grid gap-2 rounded-lg border bg-card p-3 text-sm text-muted-foreground">
+      <div className="grid gap-2 rounded-lg bg-card p-3 text-sm text-muted-foreground">
         <div className="flex items-center justify-between gap-3">
           <span>Read-only override</span>
           <Badge variant={status.read_only ? "warning" : "muted"}>{status.read_only ? "on" : "off"}</Badge>
@@ -1015,8 +1006,8 @@ function AgentStatusDetails({ status }) {
 
 function StatusRow({ icon: Icon, label, value }) {
   return (
-    <div className="grid grid-cols-[2rem_7rem_minmax(0,1fr)] items-center gap-2 rounded-lg border bg-card p-2">
-      <span className="flex size-8 items-center justify-center rounded-md bg-muted text-foreground">
+    <div className="grid grid-cols-[2rem_7rem_minmax(0,1fr)] items-center gap-2 rounded-lg bg-card p-2">
+      <span className="flex size-8 items-center justify-center text-foreground">
         <Icon className="size-4" aria-hidden="true" />
       </span>
       <dt className="text-muted-foreground">{label}</dt>
@@ -1047,7 +1038,6 @@ function ChatMessage({ message, onPinTask, onInspect }) {
   const response = message.response;
   return (
     <Message role={message.role}>
-      {!isUser && <MessageAvatar className="text-primary"><Bot className="size-4" /></MessageAvatar>}
       <MessageContent className={cn(isUser && "items-end")}>
         {response && (
           <div className={cn("flex flex-wrap items-center justify-between gap-2", isUser && "justify-end")}>
@@ -1066,7 +1056,6 @@ function ChatMessage({ message, onPinTask, onInspect }) {
         {response && <NoticeList notices={response.notices} onPinTask={onPinTask} />}
         {response?.errors?.length > 0 && <NoticeFrame icon={AlertTriangle} title="Agent errors" message={response.errors.map((error) => error.message).filter(Boolean).join(" · ")} variant="destructive" />}
       </MessageContent>
-      {isUser && <MessageAvatar className="border-primary/35 bg-primary text-primary-foreground shadow-[0_6px_18px_rgba(28,35,48,0.12)]"><User className="size-4" /></MessageAvatar>}
     </Message>
   );
 }
@@ -1099,11 +1088,11 @@ export function ResponseSummaryBadges({ response, onInspect }) {
 
 function PinnedTask({ taskID, task, isLoading, onClear }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50/30 px-3 py-2">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-warning/10 px-3 py-2">
       <div className="flex min-w-0 items-center gap-2">
-        <Pin className="size-4 shrink-0 text-amber-800" aria-hidden="true" />
+        <Pin className="size-4 shrink-0 text-warning" aria-hidden="true" />
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase text-amber-900">Pinned task</p>
+          <p className="text-xs font-semibold uppercase text-warning">Pinned task</p>
           <p className="truncate text-sm text-foreground">
             {isLoading ? "Loading declared goal…" : task?.goal || taskID}
           </p>
@@ -1209,9 +1198,9 @@ function AgentNotice({ notice, onPinTask }) {
 function NoticeFrame({ icon: Icon, title, message, children, variant = "default" }) {
   return (
     <div className={cn(
-      "grid gap-3 rounded-lg border bg-card p-3 text-sm",
-      variant === "destructive" && "border-red-300",
-      variant === "success" && "border-emerald-300"
+      "grid gap-3 rounded-lg bg-card p-3 text-sm",
+      variant === "destructive" && "border-destructive/45",
+      variant === "success" && "border-success/40"
     )}>
       <div className="flex items-start gap-2">
         <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />

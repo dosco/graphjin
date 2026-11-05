@@ -2,6 +2,7 @@ import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 
+import ContextRail from "./ContextRail";
 import Header from "./Header";
 import { ConsoleProvider } from "./console-context";
 import { routeDefinition } from "@/app/workspaces";
@@ -11,8 +12,8 @@ import { adoptSuggestedIdentity, operatorIdentityKey, useOperatorIdentity } from
 
 const layoutClasses = {
   canvas: "min-h-0 overflow-hidden",
-  collection: "mx-auto w-full max-w-[100rem] px-4 py-6 sm:px-6 lg:px-8 lg:py-8",
-  document: "mx-auto w-full max-w-[92rem] px-4 py-6 sm:px-6 lg:px-8 lg:py-8",
+  collection: "w-full px-4 py-5 sm:px-6 lg:py-6",
+  document: "w-full px-4 py-5 sm:px-6 lg:py-6",
 };
 
 const Layout = ({ children }) => {
@@ -39,18 +40,26 @@ const Layout = ({ children }) => {
 
   return (
     <ConsoleProvider value={consoleValue}>
-      <div className="flex min-h-screen flex-col bg-background text-foreground">
-        <a href="#main-content" className="sr-only z-[100] rounded-md bg-background px-3 py-2 focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:ring-2 focus:ring-ring">
+      <div className="relative min-h-dvh bg-background text-foreground">
+        <div className="horizon" aria-hidden="true" />
+        <div className="starfield" aria-hidden="true" />
+        <a href="#main-content" className="sr-only z-[100] rounded-md bg-foreground px-4 py-2 font-semibold text-background focus:not-sr-only focus:fixed focus:left-3 focus:top-3">
           Skip to content
         </a>
-        <Header />
-        <main
-          id="main-content"
-          data-layout={route.layout}
-          className={cn("min-w-0 flex-1", layoutClasses[route.layout] || layoutClasses.collection)}
-        >
-          {children}
-        </main>
+        <div className="relative mx-auto flex min-h-dvh w-full max-w-[100rem] flex-col md:flex-row">
+          <Header />
+          <main
+            id="main-content"
+            data-layout={route.layout}
+            className={cn(
+              "relative min-w-0 flex-1 pb-[var(--chrome-bottom)] md:pb-0",
+              layoutClasses[route.layout] || layoutClasses.collection
+            )}
+          >
+            {children}
+          </main>
+          {route.layout !== "canvas" && <ContextRail />}
+        </div>
       </div>
     </ConsoleProvider>
   );

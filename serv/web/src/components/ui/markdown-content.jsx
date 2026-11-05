@@ -30,7 +30,7 @@ function MarkdownContent({ value, className }) {
               href={safeHref(href)}
               target="_blank"
               rel="noreferrer noopener"
-              className="font-medium text-primary underline underline-offset-4"
+              className="font-medium text-brand underline underline-offset-4"
             >
               {children}
             </a>
@@ -40,23 +40,23 @@ function MarkdownContent({ value, className }) {
               href={safeHref(src)}
               target="_blank"
               rel="noreferrer noopener"
-              className="font-medium text-primary underline underline-offset-4"
+              className="font-medium text-brand underline underline-offset-4"
             >
               {alt || src || "image link"}
             </a>
           ),
           table: ({ children }) => (
-            <div className="overflow-x-auto rounded-md border border-white/70 bg-card/60">
+            <div className="overflow-x-auto rounded-2xl bg-card">
               <table className="w-full border-collapse text-left text-xs">{children}</table>
             </div>
           ),
-          thead: ({ children }) => <thead className="bg-muted/60 text-foreground">{children}</thead>,
-          th: ({ children }) => <th className="border-b border-white/70 px-3 py-2 font-semibold">{children}</th>,
-          td: ({ children }) => <td className="border-t border-white/58 px-3 py-2 align-top">{children}</td>,
+          thead: ({ children }) => <thead className="text-foreground">{children}</thead>,
+          th: ({ children }) => <th className="border-b px-3 py-2 font-mono text-[0.6875rem] font-medium uppercase tracking-[0.06em] text-muted-foreground">{children}</th>,
+          td: ({ children }) => <td className="border-t px-3 py-2 align-top tabular-nums">{children}</td>,
           pre: ({ children }) => {
             const text = extractText(children);
             return (
-              <div className="group/code relative overflow-hidden rounded-md border border-white/70 bg-muted/52">
+              <div className="group/code relative overflow-hidden rounded-2xl bg-card">
                 <CopyButton
                   text={text}
                   label="Copy code"
@@ -76,7 +76,7 @@ function MarkdownContent({ value, className }) {
                 className={cn(
                   isBlock
                     ? "font-mono text-foreground/90"
-                    : "rounded bg-muted/68 px-1.5 py-0.5 font-mono text-[0.86em] text-foreground",
+                    : "rounded-md bg-accent px-1.5 py-px font-mono text-[0.84em] text-foreground",
                   className
                 )}
                 {...props}

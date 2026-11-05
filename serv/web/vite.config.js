@@ -19,7 +19,7 @@ export default defineConfig({
     port: 3001,
     proxy: {
       '^/api/': {
-        target: 'http://localhost:8080',
+        target: process.env.GJ_CONSOLE_API || 'http://localhost:8080',
         changeOrigin: true,
       },
     },
@@ -28,7 +28,7 @@ export default defineConfig({
     port: 4173,
     proxy: {
       '^/api/': {
-        target: 'http://localhost:8080',
+        target: process.env.GJ_CONSOLE_API || 'http://localhost:8080',
         changeOrigin: true,
       },
     },

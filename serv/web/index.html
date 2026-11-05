@@ -7,7 +7,22 @@
       name="viewport"
       content="width=device-width, initial-scale=1, shrink-to-fit=no"
     />
-    <meta name="theme-color" content="#f5f6f8" />
+    <meta name="theme-color" content="#000000" />
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("graphjin-console-appearance");
+          var legacy = localStorage.getItem("graphjin-console-theme");
+          var theme = stored || (legacy === "light" || legacy === "dark" ? legacy : "dark");
+          if (theme === "system") {
+            theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          }
+          document.documentElement.classList.add(theme);
+        } catch (error) {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
     <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
     <title>GraphJin Console</title>
   </head>

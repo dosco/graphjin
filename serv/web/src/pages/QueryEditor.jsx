@@ -47,7 +47,7 @@ const QueryEditor = () => {
   }, []);
 
   return (
-    <div className="grid h-[calc(100dvh-6.25rem)] min-h-[38rem] grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+    <div className="grid h-[calc(100dvh-var(--chrome-top)-var(--chrome-bottom))] min-h-[38rem] grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
       <div className="border-b px-4 py-4 sm:px-6">
         <PageHeader eyebrow="GraphQL" title="Workbench" description="Run application and system-root queries against the active GraphJin endpoint." />
       </div>

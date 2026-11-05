@@ -26,9 +26,9 @@ function Marker({ className, variant = "default", status, label, children, ...pr
         variant === "separator" && "before:mr-1 before:h-px before:min-w-0 before:flex-1 before:bg-border after:ml-1 after:h-px after:min-w-0 after:flex-1 after:bg-border",
         variant === "border" && "border-b pb-2",
         status && "w-fit text-xs",
-        (normalized === "ready" || normalized === "answered") && "text-emerald-700 dark:text-emerald-400",
+        (normalized === "ready" || normalized === "answered") && "text-success",
         (normalized === "error" || normalized === "blocked") && "text-destructive",
-        normalized === "needs_clarification" && "text-amber-700 dark:text-amber-400",
+        normalized === "needs_clarification" && "text-warning",
         className
       )}
       {...props}

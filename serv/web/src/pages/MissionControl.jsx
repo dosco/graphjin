@@ -261,9 +261,9 @@ const MissionControl = ({ section }) => {
 
 function NoIdentityState() {
   return (
-    <div className="grid min-h-80 place-items-center rounded-lg border border-dashed bg-card p-8 text-center shadow-[0_12px_36px_rgba(28,35,48,0.04)]">
+    <div className="grid min-h-80 place-items-center rounded-lg bg-card p-8 text-center">
       <div className="grid max-w-lg justify-items-center gap-4">
-        <div className="flex size-12 items-center justify-center rounded-lg border bg-muted text-muted-foreground">
+        <div className="flex size-12 items-center justify-center text-muted-foreground">
           <UserRound aria-hidden="true" />
         </div>
         <div>
@@ -364,7 +364,7 @@ function TaskDrawer({ task, identityKey, onClose }) {
               <SheetDescription className="font-mono text-xs">{task.id}</SheetDescription>
             </SheetHeader>
             <div className="grid content-start gap-5 overflow-y-auto py-5">
-              <div className="grid gap-3 rounded-lg border bg-card p-4 text-sm">
+              <div className="grid gap-3 rounded-lg bg-card p-4 text-sm">
                 <DetailRow label="Owner" value={task.owner_ref || "current operator"} />
                 <DetailRow label="Updated" value={timeLabel(task.updated_at)} />
                 <DetailRow label="Verification attempts" value={task.verify_attempts || 0} />
@@ -406,7 +406,7 @@ function TaskEntry({ entry }) {
   const detail = parseJSON(entry.detail_json, entry.detail_json) || {};
   const verification = entry.origin === "verification";
   return (
-    <article className={cn("grid gap-3 rounded-lg border bg-card p-4", verification && entry.status === "failed" && "border-red-300")}>
+    <article className={cn("grid gap-3 rounded-lg bg-card p-4", verification && entry.status === "failed" && "border-destructive/45")}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={originVariant(entry.origin)}>{entry.origin || "unknown"}</Badge>
@@ -565,7 +565,7 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
                     <TableRow key={watch.id}>
                       <TableCell>
                         <span className="block font-medium">{watch.name}</span>
-                        {watch.last_error && <span className="mt-1 block max-w-md truncate text-xs text-red-700">{watch.last_error}</span>}
+                        {watch.last_error && <span className="mt-1 block max-w-md truncate text-xs text-destructive">{watch.last_error}</span>}
                       </TableCell>
                       <TableCell><StatusPill status={watch.enabled ? watch.status : "paused"} /></TableCell>
                       <TableCell>{watch.failure_count || 0}</TableCell>
@@ -610,7 +610,7 @@ function WatchEventDrawer({ event, watches, onClose }) {
               <SheetDescription className="font-mono text-xs">{event.id}</SheetDescription>
             </SheetHeader>
             <div className="grid content-start gap-4 overflow-y-auto py-5">
-              <div className="grid gap-2 rounded-lg border bg-card p-4 text-sm">
+              <div className="grid gap-2 rounded-lg bg-card p-4 text-sm">
                 <DetailRow label="Created" value={formatDate(event.created_at)} />
                 <DetailRow label="Delivery attempts" value={event.delivery_attempts || 0} />
                 <DetailRow label="Data hash" value={event.data_hash || "not recorded"} />
@@ -673,15 +673,15 @@ function AnnotationsPanel({ query, drafts, approved, identity, identityKey, onOp
               const task = tasks.find((item) => item.id === annotation.task_id);
               const confirming = confirmingID === annotation.id;
               return (
-                <article key={annotation.id} className="grid gap-4 rounded-lg border bg-card p-4">
+                <article key={annotation.id} className="grid gap-4 rounded-lg bg-card p-4">
                   <AnnotationSummary annotation={annotation} task={task} onOpenTask={onOpenTask} />
                   {confirming ? (
-                    <div className="grid gap-3 rounded-lg border border-amber-300 bg-amber-50/40 p-4">
+                    <div className="grid gap-3 rounded-lg bg-warning/10 p-4">
                       <div className="flex items-start gap-3">
-                        <ShieldCheck className="mt-0.5 size-4 shrink-0 text-amber-800" aria-hidden="true" />
+                        <ShieldCheck className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
                         <div>
                           <p className="text-sm font-semibold">Publish this note to your account’s agents?</p>
-                          <blockquote className="mt-2 border-l-2 border-amber-400 pl-3 text-sm leading-6 text-foreground">
+                          <blockquote className="mt-2 border-l-2 border-warning pl-3 text-sm leading-6 text-foreground">
                             “{annotation.content}”
                           </blockquote>
                           <p className="mt-2 text-xs leading-5 text-muted-foreground">
@@ -732,7 +732,7 @@ function AnnotationsPanel({ query, drafts, approved, identity, identityKey, onOp
               {approved.map((annotation) => {
                 const task = tasks.find((item) => item.id === annotation.task_id);
                 return (
-                  <article key={annotation.id} className="grid gap-4 rounded-lg border bg-card p-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                  <article key={annotation.id} className="grid gap-4 rounded-lg bg-card p-4 md:grid-cols-[minmax(0,1fr)_auto]">
                     <AnnotationSummary annotation={annotation} task={task} onOpenTask={onOpenTask} />
                     {identity.role === "admin" && (
                       <Button
@@ -788,7 +788,7 @@ function JSONBlock({ title, value }) {
     return null;
   }
   return (
-    <div className="min-w-0 rounded-lg border bg-muted/20 p-3">
+    <div className="min-w-0 rounded-lg bg-accent p-3">
       <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">{title}</p>
       <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground">
         <code>{formatJSON(value)}</code>

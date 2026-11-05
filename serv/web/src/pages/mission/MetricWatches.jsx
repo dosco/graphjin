@@ -118,7 +118,7 @@ function Sparkline({ points, threshold, className }) {
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className={cn("h-10 w-full", className)} preserveAspectRatio="none" role="img" aria-label="Recent readings">
       {hasThreshold && (
-        <line x1="0" x2={w} y1={y(threshold)} y2={y(threshold)} className="stroke-amber-500/70" strokeDasharray="3 3" strokeWidth="1" />
+        <line x1="0" x2={w} y1={y(threshold)} y2={y(threshold)} className="stroke-warning/70" strokeDasharray="3 3" strokeWidth="1" />
       )}
       <path d={line} fill="none" className="stroke-primary" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
       <circle cx={x(values.length - 1)} cy={y(values[values.length - 1])} r="2.5" className="fill-primary" />
@@ -137,7 +137,7 @@ function MetricWatchCard({ watch, profiles, onEdit, onChanged }) {
   const groups = state.groups ? Object.entries(state.groups) : [];
 
   return (
-    <article className="flex min-w-0 flex-col gap-3 rounded-xl border bg-card p-4">
+    <article className="flex min-w-0 flex-col gap-3 rounded-lg bg-card p-4">
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <button type="button" className="block max-w-full truncate text-left text-sm font-semibold hover:underline" onClick={() => onEdit(watch)}>
@@ -161,14 +161,14 @@ function MetricWatchCard({ watch, profiles, onEdit, onChanged }) {
           {groups.slice(0, 6).map(([key, value]) => (
             <div key={key} className="flex items-center justify-between gap-3">
               <span className="truncate text-muted-foreground">{key}</span>
-              <span className={cn("font-mono tabular-nums", value.breached && "font-semibold text-amber-700 dark:text-amber-400")}>{formatNumber(value.value)}</span>
+              <span className={cn("font-mono tabular-nums", value.breached && "font-semibold text-warning")}>{formatNumber(value.value)}</span>
             </div>
           ))}
           {groups.length > 6 && <span className="text-xs text-muted-foreground">+{groups.length - 6} more groups</span>}
         </div>
       ) : (
         <div className="flex items-baseline gap-2">
-          <span className={cn("font-mono text-3xl font-semibold tabular-nums", breached && "text-amber-700 dark:text-amber-400")}>{formatNumber(state.last_value)}</span>
+          <span className={cn("font-mono text-3xl font-semibold tabular-nums", breached && "text-warning")}>{formatNumber(state.last_value)}</span>
           {metric?.op !== "changed" && <span className="text-xs text-muted-foreground">threshold {formatNumber(metric?.threshold)}</span>}
         </div>
       )}
@@ -176,7 +176,7 @@ function MetricWatchCard({ watch, profiles, onEdit, onChanged }) {
       <Sparkline points={state.history} threshold={groups.length ? undefined : typeof metric?.threshold === "number" ? metric.threshold : undefined} />
 
       {(state.last_error || watch.last_error) && (
-        <p className="truncate text-xs text-red-700 dark:text-red-400" title={state.last_error || watch.last_error}>{state.last_error || watch.last_error}</p>
+        <p className="truncate text-xs text-destructive" title={state.last_error || watch.last_error}>{state.last_error || watch.last_error}</p>
       )}
 
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-xs text-muted-foreground">
@@ -233,7 +233,7 @@ export function MetricWatchGrid({ watches, identityKey }) {
         </Button>
       </div>
       {metricWatches.length === 0 ? (
-        <div className="flex items-center gap-3 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+        <div className="flex items-center gap-3 rounded-lg bg-card p-4 text-sm text-muted-foreground">
           <Activity aria-hidden="true" className="size-4 shrink-0" />
           <span>Watch a count, sum or average and get told when it crosses a line. You can also ask the agent: "tell me when open tickets go above 20".</span>
         </div>
@@ -375,7 +375,7 @@ function MetricWatchEditor({ watch, profiles, onClose, onSaved }) {
               <Button type="button" size="sm" variant="outline" disabled={!form.query.trim() || run.isPending} onClick={() => run.mutate()}>
                 Run query
               </Button>
-              {run.error && <span className="truncate text-xs text-red-700">{run.error.message}</span>}
+              {run.error && <span className="truncate text-xs text-destructive">{run.error.message}</span>}
             </div>
           </Field>
           {candidates.length > 0 && (

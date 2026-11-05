@@ -20,7 +20,7 @@ function Message({ className, align, role = "assistant", ...props }) {
 }
 
 function MessageAvatar({ className, ...props }) {
-  return <div data-slot="message-avatar" className={cn("flex size-8 shrink-0 items-center justify-center self-end overflow-hidden rounded-full bg-muted text-xs font-semibold text-muted-foreground", className)} {...props} />;
+  return <div data-slot="message-avatar" className={cn("flex size-9 shrink-0 items-center justify-center self-start overflow-hidden rounded-full bg-card text-xs font-semibold text-muted-foreground", className)} {...props} />;
 }
 
 function MessageContent({ className, ...props }) {
@@ -28,7 +28,7 @@ function MessageContent({ className, ...props }) {
 }
 
 function MessageHeader({ className, ...props }) {
-  return <div data-slot="message-header" className={cn("flex max-w-full min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground", className)} {...props} />;
+  return <div data-slot="message-header" className={cn("flex max-w-full min-w-0 items-center gap-2 text-[0.8125rem] font-bold text-foreground", className)} {...props} />;
 }
 
 function MessageFooter({ className, ...props }) {

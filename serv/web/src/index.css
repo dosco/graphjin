@@ -4,8 +4,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Inter, "Segoe UI", sans-serif;
-  --font-mono: "SF Mono", "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -21,6 +21,7 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-brand: var(--brand);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -35,83 +36,119 @@
   --color-ribbon: var(--ribbon);
   --color-ribbon-foreground: var(--ribbon-foreground);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: 2px;
+  --radius-md: 3px;
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 1px);
+  --radius-2xl: calc(var(--radius) + 2px);
+  --radius-3xl: calc(var(--radius) + 2px);
+
+  --shadow-glow: 0 0 18px -6px var(--glow);
+  --shadow-glow-lg: 0 0 26px -4px var(--glow);
+  --shadow-float: var(--float-shadow);
 }
 
+/*
+ * Two themes share one structure. Dark ("deep space") is the default: a true
+ * black canvas, hairline borders and a single vivid accent ("nova") kept for
+ * calls to action, active tabs and focus. Light keeps the same structure on a
+ * white canvas so every surface still reads.
+ */
 :root {
   color-scheme: light;
-  --radius: 0.625rem;
-  --background: oklch(0.995 0.002 255);
-  --foreground: oklch(0.18 0.01 258);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.01 258);
+  --radius: 4px;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.16 0.006 265);
+  --card: oklch(0.975 0.003 265);
+  --card-foreground: oklch(0.16 0.006 265);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.01 258);
-  --primary: oklch(0.22 0.015 258);
+  --popover-foreground: oklch(0.16 0.006 265);
+  --primary: oklch(0.57 0.235 359);
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.965 0.006 255);
-  --secondary-foreground: oklch(0.22 0.012 258);
-  --muted: oklch(0.97 0.005 255);
-  --muted-foreground: oklch(0.48 0.014 258);
-  --accent: oklch(0.95 0.009 255);
-  --accent-foreground: oklch(0.2 0.012 258);
-  --destructive: oklch(0.52 0.17 28);
-  --success: oklch(0.55 0.13 155);
-  --warning: oklch(0.69 0.14 75);
-  --border: oklch(0.9 0.008 255);
-  --input: oklch(0.9 0.008 255);
-  --ring: oklch(0.49 0.04 258);
-  --chart-1: oklch(0.58 0.17 258);
-  --chart-2: oklch(0.61 0.13 166);
-  --chart-3: oklch(0.69 0.14 75);
-  --chart-4: oklch(0.6 0.17 312);
-  --chart-5: oklch(0.62 0.18 28);
-  --ribbon: oklch(0.995 0.002 255);
-  --ribbon-foreground: oklch(0.18 0.01 258);
+  --brand: oklch(0.57 0.235 359);
+  --secondary: oklch(0.96 0.003 265);
+  --secondary-foreground: oklch(0.2 0.006 265);
+  --muted: oklch(0.965 0.003 265);
+  --muted-foreground: oklch(0.47 0.012 260);
+  --accent: oklch(0.2 0.01 265 / 5%);
+  --accent-foreground: oklch(0.16 0.006 265);
+  --destructive: oklch(0.55 0.21 27);
+  --success: oklch(0.52 0.14 160);
+  --warning: oklch(0.6 0.14 65);
+  --border: oklch(0.2 0.01 265 / 8%);
+  --input: oklch(0.2 0.01 265 / 14%);
+  --ring: oklch(0.57 0.235 359);
+  --glow: oklch(0.57 0.235 359 / 32%);
+  --glow-edge: oklch(0.57 0.235 359 / 18%);
+  --float-shadow: 0 1px 2px oklch(0.2 0.01 265 / 8%), 0 18px 48px -12px oklch(0.2 0.01 265 / 22%);
+  --chart-1: oklch(0.57 0.235 359);
+  --chart-2: oklch(0.6 0.13 215);
+  --chart-3: oklch(0.66 0.14 70);
+  --chart-4: oklch(0.56 0.16 290);
+  --chart-5: oklch(0.6 0.14 160);
+  --ribbon: oklch(1 0 0);
+  --ribbon-foreground: oklch(0.16 0.006 265);
+  --stars: oklch(0.2 0.01 265 / 9%);
+  --stars-bright: oklch(0.2 0.01 265 / 0%);
+  --chrome-top: 3.5rem;
+  --chrome-bottom: calc(3.75rem + env(safe-area-inset-bottom));
 }
 
 .dark {
   color-scheme: dark;
-  --background: oklch(0.16 0.012 258);
-  --foreground: oklch(0.95 0.006 255);
-  --card: oklch(0.2 0.014 258);
-  --card-foreground: oklch(0.95 0.006 255);
-  --popover: oklch(0.2 0.014 258);
-  --popover-foreground: oklch(0.95 0.006 255);
-  --primary: oklch(0.92 0.008 255);
-  --primary-foreground: oklch(0.18 0.012 258);
-  --secondary: oklch(0.25 0.016 258);
-  --secondary-foreground: oklch(0.93 0.007 255);
-  --muted: oklch(0.235 0.014 258);
-  --muted-foreground: oklch(0.68 0.018 255);
-  --accent: oklch(0.27 0.02 258);
-  --accent-foreground: oklch(0.96 0.006 255);
-  --destructive: oklch(0.64 0.2 26);
-  --success: oklch(0.69 0.15 155);
-  --warning: oklch(0.78 0.14 78);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.63 0.04 255);
-  --chart-1: oklch(0.68 0.18 258);
-  --chart-2: oklch(0.7 0.14 166);
-  --chart-3: oklch(0.78 0.14 75);
-  --chart-4: oklch(0.7 0.17 312);
-  --chart-5: oklch(0.7 0.18 28);
-  --ribbon: oklch(0.18 0.012 258);
-  --ribbon-foreground: oklch(0.95 0.006 255);
+  --background: oklch(0 0 0);
+  --foreground: oklch(0.94 0.003 250);
+  --card: oklch(0.13 0.005 265);
+  --card-foreground: oklch(0.94 0.003 250);
+  --popover: oklch(0 0 0);
+  --popover-foreground: oklch(0.94 0.003 250);
+  --primary: oklch(0.6 0.24 359);
+  --primary-foreground: oklch(1 0 0);
+  --brand: oklch(0.7 0.21 357);
+  --secondary: oklch(0.18 0.006 265);
+  --secondary-foreground: oklch(0.94 0.003 250);
+  --muted: oklch(0.13 0.005 265);
+  --muted-foreground: oklch(0.67 0.01 255);
+  --accent: oklch(1 0 0 / 7%);
+  --accent-foreground: oklch(0.97 0.002 250);
+  --destructive: oklch(0.66 0.21 25);
+  --success: oklch(0.74 0.16 158);
+  --warning: oklch(0.82 0.15 80);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.7 0.21 357);
+  --glow: oklch(0.66 0.25 358 / 55%);
+  --glow-edge: oklch(0.7 0.21 357 / 35%);
+  --float-shadow: 0 0 0 1px oklch(1 0 0 / 8%), 0 0 18px oklch(1 0 0 / 7%), 0 24px 60px -16px oklch(0 0 0 / 90%);
+  --chart-1: oklch(0.7 0.21 357);
+  --chart-2: oklch(0.76 0.12 215);
+  --chart-3: oklch(0.82 0.14 80);
+  --chart-4: oklch(0.7 0.16 295);
+  --chart-5: oklch(0.76 0.15 158);
+  --ribbon: oklch(0 0 0);
+  --ribbon-foreground: oklch(0.94 0.003 250);
+  --stars: oklch(1 0 0 / 45%);
+  --stars-bright: oklch(1 0 0 / 85%);
 }
 
-* {
-  box-sizing: border-box;
-  border-color: var(--border);
+@media (min-width: 768px) {
+  :root {
+    --chrome-top: 0px;
+    --chrome-bottom: 0px;
+  }
 }
 
-*::before,
-*::after {
-  border-color: var(--border);
+/* Base element rules stay layered so utilities can override them. */
+@layer base {
+  * {
+    box-sizing: border-box;
+    border-color: var(--border);
+  }
+
+  *::before,
+  *::after {
+    border-color: var(--border);
+  }
 }
 
 html,
@@ -126,6 +163,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -135,25 +173,27 @@ html {
   scrollbar-gutter: stable;
 }
 
-:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
+/* Layered so a component's own outline-none and focus ring take precedence. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
 }
 
-button,
-input,
-textarea,
-select {
-  font: inherit;
-}
+/* Base element rules stay layered so utilities can override them. */
+@layer base {
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
 
-button {
-  letter-spacing: 0;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
 }
 
 pre,
@@ -163,8 +203,83 @@ code,
 }
 
 ::selection {
-  background: oklch(0.9 0.002 255);
-  color: oklch(0.17 0.004 255);
+  background: color-mix(in oklch, var(--brand) 32%, transparent);
+  color: var(--foreground);
+}
+
+html {
+  scrollbar-color: var(--border) transparent;
+  scrollbar-width: thin;
+}
+
+/*
+ * Starfield: three tiled layers of single-pixel stars on a fixed, composited
+ * layer behind the shell. Light theme swaps it for a faint dot grid. Pure CSS,
+ * no images, and it never repaints on scroll.
+ */
+.starfield {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(1px 1px at 20px 30px, var(--stars-bright), transparent 60%),
+    radial-gradient(1px 1px at 140px 90px, var(--stars), transparent 60%),
+    radial-gradient(1px 1px at 90px 160px, var(--stars), transparent 60%),
+    radial-gradient(1.5px 1.5px at 230px 210px, var(--stars-bright), transparent 60%),
+    radial-gradient(1px 1px at 310px 60px, var(--stars), transparent 60%),
+    radial-gradient(1px 1px at 60px 260px, var(--stars), transparent 60%);
+  background-size: 340px 300px, 340px 300px, 340px 300px, 520px 460px, 410px 380px, 270px 330px;
+  opacity: 0.4;
+  transform: translateZ(0);
+}
+
+:root:not(.dark) .starfield {
+  background-image: radial-gradient(circle at 1px 1px, var(--stars) 1px, transparent 1.5px);
+  background-size: 24px 24px;
+  opacity: 1;
+  mask-image: linear-gradient(to bottom, black, transparent 70%);
+}
+
+/*
+ * Horizon: one dim light source low on the canvas, so the black reads as
+ * depth instead of an empty page. Sits under the starfield.
+ */
+.horizon {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60rem 26rem at 50% 118%, color-mix(in oklch, var(--brand) 10%, transparent), transparent 70%),
+    radial-gradient(48rem 30rem at 92% -12%, color-mix(in oklch, var(--chart-2) 9%, transparent), transparent 70%);
+  transform: translateZ(0);
+}
+
+:root:not(.dark) .horizon {
+  opacity: 0.6;
+}
+
+/* Hairline HUD label: mono, uppercase, wide tracking. */
+@utility hud-label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+@utility text-glow {
+  text-shadow: 0 0 14px var(--glow);
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 .graphiql-shell {
@@ -197,7 +312,7 @@ code,
 .swagger-shell .swagger-ui .opblock,
 .swagger-shell .swagger-ui .model-box {
   border-radius: var(--radius);
-  box-shadow: 0 1px 2px oklch(0.17 0.004 255 / 0.05), 0 16px 42px oklch(0.17 0.004 255 / 0.05);
+  box-shadow: none;
 }
 
 .swagger-shell .swagger-ui .topbar {

@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertCircle, CheckCircle2, Loader2, ShieldAlert } from "lucide-react";
+import { AlertCircle, Loader2, ShieldAlert } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -10,10 +10,12 @@ export const cx = cn;
 export function PageHeader({ eyebrow, title, description, actions }) {
   return (
     <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-      <div className="grid gap-2">
-        {eyebrow && <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">{eyebrow}</p>}
-        <h1 className="text-3xl font-semibold leading-tight tracking-normal text-foreground md:text-[2.35rem]">{title}</h1>
-        {description && <p className="max-w-3xl text-sm leading-6 text-muted-foreground md:text-[0.95rem]">{description}</p>}
+      <div className="grid gap-1.5">
+        {eyebrow && (
+          <p className="hud-label">{eyebrow}</p>
+        )}
+        <h1 className="text-[1.75rem] font-extrabold leading-[1.1] tracking-[-0.025em] text-foreground md:text-[2.125rem]">{title}</h1>
+        {description && <p className="max-w-3xl text-[0.9375rem] leading-6 text-muted-foreground">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>
@@ -22,32 +24,27 @@ export function PageHeader({ eyebrow, title, description, actions }) {
 
 export function Panel({ title, description, children, action, className, contentClassName }) {
   return (
-    <section className={cx("min-w-0 border-y bg-background", className)}>
+    <section className={cx("min-w-0", className)}>
       {(title || action) && (
-        <header className="flex flex-col gap-3 border-b bg-muted/25 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5">
+        <header className="flex flex-col gap-3 px-1 pt-2 pb-1 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            {title && <h2 className="text-sm font-semibold text-foreground">{title}</h2>}
-            {description && <p className="mt-1 text-sm leading-5 text-muted-foreground">{description}</p>}
+            {title && <h2 className="text-[1.1875rem] font-extrabold tracking-tight text-foreground">{title}</h2>}
+            {description && <p className="mt-0.5 font-mono text-xs leading-5 text-muted-foreground">{description}</p>}
           </div>
           {action}
         </header>
       )}
-      <div className={cx("px-4 py-4 sm:px-5", !(title || action) && "py-5", contentClassName)}>{children}</div>
+      <div className={cx("px-1 py-3", !(title || action) && "py-4", contentClassName)}>{children}</div>
     </section>
   );
 }
 
 export function Metric({ label, value, detail, tone = "neutral", className }) {
-  const toneClass =
-    tone === "good"
-      ? "bg-emerald-500/8"
-      : tone === "warn"
-        ? "bg-amber-500/10"
-        : "bg-muted/45";
+  const toneClass = tone === "good" ? "text-success" : tone === "warn" ? "text-warning" : "text-muted-foreground";
   return (
-    <div className={cx("flex min-h-24 flex-col justify-between gap-2 rounded-lg p-4", toneClass, className)}>
-      <span className="text-xs font-medium uppercase text-muted-foreground">{label}</span>
-      <strong className="text-2xl font-semibold leading-none tracking-normal text-foreground">{value ?? 0}</strong>
+    <div className={cx("flex min-h-24 flex-col justify-between gap-2 py-3", className)}>
+      <span className={cx("hud-label", toneClass)}>{label}</span>
+      <strong className="font-mono text-[1.625rem] font-semibold leading-none tracking-tight text-foreground tabular-nums">{value ?? 0}</strong>
       {detail && <small className="text-xs leading-5 text-muted-foreground">{detail}</small>}
     </div>
   );
@@ -73,19 +70,18 @@ export function StatusPill({ status, severity }) {
 
 export function LoadingState({ label = "Loading" }) {
   return (
-    <div className="flex min-h-32 items-center justify-center gap-2 bg-muted/25 p-6 text-sm text-muted-foreground">
-      <Loader2 aria-hidden="true" className="size-4 animate-spin" />
-      <span>{label}</span>
+    <div className="flex min-h-32 items-center justify-center gap-2.5 p-6 text-sm text-muted-foreground">
+      <Loader2 aria-hidden="true" className="size-4 animate-spin text-brand" />
+      <span className="font-mono text-xs uppercase tracking-[0.08em]">{label}</span>
     </div>
   );
 }
 
 export function EmptyState({ title = "No data", message = "Nothing matched this view.", children }) {
   return (
-    <div className="flex min-h-32 items-start gap-3 rounded-lg border border-dashed bg-card p-5 text-sm">
-      <CheckCircle2 aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
-      <div className="min-w-0">
-        <strong className="font-medium text-foreground">{title}</strong>
+    <div className="py-6 text-sm">
+      <div className="min-w-0 max-w-xl">
+        <strong className="font-bold text-foreground">{title}</strong>
         <p className="mt-1 leading-6 text-muted-foreground">{message}</p>
         {children ? <div className="mt-3">{children}</div> : null}
       </div>

@@ -48,7 +48,7 @@ const CodeInsight = () => {
         description="Read-only files, symbols, references, and database links from gj_code."
       />
 
-      <div className="grid gap-3 rounded-lg border bg-card p-4 shadow-xs md:grid-cols-[minmax(0,1fr)_14rem] md:items-center">
+      <div className="grid gap-3 rounded-lg bg-card p-4 md:grid-cols-[minmax(0,1fr)_14rem] md:items-center">
         <label className="relative block">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search files, symbols, references" />
@@ -91,7 +91,7 @@ const CodeRow = ({ row }) => {
   const location = row.path ? `${row.path}${row.start_row ? `:${row.start_row}` : ""}` : row.db_object_id;
   return (
     <article className="grid gap-3 rounded-md border bg-background p-4 md:grid-cols-[2.5rem_minmax(0,1fr)]">
-      <div className="flex size-10 items-center justify-center rounded-md border bg-muted text-muted-foreground">
+      <div className="flex size-10 items-center justify-center text-muted-foreground">
         {row.kind === "file" ? <FileCode size={18} aria-hidden="true" /> : <Code2 size={18} aria-hidden="true" />}
       </div>
       <div className="min-w-0">

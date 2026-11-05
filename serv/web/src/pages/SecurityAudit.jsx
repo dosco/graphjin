@@ -66,7 +66,7 @@ const SecurityAudit = () => {
 
           <Panel title={summary?.title || "Security Summary"} description={summaryText(summary, summaryJSON)}>
             <div className="flex gap-3 rounded-md border bg-muted/30 p-4">
-              <ShieldCheck className="mt-0.5 size-5 text-emerald-700" aria-hidden="true" />
+              <ShieldCheck className="mt-0.5 size-5 text-success" aria-hidden="true" />
               <div>
                 <strong className="text-sm font-medium">{summaryJSON?.recommendation || summary?.summary || "Review visible findings before writes."}</strong>
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">
