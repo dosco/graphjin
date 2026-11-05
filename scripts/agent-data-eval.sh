@@ -184,7 +184,7 @@ b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 mint_jwt() {
   local header payload sig claims
   claims="$(jq -nc --arg sub "agent-data-eval" \
-    '{sub: $sub, roles: ["user"], exp: (now | floor) + 7200}')"
+    '{sub: $sub, roles: ["user"], exp: (now | floor) + 43200}')"
   header="$(printf '%s' '{"alg":"HS256","typ":"JWT"}' | b64url)"
   payload="$(printf '%s' "$claims" | b64url)"
   sig="$(printf '%s.%s' "$header" "$payload" | openssl dgst -sha256 -hmac "$JWT_SECRET" -binary | b64url)"

@@ -70,8 +70,11 @@ type discoveryState struct {
 	// Per-target mutation evidence, populated only by id-detail lookups and
 	// validations in THIS run (search hits never count, mirroring the
 	// saved-query detail rule).
-	detailKinds       map[string]bool
-	tablesDetailed    map[string]bool
+	detailKinds    map[string]bool
+	tablesDetailed map[string]bool
+	// tableColumns are the column names table cards listed, from the seed and
+	// from every table detail this run read, by table name.
+	tableColumns      map[string]map[string]bool
 	tablesValidated   map[string]bool
 	workflowsDetailed map[string]bool
 	actions           []protocolAction
@@ -328,6 +331,7 @@ func newDiscoveryState(instruction string) *discoveryState {
 		savedQueryGraphQL:      map[string]string{},
 		detailKinds:            map[string]bool{},
 		tablesDetailed:         map[string]bool{},
+		tableColumns:           map[string]map[string]bool{},
 		tablesValidated:        map[string]bool{},
 		workflowsDetailed:      map[string]bool{},
 		catalogRequestKeys:     map[string]bool{},
@@ -355,6 +359,11 @@ func (r *protocolRuntime) Seed(ctx context.Context) (any, error) {
 	r.state.seedOK = true
 	r.state.recordCatalog(args, out, true)
 	r.state.seedResult = normalizeValue(out)
+	for _, card := range catalogCards(r.state.seedResult) {
+		if strings.EqualFold(stringFromMap(card, "kind"), "table") {
+			r.state.recordTableColumns(card)
+		}
+	}
 	return r.state.seedResult, nil
 }
 
@@ -1427,14 +1436,20 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	action := r.state.startAction("model", "execute_graphql", args)
 	// A small top-n ranking runs with a few extra rows so a cut that splits
 	// a tie is seen; the result is settled back before anything reads it.
+	// A "which/who" read that left out the rows' name column runs with it, so
+	// the answer can name what it found instead of reporting an id.
 	execArgs := args
-	probeQuery, rankingCuts, rankingProbe := "", []rankingCut(nil), false
+	execQuery, rankingCuts, rankingProbe := query, []rankingCut(nil), false
 	if !ContainsMutationOperation(query) {
-		probeQuery, rankingCuts, rankingProbe = rankingTieProbe(query)
+		widened, labelled := labelWidening(query, r.state.instruction, r.state.labelColumnsByTable())
+		execQuery, rankingCuts, rankingProbe = rankingTieProbe(widened)
+		if !rankingProbe && labelled {
+			execQuery = widened
+		}
 	}
-	if rankingProbe {
+	if execQuery != query {
 		execArgs = cloneAnyMap(args)
-		execArgs["query"] = probeQuery
+		execArgs["query"] = execQuery
 	}
 	out, err := r.base.ExecuteGraphQL(ctx, execArgs)
 	if rankingProbe && err == nil && !executionFailed(out) {
@@ -1895,6 +1910,7 @@ func (s *discoveryState) recordDetailEvidence(ids []string, out any) {
 			if table := strings.ToLower(stringFromMap(card, "table_name")); table != "" {
 				s.tablesDetailed[table] = true
 			}
+			s.recordTableColumns(card)
 		case "workflow":
 			name := stringFromMap(card, "name")
 			if name == "" {
