@@ -125,6 +125,9 @@ smoke_cleanup() {
     [ -n "$metric_watch_id" ] || continue
     graphql metric-watch-trap-cleanup "mutation { gj_watch(delete: true, where: { id: { eq: \"${metric_watch_id}\" } }) { id } }" >/dev/null 2>&1 || true
   done
+  if declare -F lead_cleanup >/dev/null; then
+    lead_cleanup || true
+  fi
   if declare -F mcp_stop_all_session_streams >/dev/null; then
     mcp_stop_all_session_streams
   fi
@@ -1026,6 +1029,155 @@ run_metric_watch_suite() {
     | $d.kind == "metric" and $d.value == $v and $d.metric.path != null
   '
   graphql metric-watch-delete "mutation { gj_watch(delete: true, where: { id: { eq: \"${id}\" } }) { id } }" >/dev/null || true
+}
+
+# --- lead agent: skills, memories and threads in the graph ------------------
+
+# Rows created by the lead suites, deleted on exit as the identity that made
+# them (artifacts and threads are owner-scoped).
+SMOKE_LEAD_USER="${SMOKE_LEAD_USER:-smoke_lead_$(date +%s)_$$}"
+SMOKE_LEAD_PEER="${SMOKE_LEAD_PEER:-${SMOKE_LEAD_USER}_peer}"
+SMOKE_LEAD_ARTIFACT_IDS=()
+SMOKE_LEAD_THREAD_IDS=()
+
+lead_graphql() {
+  graphql_as_identity "$SMOKE_LEAD_USER" user "$ACCOUNT_ID" "$@"
+}
+
+# lead_enabled succeeds when the server exposes the thread roots, which exist
+# only while agent.lead.enabled is on.
+lead_enabled() {
+  local out="$TMP_DIR/lead-probe.json"
+  post_json_as_identity "$SMOKE_LEAD_USER" user "$ACCOUNT_ID" "${BASE_URL%/}/api/v1/graphql" \
+    '{"query":"{ gj_thread(limit: 1) { id } }"}' "$out" >/dev/null 2>&1 || true
+  jq -e '((.errors // []) | length) == 0' "$out" >/dev/null 2>&1
+}
+
+lead_cleanup() {
+  local id
+  for id in "${SMOKE_LEAD_THREAD_IDS[@]-}"; do
+    [ -n "$id" ] || continue
+    lead_graphql lead-cleanup-thread "mutation { gj_thread(delete: true, where: { id: { eq: \"${id}\" } }) { id } }" >/dev/null 2>&1 || true
+  done
+  for id in "${SMOKE_LEAD_ARTIFACT_IDS[@]-}"; do
+    [ -n "$id" ] || continue
+    lead_graphql lead-cleanup-artifact "mutation { gj_artifacts(delete: true, where: { id: { eq: \"${id}\" } }) { id } }" >/dev/null 2>&1 || true
+  done
+  SMOKE_LEAD_THREAD_IDS=()
+  SMOKE_LEAD_ARTIFACT_IDS=()
+}
+
+# Capability: LEAD-GRAPH
+# Contract: With agent.lead.enabled on, a user's skills, memories and threads
+# are GraphQL rows a GUI can manage: a skill is a gj_artifacts row that stays
+# personal until shared with the account, skill names are unique per owner,
+# threads are created, renamed and deleted through gj_thread, and messages are
+# written only by agent turns. With the lead off, the thread roots are absent
+# and conversation requests are refused with a pointer to agent.lead.enabled.
+# Deeper coverage: TestSkillsAreGraphQLArtifacts, TestThreadsAreGraphQLRoots,
+# TestLeadEnabledDefaultsAndDependencies, TestAgentRequestsRunTheLeadWhenEnabled.
+run_lead_graph_suite() {
+  local name="smoke_skill_$(date +%s)_$$"
+  local out id peer_out thread_id
+  if ! lead_enabled; then
+    log "checking conversation refusal with the lead off"
+    out="$TMP_DIR/lead-off-history.json"
+    post_json "${BASE_URL%/}/api/v1/agent" \
+      '{"instruction":"and last month?","history":[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"}]}' "$out" >/dev/null 2>&1 || true
+    assert_jq "$out" '([.errors[]?.message] | join(" ")) | test("agent.lead.enabled")' "[LEAD-GRAPH] conversation is refused with the lead off"
+    return 0
+  fi
+
+  log "checking skills, memories and threads through GraphQL"
+  out="$(lead_graphql lead-skill-create "mutation { gj_artifacts(insert: { kind: \"skill\", name: \"${name}\", description: \"Smoke check skill\", content: \"Smoke check instructions.\" }) { id kind name description tier } }" LEAD-GRAPH)"
+  id="$(jq -r '[.data.gj_artifacts] | flatten | .[0].id // empty' "$out")"
+  [ -n "$id" ] || fail "skill was not created: $(jq -c . "$out")"
+  SMOKE_LEAD_ARTIFACT_IDS+=("$id")
+  assert_jq "$out" '([.data.gj_artifacts] | flatten | .[0]) as $s | $s.kind == "skill" and $s.description == "Smoke check skill" and $s.tier == "observed"' "[LEAD-GRAPH] skill is a personal gj_artifacts row with its description"
+
+  graphql_expect_error_as_identity "$SMOKE_LEAD_USER" user "$ACCOUNT_ID" lead-skill-duplicate \
+    "mutation { gj_artifacts(insert: { kind: \"skill\", name: \"${name}\", description: \"again\", content: \"again\" }) { id } }" LEAD-GRAPH >/dev/null
+  pass "[LEAD-GRAPH] a second skill with the same name is refused"
+
+  peer_out="$(graphql_as_identity "$SMOKE_LEAD_PEER" user "$ACCOUNT_ID" lead-skill-peer-hidden \
+    "query { gj_artifacts(where: { kind: { eq: \"skill\" }, name: { eq: \"${name}\" } }) { id } }" LEAD-GRAPH)"
+  assert_jq "$peer_out" '(.data.gj_artifacts | length) == 0' "[LEAD-GRAPH] a teammate cannot see a personal skill"
+  lead_graphql lead-skill-share "mutation { gj_artifacts(update: { tier: \"approved\" }, where: { id: { eq: \"${id}\" } }) { id tier } }" LEAD-GRAPH >/dev/null
+  peer_out="$(graphql_as_identity "$SMOKE_LEAD_PEER" user "$ACCOUNT_ID" lead-skill-peer-shared \
+    "query { gj_artifacts(where: { kind: { eq: \"skill\" }, name: { eq: \"${name}\" } }) { id tier } }" LEAD-GRAPH)"
+  assert_jq "$peer_out" '(.data.gj_artifacts | length) == 1 and .data.gj_artifacts[0].tier == "approved"' "[LEAD-GRAPH] a shared skill is visible to the account"
+
+  out="$(lead_graphql lead-memory-create "mutation { gj_artifacts(insert: { kind: \"memory\", content: \"${name} memory\" }) { id kind content } }" LEAD-GRAPH)"
+  id="$(jq -r '[.data.gj_artifacts] | flatten | .[0].id // empty' "$out")"
+  [ -n "$id" ] || fail "memory was not created: $(jq -c . "$out")"
+  SMOKE_LEAD_ARTIFACT_IDS+=("$id")
+  pass "[LEAD-GRAPH] a memory is a gj_artifacts row"
+
+  out="$(lead_graphql lead-thread-create "mutation { gj_thread(insert: { title: \"${name}\" }) { id title status } }" LEAD-GRAPH)"
+  thread_id="$(jq -r '[.data.gj_thread] | flatten | .[0].id // empty' "$out")"
+  [ -n "$thread_id" ] || fail "thread was not created: $(jq -c . "$out")"
+  SMOKE_LEAD_THREAD_IDS+=("$thread_id")
+  lead_graphql lead-thread-rename "mutation { gj_thread(update: { title: \"${name} renamed\" }, where: { id: { eq: \"${thread_id}\" } }) { id title } }" LEAD-GRAPH >/dev/null
+  out="$(lead_graphql lead-thread-read "query { gj_thread(where: { id: { eq: \"${thread_id}\" } }) { id title } }" LEAD-GRAPH)"
+  assert_jq_args "$out" "[LEAD-GRAPH] a thread is created and renamed through gj_thread" --arg t "${name} renamed" '.data.gj_thread[0].title == $t'
+  peer_out="$(graphql_as_identity "$SMOKE_LEAD_PEER" user "$ACCOUNT_ID" lead-thread-peer \
+    "query { gj_thread(where: { id: { eq: \"${thread_id}\" } }) { id } }" LEAD-GRAPH)"
+  assert_jq "$peer_out" '(.data.gj_thread | length) == 0' "[LEAD-GRAPH] another user cannot read the thread"
+  graphql_expect_error_as_identity "$SMOKE_LEAD_USER" user "$ACCOUNT_ID" lead-message-write \
+    "mutation { gj_thread_message(insert: { thread_id: \"${thread_id}\", role: \"user\", content: \"hi\" }) { id } }" LEAD-GRAPH >/dev/null
+  pass "[LEAD-GRAPH] thread messages are not writable through GraphQL"
+
+  lead_cleanup
+  out="$(lead_graphql lead-thread-gone "query { gj_thread(where: { id: { eq: \"${thread_id}\" } }) { id } }" LEAD-GRAPH)"
+  assert_jq "$out" '(.data.gj_thread | length) == 0' "[LEAD-GRAPH] a deleted thread is gone"
+}
+
+# Capability: LEAD-SKILL-TURN
+# Contract: A lead turn on a thread loads the user's matching skill and records
+# it on the run: gj_thread_run.used_skills names the skill, and the thread holds
+# the user message and the lead's reply. Model-driven, so it retries once.
+# Deeper coverage: TestLeadLoadsOnlyCatalogSkills, TestThreadTurnRunsTheLeadOverStatelessWorkers.
+# Args: <table the skill asks to count, e.g. support_tickets>.
+run_lead_skill_turn_suite() {
+  local table="$1"
+  local stamp="$(date +%s)_$$"
+  local name="smoke pulse ${stamp}"
+  local out skill_id thread_id attempt=1 used=""
+  if ! lead_enabled; then
+    log "skipping the lead skill turn because agent.lead.enabled is off"
+    return 0
+  fi
+  log "checking that a lead turn loads a user skill"
+  out="$(lead_graphql lead-turn-skill "mutation { gj_artifacts(insert: { kind: \"skill\", name: \"${name}\", description: \"How to run the smoke pulse check\", content: \"Count the rows in the ${table} table and report the number.\" }) { id } }" LEAD-SKILL-TURN)"
+  skill_id="$(jq -r '[.data.gj_artifacts] | flatten | .[0].id // empty' "$out")"
+  [ -n "$skill_id" ] || fail "skill was not created: $(jq -c . "$out")"
+  SMOKE_LEAD_ARTIFACT_IDS+=("$skill_id")
+  while [ "$attempt" -le 2 ] && [ -z "$used" ]; do
+    out="$(lead_graphql lead-turn-thread "mutation { gj_thread(insert: { title: \"smoke_lead_turn_${stamp}_${attempt}\" }) { id } }" LEAD-SKILL-TURN)"
+    thread_id="$(jq -r '[.data.gj_thread] | flatten | .[0].id // empty' "$out")"
+    [ -n "$thread_id" ] || fail "thread was not created: $(jq -c . "$out")"
+    SMOKE_LEAD_THREAD_IDS+=("$thread_id")
+    post_json_as_identity "$SMOKE_LEAD_USER" user "$ACCOUNT_ID" "${BASE_URL%/}/api/v1/agent" \
+      "$(jq -nc --arg t "$thread_id" '{instruction:"Run the smoke pulse check.", thread_id:$t}')" \
+      "$TMP_DIR/lead-turn-${attempt}.json" || true
+    out="$(lead_graphql lead-turn-runs "query { gj_thread_run(where: { thread_id: { eq: \"${thread_id}\" } }) { id status used_skills llm_calls } }" LEAD-SKILL-TURN)"
+    if jq -e --arg s "$skill_id" '[.data.gj_thread_run[]?.used_skills[]?] | index($s) != null' "$out" >/dev/null 2>&1; then
+      used=1
+    fi
+    attempt=$((attempt + 1))
+  done
+  if [ -z "$used" ]; then
+    echo "lead never recorded skill ${skill_id}; last runs and response:" >&2
+    jq . "$out" >&2 || true
+    jq . "$TMP_DIR/lead-turn-$((attempt - 1)).json" >&2 || true
+    lead_cleanup
+    fail "[LEAD-SKILL-TURN] lead turn did not load the matching skill"
+  fi
+  pass "[LEAD-SKILL-TURN] the run records the skill the lead loaded"
+  assert_jq "$out" '[.data.gj_thread_run[] | select(.status == "done" and (.llm_calls // 0) > 0)] | length >= 1' "[LEAD-SKILL-TURN] the run finished and counted its model calls"
+  out="$(lead_graphql lead-turn-messages "query { gj_thread_message(where: { thread_id: { eq: \"${thread_id}\" } }) { role content } }" LEAD-SKILL-TURN)"
+  assert_jq "$out" '([.data.gj_thread_message[].role] | index("user") != null) and ([.data.gj_thread_message[].role] | index("assistant") != null)' "[LEAD-SKILL-TURN] the thread holds the question and the reply"
+  lead_cleanup
 }
 
 # Agent-driven watch: the agent must actually create the watch (retried); then a

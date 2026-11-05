@@ -148,6 +148,7 @@ run_watch_lifecycle_suite "subscription smoke_watch { support_tickets(first: 25,
 run_watch_fire_suite "subscription smoke_fire { support_tickets(first: 25, after: \$cursor) { id status } support_tickets_cursor }"
 run_metric_watch_suite 'query { support_tickets { count_id } }' "support_tickets.0.count_id"
 run_artifact_suite
+run_lead_graph_suite
 
 log "checking MCP discovery surfaces"
 # The limit has to clear the demo's whole saved-query set. It was 10 while the
@@ -165,6 +166,7 @@ case "$RUN_AGENT" in
       log "checking REST and MCP agent endpoints"
       retry_agent_assert "REST agent answered from churn evidence" run_agent_rest_once "$saas_agent_expr"
       retry_agent_assert "MCP agent answered from churn evidence" run_agent_mcp_once "$saas_agent_expr"
+      run_lead_skill_turn_suite support_tickets
     else
       log "skipping agent checks because /api/v1/agent is not enabled"
     fi
@@ -176,6 +178,7 @@ case "$RUN_AGENT" in
     log "checking REST and MCP agent endpoints"
     retry_agent_assert "REST agent answered from churn evidence" run_agent_rest_once "$saas_agent_expr"
     retry_agent_assert "MCP agent answered from churn evidence" run_agent_mcp_once "$saas_agent_expr"
+    run_lead_skill_turn_suite support_tickets
     ;;
   *)
     fail "GRAPHJIN_AGENT_SMOKE must be auto, always, or never"
