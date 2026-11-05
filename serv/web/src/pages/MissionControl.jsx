@@ -12,7 +12,6 @@ import {
   FileCheck2,
   Link2,
   ShieldCheck,
-  UserRound,
   X,
 } from "lucide-react";
 
@@ -34,6 +33,8 @@ import {
 import { parseJSON, relativeTime } from "../services/graphql";
 import { MetricWatchGrid, isMetricWatch, metricEventSummary } from "./mission/MetricWatches";
 import { DataErrorState, EmptyState, LoadingState, PageHeader, Panel, StatusPill } from "../components/ui";
+import { useConsole } from "@/components/Layout/console-context";
+import { signInState } from "../services/session";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,7 +60,11 @@ const sectionMeta = {
 const MissionControl = ({ section }) => {
   const identity = useOperatorIdentity();
   const identityKey = operatorIdentityKey(identity);
-  const hasIdentity = hasOperatorIdentity(identity);
+  const { bootstrap, isLoading: bootstrapLoading } = useConsole();
+  const session = signInState(bootstrap);
+  // A console session is an identity too: the server scopes rows to the
+  // signed-in user, so an empty list means "nothing yet", not "unknown user".
+  const hasIdentity = hasOperatorIdentity(identity) || session.signedIn;
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const fixedSection = validTabs.has(section) ? section : "";
@@ -93,7 +98,7 @@ const MissionControl = ({ section }) => {
   const approved = annotations.filter((annotation) => annotation.tier === "approved");
   const hasSessionData = tasks.length > 0 || watches.length > 0 || events.length > 0 || annotations.length > 0;
   const resolvingSessionIdentity = !hasIdentity && !hasSessionData &&
-    (tasksQuery.isLoading || watchesQuery.isLoading || annotationsQuery.isLoading);
+    (bootstrapLoading || tasksQuery.isLoading || watchesQuery.isLoading || annotationsQuery.isLoading);
   const canShowMission = hasIdentity || hasSessionData;
 
   const unavailable = {
@@ -167,8 +172,7 @@ const MissionControl = ({ section }) => {
               {tab === "watches" && <Badge variant={events.length ? "warning" : "muted"}>{events.length} unseen</Badge>}
               {tab === "annotations" && <Badge variant={drafts.length ? "warning" : "muted"}>{drafts.length} drafts</Badge>}
               <Badge variant={identity.role === "admin" ? "warning" : "outline"}>
-                <UserRound aria-hidden="true" />
-                {identity.userId || "Session identity"}
+                {identity.userId || session.name || "Session"}
               </Badge>
             </div>
           ) : null
@@ -273,7 +277,7 @@ function FeatureUnavailableHints({ unavailable }) {
 
 function TasksPanel({ query, tasks, onOpenTask }) {
   return (
-    <Panel title="Tasks">
+    <Panel>
       {query.isLoading ? (
         <LoadingState />
       ) : query.error ? (
@@ -515,7 +519,7 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
       </Panel>
 
       {!query.error && !query.isLoading && (
-        <Panel title="Watches">
+        <Panel>
           <MetricWatchGrid watches={watches} identityKey={identityKey} />
           <div className="mt-6" />
           {otherWatches.length === 0 && watches.length > 0 ? null : otherWatches.length === 0 ? (
