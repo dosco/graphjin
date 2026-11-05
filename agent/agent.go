@@ -1498,21 +1498,7 @@ func (a *Agent) finalizeWithGroundedRewrite(ctx context.Context, client ax.AICli
 	if protocol == nil || protocol.state == nil {
 		return resp
 	}
-	resp = a.finalizeGrounded(ctx, client, protocol, cfg, req, resp, rateLimiter)
-	resp.Answer = unescapeAnswerNewlines(resp.Answer)
-	return resp
-}
-
-// unescapeAnswerNewlines repairs markdown a model escaped twice: an answer
-// with literal \n sequences and not one real line break renders as a single
-// line of backslashes, which flash-tier models were observed to emit for
-// tables. An answer that already has real line breaks is left alone, so one
-// that shows an escape sequence on purpose is never rewritten.
-func unescapeAnswerNewlines(answer string) string {
-	if strings.Contains(answer, "\n") || !strings.Contains(answer, `\n`) {
-		return answer
-	}
-	return strings.ReplaceAll(answer, `\n`, "\n")
+	return a.finalizeGrounded(ctx, client, protocol, cfg, req, resp, rateLimiter)
 }
 
 func (a *Agent) finalizeGrounded(ctx context.Context, client ax.AIClient, protocol *protocolRuntime, cfg Config, req Request, resp Response, rateLimiter ax.AxRateLimiter) Response {

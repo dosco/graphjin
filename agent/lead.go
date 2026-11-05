@@ -269,7 +269,6 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 			}
 		}
 	}
-	resp.Answer = unescapeAnswerNewlines(resp.Answer)
 	return run.finish(resp, usage), nil
 }
 
