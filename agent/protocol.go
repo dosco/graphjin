@@ -210,11 +210,6 @@ type discoveryState struct {
 	// refusal on the mismatch itself makes the third attempt land regardless of
 	// phrasing, which is what "two corrections, then the caller decides" meant.
 	observedValueStrikes map[string]int
-	// rankingTies are ranking cuts this run's executions found tied; the
-	// answer must name every tied row rather than crown one.
-	rankingTies []rankingTie
-	// rankingTieRewriteUsed latches the one restatement a tie may cost.
-	rankingTieRewriteUsed bool
 	// databaseComputationRefusals counts finals the database-computation
 	// requirement refused since execution count databaseComputationSeen; once
 	// it is waived the requirement stays off for the run.
@@ -1425,23 +1420,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	r.state.clearCompletionLatch()
 	wasRepairPending := r.state.pendingFailedQueryKey != ""
 	action := r.state.startAction("model", "execute_graphql", args)
-	// A small top-n ranking runs with a few extra rows so a cut that splits
-	// a tie is seen; the result is settled back before anything reads it.
-	execArgs := args
-	probeQuery, rankingCuts, rankingProbe := "", []rankingCut(nil), false
-	if !ContainsMutationOperation(query) {
-		probeQuery, rankingCuts, rankingProbe = rankingTieProbe(query)
-	}
-	if rankingProbe {
-		execArgs = cloneAnyMap(args)
-		execArgs["query"] = probeQuery
-	}
-	out, err := r.base.ExecuteGraphQL(ctx, execArgs)
-	if rankingProbe && err == nil && !executionFailed(out) {
-		var ties []rankingTie
-		out, ties = settleRankingTies(out, rankingCuts)
-		r.state.rankingTies = append(r.state.rankingTies, ties...)
-	}
+	out, err := r.base.ExecuteGraphQL(ctx, args)
 	if err == nil && executionFailed(out) {
 		if denied, ok := policyFinalExecutionError(out); ok {
 			code := stringFromMap(denied.Extensions, "code")
