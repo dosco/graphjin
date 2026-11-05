@@ -20,6 +20,11 @@ freeform notes addressed to catalog card IDs. Unlike executable artifacts,
 annotations never override config or source metadata. Observed notes are
 owner-only drafts; explicitly approved notes become account-visible context.
 
+The [lead agent](/agentic/lead-agent/) keeps its state here too: `skill`,
+`memory`, and `agent_profile` rows are personal until their owner sets
+`tier: "approved"`, which shares them with the owner's account. A GUI creates,
+edits, shares, and deletes them with ordinary `gj_artifacts` mutations.
+
 Global files are the baseline:
 
 ```text

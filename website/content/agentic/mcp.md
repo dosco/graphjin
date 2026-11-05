@@ -71,6 +71,12 @@ runs it as the stored owner and returns `verified`, `failed`, or `pending`
 state through the same GraphQL row. Agent responses also surface active and
 failed task notices. See [Declared Tasks](/agentic/tasks/).
 
+With `agent.lead.enabled` (the default in `dev` and `agentic` modes),
+`ask_graphjin_agent` runs the [lead agent](/agentic/lead-agent/), which accepts
+`history` or a `thread_id` and carries the caller's skills and memories. With
+the lead off, the tool answers single self-contained questions and refuses a
+conversation.
+
 {{< verified by="TestMCPCLIParity" file="cmd/mcp_parity_test.go" line="18" >}}
 {{< verified by="TestProcessCursorsForMCP" file="serv/mcp_cursor_test.go" line="20" >}}
 {{< verified by="TestUserArtifactSavedQueryOverridesGlobalOnlyForOwner" file="serv/artifact_overlay_test.go" line="94" >}}

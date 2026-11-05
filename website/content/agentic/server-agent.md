@@ -8,6 +8,8 @@ weight: 5
 
 GraphJin's built-in agent - the server-side agent - runs the catalog-first discovery loop **inside GraphJin** and exposes it as a single MCP tool, `ask_graphjin_agent`, and a single REST endpoint, `POST /api/v1/agent`. Instead of your client chaining `query_catalog` → `query_catalog(id)` → `validate_where_clause` → `execute_saved_query` itself, you send one instruction and GraphJin discovers, validates, executes, and returns a typed, evidence-backed answer.
 
+With `agent.lead.enabled` on (the default in `dev` and `agentic` modes), every call runs the [lead agent](/agentic/lead-agent/), which holds the conversation, your skills, and your memories, and sends this loop self-contained questions. This page describes the data worker behind it.
+
 It is enabled by default in `dev` and `agentic` modes. Use it when you want GraphJin to orchestrate discovery in one governed, caller-scoped, auditable call; use the [MCP tools](/agentic/mcp/) directly when you want to drive the loop step by step yourself. Production mode keeps its existing opt-in behavior.
 
 ## Try it in five minutes
@@ -141,7 +143,7 @@ curl -sS http://localhost:8080/api/v1/agent \
 }
 ```
 
-{{< verified by="TestAskGraphJinAgentMCPSchema" file="serv/agent_handler_test.go" line="347" >}}
+{{< verified by="TestAskGraphJinAgentMCPSchema" file="serv/agent_handler_test.go" line="641" >}}
 
 ### Streaming and status
 

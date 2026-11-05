@@ -45,6 +45,11 @@ context to exact catalog detail and semantic recall without changing source
 metadata. They remain untrusted data, carry author and approval attribution,
 and become stale historical notes when their addressed catalog entity vanishes.
 
+The [lead agent](/agentic/lead-agent/) holds conversations, the caller's
+skills, and their memories, and asks a stateless data worker the questions.
+Its threads, skills, and memories are GraphQL rows, so a GUI can manage them
+without a REST client.
+
 [Mission Control](/agentic/mission-control/) is the human view over the same
 state: task trails, unseen watch events, and observed annotation drafts live in
 one caller-scoped console page, while Agent chat turns response notices into
