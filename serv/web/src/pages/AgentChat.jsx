@@ -68,16 +68,16 @@ const initialMessages = [];
 
 const promptStarters = [
   {
-    label: "Runtime posture",
-    text: "Summarize the current runtime posture and the next safest operator action.",
+    label: "Server status",
+    text: "How is the server doing?",
   },
   {
-    label: "Security check",
-    text: "Check security posture before I ask the agent to make any changes.",
+    label: "Security",
+    text: "Any security issues?",
   },
   {
-    label: "Find saved queries",
-    text: "Find saved queries that help inspect source health and recent runtime events.",
+    label: "Saved queries",
+    text: "What saved queries are there?",
   },
 ];
 
@@ -411,7 +411,7 @@ const AgentChat = () => {
               value={instruction}
               onChange={(event) => setInstruction(event.target.value)}
               onKeyDown={handleInstructionKeyDown}
-              placeholder={ready ? "Ask GraphJin about your data, runtime, or next action" : "Enable the GraphJin agent to chat"}
+              placeholder={ready ? "Ask a question" : "The agent is off"}
               disabled={inputDisabled}
               rows={2}
               className="min-h-20 resize-none border-0 bg-transparent px-4 py-3 shadow-none focus-visible:bg-transparent focus-visible:ring-0"
@@ -448,14 +448,14 @@ const AgentChat = () => {
   return (
     <div className="h-[calc(100dvh-var(--chrome-top)-var(--chrome-bottom))] min-h-[38rem] overflow-hidden">
       {statusQuery.isLoading ? (
-        <div className="p-6"><LoadingState label="Checking agent status" /></div>
+        <div className="p-6"><LoadingState /></div>
       ) : statusQuery.error ? (
         <div className="p-6"><DataErrorState error={statusQuery.error} permissionMessage="Agent status is authenticated through the current GraphJin session. Open the console with an operator/admin identity." unavailableMessage="The agent status endpoint could not be reached from /api/v1/agent/status." /></div>
       ) : (
         <div className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)]">
           <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-2 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="min-w-0 overflow-hidden"><div className="flex items-center gap-2"><h1 className="truncate text-[0.9375rem] font-extrabold tracking-tight">{activeProfile?.name || "GraphJin Agent"}</h1><StatusPill status={ready ? "ready" : status?.status || "pending"} /></div><p className="hidden truncate text-xs text-muted-foreground sm:block">{ready ? "Governed by the current caller and catalog." : status?.message}</p></div>
+              <div className="min-w-0 overflow-hidden"><div className="flex items-center gap-2"><h1 className="truncate text-[0.9375rem] font-extrabold tracking-tight">{activeProfile?.name || "Agent"}</h1><StatusPill status={ready ? "ready" : status?.status || "pending"} /></div></div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {threadsEnabled && (
@@ -531,7 +531,7 @@ export function ThreadList({ threads, profiles = [], activeID, onSelect, onSelec
             </Button>
           )}
         </div>
-        {agents.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">Agents you create get their own home thread.</p>}
+        {agents.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">None yet</p>}
         {agents.map((group) => (
           <div key={group.profile.id} className="grid gap-0.5">
             <button
@@ -557,7 +557,7 @@ export function ThreadList({ threads, profiles = [], activeID, onSelect, onSelec
       <section aria-label="Chats" className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
         <h2 className="hud-label px-2 pt-1">Chats</h2>
         {chats.threads.length === 0 ? (
-          <p className="px-2 py-1 text-xs text-muted-foreground">Conversations you start are kept here.</p>
+          <p className="px-2 py-1 text-xs text-muted-foreground">None yet</p>
         ) : (
           <ThreadItems threads={chats.threads} activeID={activeID} onSelect={onSelect} disabled={disabled} />
         )}
@@ -771,13 +771,7 @@ function EmptyAgentState({ ready, onSelectPrompt }) {
   return (
     <div className="flex min-h-[18rem] items-center justify-center p-4 md:min-h-[26rem] md:p-6">
       <div className="grid max-w-2xl justify-items-center gap-4 text-center md:gap-5">
-        <p className={cn("hud-label", ready && "text-brand")}>{ready ? "Agent online" : "Agent offline"}</p>
-        <div className="grid gap-1">
-          <p className="text-[2rem] font-extrabold leading-tight tracking-[-0.03em] text-foreground">{ready ? "Ready for governed work" : "Agent unavailable"}</p>
-          <p className="text-sm leading-6 text-muted-foreground">
-            {ready ? "Catalog, runtime, and security context are available." : "Readiness details are available."}
-          </p>
-        </div>
+        <p className="text-[2rem] font-extrabold leading-tight tracking-[-0.03em] text-foreground">{ready ? "Ask about your data" : "The agent is off"}</p>
         <div className="grid w-full gap-1 text-left">
           {promptStarters.map((prompt) => (
             <button
@@ -785,10 +779,9 @@ function EmptyAgentState({ ready, onSelectPrompt }) {
               key={prompt.label}
               disabled={!ready}
               onClick={() => onSelectPrompt(prompt.text)}
-              className="group grid w-full gap-0.5 rounded-md px-3 py-3 text-left text-sm transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-baseline sm:gap-4"
+              className="w-full rounded-md px-3 py-2.5 text-left text-[0.9375rem] text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <span className="font-semibold text-foreground">{prompt.label}</span>
-              <span className="text-xs leading-5 text-muted-foreground group-hover:text-foreground/75">{prompt.text}</span>
+              {prompt.text}
             </button>
           ))}
         </div>
@@ -949,7 +942,6 @@ function actionLabel(action) {
 function AgentStatusAction({ status }) {
   return (
     <>
-      <span className="hidden md:inline-flex"><StatusPill status={status.status} /></span>
       <Sheet>
         <SheetTrigger asChild>
           <Button type="button" variant="ghost" size="sm">

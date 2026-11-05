@@ -17,7 +17,7 @@ const catalogQuery = `query CatalogExplorer {
 
 const kinds = ["all", "database", "table", "column", "relationship", "system_capability", "capability", "workflow", "help"];
 
-const CatalogExplorer = ({ initialKind = "all", title = "Catalog", description = "Schema, source capabilities, workflows, and GraphJin help from gj_catalog." }) => {
+const CatalogExplorer = ({ initialKind = "all", title = "Catalog", description }) => {
   const [kind, setKind] = useState(initialKind);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
@@ -45,7 +45,6 @@ const CatalogExplorer = ({ initialKind = "all", title = "Catalog", description =
   return (
     <div className="mx-auto grid max-w-7xl gap-6">
       <PageHeader
-        eyebrow="Discovery"
         title={title}
         description={description}
       />
@@ -64,9 +63,9 @@ const CatalogExplorer = ({ initialKind = "all", title = "Catalog", description =
         </Select>
       </div>
 
-      <Panel title="Catalog rows" description={`${filtered.length} of ${items.length} visible rows`} contentClassName="p-0 sm:p-0">
+      <Panel title="Rows" description={`${filtered.length} of ${items.length}`} contentClassName="p-0 sm:p-0">
         {isLoading ? (
-          <LoadingState label="Reading gj_catalog" />
+          <LoadingState />
         ) : error ? (
           <DataErrorState
             error={error}
@@ -83,7 +82,7 @@ const CatalogExplorer = ({ initialKind = "all", title = "Catalog", description =
             ))}
           </div>
         ) : (
-          <EmptyState title="No catalog rows" message="Try a different filter or grant this role catalog read access." />
+          <EmptyState title="No matches" />
         )}
       </Panel>
       <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>

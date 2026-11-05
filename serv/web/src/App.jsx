@@ -37,7 +37,7 @@ const App = () => {
         <ThemeProvider>
           <BrowserRouter basename="/">
             <Layout>
-              <Suspense fallback={<LoadingState label="Loading view" />}>
+              <Suspense fallback={<LoadingState />}>
                 <Routes>
                   <Route path="/" element={<Navigate to="/user/agent" replace />} />
                   <Route path="/user/agent" element={<AgentChat />} />
@@ -50,7 +50,7 @@ const App = () => {
                   <Route path="/admin/runtime" element={<Dashboard />} />
                   <Route path="/admin/workbench" element={<QueryEditor />} />
                   <Route path="/admin/catalog" element={<CatalogExplorer />} />
-                  <Route path="/admin/workflows" element={<CatalogExplorer initialKind="workflow" title="Workflows" description="Discover approved workflows and their GraphJin execution surfaces." />} />
+                  <Route path="/admin/workflows" element={<CatalogExplorer initialKind="workflow" title="Workflows" />} />
                   <Route path="/admin/security" element={<SecurityAudit />} />
                   <Route path="/admin/code" element={<CodeInsight />} />
                   <Route path="/admin/config" element={<ConfigViewer />} />

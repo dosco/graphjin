@@ -42,13 +42,11 @@ const SecurityAudit = () => {
   return (
     <div className="mx-auto grid max-w-7xl gap-6">
       <PageHeader
-        eyebrow="Audit"
         title="Security"
-        description="Read-only posture, findings, and policy evidence from gj_security."
       />
 
       {isLoading ? (
-        <LoadingState label="Reading gj_security" />
+        <LoadingState />
       ) : error ? (
         <DataErrorState
           error={error}
@@ -64,7 +62,7 @@ const SecurityAudit = () => {
             <Metric label="Updated" value={summary?.updated_at ? "Current" : "Pending"} detail={summary?.updated_at || "no timestamp"} />
           </div>
 
-          <Panel title={summary?.title || "Security Summary"} description={summaryText(summary, summaryJSON)}>
+          <Panel title={summary?.title || "Summary"} description={summaryText(summary, summaryJSON)}>
             <div className="flex gap-3 rounded-md border bg-muted/30 p-4">
               <ShieldCheck className="mt-0.5 size-5 text-success" aria-hidden="true" />
               <div>
@@ -78,7 +76,7 @@ const SecurityAudit = () => {
 
           <Panel
             title="Findings"
-            description={`${visibleFindings.length} visible findings`}
+            description={`${visibleFindings.length}`}
             action={
               <Tabs value={severity} onValueChange={setSeverity}>
                 <TabsList>
@@ -110,11 +108,11 @@ const SecurityAudit = () => {
                 ))}
               </div>
             ) : (
-              <EmptyState title="No findings" message="No findings match this severity filter." />
+              <EmptyState title="No findings" />
             )}
           </Panel>
 
-          <Panel title="Effective Policy" description="Policy rows that are visible to the current role.">
+          <Panel title="Policy">
             {policies.length ? (
               <Table>
                 <TableHeader>
@@ -139,7 +137,7 @@ const SecurityAudit = () => {
                 </TableBody>
               </Table>
             ) : (
-              <EmptyState title="No policy rows" message="No policy rows are visible for this role." />
+              <EmptyState title="No policy rows" />
             )}
           </Panel>
         </>

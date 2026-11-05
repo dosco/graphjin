@@ -17,12 +17,10 @@ const ApiDocs = () => {
   return (
     <div className="mx-auto grid max-w-7xl gap-6">
       <PageHeader
-        eyebrow="OpenAPI"
-        title="API Docs"
-        description="Interactive API reference generated from saved REST queries."
+        title="API"
       />
       {isLoading ? (
-        <LoadingState label="Loading API documentation" />
+        <LoadingState />
       ) : error ? (
         <DataErrorState
           error={error}
@@ -33,7 +31,7 @@ const ApiDocs = () => {
         <Card className="overflow-hidden">
           <CardContent className="p-4 md:p-6">
             <div className="swagger-shell">
-          <Suspense fallback={<LoadingState label="Rendering API documentation" />}>
+          <Suspense fallback={<LoadingState />}>
             <SwaggerUI spec={data} />
           </Suspense>
             </div>

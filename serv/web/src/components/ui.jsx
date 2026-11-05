@@ -77,12 +77,12 @@ export function LoadingState({ label = "Loading" }) {
   );
 }
 
-export function EmptyState({ title = "No data", message = "Nothing matched this view.", children }) {
+export function EmptyState({ title = "Nothing here", message, children }) {
   return (
     <div className="py-6 text-sm">
       <div className="min-w-0 max-w-xl">
         <strong className="font-bold text-foreground">{title}</strong>
-        <p className="mt-1 leading-6 text-muted-foreground">{message}</p>
+        {message && <p className="mt-1 leading-6 text-muted-foreground">{message}</p>}
         {children ? <div className="mt-3">{children}</div> : null}
       </div>
     </div>

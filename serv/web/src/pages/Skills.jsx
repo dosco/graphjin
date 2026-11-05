@@ -58,18 +58,17 @@ const Skills = () => {
   return (
     <div className="grid gap-6 px-4 py-6 sm:px-6">
       <PageHeader
-        eyebrow="User"
         title="Skills"
-        description="Instructions the agent follows for recurring work. It sees each skill's description and loads the instructions when a request matches. Your skills stay yours until you share them with your team."
+        description="Instructions the agent follows when a request matches."
       />
-      <Panel title={editingID ? "Edit skill" : "Add a skill"}>
+      <Panel title={editingID ? "Edit" : "Add"}>
         <form className="grid gap-2" onSubmit={handleSubmit}>
           <div className="grid gap-2 sm:grid-cols-2">
-            <Input value={draft.name} onChange={set("name")} placeholder="Name, for example: churn review" maxLength={64} aria-label="Skill name" />
+            <Input value={draft.name} onChange={set("name")} placeholder="Name" maxLength={64} aria-label="Skill name" />
             <Input
               value={draft.description}
               onChange={set("description")}
-              placeholder="When to use it, for example: how we report churn"
+              placeholder="When to use it"
               maxLength={200}
               aria-label="Skill description"
             />
@@ -77,7 +76,7 @@ const Skills = () => {
           <Textarea
             value={draft.content}
             onChange={set("content")}
-            placeholder="The instructions, for example: report churn as a count and the MRR lost over the last 30 days, worst accounts first."
+            placeholder="Instructions"
             rows={4}
             maxLength={8192}
             aria-label="Skill instructions"
@@ -91,19 +90,19 @@ const Skills = () => {
                 </Button>
               )}
               <Button type="submit" size="sm" disabled={!ready || save.isPending}>
-                {editingID ? "Save" : "Add skill"}
+                {editingID ? "Save" : "Add"}
               </Button>
             </div>
           </div>
         </form>
       </Panel>
-      <Panel title="Your skills" description={`${skills.length} saved`}>
+      <Panel title={skills.length ? `Saved · ${skills.length}` : "Saved"}>
         {skillsQuery.isLoading ? (
-          <LoadingState label="Loading skills" />
+          <LoadingState />
         ) : skillsQuery.error ? (
           <DataErrorState error={skillsQuery.error} unavailableMessage="Skills could not be read from gj_artifacts." />
         ) : skills.length === 0 ? (
-          <EmptyState title="No skills yet" message="Add one above, and the agent will follow it whenever a request matches its description." />
+          <EmptyState title="No skills yet" />
         ) : (
           <ul className="grid divide-y">
             {skills.map((skill) => (

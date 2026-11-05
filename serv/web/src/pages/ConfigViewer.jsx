@@ -34,13 +34,12 @@ const ConfigViewer = () => {
   return (
     <div className="mx-auto grid max-w-7xl gap-6">
       <PageHeader
-        eyebrow="Configuration"
         title="Config"
-        description="Read-only effective configuration from gj_config with sensitive values redacted."
+        description="Secrets are redacted."
       />
 
       {isLoading ? (
-        <LoadingState label="Reading gj_config" />
+        <LoadingState />
       ) : error ? (
         <DataErrorState
           error={error}
@@ -56,7 +55,7 @@ const ConfigViewer = () => {
             <Metric label="Redactions" value={redactedPaths.length} detail="sensitive paths hidden" />
           </div>
 
-          <Panel title="Config Location" description={row.config_path || "No config path reported"}>
+          <Panel title="File" description={row.config_path || "Unknown"}>
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">Updated {row.updated_at || "unknown"}</Badge>
               <Badge variant="secondary">{row.id}</Badge>
@@ -69,12 +68,12 @@ const ConfigViewer = () => {
             ))}
           </div>
 
-          <Panel title="Redacted Config JSON" description="Raw effective config shape for inspection.">
+          <Panel title="JSON">
             <JSONBlock value={parseJSON(row.config_json, {})} />
           </Panel>
         </>
       ) : (
-        <EmptyState title="No config row" message="gj_config did not return the current configuration row." />
+        <EmptyState title="No config found" />
       )}
     </div>
   );
@@ -88,7 +87,7 @@ const ConfigSection = ({ title, value }) => {
       {count ? (
         <JSONBlock value={parsed} compact />
       ) : (
-        <EmptyState title={`No ${title.toLowerCase()}`} message="No entries are visible in this section." />
+        <EmptyState title={`No ${title.toLowerCase()}`} />
       )}
     </Panel>
   );

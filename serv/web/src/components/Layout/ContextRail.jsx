@@ -69,9 +69,6 @@ const ContextRail = () => {
         </ul>
       </RailCard>
 
-      <p className="px-4 font-mono text-[0.6875rem] leading-5 text-muted-foreground">
-        Press ⌘K to jump anywhere.
-      </p>
     </aside>
   );
 };

@@ -34,16 +34,15 @@ const Memory = () => {
   return (
     <div className="grid gap-6 px-4 py-6 sm:px-6">
       <PageHeader
-        eyebrow="User"
         title="Memory"
-        description="Facts the agent recalls before every answer. Personal memories stay yours; publish one to share it with your team."
+        description="Facts the agent remembers."
       />
-      <Panel title="Add a memory">
+      <Panel title="Add">
         <form className="grid gap-2" onSubmit={handleSubmit}>
           <Textarea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="For example: report revenue in EUR, and our fiscal year starts in April."
+            placeholder="Revenue is reported in EUR"
             rows={2}
             maxLength={4096}
           />
@@ -53,13 +52,13 @@ const Memory = () => {
           </div>
         </form>
       </Panel>
-      <Panel title="Recalled memories" description={`${memories.length} saved`}>
+      <Panel title={memories.length ? `Saved · ${memories.length}` : "Saved"}>
         {memoriesQuery.isLoading ? (
-          <LoadingState label="Loading memories" />
+          <LoadingState />
         ) : memoriesQuery.error ? (
           <DataErrorState error={memoriesQuery.error} unavailableMessage="Memories could not be read from gj_artifacts." />
         ) : memories.length === 0 ? (
-          <EmptyState title="No memories yet" message="Add a fact above, and the agent will use it whenever it is relevant." />
+          <EmptyState title="No memories yet" />
         ) : (
           <ul className="grid divide-y">
             {memories.map((memory) => (

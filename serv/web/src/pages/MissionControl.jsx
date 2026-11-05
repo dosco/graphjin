@@ -11,7 +11,6 @@ import {
   Eye,
   FileCheck2,
   Link2,
-  Radar,
   ShieldCheck,
   UserRound,
   X,
@@ -47,19 +46,13 @@ const validTabs = new Set(["tasks", "watches", "annotations"]);
 const refreshInterval = 15000;
 const sectionMeta = {
   tasks: {
-    eyebrow: "User workspace",
     title: "Tasks",
-    description: "Declared goals, verification state, and the durable trail behind agent work.",
   },
   watches: {
-    eyebrow: "User workspace",
-    title: "Watch inbox",
-    description: "Events that need attention across your governed GraphJin watches.",
+    title: "Watches",
   },
   annotations: {
-    eyebrow: "User workspace",
     title: "Artifacts",
-    description: "Observed and approved annotations retained as reviewed graph memory.",
   },
 };
 
@@ -183,7 +176,7 @@ const MissionControl = ({ section }) => {
       />
 
       {resolvingSessionIdentity ? (
-        <LoadingState label="Resolving operator scope" />
+        <LoadingState />
       ) : !canShowMission ? (
         <NoIdentityState />
       ) : (
@@ -192,8 +185,7 @@ const MissionControl = ({ section }) => {
 
           {visibleTabs.length === 0 ? (
             <EmptyState
-              title="Mission features are not enabled"
-              message="Enable tasks, watches, or artifacts in this GraphJin environment to populate Mission Control."
+              title="Tasks, watches and artifacts are off"
             />
           ) : (
             <div className="grid gap-4">
@@ -261,20 +253,7 @@ const MissionControl = ({ section }) => {
 
 function NoIdentityState() {
   return (
-    <div className="grid min-h-80 place-items-center rounded-lg bg-card p-8 text-center">
-      <div className="grid max-w-lg justify-items-center gap-4">
-        <div className="flex size-12 items-center justify-center text-muted-foreground">
-          <UserRound aria-hidden="true" />
-        </div>
-        <div>
-          <h2 className="text-lg font-semibold">No operator identity</h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Set a development identity in the header to see owner-scoped tasks, watches, and annotation drafts. Without it GraphJin correctly returns an empty owner scope.
-          </p>
-        </div>
-        <Badge variant="outline">Same-origin auth cookies continue to flow</Badge>
-      </div>
-    </div>
+    <p className="py-6 text-sm text-muted-foreground">Set an identity to see your tasks, watches and artifacts.</p>
   );
 }
 
@@ -286,21 +265,17 @@ function FeatureUnavailableHints({ unavailable }) {
     return null;
   }
   return (
-    <Alert>
-      <Radar aria-hidden="true" className="size-4" />
-      <AlertTitle>Some mission features are not enabled</AlertTitle>
-      <AlertDescription>
-        {labels.map(titleCase).join(", ")} {labels.length === 1 ? "is" : "are"} hidden because the current GraphJin service does not expose those roots.
-      </AlertDescription>
-    </Alert>
+    <p className="text-sm text-muted-foreground">
+      {labels.map(titleCase).join(", ")} {labels.length === 1 ? "is" : "are"} off on this server.
+    </p>
   );
 }
 
 function TasksPanel({ query, tasks, onOpenTask }) {
   return (
-    <Panel title="Declared tasks" description="Explicit goals and their durable outcome state. Task changes remain in Agent chat.">
+    <Panel title="Tasks">
       {query.isLoading ? (
-        <LoadingState label="Reading declared tasks" />
+        <LoadingState />
       ) : query.error ? (
         <DataErrorState
           error={query.error}
@@ -308,7 +283,7 @@ function TasksPanel({ query, tasks, onOpenTask }) {
           queryMessage="The task surface could not be read from this GraphJin service."
         />
       ) : tasks.length === 0 ? (
-        <EmptyState title="No declared tasks" message="Create a task explicitly in Agent chat when work needs a durable goal and trail." />
+        <EmptyState title="No tasks" message="Ask the agent to create one." />
       ) : (
         <Table>
           <TableHeader>
@@ -385,11 +360,11 @@ function TaskDrawer({ task, identityKey, onClose }) {
                   <p className="mt-1 text-xs text-muted-foreground">Newest first · provenance is assigned by GraphJin.</p>
                 </div>
                 {entriesQuery.isLoading ? (
-                  <LoadingState label="Reading task trail" />
+                  <LoadingState />
                 ) : entriesQuery.error ? (
                   <DataErrorState error={entriesQuery.error} queryMessage="The trail for this task could not be loaded." />
                 ) : entries.length === 0 ? (
-                  <EmptyState title="No trail entries" message="The task exists but has no caller, agent, watch, or verification entries yet." />
+                  <EmptyState title="No history yet" />
                 ) : (
                   entries.map((entry) => <TaskEntry key={entry.id} entry={entry} />)
                 )}
@@ -472,9 +447,9 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
 
   return (
     <div className="grid gap-4">
-      <Panel title="Unseen watch events" description="The durable inbox for fired standing questions.">
+      <Panel title="Unseen events">
         {query.isLoading ? (
-          <LoadingState label="Reading the watch inbox" />
+          <LoadingState />
         ) : query.error ? (
           <DataErrorState
             error={query.error}
@@ -482,7 +457,7 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
             queryMessage="The watch surface could not be read from this GraphJin service."
           />
         ) : events.length === 0 ? (
-          <EmptyState title="Inbox reviewed" message="No unseen watch events are waiting for this operator." />
+          <EmptyState title="All caught up" />
         ) : (
           <Table>
             <TableHeader>
@@ -540,11 +515,11 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
       </Panel>
 
       {!query.error && !query.isLoading && (
-        <Panel title="Watches" description="Definition health and recent runner state.">
+        <Panel title="Watches">
           <MetricWatchGrid watches={watches} identityKey={identityKey} />
           <div className="mt-6" />
           {otherWatches.length === 0 && watches.length > 0 ? null : otherWatches.length === 0 ? (
-            <EmptyState title="No watches" message="No standing questions are visible for this operator.">
+            <EmptyState title="No watches">
               <WatchStarterHint />
             </EmptyState>
           ) : (
@@ -654,11 +629,10 @@ function AnnotationsPanel({ query, drafts, approved, identity, identityKey, onOp
   return (
     <div className="grid gap-4">
       <Panel
-        title="Review queue"
-        description="Observed notes remain owner-only until a human deliberately publishes them to the account."
+        title="To review"
       >
         {query.isLoading ? (
-          <LoadingState label="Reading annotation drafts" />
+          <LoadingState />
         ) : query.error ? (
           <DataErrorState
             error={query.error}
@@ -666,7 +640,7 @@ function AnnotationsPanel({ query, drafts, approved, identity, identityKey, onOp
             queryMessage="The annotation surface could not be read from this GraphJin service."
           />
         ) : drafts.length === 0 ? (
-          <EmptyState title="No drafts to review" message="Observed annotations authored for this operator will appear here." />
+          <EmptyState title="Nothing to review" />
         ) : (
           <div className="grid gap-3">
             {drafts.map((annotation) => {
@@ -724,9 +698,9 @@ function AnnotationsPanel({ query, drafts, approved, identity, identityKey, onOp
       </Panel>
 
       {!query.error && !query.isLoading && (
-        <Panel title="Approved annotations" description="Account-visible notes with server-stamped attribution.">
+        <Panel title="Approved">
           {approved.length === 0 ? (
-            <EmptyState title="No approved annotations" message="Reviewed notes will appear here with their approver and timestamp." />
+            <EmptyState title="Nothing approved yet" />
           ) : (
             <div className="grid gap-3">
               {approved.map((annotation) => {

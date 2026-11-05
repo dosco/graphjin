@@ -20,7 +20,7 @@ export const workspaceDefinitions = {
   user: {
     id: "user",
     label: "User",
-    description: "Governed agent work",
+    description: "Your work",
     defaultPath: "/user/agent",
     items: [
       { path: "/user/agent", label: "Agent", icon: Bot, layout: "canvas" },
@@ -34,7 +34,7 @@ export const workspaceDefinitions = {
   admin: {
     id: "admin",
     label: "Admin",
-    description: "Runtime and configuration",
+    description: "Server",
     defaultPath: "/admin/runtime",
     items: [
       { path: "/admin/runtime", label: "Runtime", icon: Activity, layout: "collection" },
@@ -50,7 +50,7 @@ export const workspaceDefinitions = {
   trainer: {
     id: "trainer",
     label: "Trainer",
-    description: "Evals and model training",
+    description: "Evals",
     defaultPath: "/trainer/reports",
     items: [
       { path: "/trainer/reports", label: "Reports", icon: FlaskConical, layout: "document" },

@@ -70,9 +70,7 @@ const Dashboard = () => {
   return (
     <div className="mx-auto grid max-w-7xl gap-6">
       <PageHeader
-        eyebrow="Runtime"
-        title="System Overview"
-        description="Live GraphJin health, source readiness, discovery coverage, and security posture from GraphQL system roots."
+        title="Runtime"
         actions={
           <Badge variant="outline" className="gap-2 px-3 py-1.5">
             <RefreshCw className="size-3.5" aria-hidden="true" />
@@ -82,7 +80,7 @@ const Dashboard = () => {
       />
 
       {runtime.isLoading ? (
-        <LoadingState label="Reading gj_runtime" />
+        <LoadingState />
       ) : runtime.error ? (
         <DataErrorState
           error={runtime.error}
@@ -100,11 +98,8 @@ const Dashboard = () => {
                 </div>
                 <div className="grid gap-3">
                   <h2 className="max-w-3xl text-2xl font-extrabold leading-tight tracking-[-0.03em] md:text-4xl">
-                    {status?.summary || "Runtime status is not available."}
+                    {status?.summary || "Status unavailable"}
                   </h2>
-                  <p className="max-w-3xl text-sm leading-6 text-muted-foreground md:text-base">
-                    {status?.next_action || "Query gj_runtime before guarded workflow, config, or schema actions."}
-                  </p>
                 </div>
               </div>
               <div className="grid gap-x-8 sm:grid-cols-2">
@@ -116,7 +111,7 @@ const Dashboard = () => {
           </section>
 
           <div className="grid gap-4 xl:grid-cols-2">
-            <Panel title="Source Health" description="Ephemeral gj_runtime source rows from the current node.">
+            <Panel title="Sources">
               {sources.length ? (
                 <div className="divide-y">
                   {sources.map((source) => (
@@ -139,13 +134,13 @@ const Dashboard = () => {
                   ))}
                 </div>
               ) : (
-                <EmptyState title="No source rows" message="gj_runtime did not return current source health rows." />
+                <EmptyState title="No sources" />
               )}
             </Panel>
 
-            <Panel title="Security Posture" description="Read-only summary from gj_security.">
+            <Panel title="Security">
               {security.isLoading ? (
-                <LoadingState label="Reading gj_security" />
+                <LoadingState />
               ) : security.error ? (
                 <DataErrorState
                   error={security.error}
@@ -167,7 +162,7 @@ const Dashboard = () => {
                         <StatusPill status={finding.severity} />
                         <span className="min-w-0 truncate text-sm">{finding.title}</span>
                       </div>
-                    )) : <EmptyState title="No findings returned" message="No security findings are visible for this role." />}
+                    )) : <EmptyState title="No findings" />}
                   </div>
                 </div>
               )}
@@ -175,9 +170,9 @@ const Dashboard = () => {
           </div>
 
           <div className="grid gap-4 xl:grid-cols-2">
-            <Panel title="Discovery Coverage" description="Catalog system capabilities and schema coverage.">
+            <Panel title="Catalog">
               {catalog.isLoading ? (
-                <LoadingState label="Reading gj_catalog" />
+                <LoadingState />
               ) : catalog.error ? (
                 <DataErrorState
                   error={catalog.error}
@@ -200,7 +195,7 @@ const Dashboard = () => {
               )}
             </Panel>
 
-            <Panel title="Recent Runtime Events" description="Bounded event rows from gj_runtime.">
+            <Panel title="Recent events">
               {events.length ? (
                 <div className="divide-y">
                   {events.map((event) => (
@@ -215,7 +210,7 @@ const Dashboard = () => {
                   ))}
                 </div>
               ) : (
-                <EmptyState title="No recent events" message="Runtime event storage has not recorded recent rows." />
+                <EmptyState title="No recent events" />
               )}
             </Panel>
           </div>

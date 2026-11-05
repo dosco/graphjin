@@ -43,9 +43,7 @@ const CodeInsight = () => {
   return (
     <div className="mx-auto grid max-w-7xl gap-6">
       <PageHeader
-        eyebrow="Source Insight"
         title="Code"
-        description="Read-only files, symbols, references, and database links from gj_code."
       />
 
       <div className="grid gap-3 rounded-lg bg-card p-4 md:grid-cols-[minmax(0,1fr)_14rem] md:items-center">
@@ -62,9 +60,9 @@ const CodeInsight = () => {
         </Select>
       </div>
 
-      <Panel title="Code Source" description={`${visible.length} of ${rows.length} visible rows`}>
+      <Panel title="Files" description={`${visible.length} of ${rows.length}`}>
         {isLoading ? (
-          <LoadingState label="Reading gj_code" />
+          <LoadingState />
         ) : error ? (
           <DataErrorState
             error={error}
@@ -78,7 +76,7 @@ const CodeInsight = () => {
             ))}
           </div>
         ) : (
-          <EmptyState title="No code rows" message="No code source rows match this filter." />
+          <EmptyState title="No matches" />
         )}
       </Panel>
     </div>

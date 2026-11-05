@@ -37,13 +37,11 @@ const EvalReports = () => {
   return (
     <div className="mx-auto grid max-w-[92rem] gap-6">
       <PageHeader
-        eyebrow="Trainer"
-        title="Evaluation reports"
-        description="Shareable benchmark outcomes, method checks, safety gates, and provider usage from the local GraphJin eval store."
+        title="Eval reports"
       />
 
       {listQuery.isLoading ? (
-        <LoadingState label="Reading evaluation reports" />
+        <LoadingState />
       ) : listQuery.error ? (
         <DataErrorState
           error={listQuery.error}
@@ -84,7 +82,7 @@ const EvalReports = () => {
 
           <div className="min-w-0">
             {detailQuery.isLoading ? (
-              <LoadingState label="Loading report" />
+              <LoadingState />
             ) : detailQuery.error ? (
               <DataErrorState
                 error={detailQuery.error}
@@ -138,7 +136,6 @@ function EvalReportDetail({ report }) {
         <TabsContent value="technical" className="mt-0">
           <Panel
             title="Technical benchmark report"
-            description="Industry-standard metrics, provenance, fingerprints, task verdicts, and provider accounting."
             action={<StatusPill status={reportStatus(report)} />}
           >
             <MarkdownContent value={report.technical_markdown} className="gap-5 text-sm" />
