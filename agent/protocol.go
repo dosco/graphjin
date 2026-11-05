@@ -226,6 +226,10 @@ type discoveryState struct {
 	rankingTies []rankingTie
 	// rankingTieRewriteUsed latches the one restatement a tie may cost.
 	rankingTieRewriteUsed bool
+	// rowNames are rows a which-question's reads returned with both an id and
+	// a name; rowNameRewriteUsed latches the one restatement naming them costs.
+	rowNames           []rowName
+	rowNameRewriteUsed bool
 	// databaseComputationRefusals counts finals the database-computation
 	// requirement refused since execution count databaseComputationSeen; once
 	// it is waived the requirement stays off for the run.
@@ -1487,6 +1491,9 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		var ties []rankingTie
 		out, ties = settleRankingTies(out, rankingCuts)
 		r.state.rankingTies = append(r.state.rankingTies, ties...)
+	}
+	if err == nil && !executionFailed(out) && !ContainsMutationOperation(query) {
+		r.state.recordRowNames(execQuery, out, r.state.labelColumnsByTable())
 	}
 	if err == nil && executionFailed(out) {
 		if denied, ok := policyFinalExecutionError(out); ok {

@@ -173,7 +173,8 @@ func TestDemoUpcomingReadFromSubscriptionsNamesTheAccount(t *testing.T) {
 	const read = `
 const detail = await query_catalog({id:"table:app:main.subscriptions"});
 const rows = await execute_graphql({query: 'query { subscriptions(order_by: {renews_at: asc}, limit: 1) { account_id renews_at } }'});
-await final({status:"answered", answer:"done", data:{rows:rows}, evidence:[detail, rows]});
+const row = rows.data.subscriptions[0];
+await final({status:"answered", answer:"Account ID " + row.account_id + " renews soonest, on " + row.renews_at + ".", data:{rows:rows}, evidence:[detail, rows]});
 `
 	client := &evalScriptClient{}
 	client.setSequence(read, read, read)
@@ -201,6 +202,12 @@ await final({status:"answered", answer:"done", data:{rows:rows}, evidence:[detai
 	account, _ := row["account"].(map[string]any)
 	if account["name"] != "Meridian Robotics" {
 		t.Fatalf("row = %v, want the account named through account_id", row)
+	}
+	t.Logf("answer: %s", response.Answer)
+	// The scripted answer cites the account by id, as flash-lite did; the
+	// finished answer must still name it.
+	if !strings.Contains(response.Answer, "Meridian Robotics") {
+		t.Fatalf("answer = %q, want the account named", response.Answer)
 	}
 	if guidance, _ := result["guidance"].(string); !strings.Contains(guidance, "upcoming") {
 		t.Fatalf("the result must say why past rows were dropped: %.400s", raw)

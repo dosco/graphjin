@@ -1500,6 +1500,7 @@ func (a *Agent) finalizeWithGroundedRewrite(ctx context.Context, client ax.AICli
 		return resp
 	}
 	resp = a.reportRankingTies(ctx, client, protocol, cfg, req, a.finalizeGrounded(ctx, client, protocol, cfg, req, resp, rateLimiter), rateLimiter)
+	resp = a.nameCitedRows(ctx, client, protocol, cfg, req, resp, rateLimiter)
 	resp.Answer = unescapeAnswerNewlines(resp.Answer)
 	return resp
 }
