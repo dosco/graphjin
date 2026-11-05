@@ -53,6 +53,8 @@ func controlPlaneSourceReadOnly(conf *Config, table string) bool {
 		return configWatchesEnabled(conf) && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
 	case "gj_task", "gj_task_entry":
 		return configTasksEnabled(conf) && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
+	case threadsRootTable, threadMessagesRootTable, threadRunsRootTable:
+		return configThreadsEnabled(conf) && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
 	case "gj_artifacts":
 		return conf.Core.Artifacts.Enabled && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
 	case "gj_catalog", "gj_security", "gj_runtime":
@@ -68,6 +70,10 @@ func defaultControlPlaneTableReadOnly(conf *Config, table string) bool {
 		return !configWatchesEnabled(conf)
 	case "gj_task", "gj_task_entry":
 		return !configTasksEnabled(conf)
+	case threadsRootTable:
+		return !configThreadsEnabled(conf)
+	case threadMessagesRootTable, threadRunsRootTable:
+		return true
 	case "gj_workflow":
 		return !conf.effectiveFeatureCapability(featurecap.KindWorkflows, featurecap.KeyWorkflowWrite)
 	case "gj_workflow_execution":
@@ -116,7 +122,7 @@ func applySystemRoleQueryDefaults(conf *Config, runtimeCore *core.Config, databa
 			}
 			allowed := systemReadAllowedBySource(conf, mode, role, table)
 			if allowed {
-				if (strings.EqualFold(table, "gj_artifacts") || strings.EqualFold(table, "gj_watch") || strings.EqualFold(table, "gj_watch_event") || strings.EqualFold(table, "gj_task") || strings.EqualFold(table, "gj_task_entry")) && !systemRoleTableConfigured(&conf.Core, role, table, database) {
+				if ownerScopedSystemRoot(table) && !systemRoleTableConfigured(&conf.Core, role, table, database) {
 					rt := core.RoleTable{
 						Name:     table,
 						Database: database,
@@ -189,6 +195,8 @@ func artifactPublicProjectionColumns() []string {
 		"content_truncated",
 		"content_json",
 		"metadata_json",
+		"description",
+		"icon",
 		"content_hash",
 		"status",
 		"target_ref",
@@ -518,6 +526,18 @@ func sourceModeSystemRoleNames(conf *Config) []string {
 	return out
 }
 
+// ownerScopedSystemRoot reports a root whose handler scopes rows to their
+// owner, so a signed-in role reads it through a generated, unblocked role table.
+func ownerScopedSystemRoot(table string) bool {
+	switch strings.ToLower(strings.TrimSpace(table)) {
+	case "gj_artifacts", "gj_watch", "gj_watch_event", "gj_task", "gj_task_entry",
+		threadsRootTable, threadMessagesRootTable, threadRunsRootTable:
+		return true
+	default:
+		return false
+	}
+}
+
 func systemReadAllowedBySource(conf *Config, mode, role, table string) bool {
 	return systemRootAllowed(conf, table, systemActionRead, role)
 }
@@ -555,6 +575,8 @@ func systemReadSourceEnabled(conf *Config, table string) bool {
 		return configWatchesEnabled(conf)
 	case "gj_task", "gj_task_entry":
 		return configTasksEnabled(conf)
+	case threadsRootTable, threadMessagesRootTable, threadRunsRootTable:
+		return configThreadsEnabled(conf)
 	case "gj_workflow", "gj_workflow_execution":
 		return conf.workflowsEnabled()
 	default:

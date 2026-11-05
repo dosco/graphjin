@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -169,10 +168,11 @@ func (h artifactControlPlane) upsertAgentProfile(ctx context.Context, root core.
 		return nil, err
 	}
 	s.markArtifactChanged("agent profile mutation")
+	admin := s.identityRoleIsAdmin(ctx)
 	if len(rows) != 0 {
-		return profileAPIRow(rows[0], actorID), nil
+		return artifactProjectionRow(rows[0], admin), nil
 	}
-	return profileAPIRow(input, actorID), nil
+	return artifactProjectionRow(input, admin), nil
 }
 
 func (s *graphjinService) enforceProfileLimit(ctx context.Context, ownerID string) error {
@@ -186,34 +186,6 @@ func (s *graphjinService) enforceProfileLimit(ctx context.Context, ownerID strin
 		return fmt.Errorf("agent profile limit reached: delete an agent before adding another (limit %d)", maxProfilesPerOwner)
 	}
 	return nil
-}
-
-// visibleProfileRows returns the caller's own profiles plus the profiles
-// shared with the caller's account.
-func (s *graphjinService) visibleProfileRows(ctx context.Context) ([]map[string]any, error) {
-	ownerID, ok := artifactUserID(ctx)
-	if !ok {
-		return nil, nil
-	}
-	rows, err := s.internalStoreAllRows(ctx, "artifacts", `where: { kind: { eq: "agent_profile" }, owner_id: { eq: $owner_id } }`,
-		artifactStoreFields, map[string]any{"owner_id": ownerID})
-	if err != nil {
-		return nil, err
-	}
-	if accountID, _ := identityVarString(ctx, "account_id"); accountID != "" {
-		team, err := s.internalStoreAllRows(ctx, "artifacts",
-			`where: { kind: { eq: "agent_profile" }, tier: { eq: "approved" }, account_id: { eq: $account_id } }`,
-			artifactStoreFields, map[string]any{"account_id": accountID})
-		if err != nil {
-			return nil, err
-		}
-		for _, row := range team {
-			if stringMapValue(row, "owner_id") != ownerID {
-				rows = append(rows, row)
-			}
-		}
-	}
-	return rows, nil
 }
 
 // visibleProfileRow returns one profile the caller may use, or nil.
@@ -265,25 +237,6 @@ func profileIcon(row map[string]any) string {
 	return meta.Icon
 }
 
-func profileAPIRow(row map[string]any, viewerID string) map[string]any {
-	scope := "personal"
-	if normalizeAnnotationTier(stringMapValue(row, "tier")) == annotationTierApproved {
-		scope = "team"
-	}
-	return map[string]any{
-		"id":           stringMapValue(row, "id"),
-		"name":         stringMapValue(row, "name"),
-		"instructions": stringMapValue(row, "content"),
-		"icon":         profileIcon(row),
-		"scope":        scope,
-		"tier":         normalizeAnnotationTier(stringMapValue(row, "tier")),
-		"mine":         stringMapValue(row, "owner_id") == viewerID,
-		"owner_ref":    safeArtifactIdentity(stringMapValue(row, "owner_id"), false),
-		"created_at":   stringMapValue(row, "created_at"),
-		"updated_at":   stringMapValue(row, "updated_at"),
-	}
-}
-
 // --- home thread -------------------------------------------------------------
 
 // profileHomeThreadID is the id of ownerID's home thread for a profile. It is
@@ -332,13 +285,12 @@ func (s1 *HttpService) AgentProfilesWithNS(ah auth.HandlerFunc, ns string) http.
 	return apiV1Handler(s1, &ns, s1.apiV1AgentProfiles(), ah)
 }
 
-// apiV1AgentProfiles serves the console's agents:
+// apiV1AgentProfiles serves the one profile action that is not a row write:
 //
-//	GET    /api/v1/agent/profiles              the caller's agents and team agents
-//	POST   /api/v1/agent/profiles              add an agent {name, instructions, icon}
-//	PATCH  /api/v1/agent/profiles/{id}         edit, or share {tier: approved|observed}
-//	DELETE /api/v1/agent/profiles/{id}         delete
-//	GET    /api/v1/agent/profiles/{id}/thread  the caller's home thread (find or create)
+//	GET /api/v1/agent/profiles/{id}/thread  the caller's home thread (find or create)
+//
+// Profiles themselves are gj_artifacts rows of kind agent_profile: list,
+// create, edit, share and delete them through GraphQL.
 func (s1 *HttpService) apiV1AgentProfiles() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s := s1.Load().(*graphjinService)
@@ -352,70 +304,17 @@ func (s1 *HttpService) apiV1AgentProfiles() http.Handler {
 			return
 		}
 		ctx := s.applyIdentityContext(r.Context())
-		viewerID, ok := artifactUserID(ctx)
-		if !ok {
+		if _, ok := artifactUserID(ctx); !ok {
 			writeJSONStatus(w, http.StatusUnauthorized, map[string]any{"error": "agent profiles require a signed-in user"})
 			return
 		}
-		cp := newArtifactControlPlane(s)
 		id, action, _ := strings.Cut(strings.Trim(strings.TrimPrefix(r.URL.Path, routeAgentProfiles), "/"), "/")
-		switch {
-		case id == "" && r.Method == http.MethodGet:
-			rows, err := s.visibleProfileRows(ctx)
-			out := make([]map[string]any, 0, len(rows))
-			for _, row := range rows {
-				out = append(out, profileAPIRow(row, viewerID))
-			}
-			sort.SliceStable(out, func(i, j int) bool {
-				return strings.ToLower(stringMapValue(out[i], "name")) < strings.ToLower(stringMapValue(out[j], "name"))
-			})
-			writeProfileResult(w, http.StatusOK, out, err)
-		case id == "" && r.Method == http.MethodPost:
-			input, err := readJSONMap(r)
-			if err != nil {
-				writeProfileResult(w, http.StatusBadRequest, nil, err)
-				return
-			}
-			fields := map[string]any{}
-			for _, field := range []string{"name", "instructions", "icon"} {
-				if v, ok := input[field]; ok {
-					fields[field] = v
-				}
-			}
-			row, err := cp.upsertAgentProfile(ctx, core.ManagedMutationRoot{Operation: "insert", Input: fields}, nil)
-			writeProfileResult(w, http.StatusCreated, row, err)
-		case id != "" && action == "thread" && r.Method == http.MethodGet:
-			row, err := s.profileHomeThread(ctx, id)
-			writeProfileResult(w, http.StatusOK, row, err)
-		case id != "" && action == "" && r.Method == http.MethodPatch:
-			input, err := readJSONMap(r)
-			if err != nil {
-				writeProfileResult(w, http.StatusBadRequest, nil, err)
-				return
-			}
-			existing, err := s.internalArtifactStoreRow(ctx, id)
-			var row map[string]any
-			if err == nil {
-				if existing == nil {
-					err = errProfileNotFound
-				} else {
-					row, err = cp.upsertAgentProfile(ctx, core.ManagedMutationRoot{Operation: "update", Input: input}, existing)
-				}
-			}
-			writeProfileResult(w, http.StatusOK, row, err)
-		case id != "" && action == "" && r.Method == http.MethodDelete:
-			existing, err := s.internalArtifactStoreRow(ctx, id)
-			if err == nil && (existing == nil || normalizeArtifactKind(stringMapValue(existing, "kind")) != artifactKindAgentProfile ||
-				(stringMapValue(existing, "owner_id") != viewerID && !s.identityRoleIsAdmin(ctx))) {
-				err = errProfileNotFound
-			}
-			if err == nil {
-				_, err = cp.deleteArtifact(ctx, core.ManagedMutationRoot{Operation: "delete", Input: map[string]any{"id": id}})
-			}
-			writeProfileResult(w, http.StatusOK, map[string]any{"id": id, "deleted": err == nil}, err)
-		default:
-			writeJSONStatus(w, http.StatusNotFound, map[string]any{"error": "not found"})
+		if id == "" || action != "thread" || r.Method != http.MethodGet {
+			writeJSONStatus(w, http.StatusNotFound, map[string]any{"error": "not found: agent profiles are gj_artifacts rows of kind agent_profile; use /api/v1/graphql"})
+			return
 		}
+		row, err := s.profileHomeThread(ctx, id)
+		writeProfileResult(w, http.StatusOK, row, err)
 	})
 }
 

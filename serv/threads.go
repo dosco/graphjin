@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -26,7 +25,7 @@ import (
 const (
 	threadStoreFields   = `id title profile status channel channel_ref active_run_id account_id owner_id owner_role last_message_at last_seen_at created_at updated_at`
 	messageStoreFields  = `id thread_id seq role content status run_id catalog_ids response_json account_id owner_id created_at`
-	runStoreFields      = `id thread_id status lease_until_ms replica tokens_in tokens_out error account_id owner_id created_at updated_at finished_at`
+	runStoreFields      = `id thread_id status lease_until_ms replica tokens_in tokens_out llm_calls used_skills used_memories error account_id owner_id created_at updated_at finished_at`
 	runEventStoreFields = `id run_id seq kind payload created_at`
 
 	maxThreadTitleBytes   = 200
@@ -64,7 +63,7 @@ func (s *graphjinService) threadsEnabled() bool {
 }
 
 func configThreadsEnabled(conf *Config) bool {
-	return conf != nil && conf.Core.Artifacts.Enabled && conf.Core.Threads.Enabled
+	return conf != nil && conf.Core.Artifacts.Enabled && conf.Core.Threads.Enabled && conf.Agent.Lead.Enabled
 }
 
 func (s *graphjinService) threadDB() (*sql.DB, string, bool) {
@@ -212,36 +211,6 @@ func (s *graphjinService) ownedThreadStoreRow(ctx context.Context, id string) (m
 	return row, nil
 }
 
-func (s *graphjinService) listThreads(ctx context.Context, includeArchived bool) ([]map[string]any, error) {
-	ownerID, ok := artifactUserID(ctx)
-	if !ok {
-		return nil, nil
-	}
-	args := `where: { owner_id: { eq: $owner_id }, status: { eq: "open" } }`
-	if includeArchived {
-		args = `where: { owner_id: { eq: $owner_id } }`
-	}
-	rows, err := s.internalStoreAllRows(ctx, "threads", args, threadStoreFields, map[string]any{"owner_id": ownerID})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]map[string]any, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, threadAPIRow(row))
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return threadSortKey(out[i]) > threadSortKey(out[j])
-	})
-	return out, nil
-}
-
-func threadSortKey(row map[string]any) string {
-	if v := stringMapValue(row, "last_message_at"); v != "" {
-		return v
-	}
-	return stringMapValue(row, "created_at")
-}
-
 func (s *graphjinService) updateThread(ctx context.Context, id string, input map[string]any) (map[string]any, error) {
 	if _, err := s.ownedThreadStoreRow(ctx, id); err != nil {
 		return nil, err
@@ -338,19 +307,6 @@ func threadUnread(row map[string]any) bool {
 }
 
 // --- messages ----------------------------------------------------------------
-
-func (s *graphjinService) threadMessages(ctx context.Context, threadID string) ([]map[string]any, error) {
-	rows, err := s.internalStoreAllRowsOrdered(ctx, "messages", `where: { thread_id: { eq: $thread_id } }`,
-		messageStoreFields, "seq", map[string]any{"thread_id": threadID})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]map[string]any, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, messageAPIRow(row))
-	}
-	return out, nil
-}
 
 func messageAPIRow(row map[string]any) map[string]any {
 	out := map[string]any{
@@ -548,6 +504,7 @@ func runAPIRow(row map[string]any) map[string]any {
 		"status":      stringMapValue(row, "status"),
 		"tokens_in":   int64MapValue(row, "tokens_in"),
 		"tokens_out":  int64MapValue(row, "tokens_out"),
+		"llm_calls":   int64MapValue(row, "llm_calls"),
 		"error":       stringMapValue(row, "error"),
 		"created_at":  stringMapValue(row, "created_at"),
 		"updated_at":  stringMapValue(row, "updated_at"),
@@ -594,16 +551,45 @@ func (s *graphjinService) requestRunCancel(ctx context.Context, runID string) (m
 
 // finishRun records a run's final state unless another replica already
 // failed it (a lost lease).
-func (s *graphjinService) finishRun(ctx context.Context, runID, status, errMsg string, usage gjagent.UsageTotals) error {
+func (s *graphjinService) finishRun(ctx context.Context, runID, status, errMsg string, resp gjagent.Response) error {
 	now := storeNow()
+	usage := gjagent.SummarizeUsage(resp.Usage)
+	input := map[string]any{
+		"status": status, "error": truncateUTF8(errMsg, 2048),
+		"tokens_in": usage.PromptTokens, "tokens_out": usage.CompletionTokens, "llm_calls": usage.LLMCalls,
+		"updated_at": now, "finished_at": now,
+	}
+	if ids := usedSkillIDs(resp.Skills); len(ids) != 0 {
+		input["used_skills"] = jsonText(ids)
+	}
+	if ids := usedMemoryIDs(resp.Memories); len(ids) != 0 {
+		input["used_memories"] = jsonText(ids)
+	}
 	_, err := s.internalStoreMutationRows(ctx, "runs",
 		`where: { id: { eq: $id }, status: { in: ["running", "cancel_requested"] } }, update: $input`, "id",
-		map[string]any{"id": runID, "input": map[string]any{
-			"status": status, "error": truncateUTF8(errMsg, 2048),
-			"tokens_in": usage.PromptTokens, "tokens_out": usage.CompletionTokens,
-			"updated_at": now, "finished_at": now,
-		}})
+		map[string]any{"id": runID, "input": input})
 	return err
+}
+
+func usedSkillIDs(skills []gjagent.SkillUsage) []string {
+	out := make([]string, 0, len(skills))
+	for _, skill := range skills {
+		out = append(out, skill.ID)
+	}
+	return out
+}
+
+func usedMemoryIDs(memories []gjagent.MemoryUsage) []string {
+	out := make([]string, 0, len(memories))
+	for _, memory := range memories {
+		out = append(out, memory.ID)
+	}
+	return out
+}
+
+func jsonText(v any) string {
+	raw, _ := json.Marshal(v)
+	return string(raw)
 }
 
 // --- run events --------------------------------------------------------------
@@ -776,6 +762,9 @@ lease_until_ms BIGINT NOT NULL DEFAULT 0,
 replica TEXT NOT NULL DEFAULT '',
 tokens_in BIGINT NOT NULL DEFAULT 0,
 tokens_out BIGINT NOT NULL DEFAULT 0,
+llm_calls BIGINT NOT NULL DEFAULT 0,
+used_skills TEXT,
+used_memories TEXT,
 error TEXT NOT NULL DEFAULT '',
 account_id TEXT NOT NULL DEFAULT '',
 owner_id TEXT NOT NULL DEFAULT '',
@@ -838,6 +827,9 @@ lease_until_ms BIGINT NOT NULL DEFAULT 0,
 replica VARCHAR(191) NOT NULL DEFAULT '',
 tokens_in BIGINT NOT NULL DEFAULT 0,
 tokens_out BIGINT NOT NULL DEFAULT 0,
+llm_calls BIGINT NOT NULL DEFAULT 0,
+used_skills TEXT,
+used_memories TEXT,
 error LONGTEXT NOT NULL,
 account_id VARCHAR(191) NOT NULL DEFAULT '',
 owner_id VARCHAR(191) NOT NULL DEFAULT '',
@@ -903,6 +895,9 @@ lease_until_ms INTEGER NOT NULL DEFAULT 0,
 replica TEXT NOT NULL DEFAULT '',
 tokens_in INTEGER NOT NULL DEFAULT 0,
 tokens_out INTEGER NOT NULL DEFAULT 0,
+llm_calls INTEGER NOT NULL DEFAULT 0,
+used_skills TEXT,
+used_memories TEXT,
 error TEXT NOT NULL DEFAULT '',
 account_id TEXT NOT NULL DEFAULT '',
 owner_id TEXT NOT NULL DEFAULT '',
@@ -940,6 +935,18 @@ func migrateThreadSchema(ctx context.Context, db *sql.DB, dbType, schema string)
 	}
 	if err := ensureSQLColumn(ctx, db, dbType, threads, "last_seen_at", definition); err != nil {
 		return err
+	}
+	// Runs record how many model calls a turn took and which of the caller's
+	// skills and memories shaped it.
+	runs := artifactTableName(dbType, schema, "runs")
+	counter := "BIGINT NOT NULL DEFAULT 0"
+	if dbType == "sqlite" {
+		counter = "INTEGER NOT NULL DEFAULT 0"
+	}
+	for _, col := range [][2]string{{"llm_calls", counter}, {"used_skills", "TEXT"}, {"used_memories", "TEXT"}} {
+		if err := ensureSQLColumn(ctx, db, dbType, runs, col[0], col[1]); err != nil {
+			return err
+		}
 	}
 	_, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET last_seen_at = COALESCE(last_message_at, created_at) WHERE last_seen_at IS NULL", threads))
 	return err

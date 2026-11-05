@@ -990,32 +990,36 @@ func TestAgentAuditHelpers(t *testing.T) {
 }
 
 func TestAskGraphJinAgentMCPHistoryArg(t *testing.T) {
-	runner := &scriptedAgentRunner{resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "ok"}}
-	withScriptedAgentRunner(t, runner)
-
-	ms := mockMcpServerWithConfig(MCPConfig{})
-	ms.service.conf.Agent.Enabled = true
-	res, err := ms.handleAskGraphJinAgent(context.Background(), newToolRequest(map[string]any{
+	args := map[string]any{
 		"instruction": "and how many were sold?",
 		"history": []any{
 			map[string]any{"role": "user", "content": "show products"},
 			map[string]any{"role": "assistant", "content": "3 products", "status": "answered", "catalog_ids": []any{"table:db:public.products"}},
 		},
-	}))
+	}
+	req := agentRequestFromArgs(args)
+	if len(req.History) != 2 {
+		t.Fatalf("history turns = %d, want 2", len(req.History))
+	}
+	if req.History[1].Role != "assistant" || req.History[1].Status != "answered" {
+		t.Fatalf("assistant turn malformed: %+v", req.History[1])
+	}
+
+	// With only the worker exposed, a conversation is refused, never silently
+	// answered without its history.
+	runner := &scriptedAgentRunner{resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "ok"}}
+	withScriptedAgentRunner(t, runner)
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms.service.conf.Agent.Enabled = true
+	res, err := ms.handleAskGraphJinAgent(context.Background(), newToolRequest(args))
 	if err != nil {
 		t.Fatalf("handleAskGraphJinAgent: %v", err)
 	}
-	if res.IsError {
-		t.Fatalf("unexpected tool error: %+v", res.Content)
+	if !res.IsError || !strings.Contains(fmt.Sprint(res.Content), "agent.lead.enabled") {
+		t.Fatalf("history without the lead = %+v, want the lead-required error", res.Content)
 	}
-	if len(runner.req.History) != 2 {
-		t.Fatalf("history turns = %d, want 2", len(runner.req.History))
-	}
-	if runner.req.History[1].Role != "assistant" || runner.req.History[1].Status != "answered" {
-		t.Fatalf("assistant turn malformed: %+v", runner.req.History[1])
-	}
-	if runner.req.Observer != nil {
-		t.Fatal("observer must not be set without a progress token")
+	if runner.req.Instruction != "" {
+		t.Fatalf("worker ran for a refused conversation: %+v", runner.req)
 	}
 }
 

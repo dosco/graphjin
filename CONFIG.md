@@ -1164,7 +1164,8 @@ they inherit that deployment's capabilities rather than OpenAI's.
 | `agent.return_trace` | boolean | `false` | Include agent action/trace data in responses |
 | `agent.seed_limit` | integer | `40` | Initial `query_catalog(search: instruction)` seed row cap |
 | `agent.catalog_default_limit` | integer | `20` | Default row limit for model-issued catalog queries |
-| `agent.lead.provider` | string | `agent.provider` | Deployment profile for the lead agent that runs thread turns (console chat, MCP `thread_id`, routines). Unset runs the lead on the worker's model. Env `GJ_AGENT_LEAD_PROVIDER` |
+| `agent.lead.enabled` | boolean | dev/agentic: `agent.enabled`; prod: `false` | Make the lead the agent: every `POST /api/v1/agent` and `ask_graphjin_agent` call runs it, and the data worker is reachable only through its questions. Off, the worker answers single questions directly and conversations, memories, skills and agent profiles are unavailable. Env `GJ_AGENT_LEAD_ENABLED` |
+| `agent.lead.provider` | string | `agent.provider` | Deployment profile for the lead agent. Unset runs the lead on the worker's model. Env `GJ_AGENT_LEAD_PROVIDER` |
 | `agent.lead.model` | string | `agent.model` | Lead model, typically stronger than the worker. Env `GJ_AGENT_LEAD_MODEL` |
 | `agent.lead.api_key_env` | string | `agent.api_key_env` | Env var holding the lead provider's key; required when `agent.lead.provider` differs from `agent.provider`. Env `GJ_AGENT_LEAD_API_KEY_ENV` |
 | `agent.lead.base_url` | string | - | Lead provider base URL. Env `GJ_AGENT_LEAD_BASE_URL` |
@@ -1343,27 +1344,39 @@ memory:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `threads.enabled` | boolean | dev/agentic: artifact setting; prod: `false` | Enable persistent threads, `thread_id` on `POST /api/v1/agent` and `ask_graphjin_agent`, and the thread/run endpoints |
+| `threads.enabled` | boolean | dev/agentic: artifact setting; prod: `false` | Enable persistent threads, `thread_id` on `POST /api/v1/agent` and `ask_graphjin_agent`, the `gj_thread`, `gj_thread_message` and `gj_thread_run` roots, and the run endpoints. Requires `agent.lead.enabled` |
 | `threads.history_turns` | integer | `12` | Prior messages loaded from the thread into each run; the thread's history replaces any `history` the caller sends |
 | `threads.run_lease_seconds` | integer | `30` | How long a run stays claimed without a heartbeat before another replica marks it failed |
 | `threads.max_per_owner` | integer | `500` | Maximum open threads per owner; archived threads do not count |
 | `threads.response_max_bytes` | integer | `262144` | Cap on the agent response stored with each answer; larger responses drop `data` and `trace` |
-| `memory.enabled` | boolean | dev/agentic: artifact setting; prod: `false` | Enable memory artifacts, recall into agent runs, and `/api/v1/agent/memories` |
+| `memory.enabled` | boolean | dev/agentic: artifact setting; prod: `false` | Enable memory artifacts and the lead's recall and `remember`. Requires `agent.lead.enabled` |
 | `memory.recall_limit` | integer | `5` | Memories recalled into a run (also capped at 2 KB in total) |
 | `memory.max_per_owner` | integer | `200` | Maximum memories per owner |
 
-Thread endpoints (owner-scoped; admins may read any thread):
+Threads are GraphQL roots, owner-scoped (admins may read any thread), so a
+GUI lists and manages conversations through `/api/v1/graphql`:
+
+| Root | Rows | Writes |
+|------|------|--------|
+| `gj_thread` | The caller's threads: `id title profile status channel active_run_id unread last_message_at last_seen_at created_at updated_at` | `insert: { title, profile }`; `update` of `title`, `profile`, `status` (`open` or `archived`) or `last_seen_at` (any value marks the thread read now); `delete: true` removes it with its messages and runs |
+| `gj_thread_message` | A thread's messages: `id thread_id seq role content status run_id catalog_ids response created_at` | Read-only: messages are written by turns |
+| `gj_thread_run` | A thread's runs: `id thread_id status tokens_in tokens_out llm_calls used_skills used_memories error created_at finished_at` | Read-only |
+
+These roots have no nested relationships; filter messages and runs with
+`where: { thread_id: { eq: $id } }`. They are served live rather than from the
+system NanoDB mirror, so query them in their own request, not alongside
+`gj_artifacts` or other mirrored roots. A turn starts at `POST /api/v1/agent` (or
+`ask_graphjin_agent`) with a `thread_id`; two REST actions follow a running turn:
 
 | Method and path | Purpose |
 |-----------------|---------|
-| `GET /api/v1/agent/threads` | List the caller's open threads (`?archived=true` for all) |
-| `POST /api/v1/agent/threads` | Create a thread |
-| `GET /api/v1/agent/threads/{id}` | A thread with its messages |
-| `PATCH /api/v1/agent/threads/{id}` | Rename, archive (`status`), set `profile`, or mark read (`{"seen": true}`) |
-| `DELETE /api/v1/agent/threads/{id}` | Delete a thread with its messages and runs |
-| `GET /api/v1/agent/runs/{id}` | A run's status and token usage |
 | `GET /api/v1/agent/runs/{id}/events` | Replay and follow a run as SSE (`Last-Event-ID` or `?after=N`) |
 | `POST /api/v1/agent/runs/{id}/cancel` | Cancel a run, whichever replica executes it |
+
+```graphql
+query { gj_thread(where: { status: { eq: "open" } }, order_by: { last_message_at: desc }) { id title unread } }
+mutation { gj_thread(where: { id: { eq: "th_..." } }, update: { title: "Churn review" }) { id title } }
+```
 
 A run keeps going if the client disconnects. A run whose replica stops is
 marked `failed` by the lease sweep on any replica and is never re-executed,
@@ -1377,17 +1390,38 @@ server, so production can run with `artifacts.auto_init: false`;
 
 Memories are `memory` artifacts. A new memory is personal (`tier: observed`);
 publishing it (`tier: approved`) shares it with the owner's account, and
-editing a team memory makes it personal again. Before every agent run GraphJin
-recalls the caller's most relevant personal and team memories and gives them
-to the agent as standing preferences, never as evidence. Recall ranks with the
-`catalog_search.semantic` embedder when that is enabled and falls back to
-shared-word matching otherwise.
+editing a team memory makes it personal again. Each lead turn starts with the
+caller's most relevant personal and team memories, can recall more as it
+works, and saves new ones with its `remember` tool, a `gj_artifacts` insert
+made as the caller. Memories are standing preferences, never evidence. Recall
+ranks with the `catalog_search.semantic` embedder when that is enabled and
+falls back to shared-word matching otherwise.
+
+Skills are `skill` artifacts: a `name` (unique per owner, at most 64 bytes), a
+one-line `description` (at most 200 bytes) that says when to use it, and the
+instructions as `content` (at most 8 KB). They follow the memory tiers. The lead
+sees each visible skill's name and description, loads a skill's instructions
+when a request matches, and records the skills it used on the run
+(`gj_thread_run.used_skills`).
+
+```graphql
+mutation {
+  gj_artifacts(insert: { kind: "skill", name: "churn review", description: "How we report churn",
+    content: "Report churn as a count and the MRR lost over the last 30 days." }) { id tier }
+}
+query { gj_artifacts(where: { kind: { eq: "skill" } }) { id name description content tier owner_ref } }
+```
+
+Rows carry `owner_ref`; the console bootstrap's `identity.user_ref` is the
+caller's own, so a GUI can tell its rows from ones teammates shared.
 
 Thread rows report `unread: true` when an assistant message landed after the
-owner last looked; the owner's own messages and `{"seen": true}` mark it read.
+owner last looked; the owner's own messages and an update of `last_seen_at`
+mark it read.
 
-Agents are `agent_profile` artifacts: a `name`, standing `instructions`
-(at most 2 KB) and an optional `icon`, enabled with threads. They follow the
+Agents are `agent_profile` artifacts: a `name`, standing instructions as
+`content` (at most 2 KB) and an optional `icon`, enabled with threads; create,
+edit, share and delete them through `gj_artifacts`. They follow the
 memory tiers: a new agent is personal, `tier: approved` shares it with the
 owner's account, and changing a shared agent's instructions makes it personal
 again. Every user gets one home thread per agent they can see, created on
@@ -1397,10 +1431,6 @@ grant no access.
 
 | Method and path | Purpose |
 |-----------------|---------|
-| `GET /api/v1/agent/profiles` | The caller's agents and agents shared with their account |
-| `POST /api/v1/agent/profiles` | Create an agent `{name, instructions, icon}` |
-| `PATCH /api/v1/agent/profiles/{id}` | Edit, or share (`tier: approved`) / unshare (`tier: observed`) |
-| `DELETE /api/v1/agent/profiles/{id}` | Delete an agent (its threads stay, as plain chats) |
 | `GET /api/v1/agent/profiles/{id}/thread` | The caller's home thread for the agent, found or created |
 
 ---

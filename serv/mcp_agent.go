@@ -19,9 +19,18 @@ func (ms *mcpServer) registerAgentTools() {
 	if ms == nil || ms.service == nil || ms.service.conf == nil || !ms.service.conf.agentEnabled() {
 		return
 	}
+	// With the lead on, this tool is the lead: it plans, delegates questions to
+	// data workers, and keeps conversations, memories and the caller's skills.
+	// With it off, the data worker answers one self-contained question.
+	about := "Ask GraphJin's server-side Ax agent to do catalog-first discovery, safe saved-query execution, and return a typed answer/result. Use this when the caller wants GraphJin to orchestrate discovery instead of manually chaining MCP tools. Send a _meta.progressToken to receive notifications/progress events per agent action. Each call answers one self-contained question; conversations need agent.lead.enabled."
+	historyAbout := "Not supported: conversations need agent.lead.enabled."
+	if ms.service.conf.Agent.Lead.Enabled {
+		about = "Ask GraphJin's lead agent. It plans the request, sends self-contained questions to data agents that discover, query and change data through the governed graph, applies the caller's saved memories and skills, and returns a typed answer/result. Send a _meta.progressToken to receive notifications/progress events per agent action; pass thread_id or prior turns in history to continue a conversation."
+		historyAbout = "Prior conversation turns, most recent last: {role:'user'|'assistant', content, status?}. The lead resolves follow-ups against them."
+	}
 	ms.srv.AddTool(mcp.NewTool(
 		mcpToolAskGraphJinAgent,
-		mcp.WithDescription("Ask GraphJin's server-side Ax agent to do catalog-first discovery, safe saved-query execution, and return a typed answer/result. Use this when the caller wants GraphJin to orchestrate discovery instead of manually chaining MCP tools. Send a _meta.progressToken to receive notifications/progress events per agent action; pass prior turns in history to enable follow-up questions. Blocked responses include a structured refusal (code, because, unblock steps, policy_final/retryable): run the unblock steps and retry only when retryable. Responses may also carry notices: watch_events_unseen lists watch_ids to review, task_open_unlinked lists open task_ids that were not attached to the run, task_context_loaded confirms retained task context, and annotations_unshared lists owner-only annotation drafts awaiting review. The agent always uses GraphJin-owned provider credentials. Caller identity and permissions are unchanged."),
+		mcp.WithDescription(about+" Blocked responses include a structured refusal (code, because, unblock steps, policy_final/retryable): run the unblock steps and retry only when retryable. Responses may also carry notices: watch_events_unseen lists watch_ids to review, task_open_unlinked lists open task_ids that were not attached to the run, task_context_loaded confirms retained task context, and annotations_unshared lists owner-only annotation drafts awaiting review. The agent always uses GraphJin-owned provider credentials. Caller identity and permissions are unchanged."),
 		mcp.WithString("instruction",
 			mcp.Required(),
 			mcp.Description("The user's goal or question for GraphJin."),
@@ -43,7 +52,7 @@ func (ms *mcpServer) registerAgentTools() {
 			mcp.Description("Include Ax action/trace data in the response for debugging."),
 		),
 		mcp.WithArray("history",
-			mcp.Description("Prior conversation turns, most recent last: {role:'user'|'assistant', content, status?}. A request with history runs the lead agent, which resolves follow-ups into self-contained questions; without it one question runs directly."),
+			mcp.Description(historyAbout),
 			mcp.Items(map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -74,6 +83,9 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 	if strings.TrimSpace(agentReq.Instruction) == "" {
 		return mcp.NewToolResultError(gjagent.ErrMissingInstruction.Error()), nil
 	}
+	if !agentConf.Lead.Enabled && (strings.TrimSpace(stringArg(args, "thread_id")) != "" || len(agentReq.History) != 0) {
+		return mcp.NewToolResultError(errConversationNeedsLead.Error()), nil
+	}
 	// Capabilities is server-derived and json:"-"; it is never taken from tool args.
 	agentReq.Capabilities = ms.service.agentCapabilityProfile(ctx)
 	taskWarm, err := ms.service.resolveAgentTaskContext(ctx, &agentReq)
@@ -97,7 +109,7 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 	}
 
 	var resp gjagent.Response
-	runner, err := newGraphJinAgentRunner(ms.service, agentConf)
+	runner, err := ms.service.agentEntryRunner(agentConf)
 	if err != nil {
 		if errors.Is(err, gjagent.ErrMissingAPIKey) {
 			recordAgentRuntimeEvent(ms.service, ctx, agentReq, resp, taskWarm, time.Since(start), err)
@@ -111,15 +123,6 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 		return ms.toolResultJSON(mcpToolAskGraphJinAgent, args, resp)
 	}
 	threadID := strings.TrimSpace(stringArg(args, "thread_id"))
-	// A conversation — a thread, history, a task's trail — runs the lead; a
-	// single self-contained question runs the worker alone.
-	if threadID != "" || len(agentReq.History) != 0 {
-		lead, err := ms.service.threadAgentRunner(agentConf, runner)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		runner = lead
-	}
 	if threadID != "" {
 		return ms.askAgentInThread(ctx, args, threadID, agentReq, taskWarm, runner, start)
 	}

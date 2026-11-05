@@ -10,6 +10,7 @@ import (
 	"time"
 
 	ax "github.com/ax-llm/ax/packages/go"
+	axgoja "github.com/ax-llm/ax/packages/go/runtime/goja"
 )
 
 // The lead holds the conversation; the worker (Agent) answers one data
@@ -28,12 +29,56 @@ const (
 	leadResultDataBytes = 8 << 10
 
 	toolAskGraphJin = "ask_graphjin"
+	toolRemember    = "remember"
+
+	// leadSeedMemories is how many recalled memories start every turn, so
+	// standing preferences apply without the model having to ask for them.
+	leadSeedMemories = 5
+	leadRecallLimit  = 5
 )
+
+// SkillDoc is one of the caller's own skills: a named, reusable instruction
+// the lead loads when a request matches its description.
+type SkillDoc struct {
+	ID          string
+	Name        string
+	Description string
+	Content     string
+}
+
+// MemoryDoc is one saved preference or fact of the caller's.
+type MemoryDoc struct {
+	ID      string
+	Content string
+}
+
+// MemoryUsage names a memory that shaped a turn.
+type MemoryUsage struct {
+	ID     string `json:"id"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// LeadStore gives the lead the caller's skills and memories. The service
+// implements it over the graph, always as the caller, so every read and write
+// goes through the same identity, tiers and policy as any GraphQL client.
+type LeadStore interface {
+	// Skills lists the skills the caller can see, with their content.
+	Skills(ctx context.Context) ([]SkillDoc, error)
+	// RecallMemories ranks the caller's visible memories against query; an
+	// empty query returns the caller's standing memories, most recent first.
+	RecallMemories(ctx context.Context, query string, limit int) ([]MemoryDoc, error)
+	// Remember saves a memory for the caller.
+	Remember(ctx context.Context, content string) (MemoryDoc, error)
+}
 
 // LeadConfig selects the lead's model and bounds its fan-out. Unset model
 // fields fall back to the worker's, so a deployment with no lead section runs
 // the lead on the worker's model.
 type LeadConfig struct {
+	// Enabled makes the lead the agent: every agent request runs it, and the
+	// worker is reachable only through its questions. Conversations, memories,
+	// custom skills and profiles are lead features and need it on.
+	Enabled   bool   `mapstructure:"enabled" json:"enabled,omitempty" jsonschema:"title=Enable Lead Agent,description=Parsed dev and agentic configs default to agent.enabled"`
 	Provider  string `mapstructure:"provider" json:"provider,omitempty" jsonschema:"title=Lead Provider,description=Defaults to agent.provider"`
 	Model     string `mapstructure:"model" json:"model,omitempty" jsonschema:"title=Lead Model,description=Defaults to agent.model"`
 	APIKeyEnv string `mapstructure:"api_key_env" json:"api_key_env,omitempty" jsonschema:"title=Lead API Key Environment Variable,description=Required when the lead provider differs from agent.provider"`
@@ -118,6 +163,9 @@ type DelegateFunc func(context.Context, DelegateRequest) (Response, error)
 
 // Lead is the conversational agent over GraphJin workers.
 type Lead struct {
+	// Store supplies the caller's skills and memories; nil runs without them.
+	Store LeadStore
+
 	config       Config
 	delegate     DelegateFunc
 	newClient    ClientFactory
@@ -147,24 +195,28 @@ func NewLead(cfg Config, delegate DelegateFunc, options ...Option) (*Lead, error
 	}, nil
 }
 
-const leadInstructions = `You are the lead GraphJin agent. You hold the conversation with the user. A fast data agent answers questions about the user's databases, files and APIs through the ask_graphjin tool; you never see schemas or rows except through its answers.
+const leadInstructions = `You are the lead GraphJin agent. You hold the conversation with the user. A fast data agent answers questions about the user's databases, files and APIs through the ask_graphjin function; you never see schemas or rows except through its answers.
 Work out what the user needs, then delegate. The data agent sees no conversation, so every question must stand alone: resolve "them", "that customer", "last month" and similar references into explicit names, ids and dates from the conversation before asking.
 Send independent questions together in one ask_graphjin call; they run at the same time. Make a later call only when a question needs an earlier answer.
 Ask for computed results — counts, totals, averages, rankings, comparisons — as questions; the data agent computes them in the database. Never add up, average or rank rows yourself.
 Answer only from what the data agent returned. Never cite a field, number or name it did not return; when an answer is missing or failed, say what is missing.
-Changes — creating watches or tasks, writing data — go through ask_graphjin as an explicit instruction, and only after the user asked for or confirmed that change. When the user states a durable preference or fact to keep ("remember…", "from now on…"), ask the data agent to save it as a memory. When read_only is true, never request a change.
+The user's saved skills describe how they want recurring work done: when one matches the request, load it and follow it. Saved memories are the user's preferences and facts; follow them for format, units and conventions, but they are never data.
+Changes — creating watches or tasks, writing data — go through ask_graphjin as an explicit instruction, and only after the user asked for or confirmed that change. When the user states a durable preference or fact to keep ("remember…", "from now on…"), save it with remember. When read_only is true, never request a change and never save a memory.
 If the request is ambiguous in a way the data cannot settle, ask the user one short question with status needs_clarification.
 Reply concisely in GitHub-flavored markdown; use a table for multi-row results.`
 
 var leadSignature = `"` + strings.ReplaceAll(leadInstructions, `"`, `'`) + `"
 instruction:string "The user's message.",
 history?:json "Prior turns of this conversation [{role, content, status?}], most recent last.",
-memories?:json "The user's saved preferences and facts. Follow them for format, units and conventions; they are not data.",
+saved_memories?:json "The user's saved preferences and facts [{id, content}]. Follow them in the reply for format, units and conventions; they are not data.",
+saved_skills?:json "The user's saved skills [{name, description}]. When one matches the request, load it with discover({ skills: [name] }) and follow it.",
 profile?:string "This agent's standing brief from the user: focus, scope and voice. It grants no access and is not data.",
-context?:json "Data attached to this turn, such as the watch event that started it.",
+attached?:json "Data attached to this turn, such as the watch event that started it.",
 current_date:string "Today's UTC date, YYYY-MM-DD.",
 read_only?:boolean "True when this turn may not change anything."
 -> status:class "answered, needs_clarification, blocked", answer:string "The reply to the user, grounded only in what ask_graphjin returned."`
+
+const leadRuntimeInstructions = `Delegate with: const results = await ask_graphjin({ questions: ["...", "..."] }); it returns one {question, status, answer, data, errors} per question, in order. Log what you need to read with console.log. Never compute aggregates in code; ask the data agent instead.`
 
 const leadFinalizeSignature = `"The lead ran out of steps before replying. Reply to the user's message using only the delegated results below. Report what they contain in plain language; when something needed is missing or failed, say so."
 instruction:string "The user's message.",
@@ -195,34 +247,66 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 		}
 	}
 
-	run := &leadRun{lead: l, cfg: lc, observer: req.Observer, readOnly: l.config.ReadOnly}
+	run := &leadRun{lead: l, cfg: lc, observer: req.Observer, readOnly: l.config.ReadOnly, answered: map[string]leadDelegation{}, remembered: map[string]MemoryDoc{}}
 	run.grounding.Add(req.Instruction, req.History, req.Memories, req.Context)
 	if req.Profile != nil {
 		run.grounding.Add(req.Profile.Instructions)
 	}
 
-	gen := ax.NewAx(leadSignature, nil)
-	gen.Functions = []ax.Tool{run.askTool(ctx)}
-	options := modelForwardOptions(modelCfg, rateLimiter)
-	options["maxSteps"] = lc.MaxSteps
+	tools := []ax.Tool{run.askTool(ctx)}
+	if l.Store != nil && !l.config.ReadOnly {
+		tools = append(tools, run.rememberTool(ctx))
+	}
+	runtime := axgoja.NewRuntime()
+	for _, tool := range tools {
+		t := tool
+		runtime.RegisterCallable(t.Name, func(params ax.Value) (ax.Value, error) {
+			return t.Handler(asMap(params))
+		})
+	}
+	usedSkills := &skillUsageCollector{}
+	usedMemories := &memoryUsageCollector{}
+	options := map[string]ax.Value{
+		"functions":         toolArray(tools),
+		"functionDiscovery": false,
+		"onUsedSkills":      ax.AxAgentObserverFn(usedSkills.observe),
+		"onUsedMemories":    ax.AxAgentObserverFn(usedMemories.observe),
+		"runtime":           map[string]ax.Value{"language": "JavaScript", "usageInstructions": leadRuntimeInstructions},
+		"max_actor_steps":   lc.MaxSteps,
+	}
 	input := map[string]ax.Value{
 		"instruction":  strings.TrimSpace(req.Instruction),
 		"history":      historyValue(req.History),
 		"current_date": l.now().UTC().Format("2006-01-02"),
 		"read_only":    l.config.ReadOnly,
 	}
-	if len(req.Context) != 0 {
-		input["context"] = normalizeValue(req.Context)
+	memories := run.memorySource(ctx, req)
+	if memories.enabled() {
+		options["onMemoriesSearch"] = ax.AxMemoriesSearchFn(memories.search)
 	}
-	if memories := leadMemories(req.Memories); len(memories) != 0 {
-		input["memories"] = memories
+	if skills := run.skillSource(ctx); len(skills.docs) != 0 {
+		options["skillsCatalog"] = skills.catalog()
+		options["onSkillsSearch"] = ax.AxSkillsSearchFn(skills.load)
+		input["saved_skills"] = skills.listing()
+	}
+	program := ax.NewAgent(leadSignature, options)
+	forwardOptions := modelForwardOptions(modelCfg, rateLimiter)
+	forwardOptions["runtime"] = runtime
+	forwardOptions["max_actor_steps"] = lc.MaxSteps
+	if len(req.Context) != 0 {
+		input["attached"] = normalizeValue(req.Context)
+	}
+	if seed := memories.seed(req.Instruction); len(seed) != 0 {
+		// A signature field, not Ax's memories input: Ax hands that only to the
+		// code stages, and the reply stage must follow the user's preferences.
+		input["saved_memories"] = seed
 	}
 	if req.Profile != nil && strings.TrimSpace(req.Profile.Instructions) != "" {
 		input["profile"] = strings.TrimSpace(req.Profile.Name + ": " + req.Profile.Instructions)
 	}
 
-	out, ferr := gen.Forward(ctx, client, input, options)
-	usage := usageSummary(finalizeProgram{gen: gen})
+	out, ferr := program.Forward(ctx, client, input, forwardOptions)
+	usage := usageSummary(program)
 	resp := Response{Status: StatusAnswered}
 	if ferr != nil {
 		if len(run.results()) == 0 {
@@ -269,6 +353,7 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 			}
 		}
 	}
+	resp.Skills, resp.Memories = run.shapedBy(usedSkills.snapshot(), usedMemories.snapshot())
 	return run.finish(resp, usage), nil
 }
 
@@ -287,14 +372,220 @@ func (l *Lead) finalizeFrom(ctx context.Context, client ax.AIClient, cfg Config,
 	return answer, usage, nil
 }
 
-func leadMemories(memories []string) []any {
-	var out []any
-	for _, memory := range memories {
+// leadMemorySource answers the lead's memory recall: from the store when the
+// service has one, else from the memories the request carried.
+type leadMemorySource struct {
+	ctx    context.Context
+	run    *leadRun
+	store  LeadStore
+	static []MemoryDoc
+}
+
+func (r *leadRun) memorySource(ctx context.Context, req Request) leadMemorySource {
+	src := leadMemorySource{ctx: ctx, run: r, store: r.lead.Store}
+	for i, memory := range req.Memories {
 		if memory = strings.TrimSpace(memory); memory != "" {
-			out = append(out, memory)
+			src.static = append(src.static, MemoryDoc{ID: fmt.Sprintf("memory-%d", i+1), Content: memory})
+		}
+	}
+	return src
+}
+
+func (m leadMemorySource) enabled() bool { return m.store != nil || len(m.static) != 0 }
+
+func (m leadMemorySource) recall(query string, limit int) []MemoryDoc {
+	if m.store == nil {
+		if len(m.static) > limit {
+			return m.static[:limit]
+		}
+		return m.static
+	}
+	docs, err := m.store.RecallMemories(m.ctx, query, limit)
+	if err != nil {
+		return nil
+	}
+	return docs
+}
+
+// seed is the turn's starting memories: those relevant to the message, then
+// the caller's standing ones (an empty query) while room remains, so a
+// preference applies even when the message shares no words with it.
+func (m leadMemorySource) seed(instruction string) []ax.Value {
+	if !m.enabled() {
+		return nil
+	}
+	docs := m.recall(instruction, leadSeedMemories)
+	if len(docs) < leadSeedMemories {
+		seen := map[string]bool{}
+		for _, doc := range docs {
+			seen[doc.ID] = true
+		}
+		for _, doc := range m.recall("", leadSeedMemories) {
+			if len(docs) == leadSeedMemories {
+				break
+			}
+			if !seen[doc.ID] {
+				seen[doc.ID] = true
+				docs = append(docs, doc)
+			}
+		}
+	}
+	return m.values(docs, nil)
+}
+
+// search runs one recall per search string, leaving out what is loaded.
+func (m leadMemorySource) search(searches []ax.Value, alreadyLoaded []ax.Value) []ax.Value {
+	loaded := map[string]bool{}
+	for _, item := range alreadyLoaded {
+		switch v := normalizeValue(item).(type) {
+		case string:
+			loaded[v] = true
+		case map[string]any:
+			loaded[stringValue(v["id"])] = true
+		}
+	}
+	var out []ax.Value
+	for _, search := range searches {
+		query := strings.TrimSpace(stringValue(normalizeValue(search)))
+		if query == "" {
+			continue
+		}
+		out = append(out, m.values(m.recall(query, leadRecallLimit), loaded)...)
+	}
+	return out
+}
+
+func (m leadMemorySource) values(docs []MemoryDoc, skip map[string]bool) []ax.Value {
+	out := make([]ax.Value, 0, len(docs))
+	for _, doc := range docs {
+		if doc.ID == "" || skip[doc.ID] {
+			continue
+		}
+		if skip != nil {
+			skip[doc.ID] = true
+		}
+		m.run.mu.Lock()
+		m.run.grounding.Add(doc.Content)
+		m.run.loadedMemories = append(m.run.loadedMemories, MemoryUsage{ID: doc.ID, Reason: "recalled"})
+		m.run.mu.Unlock()
+		out = append(out, ax.Object("id", doc.ID, "content", doc.Content))
+	}
+	return out
+}
+
+// leadSkillSource is the turn's skill catalog. The model sees names and
+// descriptions; load hands back a skill's content only for a catalog entry,
+// matched by id or name, so nothing outside the caller's own skills loads.
+type leadSkillSource struct {
+	run  *leadRun
+	docs []SkillDoc
+}
+
+func (r *leadRun) skillSource(ctx context.Context) leadSkillSource {
+	src := leadSkillSource{run: r}
+	if r.lead.Store == nil {
+		return src
+	}
+	docs, err := r.lead.Store.Skills(ctx)
+	if err == nil {
+		src.docs = docs
+	}
+	return src
+}
+
+func (s leadSkillSource) catalog() []ax.Value {
+	values := make([]ax.Value, 0, len(s.docs))
+	for _, doc := range s.docs {
+		values = append(values, ax.Object("id", doc.ID, "name", doc.Name, "description", doc.Description))
+	}
+	return values
+}
+
+// listing is what the model sees before loading anything.
+func (s leadSkillSource) listing() []ax.Value {
+	values := make([]ax.Value, 0, len(s.docs))
+	for _, doc := range s.docs {
+		values = append(values, ax.Object("name", doc.Name, "description", doc.Description))
+	}
+	return values
+}
+
+func (s leadSkillSource) load(requested []ax.Value) []ax.Value {
+	var out []ax.Value
+	seen := map[string]bool{}
+	for _, item := range requested {
+		key := strings.ToLower(strings.TrimSpace(stringValue(normalizeValue(item))))
+		for _, doc := range s.docs {
+			if seen[doc.ID] || (key != strings.ToLower(doc.ID) && key != strings.ToLower(doc.Name)) {
+				continue
+			}
+			seen[doc.ID] = true
+			s.run.mu.Lock()
+			s.run.grounding.Add(doc.Content)
+			s.run.loadedSkills = append(s.run.loadedSkills, SkillUsage{ID: doc.ID, Name: doc.Name, Reason: "loaded"})
+			s.run.mu.Unlock()
+			out = append(out, ax.Object("id", doc.ID, "name", doc.Name, "content", doc.Content))
 		}
 	}
 	return out
+}
+
+// shapedBy lists the skills and memories behind the answer: those the model
+// reported using, then any others it loaded, each once.
+func (r *leadRun) shapedBy(usedSkills []SkillUsage, usedMemories []MemoryUsage) ([]SkillUsage, []MemoryUsage) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	skills := append([]SkillUsage(nil), usedSkills...)
+	seen := map[string]bool{}
+	for _, s := range skills {
+		seen[s.ID] = true
+	}
+	for _, s := range r.loadedSkills {
+		if !seen[s.ID] {
+			seen[s.ID] = true
+			skills = append(skills, s)
+		}
+	}
+	memories := append([]MemoryUsage(nil), usedMemories...)
+	seenMem := map[string]bool{}
+	for _, m := range memories {
+		seenMem[m.ID] = true
+	}
+	for _, m := range r.loadedMemories {
+		if !seenMem[m.ID] {
+			seenMem[m.ID] = true
+			memories = append(memories, m)
+		}
+	}
+	return skills, memories
+}
+
+type memoryUsageCollector struct {
+	mu    sync.Mutex
+	items []MemoryUsage
+}
+
+func (c *memoryUsageCollector) observe(items []ax.Value) {
+	var out []MemoryUsage
+	for _, item := range items {
+		switch v := normalizeValue(item).(type) {
+		case string:
+			out = append(out, MemoryUsage{ID: v})
+		case map[string]any:
+			if id := stringValue(v["id"]); id != "" {
+				out = append(out, MemoryUsage{ID: id, Reason: stringValue(v["reason"])})
+			}
+		}
+	}
+	c.mu.Lock()
+	c.items = out
+	c.mu.Unlock()
+}
+
+func (c *memoryUsageCollector) snapshot() []MemoryUsage {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]MemoryUsage(nil), c.items...)
 }
 
 // leadRun is one turn's delegation state. ask runs from Ax's tool loop while
@@ -305,11 +596,17 @@ type leadRun struct {
 	observer func(ActionEvent)
 	readOnly bool
 
-	mu          sync.Mutex
-	asked       int
-	actionIndex int
-	delegations []leadDelegation
-	grounding   GroundingCorpus
+	mu         sync.Mutex
+	asked      int
+	answered   map[string]leadDelegation
+	remembered map[string]MemoryDoc
+	// loadedSkills and loadedMemories are what the lead was given this turn;
+	// they shape the answer whether or not the model reports using them.
+	loadedSkills   []SkillUsage
+	loadedMemories []MemoryUsage
+	actionIndex    int
+	delegations    []leadDelegation
+	grounding      GroundingCorpus
 }
 
 type leadDelegation struct {
@@ -334,6 +631,45 @@ func (r *leadRun) askTool(ctx context.Context) ax.Tool {
 	return tool
 }
 
+// rememberTool saves one of the user's preferences or facts through the
+// store, as the caller. It is not offered on read-only turns.
+func (r *leadRun) rememberTool(ctx context.Context) ax.Tool {
+	tool := ax.Fn(toolRemember).WithHandler(func(args map[string]ax.Value) (ax.Value, error) {
+		content := strings.TrimSpace(stringValue(normalizeValue(args["content"])))
+		if content == "" {
+			return nil, errors.New("content must state the preference or fact to keep")
+		}
+		// Saving the same memory again this turn — the lead's code can run
+		// again in a later stage — returns the first save instead of a copy.
+		key := leadQuestionKey(content)
+		r.mu.Lock()
+		prior, saved := r.remembered[key]
+		r.mu.Unlock()
+		if saved {
+			return map[string]any{"saved": true, "id": prior.ID, "already_saved": true}, nil
+		}
+		start := r.emit(ActionEvent{Source: "lead", Tool: toolRemember, Status: "running"})
+		doc, err := r.lead.Store.Remember(ctx, content)
+		finish := ActionEvent{Source: "lead", Tool: toolRemember, Status: StatusAnswered, ElapsedMS: time.Since(start).Milliseconds()}
+		if err != nil {
+			finish.Status, finish.Error = StatusError, err.Error()
+			r.emit(finish)
+			return nil, err
+		}
+		r.emit(finish)
+		r.mu.Lock()
+		r.grounding.Add(content)
+		r.remembered[key] = doc
+		r.mu.Unlock()
+		return map[string]any{"saved": true, "id": doc.ID}, nil
+	})
+	tool.Description = "Save one of the user's durable preferences or facts so later conversations follow it. Use only when the user asks to remember something or states a standing preference; never save query results, secrets, credentials or one-off requests."
+	tool.Args = map[string]ax.Field{
+		"content": {Name: "content", Type: ax.FieldType{Name: "string"}, Description: "The preference or fact, as one short self-contained sentence."},
+	}
+	return tool
+}
+
 func (r *leadRun) ask(ctx context.Context, args map[string]ax.Value) (ax.Value, error) {
 	var questions []string
 	for _, q := range anySlice(normalizeValue(args["questions"])) {
@@ -344,25 +680,42 @@ func (r *leadRun) ask(ctx context.Context, args map[string]ax.Value) (ax.Value, 
 	if len(questions) == 0 {
 		return nil, errors.New("questions must list at least one question")
 	}
+
+	// A question already answered this turn is answered from that result: the
+	// lead's code can run again in a later stage, and re-asking would run the
+	// worker (and repeat any write) a second time.
+	out := make([]any, len(questions))
+	var fresh []string
+	var freshAt []int
 	r.mu.Lock()
+	for i, question := range questions {
+		if prior, ok := r.answered[leadQuestionKey(question)]; ok {
+			view := prior.modelView()
+			view["already_asked"] = true
+			out[i] = view
+			continue
+		}
+		fresh = append(fresh, question)
+		freshAt = append(freshAt, i)
+	}
 	remaining := r.cfg.MaxQuestions - r.asked
-	if remaining <= 0 {
+	if len(fresh) != 0 && remaining <= 0 {
 		r.mu.Unlock()
 		return nil, fmt.Errorf("this turn's %d questions are used up; reply from the results you have", r.cfg.MaxQuestions)
 	}
 	dropped := 0
-	if len(questions) > remaining {
-		dropped = len(questions) - remaining
-		questions = questions[:remaining]
+	if len(fresh) > remaining {
+		dropped = len(fresh) - remaining
+		fresh, freshAt = fresh[:remaining], freshAt[:remaining]
 	}
 	first := r.asked + 1
-	r.asked += len(questions)
+	r.asked += len(fresh)
 	r.mu.Unlock()
 
-	results := make([]leadDelegation, len(questions))
+	results := make([]leadDelegation, len(fresh))
 	sem := make(chan struct{}, r.cfg.MaxParallel)
 	var wg sync.WaitGroup
-	for i, question := range questions {
+	for i, question := range fresh {
 		wg.Add(1)
 		go func(i int, question string) {
 			defer wg.Done()
@@ -380,16 +733,29 @@ func (r *leadRun) ask(ctx context.Context, args map[string]ax.Value) (ax.Value, 
 
 	r.mu.Lock()
 	r.delegations = append(r.delegations, results...)
+	for i, d := range results {
+		if d.err == nil {
+			r.answered[leadQuestionKey(d.question)] = d
+		}
+		out[freshAt[i]] = d.modelView()
+	}
 	r.mu.Unlock()
 
-	out := make([]any, 0, len(results)+1)
-	for _, d := range results {
-		out = append(out, d.modelView())
+	kept := out[:0]
+	for _, view := range out {
+		if view != nil {
+			kept = append(kept, view)
+		}
 	}
 	if dropped != 0 {
-		out = append(out, map[string]any{"note": fmt.Sprintf("%d questions were not asked: this turn allows %d", dropped, r.cfg.MaxQuestions)})
+		kept = append(kept, map[string]any{"note": fmt.Sprintf("%d questions were not asked: this turn allows %d", dropped, r.cfg.MaxQuestions)})
 	}
-	return out, nil
+	return kept, nil
+}
+
+// leadQuestionKey matches a question asked again with different spacing or case.
+func leadQuestionKey(question string) string {
+	return strings.ToLower(strings.Join(strings.Fields(question), " "))
 }
 
 func (r *leadRun) runOne(ctx context.Context, index int, question string) leadDelegation {

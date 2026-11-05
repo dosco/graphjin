@@ -953,6 +953,7 @@ var runtimeDefaultKeys = []string{
 	"watches.runner",
 	"tasks.enabled",
 	"agent.enabled",
+	"agent.lead.enabled",
 	"mcp.include_tools_with_agent",
 }
 
@@ -1030,6 +1031,9 @@ func applyRuntimeModeDefaults(c *Config) {
 
 	if !c.settingExplicit("agent.enabled") {
 		c.Agent.Enabled = true
+	}
+	if !c.settingExplicit("agent.lead.enabled") {
+		c.Agent.Lead.Enabled = c.Agent.Enabled
 	}
 	if !c.settingExplicit("mcp.include_tools_with_agent") {
 		c.MCP.IncludeToolsWithAgent = true
@@ -1136,6 +1140,15 @@ func normalizeAgentConfig(c *Config) error {
 	}
 	if err := c.Agent.ValidateLead(); err != nil {
 		return err
+	}
+	// Conversations and what they carry are lead features: with the lead off
+	// the worker answers single questions and nothing else.
+	if !c.Agent.Lead.Enabled {
+		for _, key := range []string{"threads.enabled", "memory.enabled"} {
+			if c.settingExplicit(key) && ((key == "threads.enabled" && c.Core.Threads.Enabled) || (key == "memory.enabled" && c.Memory.Enabled)) {
+				return fmt.Errorf("%s requires agent.lead.enabled", key)
+			}
+		}
 	}
 	// Resolve the deprecated alias once, here, so every downstream reader sees a
 	// single canonical mode and never has to re-derive precedence.
@@ -1308,6 +1321,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.BindEnv("agent.api_key_env", "GJ_AGENT_API_KEY_ENV", "SG_AGENT_API_KEY_ENV", "SJ_AGENT_API_KEY_ENV")                                                                             //nolint:errcheck
 	vi.BindEnv("agent.rate_limit.requests_per_minute", "GJ_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE", "SG_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE", "SJ_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE") //nolint:errcheck
 	vi.BindEnv("agent.rate_limit.tokens_per_minute", "GJ_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE", "SG_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE", "SJ_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE")         //nolint:errcheck
+	vi.BindEnv("agent.lead.enabled", "GJ_AGENT_LEAD_ENABLED", "SG_AGENT_LEAD_ENABLED", "SJ_AGENT_LEAD_ENABLED")                                                                         //nolint:errcheck
 	vi.BindEnv("agent.lead.provider", "GJ_AGENT_LEAD_PROVIDER", "SG_AGENT_LEAD_PROVIDER", "SJ_AGENT_LEAD_PROVIDER")                                                                     //nolint:errcheck
 	vi.BindEnv("agent.lead.model", "GJ_AGENT_LEAD_MODEL", "SG_AGENT_LEAD_MODEL", "SJ_AGENT_LEAD_MODEL")                                                                                 //nolint:errcheck
 	vi.BindEnv("agent.lead.api_key_env", "GJ_AGENT_LEAD_API_KEY_ENV", "SG_AGENT_LEAD_API_KEY_ENV", "SJ_AGENT_LEAD_API_KEY_ENV")                                                         //nolint:errcheck

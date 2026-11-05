@@ -798,3 +798,34 @@ func clearLegacyDatabaseEnv(t *testing.T) {
 		}
 	}
 }
+
+// The lead fronts the agent by default where the agent is on by default, and
+// conversations cannot be switched on without it.
+func TestLeadEnabledDefaultsAndDependencies(t *testing.T) {
+	for _, mode := range []string{"dev", "agentic"} {
+		conf, err := NewConfig("mode: "+mode+"\n", "yaml")
+		if err != nil {
+			t.Fatalf("%s: %v", mode, err)
+		}
+		if !conf.Agent.Lead.Enabled {
+			t.Fatalf("%s: agent.lead.enabled defaulted off", mode)
+		}
+	}
+	prod, err := NewConfig("mode: prod\n", "yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prod.Agent.Lead.Enabled {
+		t.Fatal("prod enabled the lead by default")
+	}
+	off, err := NewConfig("mode: dev\nagent:\n  lead:\n    enabled: false\n", "yaml")
+	if err != nil {
+		t.Fatalf("lead off: %v", err)
+	}
+	if off.Agent.Lead.Enabled {
+		t.Fatal("an explicit agent.lead.enabled: false was overridden")
+	}
+	if _, err := NewConfig("mode: dev\nagent:\n  lead:\n    enabled: false\nthreads:\n  enabled: true\n", "yaml"); err == nil || !strings.Contains(err.Error(), "agent.lead.enabled") {
+		t.Fatalf("threads without the lead = %v, want refused", err)
+	}
+}

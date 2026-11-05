@@ -678,6 +678,9 @@ export function AgentInspector({ inspection, onClose, compact = false }) {
   const payloads = React.useMemo(() => [
     { id: "data", label: "Data", value: response.data },
     { id: "questions", label: "Questions", value: delegations },
+    // The caller's saved skills and memories that shaped this answer.
+    { id: "skills", label: "Skills", value: response.skills },
+    { id: "memories", label: "Memories", value: response.memories },
     { id: "evidence", label: "Evidence", value: response.evidence },
     { id: "actions", label: "Actions", value: response.actions },
     { id: "next", label: "Next", value: response.next },

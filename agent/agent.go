@@ -212,15 +212,14 @@ const (
 	CapabilityActionCodeWrite  = "code.write"
 	CapabilityActionAPIWrite   = "api.write"
 	CapabilityActionAPIDelete  = "api.delete"
-	// CapabilityActionMemoryWrite lets the agent save the caller's personal
-	// memories (gj_artifacts rows of kind memory).
-	CapabilityActionMemoryWrite = "memory.write"
 )
 
 type Response struct {
-	Status      string            `json:"status"`
-	Answer      string            `json:"answer,omitempty"`
-	Skills      []SkillUsage      `json:"skills,omitempty"`
+	Status string       `json:"status"`
+	Answer string       `json:"answer,omitempty"`
+	Skills []SkillUsage `json:"skills,omitempty"`
+	// Memories names the saved memories that shaped a lead's answer.
+	Memories    []MemoryUsage     `json:"memories,omitempty"`
 	Skill       string            `json:"skill,omitempty"` // Deprecated through v3.
 	Data        any               `json:"data,omitempty"`
 	Evidence    any               `json:"evidence,omitempty"`

@@ -130,10 +130,7 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 
 	agentConf := agentConfigFromService(s.conf)
 	agentConf.ReadOnly = true
-	runner, err := newGraphJinAgentRunner(s, agentConf)
-	if err == nil {
-		runner, err = s.threadAgentRunner(agentConf, runner)
-	}
+	runner, err := s.agentEntryRunner(agentConf)
 	if err != nil {
 		// The run row exists; record the failure in the thread rather than
 		// leaving it for the lease sweep.

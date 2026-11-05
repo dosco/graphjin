@@ -15,7 +15,10 @@ import (
 const consoleBootstrapSchemaVersion = "1"
 
 type consoleBootstrapIdentity struct {
-	DisplayName   string `json:"display_name,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+	// UserRef is the caller's owner_ref: rows of the caller's own carry it, so
+	// a GUI built on the system roots can tell its rows from shared ones.
+	UserRef       string `json:"user_ref,omitempty"`
 	Role          string `json:"role"`
 	Authenticated bool   `json:"authenticated"`
 	// Suggested is a development identity the console may adopt when the
@@ -109,6 +112,7 @@ func (s1 *HttpService) apiV1ConsoleBootstrap(ns *string) http.Handler {
 		}
 		if userID := ctx.Value(core.UserIDKey); userID != nil {
 			identity.DisplayName = fmt.Sprint(userID)
+			identity.UserRef = safeArtifactIdentity(fmt.Sprint(userID), false)
 			if name := auth.UserName(ctx); name != "" {
 				identity.DisplayName = name
 			}

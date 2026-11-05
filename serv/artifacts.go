@@ -58,6 +58,11 @@ func artifactColumns() []core.ManagedColumn {
 		cpCol("content", "text", false),
 		cpCol("content_json", "json", false),
 		cpCol("metadata_json", "json", false),
+		// description is metadata_json.description, surfaced as a column so a
+		// GUI reads and writes a skill's one-line description directly.
+		cpCol("description", "text", false),
+		// icon is metadata_json.icon, an agent profile's console icon.
+		cpCol("icon", "text", false),
 		cpCol("content_hash", "text", false),
 		cpCol("status", "text", false),
 		cpCol("target_ref", "text", false),
@@ -402,6 +407,9 @@ func (h artifactControlPlane) upsertArtifact(ctx context.Context, root core.Mana
 	}
 	if requestedKind == artifactKindAgentProfile || normalizeArtifactKind(stringMapValue(requestedExisting, "kind")) == artifactKindAgentProfile {
 		return h.upsertAgentProfile(ctx, root, requestedExisting)
+	}
+	if requestedKind == artifactKindSkill || normalizeArtifactKind(stringMapValue(requestedExisting, "kind")) == artifactKindSkill {
+		return h.upsertSkill(ctx, root, requestedExisting)
 	}
 	visibility := stringInput(root.Input, "visibility", "user")
 	if visibility == "global" {
@@ -1209,6 +1217,8 @@ func artifactProjectionRow(row map[string]any, rawIDs bool) map[string]any {
 		"content":          stringMapValue(row, "content"),
 		"content_json":     row["content_json"],
 		"metadata_json":    row["metadata_json"],
+		"description":      skillDescription(row),
+		"icon":             profileIcon(row),
 		"content_hash":     stringMapValue(row, "content_hash"),
 		"status":           artifactStatus(stringMapValue(row, "status")),
 		"target_ref":       stringMapValue(row, "target_ref"),

@@ -361,6 +361,11 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 
 func configureEvalInstance(config *serv.Config, spec gjeval.EnvSpec) {
 	config.Agent.Enabled = true
+	// The environment grades the data agent itself: every published board row
+	// measures the worker answering one question. With the lead on, the agent
+	// endpoint would run the lead instead and change what the board measures.
+	// The lead is scored separately (scripts/agent-data-eval.sh --corpus lead).
+	config.Agent.Lead.Enabled = false
 	config.Agent.ReadOnly = !spec.Writable
 	config.Agent.ReturnTrace = true
 	// A sampling run pins how the model draws; a benchmark leaves it alone.

@@ -1,4 +1,4 @@
-import { fetchJSON, RequestError } from "./graphql";
+import { fetchJSON, graphqlRequest, RequestError } from "./graphql";
 import { operatorIdentityHeaders } from "./identity";
 
 export function agentStatus() {
@@ -125,37 +125,88 @@ function parseSSEFrame(frame) {
   }
 }
 
+// Everything below reads and writes through the graph: threads are the
+// gj_thread / gj_thread_message / gj_thread_run roots, and memories, skills
+// and agent profiles are gj_artifacts rows of their kind. Only starting a
+// turn (POST /api/v1/agent), following or cancelling a run, and finding a
+// profile's home thread are REST actions.
+
+async function gql(query, variables = {}) {
+  const payload = await graphqlRequest(query, variables);
+  if (payload.errors?.length) {
+    throw new RequestError(payload.errors.map((error) => error.message).join("; "), { errors: payload.errors });
+  }
+  return payload.data || {};
+}
+
+// The caller's own rows carry the bootstrap's user_ref as owner_ref.
+let userRefPromise;
+function userRef() {
+  userRefPromise ||= fetchJSON("/api/v1/console/bootstrap")
+    .then((bootstrap) => bootstrap?.identity?.user_ref || "")
+    .catch(() => "");
+  return userRefPromise;
+}
+
+function scoped(row, ref) {
+  return { ...row, scope: row.tier === "approved" ? "team" : "personal", mine: Boolean(ref) && row.owner_ref === ref };
+}
+
+const threadFields = "id title profile status channel active_run_id unread last_message_at last_seen_at created_at updated_at";
+
 // Persistent threads (threads.enabled). A thread's stored messages are the
 // conversation history, so threaded requests send thread_id instead of
 // history, and a run can be resumed or cancelled after a reload.
-export function listThreads() {
-  return fetchJSON("/api/v1/agent/threads").then((payload) => payload?.data || []);
+export async function listThreads() {
+  const data = await gql(`query { gj_thread(where: { status: { eq: "open" } }, order_by: { last_message_at: desc }) { ${threadFields} } }`);
+  return data.gj_thread || [];
 }
 
-export function createThread({ title = "", profile = "" } = {}) {
-  return fetchJSON("/api/v1/agent/threads", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, profile }),
-  }).then((payload) => payload?.data);
+export async function createThread({ title = "", profile = "" } = {}) {
+  const data = await gql(`mutation ($title: String!, $profile: String!) { gj_thread(insert: { title: $title, profile: $profile }) { ${threadFields} } }`, { title, profile });
+  return data.gj_thread;
 }
 
-export function fetchThread(threadID) {
-  return fetchJSON(`/api/v1/agent/threads/${encodeURIComponent(threadID)}`).then((payload) => payload?.data);
+export async function fetchThread(threadID) {
+  const data = await gql(
+    `query ($id: String!) {
+      gj_thread(where: { id: { eq: $id } }) { ${threadFields} }
+      gj_thread_message(where: { thread_id: { eq: $id } }, order_by: { seq: asc }) { id thread_id seq role content status run_id catalog_ids response created_at }
+    }`,
+    { id: threadID },
+  );
+  const thread = (data.gj_thread || [])[0];
+  return thread ? { ...thread, messages: data.gj_thread_message || [] } : undefined;
 }
 
-export function updateThread(threadID, patch) {
-  return fetchJSON(`/api/v1/agent/threads/${encodeURIComponent(threadID)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  }).then((payload) => payload?.data);
+export async function updateThread(threadID, patch) {
+  const input = { ...patch };
+  if (input.seen) {
+    input.last_seen_at = "now";
+  }
+  delete input.seen;
+  const data = await gql(`mutation ($id: String!, $input: json!) { gj_thread(where: { id: { eq: $id } }, update: $input) { ${threadFields} } }`, { id: threadID, input });
+  return data.gj_thread;
+}
+
+export async function deleteThread(threadID) {
+  return gql(`mutation ($id: String!) { gj_thread(where: { id: { eq: $id } }, delete: true) { id } }`, { id: threadID });
 }
 
 // markThreadSeen clears a thread's unread state (threads report unread when an
 // assistant message landed after the owner last looked).
 export function markThreadSeen(threadID) {
   return updateThread(threadID, { seen: true });
+}
+
+// runsForThread lists a thread's runs with their cost and the skills and
+// memories that shaped each answer.
+export async function runsForThread(threadID) {
+  const data = await gql(
+    `query ($id: String!) { gj_thread_run(where: { thread_id: { eq: $id } }) { id status tokens_in tokens_out llm_calls used_skills used_memories created_at finished_at } }`,
+    { id: threadID },
+  );
+  return data.gj_thread_run || [];
 }
 
 export function cancelRun(runID) {
@@ -180,57 +231,102 @@ export async function followRun(runID, { onAction, after = 0 } = {}) {
   return readAgentEvents(response, { onAction });
 }
 
+const artifactFields = "id name kind content description icon tier owner_ref created_at updated_at";
+
+async function listArtifacts(kind) {
+  const [data, ref] = await Promise.all([
+    gql(`query ($kind: String!) { gj_artifacts(where: { kind: { eq: $kind } }, order_by: { name: asc }) { ${artifactFields} } }`, { kind }),
+    userRef(),
+  ]);
+  return (data.gj_artifacts || []).map((row) => scoped(row, ref));
+}
+
+async function insertArtifact(input) {
+  const [data, ref] = await Promise.all([
+    gql(`mutation ($input: json!) { gj_artifacts(insert: $input) { ${artifactFields} } }`, { input }),
+    userRef(),
+  ]);
+  return scoped(data.gj_artifacts, ref);
+}
+
+async function updateArtifact(id, input) {
+  const [data, ref] = await Promise.all([
+    gql(`mutation ($id: String!, $input: json!) { gj_artifacts(where: { id: { eq: $id } }, update: $input) { ${artifactFields} } }`, { id, input }),
+    userRef(),
+  ]);
+  return scoped(data.gj_artifacts, ref);
+}
+
+function deleteArtifact(id) {
+  return gql(`mutation ($id: String!) { gj_artifacts(where: { id: { eq: $id } }, delete: true) { id } }`, { id });
+}
+
 // Memory (memory.enabled): personal facts the agent recalls in every run;
 // publishing one shares it with the caller's account as team memory.
 export function listMemories() {
-  return fetchJSON("/api/v1/agent/memories").then((payload) => payload?.data || []);
+  return listArtifacts("memory");
 }
 
 export function addMemory(content) {
-  return fetchJSON("/api/v1/agent/memories", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content }),
-  }).then((payload) => payload?.data);
+  return insertArtifact({ kind: "memory", content });
 }
 
 export function updateMemory(id, patch) {
-  return fetchJSON(`/api/v1/agent/memories/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  }).then((payload) => payload?.data);
+  return updateArtifact(id, patch);
 }
 
 export function deleteMemory(id) {
-  return fetchJSON(`/api/v1/agent/memories/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return deleteArtifact(id);
+}
+
+// Skills: named instructions the lead loads when a request matches their
+// description. Sharing one (tier approved) makes it available to the account.
+export function listSkills() {
+  return listArtifacts("skill");
+}
+
+export function addSkill({ name, description, content }) {
+  return insertArtifact({ kind: "skill", name, description, content });
+}
+
+export function updateSkill(id, patch) {
+  return updateArtifact(id, patch);
+}
+
+export function deleteSkill(id) {
+  return deleteArtifact(id);
 }
 
 // Agent profiles: named agents with standing instructions. Each has one home
 // thread per user, found or created on first open; sharing one (tier
 // approved) makes it available to the caller's account.
-export function listProfiles() {
-  return fetchJSON("/api/v1/agent/profiles").then((payload) => payload?.data || []);
+function profileRow(row) {
+  return row && { ...row, instructions: row.content };
 }
 
-export function createProfile({ name, instructions = "", icon = "" }) {
-  return fetchJSON("/api/v1/agent/profiles", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, instructions, icon }),
-  }).then((payload) => payload?.data);
+function profileInput(patch) {
+  const input = { ...patch };
+  if ("instructions" in input) {
+    input.content = input.instructions;
+    delete input.instructions;
+  }
+  return input;
 }
 
-export function updateProfile(id, patch) {
-  return fetchJSON(`/api/v1/agent/profiles/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  }).then((payload) => payload?.data);
+export async function listProfiles() {
+  return (await listArtifacts("agent_profile")).map(profileRow);
+}
+
+export async function createProfile({ name, instructions = "", icon = "" }) {
+  return profileRow(await insertArtifact({ kind: "agent_profile", name, content: instructions, icon }));
+}
+
+export async function updateProfile(id, patch) {
+  return profileRow(await updateArtifact(id, profileInput(patch)));
 }
 
 export function deleteProfile(id) {
-  return fetchJSON(`/api/v1/agent/profiles/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return deleteArtifact(id);
 }
 
 export function profileHomeThread(id) {

@@ -24,25 +24,22 @@ type threadAgentResponse struct {
 	RunID    string `json:"run_id"`
 }
 
-func (s1 *HttpService) AgentThreads(ah auth.HandlerFunc) http.Handler {
-	return apiV1Handler(s1, nil, s1.apiV1AgentThreads(), ah)
+func (s1 *HttpService) AgentRuns(ah auth.HandlerFunc) http.Handler {
+	return apiV1Handler(s1, nil, s1.apiV1AgentRuns(), ah)
 }
 
-func (s1 *HttpService) AgentThreadsWithNS(ah auth.HandlerFunc, ns string) http.Handler {
-	return apiV1Handler(s1, &ns, s1.apiV1AgentThreads(), ah)
+func (s1 *HttpService) AgentRunsWithNS(ah auth.HandlerFunc, ns string) http.Handler {
+	return apiV1Handler(s1, &ns, s1.apiV1AgentRuns(), ah)
 }
 
-// apiV1AgentThreads serves thread and run reads, run streams and cancels:
+// apiV1AgentRuns serves a running turn's live actions:
 //
-//	GET    /api/v1/agent/threads              list the caller's threads
-//	POST   /api/v1/agent/threads              create a thread
-//	GET    /api/v1/agent/threads/{id}         a thread with its messages
-//	PATCH  /api/v1/agent/threads/{id}         rename, archive or change profile
-//	DELETE /api/v1/agent/threads/{id}         delete with its messages and runs
-//	GET    /api/v1/agent/runs/{id}            a run's status
-//	GET    /api/v1/agent/runs/{id}/events     replay and follow a run (SSE)
-//	POST   /api/v1/agent/runs/{id}/cancel     cancel a run on any replica
-func (s1 *HttpService) apiV1AgentThreads() http.Handler {
+//	GET  /api/v1/agent/runs/{id}/events  stream a run's events (SSE), resumable with ?after=
+//	POST /api/v1/agent/runs/{id}/cancel  cancel a run on any replica
+//
+// Threads, their messages and runs are the gj_thread, gj_thread_message and
+// gj_thread_run GraphQL roots; a turn starts at POST /api/v1/agent.
+func (s1 *HttpService) apiV1AgentRuns() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s := s1.Load().(*graphjinService)
 		w.Header().Set("Content-Type", "application/json")
@@ -56,64 +53,17 @@ func (s1 *HttpService) apiV1AgentThreads() http.Handler {
 		}
 		ctx := s.applyIdentityContext(r.Context())
 		if _, ok := artifactUserID(ctx); !ok {
-			writeJSONStatus(w, http.StatusUnauthorized, map[string]any{"error": "agent threads require a signed-in user"})
+			writeJSONStatus(w, http.StatusUnauthorized, map[string]any{"error": "agent runs require a signed-in user"})
 			return
 		}
-		if path, ok := strings.CutPrefix(r.URL.Path, routeAgentRuns); ok {
-			s.handleAgentRunsREST(ctx, w, r, strings.Trim(path, "/"))
-			return
-		}
-		path := strings.Trim(strings.TrimPrefix(r.URL.Path, routeAgentThreads), "/")
-		switch {
-		case path == "" && r.Method == http.MethodGet:
-			rows, err := s.listThreads(ctx, r.URL.Query().Get("archived") == "true")
-			writeThreadResult(w, http.StatusOK, rows, err)
-		case path == "" && r.Method == http.MethodPost:
-			var input struct {
-				Title   string `json:"title"`
-				Profile string `json:"profile"`
-			}
-			if err := decodeJSON(r, &input); err != nil {
-				writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
-				return
-			}
-			row, err := s.createThread(ctx, threadSpec{Title: input.Title, Profile: input.Profile})
-			writeThreadResult(w, http.StatusCreated, row, err)
-		case path != "" && !strings.Contains(path, "/") && r.Method == http.MethodGet:
-			thread, err := s.threadForCaller(ctx, path)
-			if err == nil {
-				var messages []map[string]any
-				messages, err = s.threadMessages(ctx, path)
-				thread["messages"] = messages
-			}
-			writeThreadResult(w, http.StatusOK, thread, err)
-		case path != "" && !strings.Contains(path, "/") && r.Method == http.MethodPatch:
-			input, err := readJSONMap(r)
-			if err != nil {
-				writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
-				return
-			}
-			row, err := s.updateThread(ctx, path, input)
-			writeThreadResult(w, http.StatusOK, row, err)
-		case path != "" && !strings.Contains(path, "/") && r.Method == http.MethodDelete:
-			err := s.deleteThread(ctx, path)
-			writeThreadResult(w, http.StatusOK, map[string]any{"id": path, "deleted": err == nil}, err)
-		default:
-			writeJSONStatus(w, http.StatusNotFound, map[string]any{"error": "not found"})
-		}
+		path, _ := strings.CutPrefix(r.URL.Path, routeAgentRuns)
+		s.handleAgentRunsREST(ctx, w, r, strings.Trim(path, "/"))
 	})
 }
 
 func (s *graphjinService) handleAgentRunsREST(ctx context.Context, w http.ResponseWriter, r *http.Request, path string) {
 	runID, action, _ := strings.Cut(path, "/")
 	switch {
-	case runID != "" && action == "" && r.Method == http.MethodGet:
-		row, err := s.runForCaller(ctx, runID)
-		if err == nil {
-			writeThreadResult(w, http.StatusOK, runAPIRow(row), nil)
-			return
-		}
-		writeThreadResult(w, http.StatusOK, nil, err)
 	case runID != "" && action == "events" && r.Method == http.MethodGet:
 		s.streamRunEvents(ctx, w, r, runID)
 	case runID != "" && action == "cancel" && r.Method == http.MethodPost:

@@ -39,7 +39,7 @@ func TestAgentProfileScopingOwnerTeammateOtherAccount(t *testing.T) {
 
 	profile := addProfile(t, cp, alice, "Finance", "Report revenue in EUR.")
 	id := profile["id"].(string)
-	if profile["scope"] != "personal" || profile["icon"] != "chart" || profile["instructions"] != "Report revenue in EUR." {
+	if profile["tier"] != "observed" || profile["icon"] != "chart" || profile["content"] != "Report revenue in EUR." {
 		t.Fatalf("new profile = %+v", profile)
 	}
 	visible := func(ctx context.Context) bool {
@@ -66,7 +66,7 @@ func TestAgentProfileScopingOwnerTeammateOtherAccount(t *testing.T) {
 
 	existing, _ := svc.internalArtifactStoreRow(alice, id)
 	shared, err := cp.upsertAgentProfile(alice, core.ManagedMutationRoot{Operation: "update", Input: map[string]any{"tier": "approved"}}, existing)
-	if err != nil || shared["scope"] != "team" {
+	if err != nil || shared["tier"] != "approved" {
 		t.Fatalf("share = %+v err=%v", shared, err)
 	}
 	if !visible(alice) || !visible(bob) || visible(carol) {
@@ -92,7 +92,7 @@ func TestAgentProfileScopingOwnerTeammateOtherAccount(t *testing.T) {
 		t.Fatalf("teammate edited a shared profile: %v", err)
 	}
 	edited, err := cp.upsertAgentProfile(alice, core.ManagedMutationRoot{Operation: "update", Input: map[string]any{"instructions": "Report revenue in USD."}}, existing)
-	if err != nil || edited["scope"] != "personal" || edited["icon"] != "chart" {
+	if err != nil || edited["tier"] != "observed" || edited["icon"] != "chart" {
 		t.Fatalf("editing shared instructions must take the profile back to personal: %+v err=%v", edited, err)
 	}
 	if _, err := cp.upsertAgentProfile(alice, core.ManagedMutationRoot{Operation: "insert",
@@ -108,54 +108,60 @@ func TestAgentProfileScopingOwnerTeammateOtherAccount(t *testing.T) {
 	}
 }
 
-func TestAgentProfileRESTAndGJArtifactsDispatch(t *testing.T) {
+// Profiles are managed entirely through gj_artifacts; only finding a
+// profile's home thread is a REST action.
+func TestAgentProfilesThroughGraphQL(t *testing.T) {
 	svc := newSQLiteThreadService(t)
 	hs := &HttpService{}
 	hs.Store(svc)
 	alice := profileUserCtx("alice", "acct_1")
-	call := func(ctx context.Context, method, path, body string) (int, map[string]any) {
+	gql := func(ctx context.Context, query string) (map[string]any, string) {
 		t.Helper()
-		req := httptest.NewRequest(method, path, strings.NewReader(body)).WithContext(ctx)
+		raw, errText := skillGraphQL(t, svc, ctx, query, nil)
+		var row map[string]any
+		_ = json.Unmarshal(raw, &row)
+		return row, errText
+	}
+
+	row, errText := gql(alice, `mutation { gj_artifacts(insert: { kind: "agent_profile", name: "Ops", content: "Focus on late shipments.", icon: "truck" }) { id name content icon tier } }`)
+	if errText != "" || row["icon"] != "truck" || row["tier"] != "observed" {
+		t.Fatalf("create = %+v %s", row, errText)
+	}
+	id := row["id"].(string)
+	row, errText = gql(alice, `mutation { gj_artifacts(where: { id: { eq: "`+id+`" } }, update: { name: "Operations" }) { id name content } }`)
+	if errText != "" || row["name"] != "Operations" || row["content"] != "Focus on late shipments." {
+		t.Fatalf("rename = %+v %s", row, errText)
+	}
+
+	home := func(ctx context.Context) (int, map[string]any) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, routeAgentProfiles+"/"+id+"/thread", nil).WithContext(ctx)
 		rec := httptest.NewRecorder()
 		hs.AgentProfiles(nil).ServeHTTP(rec, req)
 		var out map[string]any
 		_ = json.Unmarshal(rec.Body.Bytes(), &out)
 		return rec.Code, out
 	}
-
-	code, out := call(alice, http.MethodPost, routeAgentProfiles, `{"name":"Ops","instructions":"Focus on late shipments.","icon":"truck"}`)
-	if code != http.StatusCreated {
-		t.Fatalf("create = %d %+v", code, out)
-	}
-	id := out["data"].(map[string]any)["id"].(string)
-	code, out = call(alice, http.MethodPatch, routeAgentProfiles+"/"+id, `{"name":"Operations"}`)
-	if code != http.StatusOK || out["data"].(map[string]any)["name"] != "Operations" ||
-		out["data"].(map[string]any)["instructions"] != "Focus on late shipments." {
-		t.Fatalf("patch = %d %+v", code, out)
-	}
-	code, out = call(alice, http.MethodGet, routeAgentProfiles+"/"+id+"/thread", "")
-	if code != http.StatusOK || out["data"].(map[string]any)["id"] != profileHomeThreadID("alice", id) {
+	if code, out := home(alice); code != http.StatusOK || out["data"].(map[string]any)["id"] != profileHomeThreadID("alice", id) {
 		t.Fatalf("home thread = %d %+v", code, out)
 	}
-	if code, _ := call(profileUserCtx("carol", "acct_2"), http.MethodGet, routeAgentProfiles+"/"+id+"/thread", ""); code != http.StatusNotFound {
+	if code, _ := home(profileUserCtx("carol", "acct_2")); code != http.StatusNotFound {
 		t.Fatalf("other account home thread = %d, want 404", code)
 	}
+	req := httptest.NewRequest(http.MethodGet, routeAgentProfiles+"/"+id, nil).WithContext(alice)
+	rec := httptest.NewRecorder()
+	hs.AgentProfiles(nil).ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("profile REST read = %d, want 404 (profiles are GraphQL rows)", rec.Code)
+	}
 
-	// gj_artifacts writes of the kind route to the same upsert.
-	row, err := newArtifactControlPlane(svc).upsertArtifact(alice, core.ManagedMutationRoot{Operation: "insert",
-		Input: map[string]any{"kind": "agent_profile", "name": "Sales", "content": "Quota is per quarter."}})
-	if err != nil || row["instructions"] != "Quota is per quarter." {
-		t.Fatalf("gj_artifacts insert = %+v err=%v", row, err)
+	// A non-owner's delete is a no-op that does not reveal the row exists.
+	gql(profileUserCtx("bob", "acct_1"), `mutation { gj_artifacts(where: { id: { eq: "`+id+`" } }, delete: true) { id } }`)
+	if row, _ := svc.internalArtifactStoreRow(alice, id); row == nil {
+		t.Fatal("a teammate deleted alice's profile")
 	}
-	code, out = call(alice, http.MethodGet, routeAgentProfiles, "")
-	if list, _ := out["data"].([]any); code != http.StatusOK || len(list) != 2 {
-		t.Fatalf("list = %d %+v", code, out)
-	}
-	if code, _ := call(profileUserCtx("bob", "acct_1"), http.MethodDelete, routeAgentProfiles+"/"+id, ""); code != http.StatusNotFound {
-		t.Fatalf("teammate delete = %d, want 404", code)
-	}
-	if code, _ := call(alice, http.MethodDelete, routeAgentProfiles+"/"+id, ""); code != http.StatusOK {
-		t.Fatalf("owner delete = %d", code)
+	if _, errText := gql(alice, `mutation { gj_artifacts(where: { id: { eq: "`+id+`" } }, delete: true) { id } }`); errText != "" {
+		t.Fatalf("owner delete: %s", errText)
 	}
 	if row, _ := svc.internalArtifactStoreRow(alice, id); row != nil {
 		t.Fatalf("profile survived delete: %+v", row)
@@ -291,11 +297,8 @@ func TestThreadUnreadFlipsAndSeen(t *testing.T) {
 		t.Fatal("an assistant message after the last visit must make the thread unread")
 	}
 	time.Sleep(2 * time.Millisecond)
-	req := httptest.NewRequest(http.MethodPatch, routeAgentThreads+"/"+id, strings.NewReader(`{"seen":true}`)).WithContext(ctx)
-	rec := httptest.NewRecorder()
-	hs.AgentThreads(nil).ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"unread":false`) {
-		t.Fatalf("seen = %d %s", rec.Code, rec.Body.String())
+	if _, errText := threadGraphQL(t, svc, ctx, `mutation { gj_thread(where: { id: { eq: "`+id+`" } }, update: { last_seen_at: "now" }) { id unread } }`); errText != "" {
+		t.Fatalf("seen: %s", errText)
 	}
 	if unread() {
 		t.Fatal("marking the thread seen must clear unread")
@@ -316,6 +319,7 @@ func TestThreadMigrationAddsLastSeenAt(t *testing.T) {
 	_, svc := newSQLiteWatchServiceWithDBAndOptions(t, db, dsn, 10, func(conf *Config) {
 		conf.Agent.Enabled = true
 		conf.Core.Threads = core.ThreadsConfig{Enabled: true, HistoryTurns: 12, RunLeaseSeconds: 3, MaxPerOwner: 3}
+		conf.Agent.Lead.Enabled = true
 	})
 	schema := svc.conf.Core.EffectiveArtifactsConfig().Schema
 	// The thread table as an older build created it, with one answered thread.

@@ -70,6 +70,14 @@ func systemRootActionEnabled(conf *Config, root, action string) bool {
 			return false
 		}
 		return action == systemActionRead || !conf.artifactSourceReadOnly()
+	case threadsRootTable:
+		if !configThreadsEnabled(conf) {
+			return false
+		}
+		return action == systemActionRead || !conf.artifactSourceReadOnly()
+	case threadMessagesRootTable, threadRunsRootTable:
+		// Written only by agent turns.
+		return action == systemActionRead && configThreadsEnabled(conf)
 	default:
 		return false
 	}

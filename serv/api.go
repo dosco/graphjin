@@ -187,6 +187,7 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 	artifacts := newArtifactControlPlane(live)
 	watches := newWatchControlPlane(live)
 	tasks := newTaskControlPlane(live)
+	threads := newThreadControlPlane(live)
 	revisions := revisionSignalHandler{service: live}
 	opts := []core.Option{
 		core.OptionSetFS(s.fs),
@@ -251,6 +252,17 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 				opts = append(opts, core.OptionSetManagedQueryHandler(dbName, tasks))
 			}
 			opts = append(opts, core.OptionSetManagedMutationHandler(dbName, tasks))
+		}
+	}
+	if s.conf != nil && s.threadsEnabled() {
+		targetDB := s.metadataDB
+		if targetDB == "" {
+			targetDB = core.DefaultDBName
+		}
+		// Thread roots are always served live, never from the NanoDB mirror.
+		for _, dbName := range s.managedSystemRootDatabases(targetDB) {
+			opts = append(opts, core.OptionSetManagedQueryHandler(dbName, threads))
+			opts = append(opts, core.OptionSetManagedMutationHandler(dbName, threads))
 		}
 	}
 	if s.namespace != nil {

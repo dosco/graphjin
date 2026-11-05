@@ -7,15 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net/http"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
 
-	gjagent "github.com/dosco/graphjin/agent/v3"
-	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/core/v3"
 )
 
@@ -37,7 +34,7 @@ const (
 var errMemoryNotFound = errors.New("memory_not_found")
 
 func (s *graphjinService) memoryEnabled() bool {
-	return s != nil && s.conf != nil && s.conf.Core.Artifacts.Enabled && s.conf.Memory.Enabled
+	return s != nil && s.conf != nil && s.conf.Core.Artifacts.Enabled && s.conf.Memory.Enabled && s.conf.Agent.Lead.Enabled
 }
 
 func (h artifactControlPlane) upsertMemory(ctx context.Context, root core.ManagedMutationRoot, existing map[string]any) (map[string]any, error) {
@@ -150,9 +147,9 @@ func (h artifactControlPlane) upsertMemory(ctx context.Context, root core.Manage
 	}
 	s.markArtifactChanged("memory mutation")
 	if len(rows) != 0 {
-		return memoryAPIRow(rows[0], actorID), nil
+		return artifactProjectionRow(rows[0], admin), nil
 	}
-	return memoryAPIRow(input, actorID), nil
+	return artifactProjectionRow(input, admin), nil
 }
 
 func (s *graphjinService) enforceMemoryLimit(ctx context.Context, ownerID string) error {
@@ -169,88 +166,16 @@ func (s *graphjinService) enforceMemoryLimit(ctx context.Context, ownerID string
 	return nil
 }
 
-// visibleMemoryRows returns the caller's own memories plus the team memories
-// published to the caller's account.
-func (s *graphjinService) visibleMemoryRows(ctx context.Context) ([]map[string]any, error) {
-	ownerID, ok := artifactUserID(ctx)
-	if !ok {
-		return nil, nil
-	}
-	own, err := s.internalStoreAllRows(ctx, "artifacts", `where: { kind: { eq: "memory" }, owner_id: { eq: $owner_id } }`,
-		artifactStoreFields, map[string]any{"owner_id": ownerID})
-	if err != nil {
-		return nil, err
-	}
-	rows := own
-	if accountID, _ := identityVarString(ctx, "account_id"); accountID != "" {
-		team, err := s.internalStoreAllRows(ctx, "artifacts",
-			`where: { kind: { eq: "memory" }, tier: { eq: "approved" }, account_id: { eq: $account_id } }`,
-			artifactStoreFields, map[string]any{"account_id": accountID})
-		if err != nil {
-			return nil, err
-		}
-		for _, row := range team {
-			if stringMapValue(row, "owner_id") != ownerID {
-				rows = append(rows, row)
-			}
-		}
-	}
-	return rows, nil
-}
-
-func memoryAPIRow(row map[string]any, viewerID string) map[string]any {
-	scope := "personal"
-	if normalizeAnnotationTier(stringMapValue(row, "tier")) == annotationTierApproved {
-		scope = "team"
-	}
-	return map[string]any{
-		"id":         stringMapValue(row, "id"),
-		"content":    stringMapValue(row, "content"),
-		"scope":      scope,
-		"tier":       normalizeAnnotationTier(stringMapValue(row, "tier")),
-		"mine":       stringMapValue(row, "owner_id") == viewerID,
-		"owner_ref":  safeArtifactIdentity(stringMapValue(row, "owner_id"), false),
-		"created_at": stringMapValue(row, "created_at"),
-		"updated_at": stringMapValue(row, "updated_at"),
-	}
-}
-
 // --- recall ------------------------------------------------------------------
 
-// withMemoryRecall wraps a runner so each run starts with the caller's most
-// relevant memories in its context.
-func (s *graphjinService) withMemoryRecall(runner graphjinAgentRunner) graphjinAgentRunner {
-	if !s.memoryEnabled() || runner == nil {
-		return runner
+// rankMemoryRows orders memory rows by relevance to query and keeps at most
+// limit of them within the recall byte budget. With an embedding client it
+// ranks by cosine similarity; without one it falls back to shared-word overlap
+// and keeps only memories that share a word.
+func (s *graphjinService) rankMemoryRows(ctx context.Context, rows []map[string]any, query string, limit int) ([]map[string]any, error) {
+	if len(rows) == 0 || strings.TrimSpace(query) == "" || limit <= 0 {
+		return nil, nil
 	}
-	return memoryRecallRunner{s: s, inner: runner}
-}
-
-type memoryRecallRunner struct {
-	s     *graphjinService
-	inner graphjinAgentRunner
-}
-
-func (r memoryRecallRunner) Run(ctx context.Context, req gjagent.Request) (gjagent.Response, error) {
-	memories, err := r.s.recallMemories(ctx, req.Instruction)
-	if err != nil && r.s.log != nil {
-		r.s.log.Warnf("memory recall skipped: %v", err)
-	}
-	for _, memory := range memories {
-		req.Memories = append(req.Memories, stringMapValue(memory, "content"))
-	}
-	return r.inner.Run(ctx, req)
-}
-
-// recallMemories ranks the caller's visible memories against the request.
-// With an embedding client it ranks by cosine similarity; without one it falls
-// back to shared-word overlap and returns only memories that share a word.
-func (s *graphjinService) recallMemories(ctx context.Context, query string) ([]map[string]any, error) {
-	rows, err := s.visibleMemoryRows(ctx)
-	if err != nil || len(rows) == 0 || strings.TrimSpace(query) == "" {
-		return nil, err
-	}
-	limit := s.conf.Memory.effectiveRecallLimit()
 	type scored struct {
 		row   map[string]any
 		score float64
@@ -292,7 +217,7 @@ func (s *graphjinService) recallMemories(ctx context.Context, query string) ([]m
 		if normalizeAnnotationTier(stringMapValue(item.row, "tier")) == annotationTierApproved {
 			scope = "team"
 		}
-		out = append(out, map[string]any{"content": content, "scope": scope})
+		out = append(out, map[string]any{"id": stringMapValue(item.row, "id"), "content": content, "scope": scope})
 	}
 	return out, nil
 }
@@ -399,105 +324,4 @@ func keywordOverlap(query, memory map[string]struct{}) float64 {
 		}
 	}
 	return float64(shared)
-}
-
-// --- REST --------------------------------------------------------------------
-
-func (s1 *HttpService) AgentMemories(ah auth.HandlerFunc) http.Handler {
-	return apiV1Handler(s1, nil, s1.apiV1AgentMemories(), ah)
-}
-
-func (s1 *HttpService) AgentMemoriesWithNS(ah auth.HandlerFunc, ns string) http.Handler {
-	return apiV1Handler(s1, &ns, s1.apiV1AgentMemories(), ah)
-}
-
-// apiV1AgentMemories serves the console's memory page:
-//
-//	GET    /api/v1/agent/memories        the caller's memories and team memories
-//	POST   /api/v1/agent/memories        add a personal memory {content}
-//	PATCH  /api/v1/agent/memories/{id}   edit {content} or publish {tier: approved|observed}
-//	DELETE /api/v1/agent/memories/{id}   delete
-func (s1 *HttpService) apiV1AgentMemories() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s := s1.Load().(*graphjinService)
-		w.Header().Set("Content-Type", "application/json")
-		if !s.memoryEnabled() {
-			writeJSONStatus(w, http.StatusNotFound, map[string]any{"error": "agent memory is disabled"})
-			return
-		}
-		if err := s.checkGraphJinInitialized(); err != nil {
-			renderErr(w, err)
-			return
-		}
-		ctx := s.applyIdentityContext(r.Context())
-		viewerID, ok := artifactUserID(ctx)
-		if !ok {
-			writeJSONStatus(w, http.StatusUnauthorized, map[string]any{"error": "agent memory requires a signed-in user"})
-			return
-		}
-		cp := newArtifactControlPlane(s)
-		id := strings.Trim(strings.TrimPrefix(r.URL.Path, routeAgentMemories), "/")
-		switch {
-		case id == "" && r.Method == http.MethodGet:
-			rows, err := s.visibleMemoryRows(ctx)
-			out := make([]map[string]any, 0, len(rows))
-			for _, row := range rows {
-				out = append(out, memoryAPIRow(row, viewerID))
-			}
-			sort.SliceStable(out, func(i, j int) bool {
-				return stringMapValue(out[i], "updated_at") > stringMapValue(out[j], "updated_at")
-			})
-			writeMemoryResult(w, http.StatusOK, out, err)
-		case id == "" && r.Method == http.MethodPost:
-			input, err := readJSONMap(r)
-			if err == nil {
-				var row map[string]any
-				row, err = cp.upsertMemory(ctx, core.ManagedMutationRoot{Operation: "insert",
-					Input: map[string]any{"content": input["content"]}}, nil)
-				writeMemoryResult(w, http.StatusCreated, row, err)
-				return
-			}
-			writeMemoryResult(w, http.StatusBadRequest, nil, err)
-		case id != "" && r.Method == http.MethodPatch:
-			input, err := readJSONMap(r)
-			if err == nil {
-				var existing, row map[string]any
-				existing, err = s.internalArtifactStoreRow(ctx, id)
-				if err == nil {
-					if existing == nil {
-						err = errMemoryNotFound
-					} else {
-						row, err = cp.upsertMemory(ctx, core.ManagedMutationRoot{Operation: "update", Input: input}, existing)
-					}
-				}
-				writeMemoryResult(w, http.StatusOK, row, err)
-				return
-			}
-			writeMemoryResult(w, http.StatusBadRequest, nil, err)
-		case id != "" && r.Method == http.MethodDelete:
-			existing, err := s.internalArtifactStoreRow(ctx, id)
-			if err == nil && (existing == nil || normalizeArtifactKind(stringMapValue(existing, "kind")) != artifactKindMemory ||
-				(stringMapValue(existing, "owner_id") != viewerID && !s.identityRoleIsAdmin(ctx))) {
-				err = errMemoryNotFound
-			}
-			if err == nil {
-				_, err = cp.deleteArtifact(ctx, core.ManagedMutationRoot{Operation: "delete", Input: map[string]any{"id": id}})
-			}
-			writeMemoryResult(w, http.StatusOK, map[string]any{"id": id, "deleted": err == nil}, err)
-		default:
-			writeJSONStatus(w, http.StatusNotFound, map[string]any{"error": "not found"})
-		}
-	})
-}
-
-func writeMemoryResult(w http.ResponseWriter, status int, data any, err error) {
-	if err != nil {
-		code := http.StatusBadRequest
-		if errors.Is(err, errMemoryNotFound) {
-			code = http.StatusNotFound
-		}
-		writeJSONStatus(w, code, map[string]any{"error": err.Error()})
-		return
-	}
-	writeJSONStatus(w, status, map[string]any{"data": data})
 }

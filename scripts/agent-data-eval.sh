@@ -198,7 +198,13 @@ boot_server() {
     exit 1
   fi
   echo "==> booting $DEMO_PATH (model=$model, default_limit=$DEFAULT_LIMIT)"
-  GO_ENV=agentic GJ_AGENT_MODEL="$model" GJ_DEFAULT_LIMIT="$DEFAULT_LIMIT" \
+  # The worker corpus grades the data agent answering one question, so the
+  # lead stays off; the lead corpus runs thread turns, which need it.
+  local lead_enabled=false
+  if [ "$CORPUS" = "lead" ]; then
+    lead_enabled=true
+  fi
+  GO_ENV=agentic GJ_AGENT_MODEL="$model" GJ_DEFAULT_LIMIT="$DEFAULT_LIMIT" GJ_AGENT_LEAD_ENABLED="$lead_enabled" \
     "$SERVER_BIN" serve --demo --path "$DEMO_PATH" \
     >"$SERVER_LOG" 2>&1 &
   SERVER_PID=$!

@@ -79,7 +79,7 @@ func (s *graphjinService) prepareThreadRunWith(ctx context.Context, threadID str
 		ThreadID: threadID, Role: "user", Content: shown, RunID: run.runID,
 		AccountID: stringMapValue(thread, "account_id"), OwnerID: stringMapValue(thread, "owner_id"),
 	}); err != nil {
-		_ = s.finishRun(context.WithoutCancel(ctx), run.runID, runStatusFailed, err.Error(), gjagent.UsageTotals{})
+		_ = s.finishRun(context.WithoutCancel(ctx), run.runID, runStatusFailed, err.Error(), gjagent.Response{})
 		release()
 		return nil, err
 	}
@@ -203,7 +203,7 @@ func (r *threadRun) execute(ctx context.Context, runner graphjinAgentRunner, req
 	}
 	r.record(base, emit, "result", resp)
 	r.record(base, emit, "complete", map[string]any{"status": status})
-	if ferr := s.finishRun(base, r.runID, status, errMsg, gjagent.SummarizeUsage(resp.Usage)); ferr != nil && s.log != nil {
+	if ferr := s.finishRun(base, r.runID, status, errMsg, resp); ferr != nil && s.log != nil {
 		s.log.Warnf("run %s: finish: %v", r.runID, ferr)
 	}
 	if rerr := s.releaseThreadRun(base, r.threadID, r.runID); rerr != nil && s.log != nil {

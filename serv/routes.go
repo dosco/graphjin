@@ -10,9 +10,7 @@ const (
 	routeGraphQL           = "/api/v1/graphql"
 	routeAgent             = "/api/v1/agent"
 	routeAgentStatus       = "/api/v1/agent/status"
-	routeAgentThreads      = "/api/v1/agent/threads"
 	routeAgentRuns         = "/api/v1/agent/runs/"
-	routeAgentMemories     = "/api/v1/agent/memories"
 	routeAgentProfiles     = "/api/v1/agent/profiles"
 	routeConsoleBootstrap  = "/api/v1/console/bootstrap"
 	routeEvalReports       = "/api/v1/eval/reports"
@@ -86,15 +84,8 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 			if s.conf.agentEnabled() {
 				mux.Handle(routeAgent, s1.Agent(ah))
 				if s.threadsEnabled() {
-					mux.Handle(routeAgentThreads, s1.AgentThreads(ah))
-					mux.Handle(routeAgentThreads+"/", s1.AgentThreads(ah))
-					mux.Handle(routeAgentRuns, s1.AgentThreads(ah))
-					mux.Handle(routeAgentProfiles, s1.AgentProfiles(ah))
+					mux.Handle(routeAgentRuns, s1.AgentRuns(ah))
 					mux.Handle(routeAgentProfiles+"/", s1.AgentProfiles(ah))
-				}
-				if s.memoryEnabled() {
-					mux.Handle(routeAgentMemories, s1.AgentMemories(ah))
-					mux.Handle(routeAgentMemories+"/", s1.AgentMemories(ah))
 				}
 			}
 			if s.watchesEnabled() {
@@ -120,15 +111,8 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 			if s.conf.agentEnabled() {
 				mux.Handle(routeAgent, s1.AgentWithNS(ah, *ns))
 				if s.threadsEnabled() {
-					mux.Handle(routeAgentThreads, s1.AgentThreadsWithNS(ah, *ns))
-					mux.Handle(routeAgentThreads+"/", s1.AgentThreadsWithNS(ah, *ns))
-					mux.Handle(routeAgentRuns, s1.AgentThreadsWithNS(ah, *ns))
-					mux.Handle(routeAgentProfiles, s1.AgentProfilesWithNS(ah, *ns))
+					mux.Handle(routeAgentRuns, s1.AgentRunsWithNS(ah, *ns))
 					mux.Handle(routeAgentProfiles+"/", s1.AgentProfilesWithNS(ah, *ns))
-				}
-				if s.memoryEnabled() {
-					mux.Handle(routeAgentMemories, s1.AgentMemoriesWithNS(ah, *ns))
-					mux.Handle(routeAgentMemories+"/", s1.AgentMemoriesWithNS(ah, *ns))
 				}
 			}
 			if s.watchesEnabled() {

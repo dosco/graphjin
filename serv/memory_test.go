@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	gjagent "github.com/dosco/graphjin/agent/v3"
 	"github.com/dosco/graphjin/core/v3"
 )
 
@@ -14,6 +13,7 @@ func newSQLiteMemoryService(t *testing.T) (*graphjinService, artifactControlPlan
 	t.Helper()
 	svc := newSQLiteThreadService(t)
 	svc.conf.Memory = MemoryConfig{Enabled: true, RecallLimit: 2, MaxPerOwner: 3}
+	svc.conf.Agent.Lead.Enabled = true
 	return svc, newArtifactControlPlane(svc)
 }
 
@@ -50,8 +50,8 @@ func TestMemoryScopesAndPublishing(t *testing.T) {
 	bob := threadUserCtx("bob")
 
 	personal := addMemory(t, cp, alice, "Report revenue in EUR currency.")
-	if personal["scope"] != "personal" {
-		t.Fatalf("new memory scope = %v", personal["scope"])
+	if personal["tier"] != "observed" {
+		t.Fatalf("new memory tier = %v", personal["tier"])
 	}
 	rows, _ := svc.visibleMemoryRows(bob)
 	if len(rows) != 0 {
@@ -60,7 +60,7 @@ func TestMemoryScopesAndPublishing(t *testing.T) {
 
 	existing, _ := svc.internalArtifactStoreRow(alice, personal["id"].(string))
 	team, err := cp.upsertMemory(alice, core.ManagedMutationRoot{Operation: "update", Input: map[string]any{"tier": "approved"}}, existing)
-	if err != nil || team["scope"] != "team" {
+	if err != nil || team["tier"] != "approved" {
 		t.Fatalf("publish = %+v err=%v", team, err)
 	}
 	if rows, _ := svc.visibleMemoryRows(bob); len(rows) != 1 {
@@ -71,7 +71,7 @@ func TestMemoryScopesAndPublishing(t *testing.T) {
 		t.Fatalf("bob edited alice's memory: %v", err)
 	}
 	edited, err := cp.upsertMemory(alice, core.ManagedMutationRoot{Operation: "update", Input: map[string]any{"content": "Report revenue in USD currency."}}, existing)
-	if err != nil || edited["scope"] != "personal" {
+	if err != nil || edited["tier"] != "observed" {
 		t.Fatalf("editing a team memory must take it back to personal: %+v err=%v", edited, err)
 	}
 
@@ -109,11 +109,27 @@ func TestMemoryRecallRanksAndInjects(t *testing.T) {
 		t.Fatalf("embedding recall picked the wrong memories: %+v", got)
 	}
 
-	inner := &scriptedAgentRunner{resp: gjagent.Response{Status: "answered"}}
-	if _, err := svc.withMemoryRecall(inner).Run(ctx, gjagent.Request{Instruction: "fiscal region split", Context: map[string]any{"keep": 1}}); err != nil {
-		t.Fatal(err)
+	// The lead reads the same ranking through the graph, as the caller, and
+	// saves new memories with a gj_artifacts insert.
+	store := graphLeadStore{s: svc}
+	docs, err := store.RecallMemories(ctx, "Which region and fiscal quarter?", 2)
+	if err != nil || len(docs) != 2 || docs[0].ID == "" {
+		t.Fatalf("lead recall = %+v err=%v", docs, err)
 	}
-	if len(inner.req.Memories) == 0 || inner.req.Context["keep"] != 1 {
-		t.Fatalf("recall did not reach the run request: %+v", inner.req)
+	// An empty query is the caller's standing memories, regardless of words.
+	standing, err := store.RecallMemories(ctx, "", 2)
+	if err != nil || len(standing) != 2 {
+		t.Fatalf("standing memories = %+v err=%v", standing, err)
+	}
+	saved, err := store.Remember(ctx, "Round money to whole euros.")
+	if err != nil || saved.ID == "" {
+		t.Fatalf("lead remember = %+v err=%v", saved, err)
+	}
+	mine, err := store.artifacts(ctx, artifactKindMemory)
+	if err != nil || len(mine) != 4 {
+		t.Fatalf("after remember the caller sees %d memories, want 4 (err=%v)", len(mine), err)
+	}
+	if others, err := store.artifacts(threadUserCtx("bob"), artifactKindMemory); err != nil || len(others) != 0 {
+		t.Fatalf("bob sees %d of alice's personal memories (err=%v)", len(others), err)
 	}
 }

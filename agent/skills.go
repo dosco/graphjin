@@ -19,7 +19,6 @@ const (
 	skillWorkflowWrite   = "workflow_write"
 	skillWatchRead       = "watch_read"
 	skillWatchWrite      = "watch_write"
-	skillMemoryWrite     = "memory_write"
 	skillTaskRead        = "task_read"
 	skillTaskWrite       = "task_write"
 	skillAdminRead       = "admin_read"
@@ -129,13 +128,6 @@ var builtinSkills = []skillDefinition{
 		write:              true,
 		requiresAllRoots:   []string{systemRootWatch},
 		requiresAnyActions: []string{systemRootWatch + ".insert", systemRootWatch + ".update", systemRootWatch + ".delete"},
-	},
-	{
-		id:                 skillMemoryWrite,
-		name:               "Personal memory",
-		content:            memoryWriteInstruction,
-		write:              true,
-		requiresAllActions: []string{CapabilityActionMemoryWrite},
 	},
 	{
 		id:               skillTaskRead,
@@ -402,8 +394,6 @@ const workflowExecuteInstruction = `Skill: workflow_execute. Run only through gj
 
 const workflowWriteInstruction = `Skill: workflow_write. Author or update workflow definitions through gj_workflow. ` +
 	`Inspect existing detail and mutation guidance, preview, save through the governed capability, and verify. Execute only if separately permitted and requested.`
-
-const memoryWriteInstruction = `Skill: memory_write (gj_artifacts kind memory). When asked to save a durable preference or fact to keep ("remember...", "from now on...", a role or way of working), save it as one short sentence: mutation { gj_artifacts(insert: { kind: "memory", content: "<fact>" }) { id } }, then say you saved it. Never save query results, secrets, credentials, or one-off requests. Memories are personal; the user shares them from the Memory page.`
 
 const watchReadInstruction = `Skill: watch_read (gj_watch / gj_watch_event). Inspect help:security, help:runtime, and help:watches; follow exact examples and never invent table IDs. Payload is data_json, not event_json or payload_json. Read unseen events: query { gj_watch_event(where: { seen: { eq: false } }, order_by: { created_at: desc }, limit: 20) { id watch_id data_json seen created_at } }. After review, quote its exact string id: mutation { gj_watch_event(where: { id: { eq: "<event_id>" } }, update: { seen: true }) { id seen } }. Query only listed watch_ids and mark only reviewed events seen; never acknowledge an unrelated watch.`
 

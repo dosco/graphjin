@@ -19,6 +19,7 @@ func newSQLiteThreadService(t *testing.T) *graphjinService {
 	_, svc := newSQLiteWatchServiceWithOptions(t, 10, func(conf *Config) {
 		conf.Agent.Enabled = true
 		conf.Core.Threads = core.ThreadsConfig{Enabled: true, HistoryTurns: 12, RunLeaseSeconds: 3, MaxPerOwner: 3}
+		conf.Agent.Lead.Enabled = true
 	})
 	if err := svc.initArtifactsBeforeCore(); err != nil {
 		t.Fatalf("initArtifactsBeforeCore: %v", err)
@@ -108,7 +109,7 @@ func TestThreadTurnsPersistHistoryAndScope(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodGet, routeAgentRuns+first.RunID+"/events?after=1", nil).WithContext(ctx)
 	stream := httptest.NewRecorder()
-	hs.AgentThreads(nil).ServeHTTP(stream, req)
+	hs.AgentRuns(nil).ServeHTTP(stream, req)
 	body := stream.Body.String()
 	if strings.Contains(body, "event: action") || !strings.Contains(body, "event: result") || !strings.Contains(body, "id: 3\nevent: complete") {
 		t.Fatalf("resumed stream = %q", body)

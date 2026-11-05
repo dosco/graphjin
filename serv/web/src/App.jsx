@@ -18,6 +18,7 @@ const ApiDocs = lazy(() => import("./pages/ApiDocs"));
 const AgentChat = lazy(() => import("./pages/AgentChat"));
 const MissionControl = lazy(() => import("./pages/MissionControl"));
 const Memory = lazy(() => import("./pages/Memory"));
+const Skills = lazy(() => import("./pages/Skills"));
 const EvalReports = lazy(() => import("./pages/EvalReports"));
 
 const queryClient = new QueryClient({
@@ -44,6 +45,7 @@ const App = () => {
                   <Route path="/user/watches" element={<MissionControl section="watches" />} />
                   <Route path="/user/artifacts" element={<MissionControl section="annotations" />} />
                   <Route path="/user/memory" element={<Memory />} />
+                  <Route path="/user/skills" element={<Skills />} />
 
                   <Route path="/admin/runtime" element={<Dashboard />} />
                   <Route path="/admin/workbench" element={<QueryEditor />} />

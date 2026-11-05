@@ -57,7 +57,7 @@ const Memory = () => {
         {memoriesQuery.isLoading ? (
           <LoadingState label="Loading memories" />
         ) : memoriesQuery.error ? (
-          <DataErrorState error={memoriesQuery.error} unavailableMessage="The memory endpoint could not be reached at /api/v1/agent/memories." />
+          <DataErrorState error={memoriesQuery.error} unavailableMessage="Memories could not be read from gj_artifacts." />
         ) : memories.length === 0 ? (
           <EmptyState title="No memories yet" message="Add a fact above, and the agent will use it whenever it is relevant." />
         ) : (

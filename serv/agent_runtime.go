@@ -94,15 +94,26 @@ func (s *graphjinService) agentModelOptions(conf gjagent.Config) ([]gjagent.Opti
 	return opts, nil
 }
 
+// errConversationNeedsLead refuses a conversation when only the worker is
+// exposed: the worker answers one self-contained question and keeps no state.
+var errConversationNeedsLead = errors.New("conversations (thread_id, history) require agent.lead.enabled")
+
+// agentEntryRunner is what every agent request runs. With the lead enabled it
+// is the lead over the worker, so the worker is reachable only through the
+// lead's questions; without it the worker is exposed directly.
+func (s *graphjinService) agentEntryRunner(conf gjagent.Config) (graphjinAgentRunner, error) {
+	worker, err := newGraphJinAgentRunner(s, conf)
+	if err != nil || !conf.Lead.Enabled {
+		return worker, err
+	}
+	return s.threadAgentRunner(conf, worker)
+}
+
 // threadAgentRunner is what a thread turn runs: the lead, holding the
 // conversation and the caller's memories, over the given worker. The worker
 // itself stays stateless; it only ever sees the lead's questions.
 func (s *graphjinService) threadAgentRunner(conf gjagent.Config, worker graphjinAgentRunner) (graphjinAgentRunner, error) {
-	lead, err := newGraphJinLeadRunner(s, conf, worker)
-	if err != nil {
-		return nil, err
-	}
-	return s.withMemoryRecall(lead), nil
+	return newGraphJinLeadRunner(s, conf, worker)
 }
 
 var newGraphJinLeadRunner = func(s *graphjinService, conf gjagent.Config, worker graphjinAgentRunner) (graphjinAgentRunner, error) {
@@ -116,13 +127,15 @@ var newGraphJinLeadRunner = func(s *graphjinService, conf gjagent.Config, worker
 	if err != nil {
 		return nil, err
 	}
-	return leadRunner{conf: conf, worker: worker, opts: opts}, nil
+	return leadRunner{conf: conf, worker: worker, opts: opts, store: s.leadStore()}, nil
 }
 
 type leadRunner struct {
 	conf   gjagent.Config
 	worker graphjinAgentRunner
 	opts   []gjagent.Option
+	// store serves the caller's skills and memories through the graph.
+	store gjagent.LeadStore
 }
 
 func (r leadRunner) Run(ctx context.Context, req gjagent.Request) (gjagent.Response, error) {
@@ -140,6 +153,7 @@ func (r leadRunner) Run(ctx context.Context, req gjagent.Request) (gjagent.Respo
 	if err != nil {
 		return gjagent.Response{}, err
 	}
+	lead.Store = r.store
 	return lead.Run(ctx, req)
 }
 

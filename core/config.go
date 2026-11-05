@@ -813,7 +813,7 @@ func (c *Config) modeForSourceDefaults() string {
 // so the "owner" mode here is the visibility gate that pairs with that handler
 // scoping — it does not by itself add SQL row filters.
 func (c *Config) EffectiveSystemRootAccess() map[string]string {
-	access := make(map[string]string, len(c.System.RootAccess)+12)
+	access := make(map[string]string, len(c.System.RootAccess)+15)
 	for root, mode := range c.System.RootAccess {
 		access[strings.ToLower(strings.TrimSpace(root))] = normalizeAccessMode(mode)
 	}
@@ -828,6 +828,9 @@ func (c *Config) EffectiveSystemRootAccess() map[string]string {
 			"gj_watch_event":        AccessModePublic,
 			"gj_task":               AccessModePublic,
 			"gj_task_entry":         AccessModePublic,
+			"gj_thread":             AccessModePublic,
+			"gj_thread_message":     AccessModePublic,
+			"gj_thread_run":         AccessModePublic,
 			"gj_workflow":           AccessModePublic,
 			"gj_workflow_execution": AccessModePublic,
 			"gj_runtime":            AccessModePublic,
@@ -844,6 +847,9 @@ func (c *Config) EffectiveSystemRootAccess() map[string]string {
 			"gj_watch_event":        AccessModeOwner,
 			"gj_task":               AccessModeOwner,
 			"gj_task_entry":         AccessModeOwner,
+			"gj_thread":             AccessModeOwner,
+			"gj_thread_message":     AccessModeOwner,
+			"gj_thread_run":         AccessModeOwner,
 			"gj_workflow":           AccessModeOwner,
 			"gj_workflow_execution": AccessModeOwner,
 			"gj_runtime":            AccessModeAdmin,
@@ -862,6 +868,9 @@ func (c *Config) EffectiveSystemRootAccess() map[string]string {
 			"gj_watch_event":        AccessModeAdmin,
 			"gj_task":               AccessModeAdmin,
 			"gj_task_entry":         AccessModeAdmin,
+			"gj_thread":             AccessModeAdmin,
+			"gj_thread_message":     AccessModeAdmin,
+			"gj_thread_run":         AccessModeAdmin,
 			"gj_workflow":           AccessModeAdmin,
 			"gj_workflow_execution": AccessModeAdmin,
 			"gj_runtime":            AccessModeAdmin,

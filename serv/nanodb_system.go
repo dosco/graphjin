@@ -516,6 +516,8 @@ func artifactNanoColumns() []core.NanoColumn {
 		{Name: "content_truncated", Type: "boolean"},
 		{Name: "content_json", Type: "json"},
 		{Name: "metadata_json", Type: "json"},
+		{Name: "description", Type: "text"},
+		{Name: "icon", Type: "text"},
 		{Name: "content_hash", Type: "text", Index: true},
 		{Name: "status", Type: "text", Index: true},
 		{Name: "target_ref", Type: "text", Index: true},

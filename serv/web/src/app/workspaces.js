@@ -10,6 +10,7 @@ import {
   ListChecks,
   Radar,
   ShieldCheck,
+  Sparkles,
   SlidersHorizontal,
   SquareTerminal,
   Workflow,
@@ -27,6 +28,7 @@ export const workspaceDefinitions = {
       { path: "/user/watches", label: "Watches", icon: Radar, layout: "collection" },
       { path: "/user/artifacts", label: "Artifacts", icon: FileText, layout: "collection" },
       { path: "/user/memory", label: "Memory", icon: Brain, layout: "collection" },
+      { path: "/user/skills", label: "Skills", icon: Sparkles, layout: "collection" },
     ],
   },
   admin: {

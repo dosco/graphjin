@@ -218,10 +218,11 @@ influenced a run through the plural `skills` response field. The deprecated
 singular `skill` field is the first used skill for v3 compatibility.
 
 The agent described here answers one self-contained question and carries no
-conversation: it never reads prior turns, memories or an agent profile. A
-request that carries `history` — prior turns `{role, content, status?}` — is a
-conversation, so it runs the lead (see Lead And Worker below), which resolves
-the follow-up into questions for this agent. Progress is observable
+conversation: it never reads prior turns, memories or an agent profile. With the lead
+enabled every request runs the lead (see Lead And Worker below), which resolves
+conversation — `history` turns `{role, content, status?}` or a `thread_id` —
+into self-contained questions for this agent; with it off, a request that
+carries a conversation is refused. Progress is observable
 per action: MCP callers that send a `_meta.progressToken` receive
 `notifications/progress` events, and the REST endpoint streams `action`/
 `result` SSE frames when called with `Accept: text/event-stream`. Seed and
@@ -241,7 +242,7 @@ Semantic catalog embeddings remain governed by `catalog_search.semantic`.
 
 Requests may carry a retained `task_id` for an explicitly created open
 `gj_task`. GraphJin prepends the owner-scoped declared goal and up to five recent
-trail entries to `history` — so the request runs the lead — then appends one
+trail entries to `history` for the lead to resolve, then appends one
 server-written `agent_run` entry. This provides cross-session warm-start and
 auditability without changing the guard contract: `task_id` is only
 correlation, never authorization or evidence.
@@ -266,25 +267,48 @@ public MCP, configuration, direct core, and lexical-only agent prompts.
 ### Lead And Worker
 
 Two agents share this work. The **worker** is everything above: one data
-question in, a governed, database-computed, grounded answer out. It is meant to
-run on a small, fast model and stays stateless — direct `POST /api/v1/agent` and
-the MCP `ask_graphjin_agent` tool call it as is when the request carries no
-`thread_id`, `history` or `task_id`.
+question in, a governed, database-computed, grounded answer out, with its fixed
+built-in skills for discovery, querying, writes, watches and tasks. It is meant
+to run on a small, fast model and keeps no state.
 
-The **lead** runs every conversation: console chat and other thread turns,
-REST and MCP requests that carry `history` or a `task_id`, and watch routines. It holds the conversation — thread history, the caller's
-recalled memories, and the agent profile's instructions — and none of that
-reaches a worker. It answers by sending self-contained questions to workers
-through one `ask_graphjin` tool: it resolves "that customer" or "last month"
-from the conversation first, and questions sent together run in parallel
+With `agent.lead.enabled` (the default in dev and agentic modes) the **lead** is
+the agent: every `POST /api/v1/agent` and MCP `ask_graphjin_agent` call runs it —
+console chat, other thread turns, single questions and watch routines alike —
+and the worker is reachable only through the lead's questions. With it off the
+worker is exposed directly for single questions, and conversations, memories,
+skills and agent profiles are unavailable.
+
+The lead holds the conversation — thread history, the agent profile's
+instructions, the caller's memories and skills — and none of that reaches a
+worker. It answers by sending self-contained questions to workers through its
+`ask_graphjin` function: it resolves "that customer" or "last month" from the
+conversation first, and questions sent together run in parallel
 (`agent.lead.max_parallel`, default 4). It never computes aggregates itself; it
 asks a worker, which computes them in the database.
 
+The lead is an Ax agent with Ax's own memory and skill callbacks, both served
+from the graph as the caller:
+
+- **Memories** (`gj_artifacts` kind `memory`): a turn starts with the caller's
+  most relevant memories, `recall()` fetches more, and `remember` saves a new
+  one with a `gj_artifacts` insert.
+- **Skills** (`gj_artifacts` kind `skill`): the lead sees each skill's name and
+  description and loads one's instructions with `discover()` when a request
+  matches.
+- The run records the memories and skills it used (`gj_thread_run.used_skills`,
+  `used_memories`, and the response's `skills` and `memories`).
+
+Everything the lead keeps is in the graph, so a GUI lists, edits and shares
+memories, skills and agent profiles through `gj_artifacts`, and reads and
+manages conversations through `gj_thread`, `gj_thread_message` and
+`gj_thread_run` (see CONFIG.md). Only starting a turn, following or cancelling
+a run, and finding an agent's home thread are REST actions.
+
 The lead's reply is grounded the same way a worker's is: an identifier no
 delegated question returned triggers one restatement, then a
-`ungrounded_answer_fields` refusal. Changes such as creating a watch or saving
-a memory are delegated as explicit instructions after the user asked or
-confirmed, and a routine's lead and workers are read-only.
+`ungrounded_answer_fields` refusal. Changes such as creating a watch are
+delegated as explicit instructions after the user asked or confirmed, and a
+routine's lead and workers are read-only, with no `remember`.
 
 Configure the lead under `agent.lead`; unset, it runs on the worker's model.
 A typical split is a capable lead over a fast worker:
