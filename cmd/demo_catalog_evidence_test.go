@@ -169,7 +169,15 @@ func TestDemoRemoteJoinRepairReturnsLiveRows(t *testing.T) {
 	// run does. Then the closed route is asked for on purpose.
 	client := &evalScriptClient{code: `
 const card = await query_catalog({id:"table:app:main.account_health"});
-const probe = await execute_graphql({query:'query { account_health(where: {name: {eq: "Meridian Robotics"}}) { health open_risk_count } }'});
+let handed = "";
+try {
+  await execute_graphql({query:'query { account_health(where: {name: {eq: "Meridian Robotics"}}) { health open_risk_count } }'});
+} catch (e) {
+  const text = String(e && e.message || e);
+  const at = text.indexOf("exactly as given: ");
+  if (at >= 0) handed = text.slice(at + "exactly as given: ".length);
+}
+const probe = handed ? await execute_graphql({query: handed}) : null;
 const rows = (probe && probe.data && probe.data.accounts) || [];
 const first = rows[0] || {};
 const nested = first.account_health || {};
@@ -178,7 +186,7 @@ const report = {
   name: first.name || "",
   health: nested.health || "",
   errors: (probe && probe.errors) ? probe.errors.length : 0,
-  recovery: (probe && probe.recovery) ? probe.recovery.kind : ""
+  recovery: handed ? "handed_back" : ""
 };
 await final({status:"answered", answer:"probe " + JSON.stringify(report), data:{probe:probe}, evidence:[card]});
 `}
@@ -239,10 +247,10 @@ await final({status:"answered", answer:"probe " + JSON.stringify(report), data:{
 	if report.Name == "" || report.Health == "" {
 		t.Fatalf("the rewrite must return the parent row with the join nested inside it: %+v", report)
 	}
-	// The model asked for account_health and received accounts. Unannounced, that
-	// reshaping reads as an empty answer.
-	if report.Recovery != "remote_join_route_rewritten" {
-		t.Fatalf("an executed rewrite must tell the model what it is looking at: %+v", report)
+	// The closed route is never run for the model: the corrected query comes
+	// back in the exception, and it is that query the probe ran.
+	if report.Recovery != "handed_back" {
+		t.Fatalf("the top-level join read must hand back the corrected query: %+v", report)
 	}
 }
 

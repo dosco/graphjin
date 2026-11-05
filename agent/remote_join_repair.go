@@ -21,15 +21,9 @@ import (
 // when every column it names actually belongs to the parent; otherwise the shape
 // arrives with a hole and the real column names to fill it from.
 //
-// Offering alone was measured and it did not work: across the round-2 A/B the
-// repair fired seven times and was executed zero times, and both cross-source
-// passes in that run were nested queries the model authored for itself after
-// reading the catalog. So a repair whose filter is entirely the model's own —
-// every column of it legal on the parent — now executes instead of being handed
-// back, on the same reasoning the watch-subscription repair executes: it is the
-// unique reading of the caller's own question, and only the route was ever ours
-// to fix. Anything less certain is still offered, because choosing which row to
-// ask about stays the model's job.
+// It is never executed on the model's behalf, even when the filter is entirely
+// the model's own: the corrected query arrives in the exception, and running
+// it stays the model's call.
 
 // isRemoteJoinFilterOperator reports whether a where key is an operator or a
 // combinator rather than a column. They appear as object keys alongside column

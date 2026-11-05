@@ -269,45 +269,34 @@ func seedRemoteJoinColumns(runtime *protocolRuntime) {
 	}
 }
 
-// A filter whose every column is legal on the parent makes the nested query the
-// unique reading of the model's own question, so it runs rather than being
-// handed back. Round 2 handed it back seven times and got zero executions.
-func TestRemoteJoinRepairExecutesACleanGraft(t *testing.T) {
+// A filter whose every column is legal on the parent still is not run for the
+// model: the corrected nested query arrives in the exception, filter and all,
+// and nothing reaches the endpoint.
+func TestRemoteJoinRepairHandsBackACleanGraft(t *testing.T) {
 	runtime, base := remoteJoinTestRuntime(t)
 	seedRemoteJoinColumns(runtime)
 
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 		"query": `query { account_health(where: {name: {eq: "Meridian Robotics"}}) { health open_risk_count } }`,
 	})
-	if err != nil {
-		t.Fatalf("the rewritten query should execute: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "did NOT execute") {
+		t.Fatalf("the top-level join read must be handed back, not run: %v", err)
 	}
-	if base.execCalls != 1 {
-		t.Fatalf("the rewrite should reach the runtime exactly once, calls=%d queries=%q", base.execCalls, base.queries)
+	if base.execCalls != 0 {
+		t.Fatalf("nothing may reach the runtime on the model's behalf, calls=%d queries=%q", base.execCalls, base.queries)
 	}
-	// What reached the endpoint is the nested route carrying the model's filter,
-	// and it parses — the assertion the substring checks here used to miss.
-	ran := base.queries[len(base.queries)-1]
-	if err := checkGraphQLParses(ran); err != nil {
-		t.Fatalf("executed query does not parse: %v", err)
+	_, offered, ok := strings.Cut(err.Error(), "exactly as given: ")
+	if !ok {
+		t.Fatalf("the exception must carry the corrected query: %v", err)
 	}
-	if !strings.Contains(ran, `accounts(where: {name: {eq: "Meridian Robotics"}}`) {
-		t.Fatalf("the model's own filter should ride the parent, braces and all: %q", ran)
+	if err := checkGraphQLParses(offered); err != nil {
+		t.Fatalf("offered query does not parse: %v", err)
 	}
-	if strings.Index(ran, "accounts(") > strings.Index(ran, "account_health {") {
-		t.Fatalf("account_health must be nested under accounts, not the other way around: %q", ran)
+	if !strings.Contains(offered, `accounts(where: {name: {eq: "Meridian Robotics"}}`) {
+		t.Fatalf("the model's own filter should ride the parent, braces and all: %q", offered)
 	}
-	// Data came back under a field name the model did not ask for, so the result
-	// says so; an unexplained reshaping is how a model reports an empty answer.
-	recovery := mapValue(mapValue(out)["recovery"])
-	if stringFromMap(recovery, "kind") != "remote_join_route_rewritten" {
-		t.Fatalf("an executed rewrite must announce itself: %+v", recovery)
-	}
-	if !strings.Contains(stringFromMap(recovery, "instruction"), "nested inside") {
-		t.Fatalf("the notice must say where to read the join from: %+v", recovery)
-	}
-	if runtime.state.hasBlockingViolation() {
-		t.Fatal("a successful rewrite should discharge the interception")
+	if strings.Index(offered, "accounts(") > strings.Index(offered, "account_health {") {
+		t.Fatalf("account_health must be nested under accounts, not the other way around: %q", offered)
 	}
 }
 
@@ -489,43 +478,5 @@ func TestRemoteJoinFilterGraftRules(t *testing.T) {
 				t.Fatalf("offer must always carry the nested route: %q", offered)
 			}
 		})
-	}
-}
-
-// TestRemoteJoinRewriteNoticeSurvivesAStructResult pins the serv result
-// contract on the rewrite notice. The data comes back under the parent's field
-// name — not the shape the model asked for — and an unexplained reshaping is
-// how a model reports an empty answer, so the notice must survive a base
-// runtime handing back its own result struct instead of the typed executeResult
-// or a map (the drop that silenced the confirmation notice for a full run).
-func TestRemoteJoinRewriteNoticeSurvivesAStructResult(t *testing.T) {
-	runtime, base := remoteJoinTestRuntime(t)
-	seedRemoteJoinColumns(runtime)
-	runtime.base = &structGraphQLRuntime{GraphRuntime: base}
-
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
-		"query": `query { account_health(where: {name: {eq: "Meridian Robotics"}}) { health open_risk_count } }`,
-	})
-	if err != nil {
-		t.Fatalf("the rewritten query should execute: %v", err)
-	}
-	if base.execCalls != 1 {
-		t.Fatalf("the rewrite should reach the runtime exactly once, calls=%d", base.execCalls)
-	}
-	mapped := mapValue(normalizeValue(out))
-	recovery := mapValue(mapped["recovery"])
-	if stringFromMap(recovery, "kind") != "remote_join_route_rewritten" {
-		t.Fatalf("struct-shaped result dropped the rewrite notice: %#v", mapped)
-	}
-	if !strings.Contains(stringFromMap(recovery, "instruction"), "nested inside") {
-		t.Fatalf("the notice must say where to read the join from: %#v", recovery)
-	}
-	// The typed cases attach recovery only, no guidance; the foreign shape must
-	// behave the same, not grow extra fields.
-	if g, _ := mapped["guidance"].(string); g != "" {
-		t.Fatalf("the join notice sets no guidance on typed results, so none here either: %q", g)
-	}
-	if data := mapValue(mapped["data"]); len(anySlice(data["accounts"])) == 0 {
-		t.Fatalf("normalizing for the notice lost the rows: %#v", mapped)
 	}
 }

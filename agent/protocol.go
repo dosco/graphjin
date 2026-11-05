@@ -606,36 +606,6 @@ func attachNoticeToForeignResult(out any, recovery map[string]any, guidance stri
 	return mapped
 }
 
-// attachCompanionTimestampNotice rides a successful write whose state
-// transition implies a timestamp column it did not set. Not a violation and
-// never a block: the write is legitimate on its own, and the notice carries the
-// one fact the run otherwise never states plus the follow-up that completes it.
-func attachCompanionTimestampNotice(out any, fact string) any {
-	instruction := fact + " The write above succeeded without it: execute one follow-up update stamping that column for the same row(s) before finalizing."
-	recovery := map[string]any{
-		"kind":        "companion_timestamp_unstamped",
-		"code":        "companion_timestamp_unstamped",
-		"instruction": instruction,
-	}
-	switch res := out.(type) {
-	case executeResult:
-		res.Recovery = recovery
-		res.Guidance = instruction
-		return res
-	case *executeResult:
-		res.Recovery = recovery
-		res.Guidance = instruction
-		return res
-	case map[string]any:
-		res = cloneAnyMap(res)
-		res["recovery"] = recovery
-		res["guidance"] = instruction
-		return res
-	default:
-		return attachNoticeToForeignResult(out, recovery, instruction)
-	}
-}
-
 // attachWatchNormalizationNotice records that a gj_watch subscription string
 // arrived with unescaped quotes and was executed as its parse-verified
 // re-escaping. The notice rides the recovery block rather than a violation
@@ -666,33 +636,6 @@ func attachWatchNormalizationNotice(out any, repaired string) any {
 		return res
 	default:
 		return attachNoticeToForeignResult(out, recovery, instruction)
-	}
-}
-
-// attachRemoteJoinRewriteNotice tells the model what it is looking at. The data
-// it receives came back under the parent's field name with the join nested
-// inside, which is not the shape it asked for, and an unexplained reshaping is
-// how a model ends up reporting that its query returned nothing.
-func attachRemoteJoinRewriteNotice(out any, repaired, root, parent string) any {
-	recovery := map[string]any{
-		"kind":           "remote_join_route_rewritten",
-		"code":           "remote_join_route_rewritten",
-		"instruction":    root + " is an API join with no rows of its own, so the top-level query could not return data. It executed as the nested route shown in repaired_query, and the results below are " + parent + " rows with " + root + " nested inside each one. Read " + root + " from there, and query it that way from now on.",
-		"repaired_query": repaired,
-	}
-	switch res := out.(type) {
-	case executeResult:
-		res.Recovery = recovery
-		return res
-	case *executeResult:
-		res.Recovery = recovery
-		return res
-	case map[string]any:
-		res = cloneAnyMap(res)
-		res["recovery"] = recovery
-		return res
-	default:
-		return attachNoticeToForeignResult(out, recovery, "")
 	}
 }
 
@@ -985,7 +928,6 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		return nil, err
 	}
 	normalizedWatchQuery := ""
-	rewrittenJoinQuery, rewrittenJoinRoot, rewrittenJoinParent := "", "", ""
 	if r.state.hasPolicyFinalBlockingViolation() {
 		out := r.state.policyFinalExecutionResult()
 		action := r.state.startAction("model", "execute_graphql", args)
@@ -1134,9 +1076,6 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			repaired, kind := r.remoteJoinRepairedQuery(ctx, query, root, parent)
 			details := map[string]any{"root": root, "parent": parent, "fault": "remote_join_root_top_level", "repaired_query": repaired}
 			err := fmt.Errorf("protocol violation: %s is an API join served only nested under %s, so a top-level %s query cannot return data. Re-author it as query { %s(where: {<filter on %s>}) { %s { <fields> } } } and execute that", root, parent, root, parent, parent, root)
-			if kind == remoteJoinFilterGrafted {
-				err = fmt.Errorf("protocol violation: %s is an API join served only nested under %s, so a top-level %s query cannot return data. It carried a filter legal on %s, so it was re-authored onto the nested route and executed as: %s", root, parent, root, parent, repaired)
-			}
 			if !r.state.remoteJoinNoticed[strings.ToLower(root)] {
 				if r.state.remoteJoinNoticed == nil {
 					r.state.remoteJoinNoticed = map[string]bool{}
@@ -1144,39 +1083,24 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 				r.state.remoteJoinNoticed[strings.ToLower(root)] = true
 				r.state.addViolation("remote_join_path_required", err.Error(), "execute_graphql", true, details)
 			}
-			if kind == remoteJoinFilterGrafted {
-				// Every column of the filter is the model's own and legal on the
-				// parent, so the nested query is the unique reading of the
-				// caller's own question — the same certainty on which the watch
-				// repair executes rather than offers. Offering was measured and
-				// it failed: across the round-2 A/B the repair was handed back 7
-				// times and executed 0 times, while both cross-source passes came
-				// from nested queries models wrote for themselves. A model that
-				// has already failed to find this route is not going to adopt it
-				// from a hand-back. Every downstream guard still runs against the
-				// rewritten query, its success discharges the violation recorded
-				// above, and the result carries a notice naming the rewrite.
-				query = repaired
-				args = cloneAnyMap(args)
-				args["query"] = repaired
-				rewrittenJoinQuery, rewrittenJoinRoot, rewrittenJoinParent = repaired, root, parent
-			} else {
-				// Thrown, with the corrected query inline: an offer riding a
-				// return value was measured taken 0 of 12 times — straight-line
-				// executor code cannot react to it. The exception text is the
-				// channel the next turn actually reads.
-				thrown := "this query did NOT execute: " + root + " is served only nested under " + parent + ". Execute this corrected query exactly as given: " + repaired
-				if kind == remoteJoinFilterSalvaged {
-					thrown += " — its filter carries the value you filtered on, moved to the " + parent + " column that can hold it; change that value only if it is not the row you meant"
-				} else {
-					thrown = "this query did NOT execute: " + root + " is served only nested under " + parent + ". Replace the <filter on " + parent + "> placeholder in this corrected query with a filter on the named " + parent + " columns, then execute it: " + repaired
-				}
-				r.state.remoteJoinRepairSeen(root)
-				action := r.state.startAction("model", "execute_graphql", args)
-				offerErr := fmt.Errorf("%s", thrown)
-				r.state.finishAction(action, "execute_graphql", args, nil, offerErr)
-				return nil, offerErr
+			// Never executed on the model's behalf: the route is the engine's
+			// to name, the query stays the model's to run. Thrown, with the corrected query inline: an offer riding a
+			// return value was measured taken 0 of 12 times — straight-line
+			// executor code cannot react to it. The exception text is the
+			// channel the next turn actually reads.
+			thrown := "this query did NOT execute: " + root + " is served only nested under " + parent + ". Execute this corrected query exactly as given: " + repaired
+			switch kind {
+			case remoteJoinFilterGrafted:
+			case remoteJoinFilterSalvaged:
+				thrown += " — its filter carries the value you filtered on, moved to the " + parent + " column that can hold it; change that value only if it is not the row you meant"
+			default:
+				thrown = "this query did NOT execute: " + root + " is served only nested under " + parent + ". Replace the <filter on " + parent + "> placeholder in this corrected query with a filter on the named " + parent + " columns, then execute it: " + repaired
 			}
+			r.state.remoteJoinRepairSeen(root)
+			action := r.state.startAction("model", "execute_graphql", args)
+			offerErr := fmt.Errorf("%s", thrown)
+			r.state.finishAction(action, "execute_graphql", args, nil, offerErr)
+			return nil, offerErr
 		}
 	}
 	if ContainsMutationOperation(query) {
@@ -1238,20 +1162,8 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 					// factual one, so the schema's convention is stated as fact.
 					err := fmt.Errorf("this write did NOT execute: %s. Choose the value from that list which matches the intent, re-author the write with it, and execute it once", described)
 					if repairExists {
-						// The corrected value can imply a companion timestamp —
-						// resolved beside resolved_at. It used to ride as an
-						// aside on an imperative that said "exactly as given"
-						// while the given mutation lacked the timestamp; the
-						// recorded episodes obeyed the imperative, and 10 of 13
-						// post_state failures in run r3 were exactly that null
-						// resolved_at. The repair now carries the stamp itself.
-						companionNote := ""
-						if stamped, companion, ok := r.stampCompanionTimestamp(ctx, repaired); ok {
-							repaired = stamped
-							companionNote = fmt.Sprintf(" The repair also stamps %s at the current time, as the transition implies.", companion)
-						}
 						details["repaired_query"] = repaired
-						err = fmt.Errorf("this write did NOT execute: %s.%s Execute this corrected mutation exactly as given: %s", described, companionNote, repaired)
+						err = fmt.Errorf("this write did NOT execute: %s. Execute this corrected mutation exactly as given: %s", described, repaired)
 					}
 					r.state.noteInterceptedWrite(query, "the write was refused for a value outside the column's observed set and was not successfully retried")
 					r.state.addViolation("observed_value_mismatch", err.Error(), "execute_graphql", true, details)
@@ -1470,22 +1382,8 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		r.state.lastMutationFailure = ""
 		r.state.lastMutationRepairedQuery = ""
 	}
-	if err == nil && !executionFailed(out) && ContainsMutationOperation(query) {
-		// A clean first-try write gets no repair pass, so nothing ever told it
-		// about the timestamp its own transition implies: 2 of the 13
-		// post_state failures in run r3 wrote status and note correctly on the
-		// first attempt and left resolved_at null with no comment from anyone.
-		// The write stands — this is that schema fact on its success, with the
-		// concrete follow-up.
-		if note := r.companionTimestampNoteFromCache(query); note != "" {
-			out = attachCompanionTimestampNotice(out, note)
-		}
-	}
 	if normalizedWatchQuery != "" && err == nil && !executionFailed(out) {
 		out = attachWatchNormalizationNotice(out, normalizedWatchQuery)
-	}
-	if rewrittenJoinQuery != "" && err == nil && !executionFailed(out) {
-		out = attachRemoteJoinRewriteNotice(out, rewrittenJoinQuery, rewrittenJoinRoot, rewrittenJoinParent)
 	}
 	// An engine failure that produced no usable data is thrown: the query ran
 	// and returned nothing but errors, and a {data, errors} value is read as

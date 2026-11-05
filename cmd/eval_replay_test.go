@@ -267,7 +267,7 @@ func TestReplayCrossSourceJoinIsHandedTheNestedQuery(t *testing.T) {
 		t.Skip("embedded replay integration")
 	}
 
-	t.Run("closed route receives an executable repair", func(t *testing.T) {
+	t.Run("closed route is handed the corrected query", func(t *testing.T) {
 		fixture := loadReplayFixture(t, "cross-source-cross-source-account-health-1-rep1.json")
 		observed := replayFixture(t, fixture)
 		t.Logf("baseline: status=%s turns=%d | replay: status=%s turns=%d violations=%v recovery=%v",
@@ -277,25 +277,14 @@ func TestReplayCrossSourceJoinIsHandedTheNestedQuery(t *testing.T) {
 		if !observed.HasCode("remote_join_path_required") {
 			t.Fatalf("a top-level join query must still be intercepted: %+v", observed)
 		}
-		// The mechanism under test is no longer that the recovery describes the
-		// corrected route, nor that it carries it: this fixture's filter is legal
-		// on accounts, so the corrected query is the unique reading of the
-		// model's own question and it runs. Offering was measured on this exact
-		// shape and lost — at 40edb30d this trajectory spent all 8 turns
-		// re-sending the closed route and ended blocked, with the repair sitting
-		// unexecuted in every recovery payload.
-		if !observed.HasCode("remote_join_route_rewritten") {
-			t.Errorf("a clean graft should execute, not be handed back: recovery=%v", observed.RecoveryCodes)
+		// The corrected route is handed back in the exception, never run on the
+		// model's behalf, even though this fixture's filter is legal on accounts.
+		if observed.HasCode("remote_join_route_rewritten") {
+			t.Errorf("the corrected query must be handed back, not executed: recovery=%v", observed.RecoveryCodes)
 		}
-		if observed.HasCode("remote_join_repair") {
-			t.Errorf("a clean graft must not be offered: recovery=%v", observed.RecoveryCodes)
-		}
-		// The replay still ends unanswered, and cannot do otherwise: every
-		// program here reads res.data.account_health, and the rewritten route
-		// returns accounts with the join nested inside; the canned resends then
-		// burn the budget against thrown cached-rejection teachings. A live
-		// model is told all of that in text a next turn actually reads. Turn
-		// count is deliberately not pinned for a canned client.
+		// The replay still ends unanswered: its canned programs resend the
+		// closed route rather than run what they were handed. Turn count is
+		// deliberately not pinned for a canned client.
 	})
 
 	t.Run("open route is left alone", func(t *testing.T) {

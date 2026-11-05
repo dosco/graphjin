@@ -174,10 +174,9 @@ await final({status:"answered", answer:"Recorded payment DEEPORG-PAY-001 with id
 // The other five stable action losses are ticket resolutions: 0 of 75 recorded
 // episodes ever landed one. Three stacked faults — "closed" for a status whose
 // vocabulary is open|pending|resolved, notes for resolution_note, and
-// resolved_at left null. The run's repairs now answer all three in sequence:
-// the value guard corrects the vocabulary and its note names resolved_at, the
-// unknown-column repair corrects the column, and a model that acts on the
-// three teachings lands the exact row the benchmark oracle checks.
+// resolved_at left null. The value guard corrects the vocabulary and the
+// unknown-column repair corrects the column; stamping resolved_at is left to
+// the model, which this script does, landing the row the oracle checks.
 func TestDemoTicketResolutionChainConverts(t *testing.T) {
 	if testing.Short() {
 		t.Skip("embedded service integration")
@@ -196,10 +195,7 @@ for (let i = 0; i < 3 && !corrected; i++) {
   const r = await run(closed);
   if (!r.ok) {
     const m = r.text.match(/exactly as given: (.*?)(?: \u2014 |$)/);
-    if (m) {
-      corrected = m[1];
-      if (r.text.indexOf("resolved_at") < 0) { throw new Error("value repair did not teach resolved_at: " + r.text); }
-    }
+    if (m) { corrected = m[1]; }
   }
 }
 if (!corrected) { throw new Error("no corrected mutation was thrown"); }

@@ -701,14 +701,6 @@ func (r *protocolRuntime) attachUnknownColumnRecovery(ctx context.Context, out a
 			// the schema's vocabulary is stated as fact here too.
 			note = fmt.Sprintf(" This table spells those fields differently: %s. The corrected mutation is in details.repaired_query — execute it exactly as given.", strings.Join(renamed, ", "))
 			reason := "Execute details.repaired_query exactly as given; it is this same write expressed with the column names this table actually has."
-			// The repair carries the implied companion timestamp itself rather
-			// than describing it in an aside the imperative contradicts.
-			if stamped, companion, ok := r.stampCompanionTimestamp(ctx, repaired); ok {
-				repaired = stamped
-				extra := fmt.Sprintf(" %s is stamped at the current time, as the transition implies.", companion)
-				note += extra
-				reason += extra
-			}
 			details["repaired_query"] = repaired
 			details["renamed_columns"] = renamed
 			next = map[string]any{
