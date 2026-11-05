@@ -414,9 +414,7 @@ func rankingTieNote(ties []rankingTie) string {
 
 type rootField struct {
 	key                string
-	name               string // the field queried; key differs when aliased
-	argsStart, argsEnd int    // byte span inside the parentheses; -1 when no args
-	selStart, selEnd   int    // byte span inside the selection braces; -1 when none
+	argsStart, argsEnd int // byte span inside the parentheses; -1 when no args
 }
 
 func scanRootFields(query string) ([]rootField, bool) {
@@ -467,10 +465,10 @@ func scanRootFields(query string) ([]rootField, bool) {
 			if !isNameStart(s.peek()) {
 				return nil, false
 			}
-			name = s.readName()
+			s.readName()
 			s.skipIgnored()
 		}
-		field := rootField{key: key, name: name, argsStart: -1, argsEnd: -1, selStart: -1, selEnd: -1}
+		field := rootField{key: key, argsStart: -1, argsEnd: -1}
 		if s.peek() == '(' {
 			start := s.pos + 1
 			end, ok := s.skipBalanced('(', ')')
@@ -484,12 +482,9 @@ func scanRootFields(query string) ([]rootField, bool) {
 			return nil, false
 		}
 		if s.peek() == '{' {
-			start := s.pos + 1
-			end, ok := s.skipBalanced('{', '}')
-			if !ok {
+			if _, ok := s.skipBalanced('{', '}'); !ok {
 				return nil, false
 			}
-			field.selStart, field.selEnd = start, end-1
 		}
 		roots = append(roots, field)
 	}

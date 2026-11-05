@@ -582,7 +582,6 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	}()
 
 	protocol = newProtocolRuntime(a.runtime, strings.TrimSpace(req.Instruction), req.Namespace, cfg.SeedLimit, req.Capabilities, req.Observer, a.catalogSearch)
-	protocol.state.today = a.now().UTC().Format("2006-01-02")
 	permittedSkills := allowedSkills(readOnly, req.Capabilities)
 	prep := a.startPreparation(ctx, req, permittedSkills)
 	seed, err := protocol.Seed(ctx)
@@ -1500,7 +1499,6 @@ func (a *Agent) finalizeWithGroundedRewrite(ctx context.Context, client ax.AICli
 		return resp
 	}
 	resp = a.reportRankingTies(ctx, client, protocol, cfg, req, a.finalizeGrounded(ctx, client, protocol, cfg, req, resp, rateLimiter), rateLimiter)
-	resp = a.nameCitedRows(ctx, client, protocol, cfg, req, resp, rateLimiter)
 	resp.Answer = unescapeAnswerNewlines(resp.Answer)
 	return resp
 }

@@ -70,19 +70,8 @@ type discoveryState struct {
 	// Per-target mutation evidence, populated only by id-detail lookups and
 	// validations in THIS run (search hits never count, mirroring the
 	// saved-query detail rule).
-	detailKinds    map[string]bool
-	tablesDetailed map[string]bool
-	// tableColumns are the column names table cards listed, from the seed and
-	// from every table detail this run read, by table name.
-	tableColumns map[string]map[string]bool
-	// relations maps table -> foreign-key column -> the table it references,
-	// from relationship cards and reference edges this run read.
-	relations map[string]map[string]string
-	// relationsLooked are the tables whose foreign keys were already looked
-	// up for label widening, so each is fetched at most once per run.
-	relationsLooked map[string]bool
-	// today is the run's UTC date, YYYY-MM-DD.
-	today             string
+	detailKinds       map[string]bool
+	tablesDetailed    map[string]bool
 	tablesValidated   map[string]bool
 	workflowsDetailed map[string]bool
 	actions           []protocolAction
@@ -226,10 +215,6 @@ type discoveryState struct {
 	rankingTies []rankingTie
 	// rankingTieRewriteUsed latches the one restatement a tie may cost.
 	rankingTieRewriteUsed bool
-	// rowNames are rows a which-question's reads returned with both an id and
-	// a name; rowNameRewriteUsed latches the one restatement naming them costs.
-	rowNames           []rowName
-	rowNameRewriteUsed bool
 	// databaseComputationRefusals counts finals the database-computation
 	// requirement refused since execution count databaseComputationSeen; once
 	// it is waived the requirement stays off for the run.
@@ -343,9 +328,6 @@ func newDiscoveryState(instruction string) *discoveryState {
 		savedQueryGraphQL:      map[string]string{},
 		detailKinds:            map[string]bool{},
 		tablesDetailed:         map[string]bool{},
-		tableColumns:           map[string]map[string]bool{},
-		relations:              map[string]map[string]string{},
-		relationsLooked:        map[string]bool{},
 		tablesValidated:        map[string]bool{},
 		workflowsDetailed:      map[string]bool{},
 		catalogRequestKeys:     map[string]bool{},
@@ -373,14 +355,6 @@ func (r *protocolRuntime) Seed(ctx context.Context) (any, error) {
 	r.state.seedOK = true
 	r.state.recordCatalog(args, out, true)
 	r.state.seedResult = normalizeValue(out)
-	for _, card := range catalogCards(r.state.seedResult) {
-		switch strings.ToLower(stringFromMap(card, "kind")) {
-		case "table":
-			r.state.recordTableColumns(card)
-		case "relationship":
-			r.state.recordRelationship(stringFromMap(card, "id"))
-		}
-	}
 	return r.state.seedResult, nil
 }
 
@@ -1453,47 +1427,20 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	action := r.state.startAction("model", "execute_graphql", args)
 	// A small top-n ranking runs with a few extra rows so a cut that splits
 	// a tie is seen; the result is settled back before anything reads it.
-	// A "which/who" read that left out the rows' name column runs with it, so
-	// the answer can name what it found instead of reporting an id.
 	execArgs := args
-	execQuery, rankingCuts, rankingProbe := query, []rankingCut(nil), false
+	probeQuery, rankingCuts, rankingProbe := "", []rankingCut(nil), false
 	if !ContainsMutationOperation(query) {
-		r.lookupLabelRelations(ctx, query)
-		widened, labelled := labelWidening(query, r.state.instruction, r.state.labelColumnsByTable(), r.state.relations)
-		execQuery, rankingCuts, rankingProbe = rankingTieProbe(widened)
-		if !rankingProbe && labelled {
-			execQuery = widened
-		}
+		probeQuery, rankingCuts, rankingProbe = rankingTieProbe(query)
 	}
-	if execQuery != query {
+	if rankingProbe {
 		execArgs = cloneAnyMap(args)
-		execArgs["query"] = execQuery
+		execArgs["query"] = probeQuery
 	}
 	out, err := r.base.ExecuteGraphQL(ctx, execArgs)
-	// A rewrite the engine made must never cost the model its own read: if the
-	// widened or probed query fails, the query the model wrote runs instead.
-	if execQuery != query && (err != nil || executionFailed(out)) {
-		execQuery, rankingProbe = query, false
-		out, err = r.base.ExecuteGraphQL(ctx, args)
-	}
-	// An upcoming question whose read reached into the past runs again held
-	// to today; the first result's rows proved the filter was missing.
-	if err == nil && !executionFailed(out) && !ContainsMutationOperation(query) && asksUpcoming(r.state.instruction) {
-		if filtered, fields := upcomingRewrite(execQuery, out, r.state.today); filtered != "" {
-			filteredArgs := cloneAnyMap(args)
-			filteredArgs["query"] = filtered
-			if again, againErr := r.base.ExecuteGraphQL(ctx, filteredArgs); againErr == nil && !executionFailed(again) {
-				out = withGuidance(again, upcomingNotice(fields, r.state.today))
-			}
-		}
-	}
 	if rankingProbe && err == nil && !executionFailed(out) {
 		var ties []rankingTie
 		out, ties = settleRankingTies(out, rankingCuts)
 		r.state.rankingTies = append(r.state.rankingTies, ties...)
-	}
-	if err == nil && !executionFailed(out) && !ContainsMutationOperation(query) {
-		r.state.recordRowNames(execQuery, out, r.state.labelColumnsByTable())
 	}
 	if err == nil && executionFailed(out) {
 		if denied, ok := policyFinalExecutionError(out); ok {
@@ -1937,11 +1884,6 @@ func (s *discoveryState) correctKnownCatalogDetailArgs(args map[string]any) map[
 // lookup: catalog kinds seen in detail, table cards (by table name and by the
 // table:<...> id suffix), and workflow cards. Search results never reach here.
 func (s *discoveryState) recordDetailEvidence(ids []string, out any) {
-	for _, edge := range anySlice(mapValue(normalizeValue(out))["edges"]) {
-		if e := mapValue(edge); strings.EqualFold(stringFromMap(e, "kind"), "references") {
-			s.recordRelationship(stringFromMap(e, "id"))
-		}
-	}
 	for _, card := range catalogCards(out) {
 		kind := strings.ToLower(stringFromMap(card, "kind"))
 		if kind == "" {
@@ -1953,9 +1895,6 @@ func (s *discoveryState) recordDetailEvidence(ids []string, out any) {
 			if table := strings.ToLower(stringFromMap(card, "table_name")); table != "" {
 				s.tablesDetailed[table] = true
 			}
-			s.recordTableColumns(card)
-		case "relationship":
-			s.recordRelationship(stringFromMap(card, "id"))
 		case "workflow":
 			name := stringFromMap(card, "name")
 			if name == "" {

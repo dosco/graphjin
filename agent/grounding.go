@@ -595,7 +595,7 @@ func (s *discoveryState) pendingDatabaseComputation() string {
 		}
 		query := stringFromMap(execution, "query")
 		if databaseAggregateFieldPattern.MatchString(query) &&
-			(!needsAggregateOrder || strings.Contains(strings.ToLower(query), "order_by") || aggregatesExplicitSet(query)) {
+			(!needsAggregateOrder || strings.Contains(strings.ToLower(query), "order_by")) {
 			return ""
 		}
 		if allowsRankedRows && queryUsesDatabaseRanking(query, s.instruction) {
@@ -612,15 +612,8 @@ func (s *discoveryState) pendingDatabaseComputation() string {
 			return ""
 		}
 	}
-	// The exact query, when the last row read can be rewritten: a refusal that
-	// only names the requirement left a worker re-reading the same rows and
-	// summing them in JavaScript until the cap waived it.
-	rewrite := ""
-	if query := s.aggregateRewrite(); query != "" {
-		rewrite = " The same filter works on the aggregate; run exactly: " + query
-	}
 	if allowsRankedRows {
-		return "database_computation_required: this request asks for an extreme or ranking, but the run only has row-list or failed evidence. Execute one distinct database-side query that applies order_by on the requested ranked column together with a limit, then answer from that result." + rewrite
+		return "database_computation_required: this request asks for an extreme or ranking, but the run only has row-list or failed evidence. Execute one distinct database-side query that applies order_by on the requested ranked column together with a limit, then answer from that result."
 	}
 	requirement := "a successful database-side aggregate field such as count_/sum_/avg_/min_/max_<column>, or a stored *_count column that names the asked quantity (for example open_risk_count for open risks)"
 	if needsAggregateOrder {
@@ -635,9 +628,9 @@ func (s *discoveryState) pendingDatabaseComputation() string {
 	if roots := s.rowEvidenceRoots(); len(roots) != 0 {
 		return "database_computation_required: the run has rows from " + strings.Join(roots, ", ") +
 			", which can serve as an intermediate value, but the answer itself still needs " + requirement +
-			" on " + roots[len(roots)-1] + ". Keep the value already read and execute that aggregate as a distinct query; do not resubmit the row query and do not calculate from fetched rows." + rewrite
+			" on " + roots[len(roots)-1] + ". Keep the value already read and execute that aggregate as a distinct query; do not resubmit the row query and do not calculate from fetched rows."
 	}
-	return "database_computation_required: this request asks for a count, total, average, extreme, or ranking, but the run only has row-list or failed evidence. Execute " + requirement + " and answer from that result; do not calculate from fetched rows." + rewrite
+	return "database_computation_required: this request asks for a count, total, average, extreme, or ranking, but the run only has row-list or failed evidence. Execute " + requirement + " and answer from that result; do not calculate from fetched rows."
 }
 
 // rowEvidenceRoots names the query roots this run already read rows from, most
@@ -739,25 +732,7 @@ func databaseStrictAggregateIntent(instruction string) bool {
 			return true
 		}
 	}
-	words := " " + normalizedWords(instruction) + " "
-	for _, phrase := range sumIntentPhrases {
-		if strings.Contains(words, " "+phrase+" ") {
-			return true
-		}
-	}
 	return false
-}
-
-// explicitSetPattern matches a filter on a listed set of values (in: [...]).
-var explicitSetPattern = regexp.MustCompile(`\bin\s*:\s*\[`)
-
-// aggregatesExplicitSet reports an aggregate over a set the query lists
-// outright. "The combined MRR of the top three accounts: Solvex (ID 2), …" is
-// the lead handing a worker a set its earlier turn already ranked; the
-// ranking is done, and a sum over those ids is the database computing the
-// answer. Requiring order_by there left no query that could satisfy the guard.
-func aggregatesExplicitSet(query string) bool {
-	return databaseAggregateFieldPattern.MatchString(query) && explicitSetPattern.MatchString(query)
 }
 
 // foldToWords lowercases text and reduces every run of non-alphanumeric
@@ -848,7 +823,7 @@ func databaseComputationIntent(instruction string) (aggregate, aggregateOrder bo
 		return false, false
 	}
 	padded := " " + lower + " "
-	for _, phrase := range append([]string{"how many", "count", "count of", "average", "avg", "mean", "minimum", "maximum", "highest", "lowest", "latest", "earliest", "extreme"}, sumIntentPhrases...) {
+	for _, phrase := range []string{"how many", "count", "count of", "total", "sum", "average", "avg", "mean", "minimum", "maximum", "highest", "lowest", "latest", "earliest", "extreme"} {
 		if strings.Contains(padded, " "+phrase+" ") {
 			aggregate = true
 			break
