@@ -582,6 +582,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	}()
 
 	protocol = newProtocolRuntime(a.runtime, strings.TrimSpace(req.Instruction), req.Namespace, cfg.SeedLimit, req.Capabilities, req.Observer, a.catalogSearch)
+	protocol.state.today = a.now().UTC().Format("2006-01-02")
 	permittedSkills := allowedSkills(readOnly, req.Capabilities)
 	prep := a.startPreparation(ctx, req, permittedSkills)
 	seed, err := protocol.Seed(ctx)

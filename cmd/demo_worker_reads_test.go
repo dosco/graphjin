@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	gjeval "github.com/dosco/graphjin/agent/v3/eval"
 )
@@ -157,5 +158,51 @@ await final({status:"answered", answer:"done", data:{rows:rows}, evidence:[detai
 	row := rows[0].(map[string]any)
 	if row["name"] != "Meridian Robotics" || row["id"] == nil || row["renewal_date"] == nil {
 		t.Fatalf("row = %v, want Meridian Robotics with its id and renewal date", row)
+	}
+}
+
+// TestDemoUpcomingReadFromSubscriptionsNamesTheAccount replays the read behind
+// "Account 8, renewing 2026-10-06": the soonest renewal from subscriptions,
+// with no date filter and no name. On the real engine the read must come back
+// held to today, with the account named through account_id — so the relation
+// field the widening adds has to be one GraphJin actually resolves.
+func TestDemoUpcomingReadFromSubscriptionsNamesTheAccount(t *testing.T) {
+	if testing.Short() {
+		t.Skip("embedded service integration")
+	}
+	const read = `
+const detail = await query_catalog({id:"table:app:main.subscriptions"});
+const rows = await execute_graphql({query: 'query { subscriptions(order_by: {renews_at: asc}, limit: 1) { account_id renews_at } }'});
+await final({status:"answered", answer:"done", data:{rows:rows}, evidence:[detail, rows]});
+`
+	client := &evalScriptClient{}
+	client.setSequence(read, read, read)
+	instance := demoFailedWriteInstance(t, client)
+
+	response, _, _, err := gjeval.PostAgentForReplay(context.Background(), http.DefaultClient,
+		instance.BaseURL(), instance.Headers(), "Which account has the soonest upcoming renewal?", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(response)
+	if response.Status != "answered" {
+		t.Fatalf("status = %s: %.800s", response.Status, raw)
+	}
+	result, _ := response.Data.(map[string]any)["rows"].(map[string]any)
+	rows, _ := result["data"].(map[string]any)["subscriptions"].([]any)
+	if len(rows) != 1 {
+		t.Fatalf("want the single soonest upcoming row: %.800s", raw)
+	}
+	row := rows[0].(map[string]any)
+	today := time.Now().UTC().Format("2006-01-02")
+	if renews, _ := row["renews_at"].(string); len(renews) < 10 || renews[:10] < today {
+		t.Fatalf("renews_at = %v, want today (%s) or later", row["renews_at"], today)
+	}
+	account, _ := row["account"].(map[string]any)
+	if account["name"] != "Meridian Robotics" {
+		t.Fatalf("row = %v, want the account named through account_id", row)
+	}
+	if guidance, _ := result["guidance"].(string); !strings.Contains(guidance, "upcoming") {
+		t.Fatalf("the result must say why past rows were dropped: %.400s", raw)
 	}
 }
