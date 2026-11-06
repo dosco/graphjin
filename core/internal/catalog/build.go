@@ -736,9 +736,12 @@ func configRecipes() []configRecipe {
 		{
 			ID:      "recipe.config.agent_tuning",
 			Title:   "Tune the built-in agent",
-			Summary: "Recipe for the built-in agent's runtime settings (model, service_tier, max_steps, timeout_seconds, rate_limit, read_only) through the gj_config serv patch. Model source selection is automatic and server-first. Hot: read live and effective immediately.",
+			Summary: "Recipe for the built-in agent's runtime settings (model, provider, base_url, api_key_env, api_key_file, service_tier, max_steps, timeout_seconds, rate_limit, read_only) through the gj_config serv patch. Model source selection is automatic and server-first. Hot: the next agent request builds its client from the new values, with no restart and no schema reload.",
 			IntentExamples: []string{
 				"change the agent model",
+				"switch the agent provider",
+				"point the agent at a different base url",
+				"rotate the agent api key",
 				"increase agent max steps",
 				"set agent timeout",
 				"select the agent provider service tier",
@@ -749,15 +752,19 @@ func configRecipes() []configRecipe {
 			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", serv: { agent: { model: "gpt-4o", service_tier: "priority", max_steps: 12, timeout_seconds: 60, rate_limit: { requests_per_minute: 60, tokens_per_minute: 100000 } } } }) { valid scope reload_mode reload_strategy preview_id change_summary_json errors_json } }`,
 			Verify:    commonVerify,
 			StopConditions: append([]string{
-				"agent.enabled, provider, api_key_env, and base_url are structural and are not writable at runtime; edit the config file and restart",
+				"agent.enabled is structural and is not writable at runtime; edit the config file and restart",
+				"a runtime api_key_file must sit in the directory of the agent.api_key_file the config file names; a runtime api_key_env must end in _API_KEY",
 			}, commonStops...),
 			ForbiddenPatterns: append([]string{
-				"raw provider api keys; use api_key_env to name the environment variable instead",
+				"raw provider api keys; name the environment variable with api_key_env or the key file with api_key_file instead",
 			}, commonForbidden...),
 			Examples: []string{
 				`query { gj_config(id: "current") { serv } }`,
 				`serv: { agent: { model: "gpt-4o", service_tier: "priority", max_steps: 12, timeout_seconds: 60, rate_limit: { requests_per_minute: 60, tokens_per_minute: 100000 } } }`,
-				`configure agent.provider, agent.model, and agent.api_key_env; missing server credentials fail closed`,
+				`serv: { agent: { provider: "anthropic", model: "claude-sonnet-5-5", base_url: "https://api.anthropic.com/v1", api_key_file: "anthropic.key" } }`,
+				`configure agent.provider, agent.model, and agent.api_key_env or agent.api_key_file (not both); missing server credentials fail closed, and so does a bad provider, on the next request`,
+				`rotate a key with no gj_config call at all: rewrite the api_key_file; the next request reads it`,
+				`setting api_key_file clears api_key_env and vice versa; check GET /api/v1/agent/status api_key_configured after a switch`,
 				`agent.service_tier accepts auto, standard, flex, or priority; Ax rejects unsupported explicit tiers before transport`,
 				`agent.rate_limit is outbound and process-local; top-level rate_limiter protects inbound HTTP traffic`,
 				`reload_mode is "hot"; agent settings are read per request and take effect immediately`,

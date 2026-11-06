@@ -7,7 +7,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -954,7 +957,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	var servPatch map[string]any
 	var servReload string
 	if rawServ, ok := args["serv"].(map[string]interface{}); ok && len(rawServ) > 0 {
-		servChanges, reload, err := validateServConfigPatch(rawServ)
+		servChanges, reload, err := validateServConfigPatchFor(ms.service.conf, rawServ)
 		if err != nil {
 			errors = append(errors, err.Error())
 		} else {
@@ -2472,10 +2475,13 @@ var servWritableReload = map[string]string{
 }
 
 // agentWritableFields is the subset of agent settings safe to change at
-// runtime. Structural fields (enabled, provider, api_key_env, base_url) gate
-// startup wiring or name secrets and are excluded.
+// runtime. enabled stays structural: it gates startup wiring (routes, the MCP
+// tool). The model source — provider, base_url and the key source — is hot:
+// every request builds its client from the live config, so a change applies
+// to the next request without a schema reload.
 var agentWritableFields = map[string]bool{
 	"model": true, "max_steps": true, "timeout_seconds": true,
+	"provider": true, "base_url": true, "api_key_env": true, "api_key_file": true,
 	"structured_output_mode": true,
 	// response_format is the deprecated alias of structured_output_mode; it
 	// stays writable so existing automation keeps working.
@@ -2506,8 +2512,16 @@ func strInSet(s string, allowed ...string) bool {
 
 // validateServConfigPatch checks a serv patch against the v1 allowlist without
 // mutating anything. It returns the change descriptions and the overall reload
-// class ("restart" if any change needs a restart, otherwise "hot").
+// class ("restart" if any change needs a restart, otherwise "hot"). With no
+// live config there is no key directory, so it refuses agent.api_key_file.
 func validateServConfigPatch(patch map[string]any) (changes []string, reload string, err error) {
+	return validateServConfigPatchFor(nil, patch)
+}
+
+// validateServConfigPatchFor validates a serv patch against the live config:
+// agent changes are checked as the config they produce, so a patch that would
+// leave the agent unable to build a client is refused before it applies.
+func validateServConfigPatchFor(conf *Config, patch map[string]any) (changes []string, reload string, err error) {
 	reload = servReloadHot
 	for _, key := range sortedKeys(patch) {
 		cls, ok := servWritableReload[key]
@@ -2556,6 +2570,9 @@ func validateServConfigPatch(patch map[string]any) (changes []string, reload str
 				if err := gjagent.ValidateServiceTier(value); err != nil {
 					return nil, "", err
 				}
+			}
+			if err := validateAgentModelSourcePatch(conf, m); err != nil {
+				return nil, "", err
 			}
 			if raw, exists := m["rate_limit"]; exists {
 				rateLimit, ok := raw.(map[string]any)
@@ -2627,7 +2644,7 @@ func applyServConfigPatch(conf *Config, patch map[string]any) {
 	for key, raw := range patch {
 		switch key {
 		case "agent":
-			applyAgentConfigPatch(&conf.Serv.Agent, raw.(map[string]any))
+			applyAgentConfigPatch(&conf.Serv.Agent, raw.(map[string]any), conf)
 		case "log_level":
 			conf.Serv.LogLevel, _ = raw.(string)
 		case "log_format":
@@ -2644,9 +2661,120 @@ func applyServConfigPatch(conf *Config, patch map[string]any) {
 	}
 }
 
-func applyAgentConfigPatch(a *AgentConfig, m map[string]any) {
+// runtimeAPIKeyEnvPattern is what a runtime write may name as the key
+// variable. The config file may name any variable; a gj_config write together
+// with base_url could otherwise send any secret in the process environment
+// (a database password, a JWT signing key) to a server of the writer's choice.
+var runtimeAPIKeyEnvPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*_API_KEY$`)
+
+// validateAgentModelSourcePatch checks the hot model-source fields: provider,
+// base_url, and the key source. A runtime write may switch between key
+// sources but never widen which secrets the agent can send out: a key file
+// must sit in the directory of the key file the config file names, and a key
+// variable must be named like one.
+func validateAgentModelSourcePatch(conf *Config, m map[string]any) error {
+	str := func(field string) (string, bool, error) {
+		raw, exists := m[field]
+		if !exists {
+			return "", false, nil
+		}
+		value, ok := raw.(string)
+		if !ok {
+			return "", true, fmt.Errorf("serv.agent.%s must be a string", field)
+		}
+		return strings.TrimSpace(value), true, nil
+	}
+	provider, hasProvider, err := str("provider")
+	if err != nil {
+		return err
+	}
+	if hasProvider && (provider == "" || strings.ContainsAny(provider, " \t\r\n")) {
+		return fmt.Errorf("serv.agent.provider must be a non-empty Ax deployment profile name")
+	}
+	baseURL, _, err := str("base_url")
+	if err != nil {
+		return err
+	}
+	if baseURL != "" {
+		u, perr := url.Parse(baseURL)
+		if perr != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("serv.agent.base_url must be an absolute http or https URL")
+		}
+		if u.User != nil {
+			return fmt.Errorf("serv.agent.base_url must not carry credentials; use api_key_env or api_key_file")
+		}
+	}
+	keyEnv, hasKeyEnv, err := str("api_key_env")
+	if err != nil {
+		return err
+	}
+	keyFile, hasKeyFile, err := str("api_key_file")
+	if err != nil {
+		return err
+	}
+	if keyEnv != "" && keyFile != "" {
+		return gjagent.ErrAPIKeySourceConflict
+	}
+	if hasKeyEnv && !runtimeAPIKeyEnvPattern.MatchString(keyEnv) {
+		return fmt.Errorf("serv.agent.api_key_env must name a provider key variable ending in _API_KEY; other variables can be named only in the config file")
+	}
+	if hasKeyFile && keyFile != "" {
+		if _, err := runtimeAgentKeyFile(conf, keyFile); err != nil {
+			return err
+		}
+	}
+	if conf == nil || !(hasProvider || hasKeyEnv || hasKeyFile) {
+		return nil
+	}
+	// Check the agent config the patch produces: a provider switch must still
+	// satisfy the lead's own-key rule.
+	next := conf.Agent
+	applyAgentConfigPatch(&next, m, conf)
+	if err := next.ValidateKeySource(); err != nil {
+		return err
+	}
+	return next.ValidateLead()
+}
+
+// runtimeAgentKeyFile resolves a runtime-written api_key_file and confines it
+// to the directory of the key file the config file names. Without one there
+// is no directory an operator has vouched for, so the write is refused.
+func runtimeAgentKeyFile(conf *Config, path string) (string, error) {
+	if conf == nil || conf.agentKeyFileDir == "" {
+		return "", fmt.Errorf("serv.agent.api_key_file can be changed at runtime only when the config file sets agent.api_key_file; the new file must sit in that file's directory")
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(conf.agentKeyFileDir, path)
+	}
+	path = filepath.Clean(path)
+	if filepath.Dir(path) != conf.agentKeyFileDir {
+		return "", fmt.Errorf("serv.agent.api_key_file must sit in %s, the directory of the configured key file", conf.agentKeyFileDir)
+	}
+	return path, nil
+}
+
+// applyAgentConfigPatch applies a validated agent patch. Writing one key
+// source clears the other, so a runtime switch between them never leaves the
+// conflicting pair that config validation rejects.
+func applyAgentConfigPatch(a *AgentConfig, m map[string]any, conf *Config) {
 	if v, ok := m["model"].(string); ok {
 		a.Model = v
+	}
+	if v, ok := m["provider"].(string); ok {
+		a.Provider = strings.TrimSpace(v)
+	}
+	if v, ok := m["base_url"].(string); ok {
+		a.BaseURL = strings.TrimSpace(v)
+	}
+	if v, ok := m["api_key_env"].(string); ok {
+		a.APIKeyEnv, a.APIKeyFile = strings.TrimSpace(v), ""
+	}
+	if v, ok := m["api_key_file"].(string); ok {
+		if v = strings.TrimSpace(v); v == "" {
+			a.APIKeyFile = ""
+		} else if path, err := runtimeAgentKeyFile(conf, v); err == nil {
+			a.APIKeyFile, a.APIKeyEnv = path, ""
+		}
 	}
 	if v, ok := m["response_format"].(string); ok {
 		a.ResponseFormat = strings.TrimSpace(v)

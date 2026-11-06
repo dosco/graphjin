@@ -132,13 +132,14 @@ func (c Config) LeadModelConfig() Config {
 	m := c.withDefaults()
 	l := c.Lead
 	if l.Provider != "" && !strings.EqualFold(l.Provider, m.Provider) {
-		m.Provider, m.APIKeyEnv, m.BaseURL, m.Model = l.Provider, l.APIKeyEnv, "", ""
+		// The worker's key file belongs to the worker's provider too.
+		m.Provider, m.APIKeyEnv, m.APIKeyFile, m.BaseURL, m.Model = l.Provider, l.APIKeyEnv, "", "", ""
 	}
 	if l.Model != "" {
 		m.Model = l.Model
 	}
 	if l.APIKeyEnv != "" {
-		m.APIKeyEnv = l.APIKeyEnv
+		m.APIKeyEnv, m.APIKeyFile = l.APIKeyEnv, ""
 	}
 	if l.BaseURL != "" {
 		m.BaseURL = l.BaseURL

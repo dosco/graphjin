@@ -71,8 +71,12 @@ func TestValidateServConfigPatch_ClassifiesReloadAndRejectsUnknown(t *testing.T)
 		t.Fatal("expected host_port to be rejected (not in v1 writable allowlist)")
 	}
 	// non-writable agent field is rejected
+	if _, _, err := validateServConfigPatch(map[string]any{"agent": map[string]any{"enabled": true}}); err == nil {
+		t.Fatal("expected agent.enabled to be rejected")
+	}
+	// The key variable is writable, but only as a provider key variable.
 	if _, _, err := validateServConfigPatch(map[string]any{"agent": map[string]any{"api_key_env": "X"}}); err == nil {
-		t.Fatal("expected agent.api_key_env to be rejected")
+		t.Fatal("expected a non-key agent.api_key_env to be rejected")
 	}
 	// bad enum value is rejected
 	if _, _, err := validateServConfigPatch(map[string]any{"log_level": "loud"}); err == nil {

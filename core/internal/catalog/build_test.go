@@ -629,6 +629,13 @@ func TestBuildIncludesConfigRecipes(t *testing.T) {
 	if !strings.Contains(agentRecipe.ExamplesJSON, "missing server credentials fail closed") {
 		t.Fatalf("agent tuning recipe lacks server-credential guidance: %s", agentRecipe.ExamplesJSON)
 	}
+	// The model source is hot (#655): provider, base_url and key source change
+	// through gj_config with no restart; only enabled stays structural.
+	for _, want := range []string{"api_key_file", "base_url", "no schema reload", "agent.enabled is structural"} {
+		if !strings.Contains(agentRecipe.Summary+agentRecipe.ExamplesJSON+agentRecipe.SafetyJSON, want) {
+			t.Fatalf("agent tuning recipe lacks hot model-source guidance %q: %+v", want, agentRecipe)
+		}
+	}
 	for _, want := range []string{"requests_per_minute", "tokens_per_minute", "outbound", "process-local"} {
 		if !strings.Contains(agentRecipe.Summary+agentRecipe.ExamplesJSON+agentRecipe.GraphQLMutation, want) {
 			t.Fatalf("agent tuning recipe lacks provider rate-limit guidance %q: %+v", want, agentRecipe)

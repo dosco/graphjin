@@ -350,11 +350,20 @@ A calling agent should treat this as protocol, not prose: execute the
 
 ### Server-Owned Model Resolution
 
-The built-in agent always uses the provider, model, and credential environment
-variable configured under `agent`. MCP clients do not supply a model. If the
-environment variable named by `agent.api_key_env` is empty,
-`ask_graphjin_agent` and watch enrichment fail closed with
-`model_credentials_required`; REST reports the same missing-credentials state.
+The built-in agent always uses the provider, model, and credential source
+configured under `agent`: an environment variable (`agent.api_key_env`) or a
+key file (`agent.api_key_file`), never both. MCP clients do not supply a model.
+If the key is missing, `ask_graphjin_agent` and watch enrichment fail closed
+with `model_credentials_required`, and REST reports the same
+missing-credentials state.
+
+The client is built on every request, so the model source is hot. Rewrite
+the key file to rotate the key. Patch `provider`, `base_url`,
+`api_key_env`, or `api_key_file` through `gj_config` to switch provider.
+Either way, the next request uses the new values with no restart and no
+schema reload. Runtime key-file writes must stay in the configured key
+file's directory, and runtime key variables must end in `_API_KEY`. See
+[CONFIG.md](CONFIG.md#changing-the-key-or-provider-without-a-restart).
 
 The removed `agent.sampling` setting and its environment aliases are rejected
 with guidance to configure GraphJin-owned model credentials.

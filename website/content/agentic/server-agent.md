@@ -210,6 +210,39 @@ agent:
 
 Deployments differ in which structured-output mechanisms they support, and `auto` takes the one the profile and model rule have verified for that pairing. Set `native`, `function`, or `json_object` to override it; an explicit mode the deployment cannot serve fails before a request is sent.
 
+## Rotating keys and switching providers live
+
+The agent builds its model client on every request. Changing the key or the
+provider therefore needs no restart and no schema reload.
+
+Use a key file in place of an environment variable, and rewrite the file to rotate the key:
+
+```yaml
+agent:
+  provider: openai
+  model: gpt-4.1
+  api_key_file: /run/secrets/agent/openai.key # read on every request; not with api_key_env
+```
+
+To switch provider, base URL, or key source, patch them through `gj_config`.
+The next request uses the new values:
+
+```graphql
+mutation {
+  gj_config(id: "current", update: {
+    mode: "apply",
+    serv: { agent: { provider: "anthropic", model: "claude-sonnet-5-5", api_key_file: "anthropic.key" } }
+  }) { applied reload_mode errors_json }
+}
+```
+
+A runtime key file must be in the directory of the configured
+`api_key_file`, and a runtime `api_key_env` must end in `_API_KEY`. Without
+these limits, a config write could send any secret on the host to any
+`base_url`. A bad provider or a missing key fails the next request closed.
+`GET /api/v1/agent/status` reports `api_key_configured` from the file as it
+is at that moment.
+
 ## Fast catalog discovery and skill selection
 
 An optional Ax decision stage prepares catalog evidence and skill guides before

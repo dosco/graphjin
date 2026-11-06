@@ -23,6 +23,11 @@
 					"title": "Agent API Key Environment Variable",
 					"default": "OPENAI_API_KEY"
 				},
+				"api_key_file": {
+					"type": "string",
+					"title": "Agent API Key File",
+					"description": "Path of a file holding the provider key; read per request so rewriting it rotates the key without a restart. Mutually exclusive with api_key_env"
+				},
 				"base_url": {
 					"type": "string",
 					"title": "Agent Provider Base URL"
@@ -116,6 +121,10 @@
 				"selection": {
 					"$ref": "#/$defs/SelectionConfig",
 					"title": "Agent Discovery Preparation"
+				},
+				"lead": {
+					"$ref": "#/$defs/LeadConfig",
+					"title": "Lead Agent"
 				}
 			},
 			"additionalProperties": false,
@@ -1154,6 +1163,61 @@
 			"additionalProperties": false,
 			"type": "object",
 			"description": "KeystoreConfig configures the local encrypted keystore."
+		},
+		"LeadConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"title": "Enable Lead Agent",
+					"description": "Parsed dev and agentic configs default to agent.enabled"
+				},
+				"provider": {
+					"type": "string",
+					"title": "Lead Provider",
+					"description": "Defaults to agent.provider"
+				},
+				"model": {
+					"type": "string",
+					"title": "Lead Model",
+					"description": "Defaults to agent.model"
+				},
+				"api_key_env": {
+					"type": "string",
+					"title": "Lead API Key Environment Variable",
+					"description": "Required when the lead provider differs from agent.provider"
+				},
+				"base_url": {
+					"type": "string",
+					"title": "Lead Provider Base URL"
+				},
+				"reasoning": {
+					"type": "string",
+					"title": "Lead Reasoning Effort",
+					"description": "none low medium high xhigh; empty inherits agent.reasoning"
+				},
+				"max_steps": {
+					"type": "integer",
+					"title": "Lead Max Steps",
+					"default": 6
+				},
+				"max_parallel": {
+					"type": "integer",
+					"title": "Lead Max Parallel Questions",
+					"default": 4
+				},
+				"max_questions": {
+					"type": "integer",
+					"title": "Lead Max Questions Per Turn",
+					"default": 8
+				},
+				"timeout_seconds": {
+					"type": "integer",
+					"title": "Lead Timeout Seconds",
+					"default": 120
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
 		},
 		"MCPConfig": {
 			"properties": {

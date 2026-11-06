@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -40,6 +39,7 @@ type agentStatusResponse struct {
 	Provider             string                   `json:"provider"`
 	Model                string                   `json:"model,omitempty"`
 	APIKeyEnv            string                   `json:"api_key_env"`
+	APIKeyFile           string                   `json:"api_key_file,omitempty"`
 	APIKeyConfigured     bool                     `json:"api_key_configured"`
 	ResponseFormat       string                   `json:"response_format"`
 	StructuredOutputMode string                   `json:"structured_output_mode"`
@@ -258,17 +258,23 @@ func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient
 	if provider == "" {
 		provider = defaultAgentProvider
 	}
+	// A key file replaces the environment source, so the status names
+	// whichever one the next request will read.
+	apiKeyFile := strings.TrimSpace(conf.APIKeyFile)
 	apiKeyEnv := strings.TrimSpace(conf.APIKeyEnv)
-	if apiKeyEnv == "" {
+	if apiKeyEnv == "" && apiKeyFile == "" {
 		apiKeyEnv = defaultAgentAPIKeyEnv
 	}
+	keySource := conf.KeySource()
 	maxSteps := conf.MaxSteps
 	if maxSteps <= 0 {
 		maxSteps = defaultAgentMaxSteps
 	}
 	timeoutSeconds := gjagent.EffectiveTimeoutSeconds(conf.TimeoutSeconds)
 
-	apiKeyConfigured := strings.TrimSpace(os.Getenv(apiKeyEnv)) != ""
+	// Read the source the same way the client factory does, so a rotated or
+	// removed key file is reported as it is now, not as it was at boot.
+	apiKeyConfigured := conf.APIKeyConfigured()
 	serverModelReady := apiKeyConfigured || (len(injectedServerClient) != 0 && injectedServerClient[0])
 	status := "ready"
 	message := "GraphJin agent is ready."
@@ -276,10 +282,10 @@ func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient
 	switch {
 	case !conf.Enabled:
 		status = "disabled"
-		message = "Enable agent.enabled and configure GraphJin-owned model credentials in " + apiKeyEnv + "."
+		message = "Enable agent.enabled and configure GraphJin-owned model credentials in " + keySource + "."
 	case !serverModelReady:
 		status = "missing_key"
-		message = "GraphJin agent is enabled but " + apiKeyEnv + " is not set."
+		message = "GraphJin agent is enabled but " + keySource + " does not hold a key."
 	}
 
 	resp := agentStatusResponse{
@@ -293,6 +299,7 @@ func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient
 		Provider:             provider,
 		Model:                strings.TrimSpace(conf.Model),
 		APIKeyEnv:            apiKeyEnv,
+		APIKeyFile:           apiKeyFile,
 		APIKeyConfigured:     apiKeyConfigured,
 		ResponseFormat:       strings.TrimSpace(conf.ResponseFormat),
 		StructuredOutputMode: gjagent.EffectiveStructuredOutputMode(conf.StructuredOutputMode, conf.ResponseFormat),
@@ -397,12 +404,11 @@ func writeAgentError(w http.ResponseWriter, status int, message string) {
 	})
 }
 
+// configuredAgentSecret is the key to scrub from public output. It reads the
+// configured source fresh, so a key rotated mid-flight is still redacted.
 func configuredAgentSecret(conf gjagent.Config) string {
-	apiKeyEnv := strings.TrimSpace(conf.APIKeyEnv)
-	if apiKeyEnv == "" {
-		apiKeyEnv = defaultAgentAPIKeyEnv
-	}
-	return os.Getenv(apiKeyEnv)
+	key, _ := conf.ResolveAPIKey()
+	return key
 }
 
 func agentPublicFailure(conf gjagent.Config, err error) (gjagent.ErrorInfo, error) {

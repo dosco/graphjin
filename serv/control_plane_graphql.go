@@ -461,6 +461,12 @@ func redactConfigJSON(v any) any {
 func isSensitiveConfigKey(key string) bool {
 	k := strings.ToLower(key)
 	k = strings.ReplaceAll(k, "-", "_")
+	// These name where a key lives — a variable name, a file path — and
+	// never hold the key, so sealing or redacting them protects nothing and
+	// blocks the gj_config writes that switch key sources at runtime.
+	if k == "api_key_env" || k == "api_key_file" {
+		return false
+	}
 	if strings.Contains(k, "password") ||
 		strings.Contains(k, "secret") ||
 		strings.Contains(k, "token") ||

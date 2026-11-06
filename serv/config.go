@@ -56,6 +56,11 @@ type Config struct {
 	parsedConfig         bool
 	managedArtifactStore bool
 	explicitSettings     map[string]bool
+
+	// agentKeyFileDir is the directory of the agent.api_key_file the config
+	// file names. gj_config may switch the key file at runtime only within it,
+	// so a runtime write can never point the agent at an arbitrary file.
+	agentKeyFileDir string
 }
 
 // Configuration for admin service
@@ -1141,6 +1146,9 @@ func normalizeAgentConfig(c *Config) error {
 	if err := c.Agent.ValidateLead(); err != nil {
 		return err
 	}
+	if err := normalizeAgentKeySource(c); err != nil {
+		return err
+	}
 	// Conversations and what they carry are lead features: with the lead off
 	// the worker answers single questions and nothing else.
 	if !c.Agent.Lead.Enabled {
@@ -1154,6 +1162,29 @@ func normalizeAgentConfig(c *Config) error {
 	// single canonical mode and never has to re-derive precedence.
 	c.Agent.StructuredOutputMode = gjagent.EffectiveStructuredOutputMode(c.Agent.StructuredOutputMode, c.Agent.ResponseFormat)
 	c.Agent.ServiceTier = gjagent.EffectiveServiceTier(c.Agent.ServiceTier)
+	return nil
+}
+
+// normalizeAgentKeySource settles which source the agent key comes from.
+// agent.api_key_env carries a default, so naming a key file replaces the
+// defaulted variable; naming both explicitly is a configuration error. A
+// relative key file resolves against the config directory, like every other
+// config-relative path.
+func normalizeAgentKeySource(c *Config) error {
+	path := strings.TrimSpace(c.Agent.APIKeyFile)
+	if path == "" {
+		c.Agent.APIKeyFile = ""
+		return nil
+	}
+	if strings.TrimSpace(c.Agent.APIKeyEnv) != "" && c.settingExplicit("agent.api_key_env") {
+		return gjagent.ErrAPIKeySourceConflict
+	}
+	c.Agent.APIKeyEnv = ""
+	if !filepath.IsAbs(path) && c.ConfigPath != "" {
+		path = c.AbsolutePath(path)
+	}
+	c.Agent.APIKeyFile = filepath.Clean(path)
+	c.agentKeyFileDir = filepath.Dir(c.Agent.APIKeyFile)
 	return nil
 }
 
@@ -1278,6 +1309,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("agent.provider", "openai")
 	vi.SetDefault("agent.model", "")
 	vi.SetDefault("agent.api_key_env", "OPENAI_API_KEY")
+	vi.SetDefault("agent.api_key_file", "")
 	vi.SetDefault("agent.base_url", "")
 	// Both default to empty: an explicit response_format must still be able to
 	// win over an unset canonical key, and the resolver supplies "auto".
@@ -1319,6 +1351,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.BindEnv("agent.top_p", "GJ_AGENT_TOP_P", "SG_AGENT_TOP_P", "SJ_AGENT_TOP_P")                                                                                                     //nolint:errcheck
 	vi.BindEnv("agent.enabled", "GJ_AGENT_ENABLED", "SG_AGENT_ENABLED", "SJ_AGENT_ENABLED")                                                                                             //nolint:errcheck
 	vi.BindEnv("agent.api_key_env", "GJ_AGENT_API_KEY_ENV", "SG_AGENT_API_KEY_ENV", "SJ_AGENT_API_KEY_ENV")                                                                             //nolint:errcheck
+	vi.BindEnv("agent.api_key_file", "GJ_AGENT_API_KEY_FILE", "SG_AGENT_API_KEY_FILE", "SJ_AGENT_API_KEY_FILE")                                                                         //nolint:errcheck
 	vi.BindEnv("agent.rate_limit.requests_per_minute", "GJ_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE", "SG_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE", "SJ_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE") //nolint:errcheck
 	vi.BindEnv("agent.rate_limit.tokens_per_minute", "GJ_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE", "SG_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE", "SJ_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE")         //nolint:errcheck
 	vi.BindEnv("agent.lead.enabled", "GJ_AGENT_LEAD_ENABLED", "SG_AGENT_LEAD_ENABLED", "SJ_AGENT_LEAD_ENABLED")                                                                         //nolint:errcheck

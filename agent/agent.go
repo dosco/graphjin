@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -55,7 +54,11 @@ type Config struct {
 	Provider  string `mapstructure:"provider" jsonschema:"title=Agent Provider,default=openai"`
 	Model     string `mapstructure:"model" jsonschema:"title=Agent Model"`
 	APIKeyEnv string `mapstructure:"api_key_env" jsonschema:"title=Agent API Key Environment Variable,default=OPENAI_API_KEY"`
-	BaseURL   string `mapstructure:"base_url" jsonschema:"title=Agent Provider Base URL"`
+	// APIKeyFile is the path of a file holding the provider key. It is read
+	// each time a client is built, so rewriting the file rotates the key with
+	// no restart. Mutually exclusive with APIKeyEnv.
+	APIKeyFile string `mapstructure:"api_key_file" jsonschema:"title=Agent API Key File,description=Path of a file holding the provider key; read per request so rewriting it rotates the key without a restart. Mutually exclusive with api_key_env"`
+	BaseURL    string `mapstructure:"base_url" jsonschema:"title=Agent Provider Base URL"`
 	// ServiceTier selects Ax's portable inference service tier. Auto delegates
 	// selection to the provider; explicit tiers are checked against the Ax
 	// deployment profile and model before a request is sent.
@@ -795,9 +798,9 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 
 func DefaultClientFactory(cfg Config) (ax.AIClient, error) {
 	cfg = cfg.withDefaults()
-	apiKey := os.Getenv(cfg.APIKeyEnv)
-	if strings.TrimSpace(apiKey) == "" {
-		return nil, fmt.Errorf("%w: set %s", ErrMissingAPIKey, cfg.APIKeyEnv)
+	apiKey, err := cfg.ResolveAPIKey()
+	if err != nil {
+		return nil, err
 	}
 	options := map[string]ax.Value{
 		"apiKey":  apiKey,
@@ -936,7 +939,9 @@ func (c Config) withDefaults() Config {
 	if c.Provider == "" {
 		c.Provider = defaultProvider
 	}
-	if c.APIKeyEnv == "" {
+	// A key file replaces the environment source; defaulting the variable
+	// as well would make the two sources conflict.
+	if c.APIKeyEnv == "" && strings.TrimSpace(c.APIKeyFile) == "" {
 		c.APIKeyEnv = defaultAPIKeyEnv
 	}
 	c.StructuredOutputMode = EffectiveStructuredOutputMode(c.StructuredOutputMode, c.ResponseFormat)

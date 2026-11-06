@@ -1148,6 +1148,7 @@ they inherit that deployment's capabilities rather than OpenAI's.
 | `agent.provider` | string | `openai` | Named Ax deployment profile. The profile owns the endpoint, authentication, capabilities, and model rules — any profile name Ax ships is valid (`openai`, `openai-compatible`, `google-gemini`, `vertex-ai`, `anthropic`, `groq`, `amazon-bedrock`, …) |
 | `agent.model` | string | - | Model within the selected deployment profile. Profiles carry per-model rules, so the pairing decides capabilities |
 | `agent.api_key_env` | string | `OPENAI_API_KEY` | Env var holding the provider API key; must be non-empty (use a dummy value for keyless local endpoints) |
+| `agent.api_key_file` | string | - | Path of a file holding the provider API key, read on every agent request, so rewriting the file rotates the key with no restart. A relative path resolves against the config directory. The file must hold one key; surrounding whitespace is trimmed. Mutually exclusive with `agent.api_key_env`: setting the file replaces the defaulted variable, and setting both explicitly is a config error. Env `GJ_AGENT_API_KEY_FILE` |
 | `agent.base_url` | string | - | OpenAI-compatible provider base URL (e.g. a local or self-hosted endpoint) |
 | `agent.structured_output_mode` | string | `auto` | How Ax requests structured output: `auto` lets the profile and model rule pick the verified mechanism; `native` (JSON Schema), `function`, and `json_object` force one. An explicit mode the deployment cannot serve fails before any request is sent |
 | `agent.response_format` | string | - | **Deprecated** alias of `agent.structured_output_mode`: `json_schema` maps to `native`, `json_object` to `json_object`. Set only one; the canonical key wins |
@@ -1197,8 +1198,9 @@ public MCP `execute_graphql` tool is separate and is listed only when
 `mcp.allow_raw_queries: true`.
 
 For each request, GraphJin uses the configured server provider. If the
-environment variable named by `agent.api_key_env` is empty, MCP and REST fail
-closed with `model_credentials_required`. The removed `agent.sampling` and
+environment variable named by `agent.api_key_env` is empty, or the
+`agent.api_key_file` is missing, empty, or holds anything other than one key,
+MCP and REST fail closed with `model_credentials_required`. The removed `agent.sampling` and
 `mcp.http_stateful` settings are rejected with migration guidance; modern
 stateless and legacy stateful MCP routing is automatic.
 
@@ -1213,6 +1215,51 @@ The matching environment overrides are
 remain accepted as compatibility aliases.
 Requests wait for rolling-window capacity and remain bounded by
 `agent.timeout_seconds`.
+
+### Changing the key or provider without a restart
+
+The agent builds its model client on every request, so its model source is
+hot: no restart and no schema reload.
+
+- **Rotate a key**: point `agent.api_key_file` at a file and rewrite the
+  file. The next agent request reads the new key. Write the new key to a
+  temporary file and rename it over the old one, so no request reads a
+  half-written key.
+- **Switch provider, base URL, or key source**: patch `agent.provider`,
+  `agent.base_url`, `agent.api_key_env`, or `agent.api_key_file` through
+  `gj_config` (`serv: { agent: { ... } }`). The next agent request uses
+  the new values. Writing one key source clears the other.
+
+```graphql
+mutation {
+  gj_config(id: "current", update: {
+    mode: "apply",
+    serv: { agent: {
+      provider: "anthropic",
+      model: "claude-sonnet-5-5",
+      base_url: "https://api.anthropic.com/v1",
+      api_key_file: "anthropic.key"
+    } }
+  }) { applied reload_mode errors_json }
+}
+```
+
+A runtime write cannot widen which secrets the agent can send out, because
+together with `base_url` it could otherwise send any secret to a server
+the writer picks. Runtime writes have two limits:
+
+- `api_key_file` must be in the directory of the `agent.api_key_file` that
+  the config file names. A relative path resolves against that directory.
+  If the config file sets no key file, runtime writes to `api_key_file` are
+  refused.
+- `api_key_env` must name a variable that ends in `_API_KEY`.
+
+The config file itself can name any file or variable. A bad provider or a
+missing key fails the next request closed, as it does at startup.
+`GET /api/v1/agent/status` reads the key source on each call: it
+reports `api_key_file`, and `api_key_configured` shows whether that file
+holds a key now. `agent.enabled` stays structural, so changing it still
+needs a restart.
 
 Token limiting is feedback-based: GraphJin charges normalized token usage
 reported by each completed provider call, then gates later calls. Ax does not

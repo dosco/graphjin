@@ -181,15 +181,19 @@ func (ms *mcpServer) askAgentInThread(ctx context.Context, args map[string]any, 
 }
 
 func modelCredentialsRequiredToolResult(conf gjagent.Config) *mcp.CallToolResult {
-	apiKeyEnv := strings.TrimSpace(conf.APIKeyEnv)
-	if apiKeyEnv == "" {
-		apiKeyEnv = defaultAgentAPIKeyEnv
-	}
 	payload := map[string]any{
-		"status":      gjagent.StatusBlocked,
-		"code":        modelCredentialsRequiredCode,
-		"message":     "GraphJin-owned model credentials are required for agent execution.",
-		"api_key_env": apiKeyEnv,
+		"status":  gjagent.StatusBlocked,
+		"code":    modelCredentialsRequiredCode,
+		"message": "GraphJin-owned model credentials are required for agent execution.",
+	}
+	if apiKeyFile := strings.TrimSpace(conf.APIKeyFile); apiKeyFile != "" {
+		payload["api_key_file"] = apiKeyFile
+	} else {
+		apiKeyEnv := strings.TrimSpace(conf.APIKeyEnv)
+		if apiKeyEnv == "" {
+			apiKeyEnv = defaultAgentAPIKeyEnv
+		}
+		payload["api_key_env"] = apiKeyEnv
 	}
 	data, err := mcpMarshalJSON(payload, false)
 	if err != nil {
