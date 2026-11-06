@@ -2,6 +2,7 @@ package valid
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"strconv"
 
@@ -191,7 +192,7 @@ func requiredIfUnless(args []string, isIf bool) (fn qcode.ValidFn, err error) {
 				m = false
 				break
 			}
-			if ok := bytes.Equal(v1, values[i]); !ok {
+			if ok := equalJSONValues(v1, values[i]); !ok {
 				m = false
 				break
 			}
@@ -257,7 +258,10 @@ func notEqualsField(args []string) (fn qcode.ValidFn, err error) {
 
 func equalsAndNotEquals(args []string, equals bool, field bool) (fn qcode.ValidFn, err error) {
 	var val []byte
-	if !field {
+	var fieldName string
+	if field {
+		fieldName = fieldNameArg(args[0])
+	} else {
 		val = []byte(args[0])
 	}
 	fn = func(vars qcode.Vars, c qcode.Constraint) bool {
@@ -267,16 +271,16 @@ func equalsAndNotEquals(args []string, equals bool, field bool) (fn qcode.ValidF
 			return false
 		}
 		if field {
-			v2, ok := vars[args[0]]
+			v2, ok := vars[fieldName]
 			if !ok {
 				return false
 			}
 			expected = v2
 		}
 		if equals {
-			return bytes.Equal(v1, expected)
+			return equalJSONValues(v1, expected)
 		} else {
-			return !bytes.Equal(v1, expected)
+			return !equalJSONValues(v1, expected)
 		}
 	}
 	return
@@ -341,13 +345,37 @@ func oneOf(args []string) (fn qcode.ValidFn, err error) {
 			return false
 		}
 		for _, a := range vals {
-			if bytes.Equal(a, v1) {
+			if equalJSONValues(a, v1) {
 				return true
 			}
 		}
 		return false
 	}
 	return
+}
+
+// fieldNameArg decodes a field-name argument. The compiler passes string
+// arguments as JSON literals, so "other" arrives with its quotes.
+func fieldNameArg(arg string) string {
+	if decoded, err := strconv.Unquote(arg); err == nil {
+		return decoded
+	}
+	return arg
+}
+
+// equalJSONValues preserves raw comparison for non-strings and the common
+// identical-encoding case. JSON strings may spell the same value with different
+// escapes, so compare their decoded contents when the encodings differ.
+func equalJSONValues(a, b []byte) bool {
+	if bytes.Equal(a, b) {
+		return true
+	}
+	a, b = bytes.TrimSpace(a), bytes.TrimSpace(b)
+	if len(a) == 0 || len(b) == 0 || a[0] != '"' || b[0] != '"' {
+		return false
+	}
+	var left, right string
+	return json.Unmarshal(a, &left) == nil && json.Unmarshal(b, &right) == nil && left == right
 }
 
 func greaterThan(args []string) (fn qcode.ValidFn, err error) {
@@ -384,7 +412,10 @@ func lessThanOrEqualsField(args []string) (fn qcode.ValidFn, err error) {
 
 func greaterAndLessThanAndOrEquals(args []string, greater, equals, field bool) (fn qcode.ValidFn, err error) {
 	var val int
-	if !field {
+	var fieldName string
+	if field {
+		fieldName = fieldNameArg(args[0])
+	} else {
 		val, err = strconv.Atoi(args[0])
 		if err != nil {
 			return
@@ -397,7 +428,7 @@ func greaterAndLessThanAndOrEquals(args []string, greater, equals, field bool) (
 			return false
 		}
 		if field {
-			v2, ok := vars[args[0]]
+			v2, ok := vars[fieldName]
 			if !ok {
 				return false
 			}

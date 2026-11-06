@@ -576,6 +576,11 @@ func (in *Introspection) addTableTypeWithDepth(
 	sort.Strings(fnNames)
 
 	for _, name := range fnNames {
+		// An input object needs at least one field; a function without
+		// inputs takes no args argument, so it needs no args type.
+		if len(functions[name].Inputs) == 0 {
+			continue
+		}
 		ty := in.addArgsType(table, functions[name])
 		in.addType(ty)
 	}
@@ -888,7 +893,7 @@ func (in *Introspection) addInputType(table sdata.DBTable, ft FullType) (retFT F
 
 // addTableArgsType adds the table arguments type to the introspection schema
 func (in *Introspection) addTableArgsType(table sdata.DBTable, ft *FullType) {
-	if table.Type != "function" {
+	if table.Type != "function" || len(table.Func.Inputs) == 0 {
 		return
 	}
 	ty := in.addArgsType(table, table.Func)
@@ -899,8 +904,10 @@ func (in *Introspection) addTableArgsType(table sdata.DBTable, ft *FullType) {
 // addArgsType adds the arguments type to the introspection schema
 func (in *Introspection) addArgsType(table sdata.DBTable, fn sdata.DBFunction) (ft FullType) {
 	ft = FullType{
-		Kind: "INPUT_OBJECT",
-		Name: (table.Name + fn.Name + SUFFIX_ARGS),
+		Kind:        KIND_INPUT_OBJ,
+		Name:        (table.Name + fn.Name + SUFFIX_ARGS),
+		InputFields: []InputValue{},
+		Interfaces:  []TypeRef{},
 	}
 	for _, fi := range fn.Inputs {
 		var tr *TypeRef

@@ -127,12 +127,27 @@ func classifyOne(
 	}
 
 	jsonContent, mediaType := pickJSONContent(resp)
+	var textMediaTypes []string
 	if jsonContent == nil {
-		d.SkipReason = fmt.Sprintf("non-JSON response (%s)", mediaType)
-		return d
+		var reason string
+		textMediaTypes, reason = pickTextScalarContent(resp)
+		if reason != "" {
+			d.SkipReason = reason
+			return d
+		}
+		if len(textMediaTypes) == 0 {
+			d.SkipReason = fmt.Sprintf("non-JSON response (%s)", mediaType)
+			return d
+		}
+		if override.ResultPath != "" {
+			d.SkipReason = "result_path cannot apply to a text response"
+			return d
+		}
+		d.ResponseMediaTypes = textMediaTypes
+		d.TextResponse = true
+	} else {
+		d.ResponseMediaTypes = []string{mediaType}
 	}
-
-	d.ResponseMediaTypes = []string{mediaType}
 
 	// Parameters live in two places — on the path item (shared across
 	// methods) and on the operation itself. Merge and bucket by location.
@@ -145,11 +160,15 @@ func classifyOne(
 	// endpoints frequently wrap the array in {data: [...]} or
 	// {results: [...]} — stripping that wrapper makes the GraphQL output
 	// directly usable. A user override in cfg.Operations wins.
-	d.ResultPath, d.IsArrayResponse = deriveResultPath(jsonContent.Schema)
-	if ov, ok := cfg.Operations[d.OperationID]; ok && ov.ResultPath != "" {
-		d.ResultPath = splitPath(ov.ResultPath)
+	if d.TextResponse {
+		d.ResponseSchema = TextValueSchema()
+	} else {
+		d.ResultPath, d.IsArrayResponse = deriveResultPath(jsonContent.Schema)
+		if ov, ok := cfg.Operations[d.OperationID]; ok && ov.ResultPath != "" {
+			d.ResultPath = splitPath(ov.ResultPath)
+		}
+		d.ResponseSchema = jsonContent.Schema
 	}
-	d.ResponseSchema = jsonContent.Schema
 
 	switch len(pathParams) {
 	case 0:
@@ -500,6 +519,67 @@ func pickJSONContent(resp *openapi3.Response) (*openapi3.MediaType, string) {
 	return nil, ""
 }
 
+// TextValueColumn is the single column a text response exposes.
+const TextValueColumn = "value"
+
+// TextValueSchema describes the payload GraphJin returns for a text
+// response: an object whose required "value" string holds the body. Each
+// call builds a fresh schema so no two operations share mutable state.
+func TextValueSchema() *openapi3.SchemaRef {
+	value := openapi3.NewStringSchema()
+	object := openapi3.NewObjectSchema()
+	object.Properties = openapi3.Schemas{TextValueColumn: openapi3.NewSchemaRef("", value)}
+	object.Required = []string{TextValueColumn}
+	return openapi3.NewSchemaRef("", object)
+}
+
+// isTextScalarMediaType reports whether a declared response media type is
+// one GraphJin returns as a single string value.
+func isTextScalarMediaType(contentType string) bool {
+	switch mediaBaseType(contentType) {
+	case "text/plain", "text/html":
+		return true
+	default:
+		return false
+	}
+}
+
+func mediaBaseType(contentType string) string {
+	return strings.TrimSpace(strings.Split(strings.ToLower(contentType), ";")[0])
+}
+
+// pickTextScalarContent returns the declared text/plain and text/html
+// representations of a success response, in deterministic order. It is
+// consulted only when no JSON representation exists. A textual media type
+// whose schema is anything but a string (or is binary) is a skip reason:
+// the response is not a scalar GraphJin can hand back unchanged.
+func pickTextScalarContent(resp *openapi3.Response) ([]string, string) {
+	if resp == nil {
+		return nil, ""
+	}
+	keys := make([]string, 0, len(resp.Content))
+	for contentType := range resp.Content {
+		if isTextScalarMediaType(contentType) {
+			keys = append(keys, contentType)
+		}
+	}
+	sort.Strings(keys)
+	for _, contentType := range keys {
+		mt := resp.Content[contentType]
+		if mt == nil || mt.Schema == nil {
+			continue
+		}
+		if mt.Schema.Value == nil {
+			return nil, fmt.Sprintf("unresolved %s response schema", contentType)
+		}
+		s := responseSchemaShape(mt.Schema.Value, nil)
+		if s == nil || (s.Type != nil && !isType(s, "string")) || strings.EqualFold(s.Format, "binary") {
+			return nil, fmt.Sprintf("%s response schema must be type: string", contentType)
+		}
+	}
+	return keys, ""
+}
+
 // collectParams merges PathItem-level parameters (shared) with
 // Operation-level parameters (operation-specific) and buckets the result
 // by location. We deduplicate on (name, in) — operation-level entries
@@ -569,7 +649,7 @@ func deriveResultPath(schema *openapi3.SchemaRef) ([]string, bool) {
 	if schema == nil || schema.Value == nil {
 		return nil, false
 	}
-	s := schema.Value
+	s := responseSchemaShape(schema.Value, nil)
 
 	// Top-level array — no wrapper.
 	if isType(s, "array") {
@@ -601,8 +681,12 @@ func deriveResultPath(schema *openapi3.SchemaRef) ([]string, bool) {
 }
 
 func isType(s *openapi3.Schema, t string) bool {
+	s = responseSchemaShape(s, nil)
 	if s == nil {
 		return false
+	}
+	if t == "null" && s.Nullable {
+		return true
 	}
 	for _, x := range s.Type.Slice() {
 		if x == t {

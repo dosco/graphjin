@@ -2017,7 +2017,7 @@ func argTypes(types []graph.ParserType) string {
 	lastIndex := len(types) - 1
 	for i, t := range types {
 		if !list {
-			if i == lastIndex {
+			if i == lastIndex && i != 0 {
 				sb.WriteString(" or ")
 			} else if i != 0 {
 				sb.WriteString(", ")
@@ -2029,7 +2029,11 @@ func argTypes(types []graph.ParserType) string {
 			continue
 		}
 		if !list {
-			sb.WriteString("a ")
+			if t == graph.NodeObj {
+				sb.WriteString("an ")
+			} else {
+				sb.WriteString("a ")
+			}
 		}
 		switch t {
 		case graph.NodeBool:
@@ -2054,10 +2058,6 @@ func argTypes(types []graph.ParserType) string {
 
 func argErr(arg graph.Arg, ty string) error {
 	return fmt.Errorf("value for argument '%s' must be %s", arg.Name, ty)
-}
-
-func dbArgErr(name, ty, db string) error {
-	return fmt.Errorf("%s: value for argument '%s' must be a %s", db, name, ty)
 }
 
 func (sel *Select) addIArg(arg Arg) {

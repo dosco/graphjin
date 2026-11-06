@@ -20,7 +20,8 @@ type Param struct {
 	Type        string
 	IsArray     bool
 	IsNotNull   bool
-	WrapInArray bool // For MySQL/MariaDB: wrap single JSON object in array for JSON_TABLE
+	WrapInArray bool  // For MySQL/MariaDB: wrap single JSON object in array for JSON_TABLE
+	Max         int32 // Cap an integer value at bind time; 0 means no cap
 }
 
 type Metadata struct {

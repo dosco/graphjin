@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/psql"
@@ -183,6 +185,12 @@ func (gj *graphjinEngine) argList(c context.Context,
 				return ar, argErr(p)
 			}
 		}
+
+		if p.Max > 0 {
+			if vl[i], err = capIntParam(p, vl[i]); err != nil {
+				return ar, err
+			}
+		}
 	}
 	ar.values = vl
 
@@ -288,6 +296,46 @@ func parseVarVal(v json.RawMessage) interface{} {
 		}
 		return string(v)
 	}
+}
+
+// capIntParam applies a bind-time cap the way LEAST(value, max) does on
+// dialects that can express it in SQL: a null value takes the cap, and a
+// larger value is lowered to it.
+func capIntParam(p psql.Param, v interface{}) (interface{}, error) {
+	max := int64(p.Max)
+	var n int64
+	switch v1 := v.(type) {
+	case nil:
+		return max, nil
+	case int64:
+		n = v1
+	case int:
+		n = int64(v1)
+	case int32:
+		n = int64(v1)
+	case float64:
+		if v1 != math.Trunc(v1) {
+			return nil, fmt.Errorf("variable '%s' must be an integer", p.Name)
+		}
+		if v1 > float64(max) {
+			return max, nil
+		}
+		n = int64(v1)
+	case string:
+		var err error
+		if n, err = strconv.ParseInt(strings.TrimSpace(v1), 10, 64); err != nil {
+			return nil, fmt.Errorf("variable '%s' must be an integer", p.Name)
+		}
+	default:
+		return nil, fmt.Errorf("variable '%s' must be an integer", p.Name)
+	}
+	if n < 0 {
+		return nil, fmt.Errorf("variable '%s' must not be negative", p.Name)
+	}
+	if n > max {
+		n = max
+	}
+	return n, nil
 }
 
 func argErr(p psql.Param) error {
