@@ -102,7 +102,7 @@ case "$PROVIDER" in
   "") ;;
   openai) export GJ_AGENT_PROVIDER=openai GJ_AGENT_API_KEY_ENV=OPENAI_API_KEY ;;
   anthropic) export GJ_AGENT_PROVIDER=anthropic GJ_AGENT_API_KEY_ENV=ANTHROPIC_API_KEY ;;
-  google|gemini) export GJ_AGENT_PROVIDER=google GJ_AGENT_API_KEY_ENV=GOOGLE_API_KEY ;;
+  google|gemini) export GJ_AGENT_PROVIDER=gemini GJ_AGENT_API_KEY_ENV=GOOGLE_API_KEY ;;
   *) echo "unknown --provider '$PROVIDER' (openai|anthropic|google)" >&2; exit 1 ;;
 esac
 for tool in curl jq openssl git go; do

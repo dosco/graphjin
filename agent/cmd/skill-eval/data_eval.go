@@ -580,23 +580,19 @@ func scalesOf(rule answerRule) []float64 {
 // measures. Latency, tokens and the budget are the scored turn's alone; the
 // earlier turns are setup.
 func runThreadCase(client *http.Client, profile endpointProfile, testCase dataEvalCase, result *runResult) (*gjagent.Response, int, int64, error) {
-	threadsURL := strings.TrimRight(profile.URL, "/") + "/threads"
-	raw, status, err := postJSON(client, threadsURL, profile.Headers, map[string]any{
-		"title": fmt.Sprintf("eval_%s_%d", testCase.ID, time.Now().UnixNano()),
+	graphqlURL := oracleURL(profile.URL)
+	raw, status, err := postJSON(client, graphqlURL, profile.Headers, map[string]any{
+		"query":     `mutation eval_thread_create($title: String!) { gj_thread(insert: { title: $title }) { id } }`,
+		"variables": map[string]any{"title": fmt.Sprintf("eval_%s_%d", testCase.ID, time.Now().UnixNano())},
 	})
 	if err != nil {
 		return nil, status, 0, fmt.Errorf("create thread: %w", err)
 	}
-	var created struct {
-		Data struct {
-			ID string `json:"id"`
-		} `json:"data"`
+	threadID, err := createdThreadID(raw)
+	if err != nil {
+		return nil, status, 0, fmt.Errorf("create thread: %w", err)
 	}
-	if err := json.Unmarshal(raw, &created); err != nil || created.Data.ID == "" {
-		return nil, status, 0, fmt.Errorf("create thread: no id in %s", truncateText(string(raw), 200))
-	}
-	threadID := created.Data.ID
-	defer deleteThread(client, threadsURL+"/"+threadID, profile.Headers)
+	defer deleteThread(client, graphqlURL, profile.Headers, threadID)
 
 	for _, turn := range testCase.Turns {
 		response, status, _, err := postThreadTurn(client, profile, threadID, turn)
@@ -606,6 +602,40 @@ func runThreadCase(client *http.Client, profile endpointProfile, testCase dataEv
 		result.TurnStatuses = append(result.TurnStatuses, response.Status)
 	}
 	return postThreadTurn(client, profile, threadID, testCase.Prompt)
+}
+
+// createdThreadID reads the id from a gj_thread insert, which answers with
+// one object (or, from older servers, a one-row list).
+func createdThreadID(raw []byte) (string, error) {
+	var created struct {
+		Data struct {
+			Thread json.RawMessage `json:"gj_thread"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(raw, &created); err != nil {
+		return "", fmt.Errorf("decode: %w", err)
+	}
+	if len(created.Errors) != 0 {
+		return "", fmt.Errorf("%s", created.Errors[0].Message)
+	}
+	var row struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(created.Data.Thread, &row); err != nil || row.ID == "" {
+		var rows []struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(created.Data.Thread, &rows) == nil && len(rows) == 1 {
+			row.ID = rows[0].ID
+		}
+	}
+	if row.ID == "" {
+		return "", fmt.Errorf("no id in %s", truncateText(string(raw), 200))
+	}
+	return row.ID, nil
 }
 
 func postThreadTurn(client *http.Client, profile endpointProfile, threadID, prompt string) (*gjagent.Response, int, int64, error) {
@@ -621,18 +651,25 @@ func postThreadTurn(client *http.Client, profile endpointProfile, threadID, prom
 	return &response, status, latency, nil
 }
 
-func deleteThread(client *http.Client, url string, headers map[string]string) {
-	request, err := http.NewRequestWithContext(context.Background(), http.MethodDelete, url, nil)
+// deleteThread removes an eval thread through gj_thread, which cascades its
+// messages and runs.
+func deleteThread(client *http.Client, graphqlURL string, headers map[string]string, threadID string) {
+	raw, _, err := postJSON(client, graphqlURL, headers, map[string]any{
+		"query":     `mutation eval_thread_delete($id: String!) { gj_thread(delete: true, where: { id: { eq: $id } }) { id } }`,
+		"variables": map[string]any{"id": threadID},
+	})
+	if err == nil {
+		var out struct {
+			Errors []struct {
+				Message string `json:"message"`
+			} `json:"errors"`
+		}
+		if json.Unmarshal(raw, &out) == nil && len(out.Errors) != 0 {
+			err = fmt.Errorf("%s", out.Errors[0].Message)
+		}
+	}
 	if err != nil {
-		return
-	}
-	for key, value := range headers {
-		request.Header.Set(key, value)
-	}
-	if response, err := client.Do(request); err == nil {
-		response.Body.Close() //nolint:errcheck
-	} else {
-		fmt.Fprintf(os.Stderr, "WARNING: could not delete eval thread %s: %v\n", url, err)
+		fmt.Fprintf(os.Stderr, "WARNING: could not delete eval thread %s: %v\n", threadID, err)
 	}
 }
 

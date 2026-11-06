@@ -10,11 +10,12 @@ import (
 	"testing"
 )
 
-// threadServer mimics the shapes of serv's thread endpoints: create answers
-// {"data":{"id":…}} with 201, a turn returns the agent response with
-// thread_id and run_id beside it, delete answers {"data":{"deleted":true}}.
-// It refuses a turn without a thread, so a case that silently fell back to
-// the direct route fails here as it would against the lead.
+// threadServer mimics serv's shapes: threads are created and deleted through
+// the gj_thread GraphQL root (an insert answers one object, a delete answers
+// {id, deleted}), and a turn returns the agent response with thread_id and
+// run_id beside it. The removed thread REST paths 404, as they do in serv. It
+// refuses a turn without a thread, so a case that silently fell back to the
+// direct route fails here as it would against the lead.
 type threadServer struct {
 	mu      sync.Mutex
 	turns   []string
@@ -27,18 +28,22 @@ func (f *threadServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	body, _ := io.ReadAll(r.Body)
 	switch {
-	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/agent/threads":
-		w.WriteHeader(http.StatusCreated)
-		_, _ = io.WriteString(w, `{"data":{"id":"thread-1","title":"t"}}`)
-	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v1/agent/threads/"):
-		f.deleted = append(f.deleted, strings.TrimPrefix(r.URL.Path, "/api/v1/agent/threads/"))
-		_, _ = io.WriteString(w, `{"data":{"deleted":true}}`)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/graphql":
-		var req struct{ Query string }
+		var req struct {
+			Query     string
+			Variables map[string]any
+		}
 		_ = json.Unmarshal(body, &req)
-		if strings.Contains(req.Query, "sum_mrr_cents") {
+		switch {
+		case strings.Contains(req.Query, "gj_thread(insert:"):
+			_, _ = io.WriteString(w, `{"data":{"gj_thread":{"id":"thread-1"}}}`)
+		case strings.Contains(req.Query, "gj_thread(delete:"):
+			id, _ := req.Variables["id"].(string)
+			f.deleted = append(f.deleted, id)
+			_, _ = io.WriteString(w, `{"data":{"gj_thread":{"id":"`+id+`","deleted":true}}}`)
+		case strings.Contains(req.Query, "sum_mrr_cents"):
 			_, _ = io.WriteString(w, `{"data":{"accounts":[{"sum_mrr_cents":1980000}]}}`)
-		} else {
+		default:
 			_, _ = io.WriteString(w, `{"data":{"support_tickets":[{"count_id":4}]}}`)
 		}
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/agent":
