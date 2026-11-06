@@ -2017,7 +2017,7 @@ func argTypes(types []graph.ParserType) string {
 	lastIndex := len(types) - 1
 	for i, t := range types {
 		if !list {
-			if i == lastIndex {
+			if i == lastIndex && i != 0 {
 				sb.WriteString(" or ")
 			} else if i != 0 {
 				sb.WriteString(", ")
@@ -2029,7 +2029,11 @@ func argTypes(types []graph.ParserType) string {
 			continue
 		}
 		if !list {
-			sb.WriteString("a ")
+			if t == graph.NodeObj {
+				sb.WriteString("an ")
+			} else {
+				sb.WriteString("a ")
+			}
 		}
 		switch t {
 		case graph.NodeBool:
