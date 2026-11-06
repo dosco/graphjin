@@ -258,11 +258,9 @@ func notEqualsField(args []string) (fn qcode.ValidFn, err error) {
 
 func equalsAndNotEquals(args []string, equals bool, field bool) (fn qcode.ValidFn, err error) {
 	var val []byte
-	fieldName := args[0]
+	var fieldName string
 	if field {
-		if decoded, decodeErr := strconv.Unquote(fieldName); decodeErr == nil {
-			fieldName = decoded
-		}
+		fieldName = fieldNameArg(args[0])
 	} else {
 		val = []byte(args[0])
 	}
@@ -356,6 +354,15 @@ func oneOf(args []string) (fn qcode.ValidFn, err error) {
 	return
 }
 
+// fieldNameArg decodes a field-name argument. The compiler passes string
+// arguments as JSON literals, so "other" arrives with its quotes.
+func fieldNameArg(arg string) string {
+	if decoded, err := strconv.Unquote(arg); err == nil {
+		return decoded
+	}
+	return arg
+}
+
 // equalJSONValues preserves raw comparison for non-strings and the common
 // identical-encoding case. JSON strings may spell the same value with different
 // escapes, so compare their decoded contents when the encodings differ.
@@ -405,7 +412,10 @@ func lessThanOrEqualsField(args []string) (fn qcode.ValidFn, err error) {
 
 func greaterAndLessThanAndOrEquals(args []string, greater, equals, field bool) (fn qcode.ValidFn, err error) {
 	var val int
-	if !field {
+	var fieldName string
+	if field {
+		fieldName = fieldNameArg(args[0])
+	} else {
 		val, err = strconv.Atoi(args[0])
 		if err != nil {
 			return
@@ -418,7 +428,7 @@ func greaterAndLessThanAndOrEquals(args []string, greater, equals, field bool) (
 			return false
 		}
 		if field {
-			v2, ok := vars[args[0]]
+			v2, ok := vars[fieldName]
 			if !ok {
 				return false
 			}
