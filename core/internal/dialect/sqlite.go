@@ -59,7 +59,10 @@ func (d *SQLiteDialect) RenderLimit(ctx Context, sel *qcode.Select) {
 
 	ctx.WriteString(` LIMIT `)
 	if sel.Paging.LimitVar != "" {
+		// Cap the variable at the configured limit, as Postgres does.
+		ctx.WriteString(`min(`)
 		ctx.AddParam(Param{Name: sel.Paging.LimitVar, Type: "integer"})
+		ctx.Write(fmt.Sprintf(", %d)", sel.Paging.Limit))
 	} else {
 		ctx.Write(fmt.Sprintf("%d", sel.Paging.Limit))
 	}

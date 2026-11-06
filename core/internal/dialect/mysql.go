@@ -145,6 +145,11 @@ func (d *MySQLDialect) RenderLimit(ctx Context, sel *qcode.Select) {
 	case sel.Singular:
 		ctx.WriteString(`1`)
 
+	case sel.Paging.LimitVar != "":
+		// LIMIT takes only a literal or a placeholder, so the configured
+		// limit that Postgres applies with LEAST() is applied at bind time.
+		ctx.AddParam(Param{Name: sel.Paging.LimitVar, Type: "integer", Max: sel.Paging.Limit})
+
 	default:
 		ctx.Write(fmt.Sprintf("%d", sel.Paging.Limit))
 	}

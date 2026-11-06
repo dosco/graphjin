@@ -13,6 +13,9 @@ type Param struct {
 	IsArray     bool
 	IsNotNull   bool
 	WrapInArray bool
+	// Max caps an integer value at bind time (0 means no cap). Used where the
+	// SQL cannot express the cap itself, such as a MySQL LIMIT placeholder.
+	Max int32
 }
 
 type Context interface {

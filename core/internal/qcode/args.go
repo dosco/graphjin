@@ -81,6 +81,14 @@ func (co *Compiler) compileSelectArgs(qc *QCode, sel *Select, args []graph.Arg, 
 			return fmt.Errorf("%s: %w", a.Name, err)
 		}
 	}
+
+	// MySQL-family subscriptions read variables from a JSON_TABLE row, and
+	// LIMIT cannot take a column reference there.
+	if qc.Type == QTSubscription && (sel.Paging.LimitVar != "" || sel.Paging.OffsetVar != "") {
+		if db := co.s.DBType(); db == "mysql" || db == "mariadb" {
+			return fmt.Errorf("%s: limit and offset variables are not supported in subscriptions; use a number", db)
+		}
+	}
 	return
 }
 
@@ -376,9 +384,6 @@ func (co *Compiler) compileArgLimit(sel *Select, arg graph.Arg) (err error) {
 		sel.Paging.NoLimit = false
 
 	case graph.NodeVar:
-		if co.s.DBType() == "mysql" {
-			return dbArgErr("limit", "number", "mysql")
-		}
 		sel.Paging.LimitVar = node.Val
 		sel.Paging.NoLimit = false
 	}
@@ -401,9 +406,6 @@ func (co *Compiler) compileArgOffset(sel *Select, arg graph.Arg) (err error) {
 		sel.Paging.Offset = int32(n)
 
 	case graph.NodeVar:
-		if co.s.DBType() == "mysql" {
-			return dbArgErr("offset", "number", "mysql")
-		}
 		sel.Paging.OffsetVar = node.Val
 	}
 	return nil

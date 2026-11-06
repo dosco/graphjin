@@ -2060,10 +2060,6 @@ func argErr(arg graph.Arg, ty string) error {
 	return fmt.Errorf("value for argument '%s' must be %s", arg.Name, ty)
 }
 
-func dbArgErr(name, ty, db string) error {
-	return fmt.Errorf("%s: value for argument '%s' must be a %s", db, name, ty)
-}
-
 func (sel *Select) addIArg(arg Arg) {
 	sel.IArgs = append(sel.IArgs, arg)
 }

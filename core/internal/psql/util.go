@@ -149,6 +149,7 @@ func (c *compilerContext) AddParam(p dialect.Param) string {
 		IsArray:     p.IsArray,
 		IsNotNull:   p.IsNotNull,
 		WrapInArray: p.WrapInArray,
+		Max:         p.Max,
 	}
 	c.renderParam(pp)
 	return ""
