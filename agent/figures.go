@@ -24,8 +24,9 @@ import (
 //   - conversation: an earlier assistant turn of the thread (restating it).
 //   - user: the user's own words, saved memories and skills, the agent's
 //     profile, or data attached to the turn.
-//   - code: printed or returned by the lead's own code this turn. Combining a
-//     few returned figures belongs in code, where the arithmetic is exact.
+//   - code: computed by the lead's own code this turn — printed, returned, or
+//     handed on as evidence with final() or respond(). Numbers written as literals in
+//     the code do not count: they were copied, not computed.
 //
 // A figure with no source was produced in the model's head, or invented. The
 // check is deterministic and reports only; it never edits the answer.
@@ -258,12 +259,12 @@ func parseFigure(raw string) (scannedNumber, bool) {
 	return n, true
 }
 
-// figureRecordingRuntime hands every result the lead's code produces to record, so
-// the figures the code printed or returned can vouch for the answer. It wraps
-// the runtime without changing what the model sees.
+// figureRecordingRuntime hands every step's code and result to record, so the
+// figures the code computed can vouch for the answer. It wraps the runtime
+// without changing what the model sees.
 type figureRecordingRuntime struct {
 	ax.CodeRuntime
-	record func(ax.Value)
+	record func(code string, result ax.Value)
 }
 
 func (r figureRecordingRuntime) CreateSession(globals map[string]ax.Value, options map[string]ax.Value) (ax.CodeSession, error) {
@@ -276,27 +277,65 @@ func (r figureRecordingRuntime) CreateSession(globals map[string]ax.Value, optio
 
 type figureRecordingSession struct {
 	ax.CodeSession
-	record func(ax.Value)
+	record func(code string, result ax.Value)
 }
 
 func (s figureRecordingSession) Execute(code string, options map[string]ax.Value) ax.Value {
 	result := s.CodeSession.Execute(code, options)
-	s.record(result)
+	s.record(code, result)
 	return result
 }
 
-// recordCodeResult keeps what a code step printed (its console output) and the
-// value it evaluated to. A final() completion is the answer itself, so it never
-// vouches for the answer.
-func (l *figureLedger) recordCodeResult(result ax.Value) {
+// recordCodeResult keeps the figures a code step computed: what it printed,
+// the value it evaluated to, and what it handed on with final() or respond().
+// In Ax's agent neither is the reply: final() passes the step's evidence to
+// the next stage and respond() passes it straight to the reply stage, which
+// formats what it is given ({totalMRR: 16100} becomes "$16,100").
+// askClarification() carries a question for the user and vouches for nothing.
+//
+// Only computed values count. A number written as a literal in the step's
+// code was copied in by the model, not computed — console.log(16100), or the
+// earlier turn's figures transcribed into an object — so it is left for its
+// real source (the conversation, a data-agent answer) to vouch for, or for
+// nothing to.
+func (l *figureLedger) recordCodeResult(code string, result ax.Value) {
 	payload, ok := normalizeValue(result).(map[string]any)
 	if !ok {
 		return
 	}
+	var outputs []any
 	for _, line := range anySlice(payload["logs"]) {
-		l.add(FigureSourceCode, stringValue(line))
+		outputs = append(outputs, stringValue(line))
 	}
 	if stringValue(payload["kind"]) == "result" {
-		l.addValue(FigureSourceCode, payload["result"])
+		outputs = append(outputs, payload["result"])
+	}
+	switch stringValue(payload["type"]) {
+	case "final", "respond":
+		outputs = append(outputs, payload["args"])
+	}
+	literals := map[float64]bool{}
+	for _, n := range scanNumbers(code, false) {
+		literals[math.Abs(n.value)] = true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.values == nil {
+		l.values = map[string][]float64{}
+	}
+	for _, output := range outputs {
+		text, ok := output.(string)
+		if !ok {
+			text = stringify(normalizeValue(output))
+		}
+		for _, n := range scanNumbers(text, false) {
+			if literals[math.Abs(n.value)] {
+				continue
+			}
+			l.values[FigureSourceCode] = append(l.values[FigureSourceCode], n.value)
+			if n.percent {
+				l.values[FigureSourceCode] = append(l.values[FigureSourceCode], n.value/100)
+			}
+		}
 	}
 }

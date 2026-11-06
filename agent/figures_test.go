@@ -36,7 +36,7 @@ func TestFigureLedgerAttributesRealFollowUpAnswers(t *testing.T) {
 	t.Run("the same total computed in code is sourced, the cents leak still is not", func(t *testing.T) {
 		var l figureLedger
 		l.add(FigureSourceConversation, previous)
-		l.recordCodeResult(map[string]any{"kind": "result", "result": nil, "logs": []any{"16100"}})
+		l.recordCodeResult(`console.log(accounts.reduce((sum, a) => sum + a.mrr, 0))`, map[string]any{"kind": "result", "result": nil, "logs": []any{"16100"}})
 		got := figureTexts(l.attribute("The combined MRR is $16,100 ($1,610,000)."))
 		if got["$16,100"] != FigureSourceCode || got["$1,610,000"] != "" {
 			t.Fatalf("figures = %v, want $16,100 from code and $1,610,000 unsourced", got)
@@ -66,6 +66,62 @@ func TestFigureLedgerAttributesRealFollowUpAnswers(t *testing.T) {
 			t.Fatalf("figures = %v, want $16,100.00 from the data agent", got)
 		}
 	})
+}
+
+// The lead's stages from a captured flash-lite follow-up (2026-11-07): the
+// context stage copied the earlier answer's three MRRs into final(), the
+// executor summed them with reduce() and handed {totalMRR: 16100} on with
+// final(), and the reply stage formatted it. The total was computed in code.
+func TestFigureLedgerCreditsTotalsComputedInCode(t *testing.T) {
+	var l figureLedger
+	l.add(FigureSourceConversation, "The three biggest accounts are: **Solvex Dynamics** ($6100.00/mo), **Harborlight Systems** ($5200.00/mo), **Meridian Robotics** ($4800.00/mo).")
+	l.recordCodeResult(
+		`await final("Calculate the combined MRR", { accounts: [{ name: "Solvex Dynamics", mrr: 6100.00 }, { name: "Harborlight Systems", mrr: 5200.00 }, { name: "Meridian Robotics", mrr: 4800.00 }] });`,
+		map[string]any{"type": "final", "args": []any{"Calculate the combined MRR", map[string]any{"accounts": []any{
+			map[string]any{"name": "Solvex Dynamics", "mrr": 6100}, map[string]any{"name": "Harborlight Systems", "mrr": 5200}, map[string]any{"name": "Meridian Robotics", "mrr": 4800},
+		}}}},
+	)
+	l.recordCodeResult(
+		`const accounts = inputs.distilledContext.accounts;const totalMRR = accounts.reduce((acc, curr) => acc + curr.mrr, 0);await final('Answer the user with the combined MRR.', { totalMRR, accounts });`,
+		map[string]any{"type": "final", "args": []any{"Answer the user with the combined MRR.", map[string]any{"totalMRR": 16100}}},
+	)
+	got := figureTexts(l.attribute("The combined monthly recurring revenue for Solvex Dynamics, Harborlight Systems, and Meridian Robotics is **$16,100.00/mo**."))
+	if got["$16,100.00"] != FigureSourceCode {
+		t.Fatalf("figures = %v, want $16,100.00 computed in code", got)
+	}
+}
+
+// From a captured run (2026-11-07): the context stage converted two MRRs from
+// cents and summed them, then handed the result straight to the reply stage
+// with respond().
+func TestFigureLedgerCreditsEvidenceHandedOnWithRespond(t *testing.T) {
+	var l figureLedger
+	l.recordCodeResult(
+		"const mrr1 = 480000 / 100;\nconst mrr2 = 40000 / 100;\nconst combinedMRR = mrr1 + mrr2;\nawait respond('State the combined MRR.', { combinedMRR, accounts: [{ name: 'Meridian Robotics', mrr: mrr1 }, { name: 'Quartzline Analytics', mrr: mrr2 }] });",
+		map[string]any{"type": "respond", "args": []any{"State the combined MRR.", map[string]any{"combinedMRR": 5200, "accounts": []any{
+			map[string]any{"name": "Meridian Robotics", "mrr": 4800}, map[string]any{"name": "Quartzline Analytics", "mrr": 400},
+		}}}},
+	)
+	got := figureTexts(l.attribute("The combined MRR for Meridian Robotics ($4,800) and Quartzline Analytics ($400) is **$5,200**."))
+	for _, text := range []string{"$4,800", "$400", "$5,200"} {
+		if got[text] != FigureSourceCode {
+			t.Fatalf("figures = %v, want %s computed in code", got, text)
+		}
+	}
+}
+
+// A number the code only wrote down — printed as a literal, or put in final()
+// as a literal — was not computed, so the code does not vouch for it.
+func TestFigureLedgerIgnoresLiteralsInCode(t *testing.T) {
+	var l figureLedger
+	l.recordCodeResult(`console.log(16100)`, map[string]any{"kind": "result", "result": nil, "logs": []any{"16100"}})
+	l.recordCodeResult(`await final("answer", { total: 16100 })`, map[string]any{"type": "final", "args": []any{"answer", map[string]any{"total": 16100}}})
+	l.recordCodeResult(`await respond("State the total", { total: 9999 })`, map[string]any{"type": "respond", "args": []any{"State the total", map[string]any{"total": 9999}}})
+	l.recordCodeResult(`await askClarification("Which of the 2 accounts?")`, map[string]any{"type": "askClarification", "args": []any{"Which of the 2 accounts?"}})
+	got := figureTexts(l.attribute("The total is $16,100, or 9,999."))
+	if got["$16,100"] != "" || got["9,999"] != "" {
+		t.Fatalf("figures = %v, want both unsourced", got)
+	}
 }
 
 func TestFigureLedgerMatchesDisplayPrecisionOnly(t *testing.T) {
