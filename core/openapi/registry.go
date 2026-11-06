@@ -123,6 +123,12 @@ type OpDescriptor struct {
 	// caller can consume. They form the outgoing Accept header.
 	ResponseMediaTypes []string
 
+	// TextResponse marks a read-only GET whose success body is a declared
+	// text/plain or text/html string. The caller returns that body, exactly
+	// and uninterpreted, as {"value": "<body>"}, and ResponseSchema then
+	// describes the wrapper rather than the upstream scalar.
+	TextResponse bool
+
 	// Mutation request/response contract retained from the OpenAPI operation.
 	RequestMediaType    string
 	RequestBodySchema   *openapi3.SchemaRef

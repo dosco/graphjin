@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Caller executes a single OpenAPI operation. One Caller is constructed
@@ -54,17 +56,22 @@ type CallResult struct {
 	RequestBytes  int64
 	ResponseBytes int64
 	RetryCount    int
+	ContentType   string
 }
 
 // NewCaller wires up everything a single operation needs to execute.
 // A nil httpClient uses http.DefaultClient; auth and limiter must already be
-// initialised by the SpecRuntime that holds them. Mutation callers receive a
-// shallow client copy with redirects disabled.
+// initialised by the SpecRuntime that holds them. Mutation and text-response
+// callers receive a shallow client copy with redirects disabled.
+//
+// A text response refuses redirects because a followed redirect is how a
+// login or error page arrives as a 200 text/html body, which the caller
+// would otherwise return as if it were the operation's value.
 func NewCaller(op *OpDescriptor, baseURL string, auth AuthProvider, lim *limiter, httpClient *http.Client) *Caller {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	if op != nil && op.Mode == OpModeMutation {
+	if op != nil && (op.Mode == OpModeMutation || op.TextResponse) {
 		httpClient = clientWithoutRedirects(httpClient)
 	}
 	timeout := httpClient.Timeout
@@ -113,7 +120,42 @@ func (c *Caller) Call(ctx context.Context, p CallParams) ([]byte, error) {
 			return nil, fmt.Errorf("openapi: %s strip result_path: %w", c.op.OperationID, err)
 		}
 	}
+	if c.op.TextResponse {
+		return c.textValue(result)
+	}
 	return result.Body, nil
+}
+
+// textValue wraps a text response body as {"value": "<body>"}. The body is
+// carried as an opaque string — HTML is never parsed or rendered — and the
+// JSON encoding escapes it as data. Anything the operation did not declare
+// fails closed: an empty body, a Content-Type outside the declared text
+// media types, or bytes that are not valid UTF-8 text.
+func (c *Caller) textValue(result CallResult) ([]byte, error) {
+	if len(result.Body) == 0 {
+		return nil, fmt.Errorf("openapi: %s returned an empty text response", c.op.OperationID)
+	}
+	if result.ContentType != "" {
+		mediaType, _, err := mime.ParseMediaType(result.ContentType)
+		if err != nil || !c.declaresResponseMediaType(mediaType) {
+			return nil, fmt.Errorf("openapi: %s returned Content-Type %q; declared %s", c.op.OperationID, result.ContentType, strings.Join(c.op.ResponseMediaTypes, ", "))
+		}
+	}
+	if !utf8.Valid(result.Body) {
+		return nil, fmt.Errorf("openapi: %s returned a text response that is not valid UTF-8 (response_bytes=%d)", c.op.OperationID, result.ResponseBytes)
+	}
+	return json.Marshal(struct {
+		Value string `json:"value"`
+	}{string(result.Body)})
+}
+
+func (c *Caller) declaresResponseMediaType(mediaType string) bool {
+	for _, declared := range c.op.ResponseMediaTypes {
+		if mediaBaseType(declared) == mediaType {
+			return true
+		}
+	}
+	return false
 }
 
 // CallMutation executes an explicitly classified mutation and returns status,
@@ -238,6 +280,7 @@ func (c *Caller) doOnce(ctx context.Context, p CallParams) (CallResult, error) {
 		return result, err
 	}
 	result.StatusCode = res.StatusCode
+	result.ContentType = res.Header.Get("Content-Type")
 	result.ResponseBytes = int64(len(responseBody))
 	if result.ResponseBytes > responseLimit {
 		result.Body = nil

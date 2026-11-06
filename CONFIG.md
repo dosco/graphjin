@@ -1953,6 +1953,17 @@ Every GET in the spec is classified into one of:
 | **Mutation** | POST/PUT/PATCH/DELETE with `expose_mutation: true`, a supported JSON body, and declared 200/201/202/204 success response | Exposed only on the GraphQL mutation root through `call: JSON!`. Runtime capability, access, read-only, and role checks run before network I/O. |
 | **Skipped** | Async GET, binary response, mutating verb without explicit opt-in, unsupported request/response shape, single non-trailing GET path param without opt-in, or multi-segment GET path params without `expose_top_level: true` | Reason logged at boot. Nothing is exposed silently. |
 
+#### Text responses
+
+A GET whose `200` response declares no JSON representation, but does declare `text/plain` or `text/html` with a `type: string` schema (or no schema), is classified like any other GET. Version, health, and similar metadata endpoints are the usual case. Its root exposes exactly one field, `value`, which holds the response body unchanged:
+
+```graphql
+query { magento_magento_get_version { value } }
+# → { "magento_magento_get_version": { "value": "Magento/2.4 (Community)" } }
+```
+
+HTML is returned as an opaque string and never parsed or rendered. The call fails closed instead of returning a value when the body is empty, larger than `max_response_bytes`, or not valid UTF-8; when the response `Content-Type` is not one of the declared text types; on any non-2xx status (including a second `401` after the single auth retry); and on timeouts. Redirects are not followed, so a login page cannot come back as the value. A JSON representation always wins when both are declared, `result_path` cannot be set on a text operation, and mutations still require JSON responses.
+
 #### OpenAPI mutations
 
 Mutations require both a source policy and an operation allowlist. API source access defaults are `read: authenticated`, `write: blocked`, and `delete: blocked`; `read_only: true` is an immutable veto for every non-GET call. DELETE additionally requires the separately default-off `api.delete` capability.

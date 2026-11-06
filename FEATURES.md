@@ -873,6 +873,8 @@ The input object may contain only `path`, `query`, `headers`, and `body`. GraphJ
 | `oauth2_client_credentials` | machine-to-machine OAuth |
 | `token_exchange` | vendor-specific POST → JSON token flows |
 
+**Text responses** — a GET that declares only a `text/plain` or `text/html` string response (a version or health endpoint) exposes one `value` field holding the exact body. HTML stays data, redirects are refused, and empty, oversized, or undeclared bodies fail the call.
+
 **Per-spec concurrency, response shaping, and overrides** — `result_path` strips JSON wrappers, `expose_as` renames a field on collision, and `concurrency.max_concurrent` caps parallel calls per spec. `max_request_bytes` and `max_response_bytes` bound mutation traffic. See the [OpenAPI Integration config reference](CONFIG.md#openapi-integration) for the full surface.
 
 **Boot log** reports what loaded and what was skipped:
