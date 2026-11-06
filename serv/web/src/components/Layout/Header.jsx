@@ -30,7 +30,6 @@ import {
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -159,7 +158,7 @@ const Header = () => {
               title={item.description}
               onClick={() => switchWorkspace(item)}
               className={cn(
-                "relative py-1 font-mono text-[0.6875rem] font-medium uppercase tracking-[0.12em] transition-colors outline-none focus-visible:text-foreground",
+                "relative py-1 font-mono text-[0.6875rem] font-medium uppercase tracking-[0.12em] transition-colors",
                 "after:absolute after:inset-x-0 after:-bottom-0.5 after:h-px after:bg-transparent",
                 current ? "text-foreground after:bg-brand" : "text-muted-foreground hover:text-foreground"
               )}
@@ -182,8 +181,8 @@ const Header = () => {
               to={item.path}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "relative flex flex-1 shrink-0 items-center justify-center px-3 text-[0.8125rem] font-semibold text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground",
-                "before:absolute before:inset-x-3 before:top-0 before:h-px before:bg-transparent",
+                "relative flex flex-1 shrink-0 items-center justify-center px-3 text-[0.8125rem] font-semibold text-muted-foreground transition-colors hover:text-foreground",
+                "before:absolute before:inset-x-4 before:bottom-3.5 before:h-px before:bg-transparent",
                 "md:flex-none md:justify-start md:gap-3 md:px-2 md:py-2 md:text-[1.0625rem] md:tracking-[-0.01em]",
                 "md:before:inset-x-auto md:before:inset-y-2.5 md:before:-left-4 md:before:h-auto md:before:w-px xl:before:-left-6",
                 active && "text-foreground before:bg-brand md:font-bold"
@@ -202,7 +201,7 @@ const Header = () => {
         <button
           type="button"
           onClick={() => setCommandOpen(true)}
-          className="flex items-center gap-2 py-1 text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:text-foreground md:px-2"
+          className="flex items-center gap-2 py-1 text-sm text-muted-foreground transition-colors hover:text-foreground md:px-2"
           aria-label="Search console"
         >
           <Search className="size-4 md:hidden" aria-hidden="true" />
@@ -214,7 +213,7 @@ const Header = () => {
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="hidden items-center gap-2 py-1 text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:text-foreground md:flex md:px-2"
+              className="hidden items-center gap-2 py-1 text-sm text-muted-foreground transition-colors hover:text-foreground md:flex md:px-2"
               aria-label="Change theme"
             >
               Appearance
@@ -235,7 +234,7 @@ const Header = () => {
           <SheetTrigger asChild>
             <button
               type="button"
-              className="grid min-w-0 py-1 pl-2 text-left outline-none transition-colors md:px-2 md:pt-2 [&:hover_.identity-name]:text-brand"
+              className="grid min-w-0 py-1 pl-2 text-left transition-colors md:px-2 md:pt-2 [&:hover_.identity-name]:text-brand"
               aria-label={session.required
                 ? (session.signedIn ? `Signed in as ${session.name}` : "Sign in")
                 : (hasOperatorIdentity(identity) ? `Identity: ${identity.userId}` : "Set operator identity")}

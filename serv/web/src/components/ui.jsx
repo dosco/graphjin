@@ -99,7 +99,7 @@ export function ErrorState({ title = "Unavailable", message }) {
   );
 }
 
-export function PermissionState({ title = "Operator access required", message }) {
+export function PermissionState({ title = "No access", message }) {
   return (
     <Alert variant="warning">
       <ShieldAlert aria-hidden="true" className="size-4" />
@@ -111,15 +111,15 @@ export function PermissionState({ title = "Operator access required", message })
 
 export function DataErrorState({
   error,
-  permissionMessage = "This console uses the current GraphJin request context. Open it from local development or grant the operator/admin role access in agentic mode.",
-  unavailableMessage = "GraphJin did not return this data. Check that the service is running and the console route is served by GraphJin.",
+  permissionMessage = "Your role can't see this.",
+  unavailableMessage = "Couldn't reach the server.",
   queryMessage,
 }) {
   if (error?.kind === "auth") {
     return <PermissionState message={permissionMessage} />;
   }
   if (error?.kind === "unavailable") {
-    return <ErrorState title="Service unavailable" message={unavailableMessage} />;
+    return <ErrorState title="Unavailable" message={unavailableMessage} />;
   }
-  return <ErrorState title={error?.kind === "graphql" ? "GraphQL query failed" : "Unavailable"} message={queryMessage || error?.message || unavailableMessage} />;
+  return <ErrorState title={error?.kind === "graphql" ? "Query failed" : "Unavailable"} message={queryMessage || error?.message || unavailableMessage} />;
 }

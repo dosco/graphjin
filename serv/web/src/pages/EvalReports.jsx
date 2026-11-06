@@ -45,8 +45,8 @@ const EvalReports = () => {
       ) : listQuery.error ? (
         <DataErrorState
           error={listQuery.error}
-          permissionMessage="Trainer reports are restricted to the current GraphJin operator/admin role."
-          unavailableMessage="The evaluation report API is unavailable on this GraphJin service."
+          permissionMessage="Reports are for operators and admins."
+          unavailableMessage="Couldn't load reports."
         />
       ) : !listQuery.data?.available || reports.length === 0 ? (
         <EvalReportsEmpty stateDir={listQuery.data?.state_dir} available={listQuery.data?.available} />
@@ -86,8 +86,8 @@ const EvalReports = () => {
             ) : detailQuery.error ? (
               <DataErrorState
                 error={detailQuery.error}
-                permissionMessage="This report is restricted to the current GraphJin operator/admin role."
-                unavailableMessage="The selected evaluation report could not be loaded."
+                permissionMessage="Reports are for operators and admins."
+                unavailableMessage="Couldn't load this report."
               />
             ) : detailQuery.data ? (
               <EvalReportDetail report={detailQuery.data} />

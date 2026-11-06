@@ -50,8 +50,8 @@ const SecurityAudit = () => {
       ) : error ? (
         <DataErrorState
           error={error}
-          permissionMessage="gj_security is an admin/operator surface. Grant security.read to the agentic operator role or inspect it from local development."
-          unavailableMessage="The security root could not be reached from the current GraphJin service."
+          permissionMessage="Your role needs security.read to see this."
+          unavailableMessage="Couldn't load security."
         />
       ) : (
         <>
@@ -147,7 +147,7 @@ const SecurityAudit = () => {
 };
 
 function summaryText(summary, data) {
-  return data?.summary || summary?.summary || "Security posture is available through read-only gj_security rows.";
+  return data?.summary || summary?.summary || "";
 }
 
 export default SecurityAudit;

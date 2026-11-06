@@ -206,7 +206,7 @@ function MetricWatchCard({ watch, profiles, onEdit, onChanged }) {
           </Button>
         </div>
       </footer>
-      {(toggle.error || remove.error) && <DataErrorState error={toggle.error || remove.error} queryMessage="GraphJin did not change this watch." />}
+      {(toggle.error || remove.error) && <DataErrorState error={toggle.error || remove.error} queryMessage="Couldn't change this watch." />}
     </article>
   );
 }
@@ -453,7 +453,7 @@ function MetricWatchEditor({ watch, profiles, onClose, onSaved }) {
               </Select>
             </Field>
           )}
-          {save.error && <DataErrorState error={save.error} queryMessage="GraphJin did not save this watch." />}
+          {save.error && <DataErrorState error={save.error} queryMessage="Couldn't save this watch." />}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={!canSave || save.isPending}>{save.isPending ? "Saving" : "Save watch"}</Button>

@@ -66,8 +66,8 @@ const CodeInsight = () => {
         ) : error ? (
           <DataErrorState
             error={error}
-            permissionMessage="gj_code is read-only source insight for admins/operators. Configure a code source and grant the operator role read access."
-            unavailableMessage="The code root could not be reached from the current GraphJin service."
+            permissionMessage="Your role needs code read access, and a code source must be configured."
+            unavailableMessage="Couldn't load code."
           />
         ) : visible.length ? (
           <div className="grid gap-3">

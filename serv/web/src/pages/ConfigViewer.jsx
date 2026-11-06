@@ -43,8 +43,8 @@ const ConfigViewer = () => {
       ) : error ? (
         <DataErrorState
           error={error}
-          permissionMessage="gj_config is read-only here and intended for admins/operators. Grant config.read to the agentic operator role or use local development."
-          unavailableMessage="The config root could not be reached from the current GraphJin service."
+          permissionMessage="Your role needs config.read to see this."
+          unavailableMessage="Couldn't load the config."
         />
       ) : row ? (
         <>

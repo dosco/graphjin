@@ -100,7 +100,7 @@ const Skills = () => {
         {skillsQuery.isLoading ? (
           <LoadingState />
         ) : skillsQuery.error ? (
-          <DataErrorState error={skillsQuery.error} unavailableMessage="Skills could not be read from gj_artifacts." />
+          <DataErrorState error={skillsQuery.error} unavailableMessage="Couldn't load skills." />
         ) : skills.length === 0 ? (
           <EmptyState title="No skills yet" />
         ) : (

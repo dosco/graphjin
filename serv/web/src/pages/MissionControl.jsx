@@ -7,7 +7,6 @@ import {
   Bot,
   Check,
   CircleAlert,
-  Clock3,
   Eye,
   FileCheck2,
   Link2,
@@ -283,8 +282,8 @@ function TasksPanel({ query, tasks, onOpenTask }) {
       ) : query.error ? (
         <DataErrorState
           error={query.error}
-          permissionMessage="gj_task is owner-scoped. Set the matching operator identity or grant this role task access."
-          queryMessage="The task surface could not be read from this GraphJin service."
+          permissionMessage="Your role can't see tasks."
+          queryMessage="Couldn't load tasks."
         />
       ) : tasks.length === 0 ? (
         <EmptyState title="No tasks" message="Ask the agent to create one." />
@@ -366,7 +365,7 @@ function TaskDrawer({ task, identityKey, onClose }) {
                 {entriesQuery.isLoading ? (
                   <LoadingState />
                 ) : entriesQuery.error ? (
-                  <DataErrorState error={entriesQuery.error} queryMessage="The trail for this task could not be loaded." />
+                  <DataErrorState error={entriesQuery.error} queryMessage="Couldn't load this task's history." />
                 ) : entries.length === 0 ? (
                   <EmptyState title="No history yet" />
                 ) : (
@@ -457,8 +456,8 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
         ) : query.error ? (
           <DataErrorState
             error={query.error}
-            permissionMessage="gj_watch and gj_watch_event are owner-scoped. Set the matching operator identity or grant watch access."
-            queryMessage="The watch surface could not be read from this GraphJin service."
+            permissionMessage="Your role can't see watches."
+            queryMessage="Couldn't load watches."
           />
         ) : events.length === 0 ? (
           <EmptyState title="All caught up" />
@@ -513,7 +512,7 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
         )}
         {seenMutation.error && (
           <div className="mt-4">
-            <DataErrorState error={seenMutation.error} queryMessage="GraphJin did not mark this watch event as seen." />
+            <DataErrorState error={seenMutation.error} queryMessage="Couldn't mark this as seen." />
           </div>
         )}
       </Panel>
@@ -640,8 +639,8 @@ function AnnotationsPanel({ query, drafts, approved, identity, identityKey, onOp
         ) : query.error ? (
           <DataErrorState
             error={query.error}
-            permissionMessage="Annotation drafts are owner-scoped. Set the matching operator identity or grant artifact access."
-            queryMessage="The annotation surface could not be read from this GraphJin service."
+            permissionMessage="Your role can't see artifacts."
+            queryMessage="Couldn't load artifacts."
           />
         ) : drafts.length === 0 ? (
           <EmptyState title="Nothing to review" />
@@ -695,7 +694,7 @@ function AnnotationsPanel({ query, drafts, approved, identity, identityKey, onOp
           <div className="mt-4">
             <DataErrorState
               error={approveMutation.error || demoteMutation.error}
-              queryMessage="GraphJin did not apply this annotation moderation action."
+              queryMessage="Couldn't update this artifact."
             />
           </div>
         )}

@@ -304,8 +304,19 @@ html {
 }
 
 .swagger-shell .swagger-ui {
-  color: var(--foreground);
   font-family: var(--font-sans);
+}
+
+:root:not(.dark) .swagger-shell .swagger-ui {
+  color: var(--foreground);
+}
+
+/*
+ * Swagger UI only ships a light theme. In dark mode invert it and rotate the
+ * hue back, so the page reads light-on-dark and GET/POST keep their colours.
+ */
+.dark .swagger-shell .swagger-ui {
+  filter: invert(0.9) hue-rotate(180deg);
 }
 
 .swagger-shell .swagger-ui .scheme-container,

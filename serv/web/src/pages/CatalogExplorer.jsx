@@ -69,8 +69,8 @@ const CatalogExplorer = ({ initialKind = "all", title = "Catalog", description }
         ) : error ? (
           <DataErrorState
             error={error}
-            permissionMessage="gj_catalog is the console discovery surface. Grant catalog.read to the operator role or inspect it from local development."
-            unavailableMessage="The catalog root could not be reached from the current GraphJin service."
+            permissionMessage="Your role needs catalog.read to see this."
+            unavailableMessage="Couldn't load the catalog."
           />
         ) : filtered.length ? (
           <div className="divide-y">

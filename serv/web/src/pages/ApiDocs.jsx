@@ -1,7 +1,6 @@
 import React, { Suspense, lazy } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataErrorState, LoadingState, PageHeader } from "../components/ui";
-import { Card, CardContent } from "@/components/ui/card";
 import { fetchJSON } from "../services/graphql";
 import "swagger-ui-react/swagger-ui.css";
 
@@ -24,19 +23,15 @@ const ApiDocs = () => {
       ) : error ? (
         <DataErrorState
           error={error}
-          permissionMessage="OpenAPI docs use the current GraphJin operator session. Expose this console only to local developers or authenticated admins in agentic mode."
-          unavailableMessage="The OpenAPI spec could not be loaded from /api/v1/openapi.json."
+          permissionMessage="Your role can't see the API docs."
+          unavailableMessage="Couldn't load the API docs."
         />
       ) : (
-        <Card className="overflow-hidden">
-          <CardContent className="p-4 md:p-6">
-            <div className="swagger-shell">
+        <div className="swagger-shell">
           <Suspense fallback={<LoadingState />}>
             <SwaggerUI spec={data} />
           </Suspense>
-            </div>
-          </CardContent>
-        </Card>
+        </div>
       )}
     </div>
   );

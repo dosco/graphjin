@@ -84,13 +84,13 @@ const Dashboard = () => {
       ) : runtime.error ? (
         <DataErrorState
           error={runtime.error}
-          permissionMessage="gj_runtime is an operator-only system root. Open the console in local development or grant runtime.read/admin access to the agentic operator role."
-          unavailableMessage="The runtime root could not be reached from the current GraphJin service."
+          permissionMessage="Your role needs runtime.read to see this."
+          unavailableMessage="Couldn't load runtime status."
         />
       ) : (
         <>
-          <section className="grid gap-6 py-6 xl:grid-cols-[1.25fr_0.75fr] xl:items-stretch" aria-label="Runtime summary">
-              <div className="flex min-h-48 flex-col justify-center gap-4">
+          <section className="grid gap-6 py-2 md:py-6 xl:grid-cols-[1.25fr_0.75fr] xl:items-stretch" aria-label="Runtime summary">
+              <div className="flex flex-col justify-center gap-4 md:min-h-48">
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusPill status={status?.status} severity={status?.severity} />
                   <Badge variant="outline">{status?.mode || "mode unknown"}</Badge>
@@ -102,7 +102,7 @@ const Dashboard = () => {
                   </h2>
                 </div>
               </div>
-              <div className="grid gap-x-8 sm:grid-cols-2">
+              <div className="grid grid-cols-2 gap-x-8">
                 <Metric label="Sources" value={compactNumber(sources.length)} detail={`${readySources} ready`} tone={degradedSources ? "warn" : "good"} />
                 <Metric label="Tables" value={compactNumber(status?.table_count)} detail={status?.schema_ready ? "schema ready" : "schema pending"} />
                 <Metric label="Catalog" value={status?.catalog_revision ? "Ready" : "Pending"} detail={status?.active_database || "no active database"} />
@@ -144,8 +144,8 @@ const Dashboard = () => {
               ) : security.error ? (
                 <DataErrorState
                   error={security.error}
-                  permissionMessage="gj_security is intended for admins and governed agentic operators. Grant that role security.read access when this console is exposed."
-                  unavailableMessage="The security root could not be reached from the current GraphJin service."
+                  permissionMessage="Your role needs security.read to see this."
+                  unavailableMessage="Couldn't load security."
                 />
               ) : (
                 <div className="grid gap-4">
@@ -176,8 +176,8 @@ const Dashboard = () => {
               ) : catalog.error ? (
                 <DataErrorState
                   error={catalog.error}
-                  permissionMessage="gj_catalog is available to operator roles. Grant catalog.read access or use the console from local development."
-                  unavailableMessage="The catalog root could not be reached from the current GraphJin service."
+                  permissionMessage="Your role needs catalog.read to see this."
+                  unavailableMessage="Couldn't load the catalog."
                 />
               ) : (
                 <div className="grid gap-4">

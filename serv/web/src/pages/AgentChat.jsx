@@ -21,7 +21,6 @@ import {
   Sparkles,
   Square,
   Timer,
-  User,
   X,
 } from "lucide-react";
 
@@ -450,7 +449,7 @@ const AgentChat = () => {
       {statusQuery.isLoading ? (
         <div className="p-6"><LoadingState /></div>
       ) : statusQuery.error ? (
-        <div className="p-6"><DataErrorState error={statusQuery.error} permissionMessage="Agent status is authenticated through the current GraphJin session. Open the console with an operator/admin identity." unavailableMessage="The agent status endpoint could not be reached from /api/v1/agent/status." /></div>
+        <div className="p-6"><DataErrorState error={statusQuery.error} permissionMessage="Sign in as an operator or admin to use the agent." unavailableMessage="The agent status endpoint could not be reached from /api/v1/agent/status." /></div>
       ) : (
         <div className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)]">
           <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-2 sm:px-6">

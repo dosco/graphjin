@@ -56,7 +56,7 @@ const Memory = () => {
         {memoriesQuery.isLoading ? (
           <LoadingState />
         ) : memoriesQuery.error ? (
-          <DataErrorState error={memoriesQuery.error} unavailableMessage="Memories could not be read from gj_artifacts." />
+          <DataErrorState error={memoriesQuery.error} unavailableMessage="Couldn't load memories." />
         ) : memories.length === 0 ? (
           <EmptyState title="No memories yet" />
         ) : (
