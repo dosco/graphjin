@@ -53,7 +53,8 @@ func (h threadControlPlane) ManagedQueryTables() []core.ManagedTable {
 		managedTable(threadRunsRootTable, []core.ManagedColumn{
 			cpCol("id", "text", true), cpCol("thread_id", "text", false), cpCol("status", "text", false),
 			cpCol("tokens_in", "integer", false), cpCol("tokens_out", "integer", false), cpCol("llm_calls", "integer", false),
-			cpCol("used_skills", "json", false), cpCol("used_memories", "json", false), cpCol("error", "text", false),
+			cpCol("used_skills", "json", false), cpCol("used_memories", "json", false), cpCol("unverified_figures", "json", false),
+			cpCol("error", "text", false),
 			cpCol("created_at", "text", false), cpCol("updated_at", "text", false), cpCol("finished_at", "text", false),
 		}),
 	}
@@ -168,6 +169,7 @@ func runGraphRow(row map[string]any) map[string]any {
 	out := runAPIRow(row)
 	out["used_skills"] = parseJSONValue(jsonMapString(row, "used_skills"))
 	out["used_memories"] = parseJSONValue(jsonMapString(row, "used_memories"))
+	out["unverified_figures"] = parseJSONValue(jsonMapString(row, "unverified_figures"))
 	return out
 }
 

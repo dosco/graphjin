@@ -659,6 +659,8 @@ export function AgentInspector({ inspection, onClose, compact = false }) {
     // The caller's saved skills and memories that shaped this answer.
     { id: "skills", label: "Skills", value: response.skills },
     { id: "memories", label: "Memories", value: response.memories },
+    // Where each figure in the answer came from; one with no source is unverified.
+    { id: "figures", label: "Figures", value: response.figures },
     { id: "evidence", label: "Evidence", value: response.evidence },
     { id: "actions", label: "Actions", value: response.actions },
     { id: "next", label: "Next", value: response.next },
@@ -1124,6 +1126,14 @@ function AgentNotice({ notice, onPinTask }) {
           <Link to="/user/artifacts">Review</Link>
         </Button>
       </NoticeFrame>
+    );
+  }
+  if (kind === "unverified_figures") {
+    return (
+      <NoticeFrame
+        title={`${notice.count === 1 ? "A figure" : `${notice.count || "Some"} figures`} not verified`}
+        message={notice.message}
+      />
     );
   }
   return <NoticeFrame title={kind.replaceAll("_", " ")} message={notice.message} />;

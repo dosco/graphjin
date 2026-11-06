@@ -25,7 +25,7 @@ import (
 const (
 	threadStoreFields   = `id title profile status channel channel_ref active_run_id account_id owner_id owner_role last_message_at last_seen_at created_at updated_at`
 	messageStoreFields  = `id thread_id seq role content status run_id catalog_ids response_json account_id owner_id created_at`
-	runStoreFields      = `id thread_id status lease_until_ms replica tokens_in tokens_out llm_calls used_skills used_memories error account_id owner_id created_at updated_at finished_at`
+	runStoreFields      = `id thread_id status lease_until_ms replica tokens_in tokens_out llm_calls used_skills used_memories unverified_figures error account_id owner_id created_at updated_at finished_at`
 	runEventStoreFields = `id run_id seq kind payload created_at`
 
 	maxThreadTitleBytes   = 200
@@ -562,6 +562,11 @@ func (s *graphjinService) finishRun(ctx context.Context, runID, status, errMsg s
 	if ids := usedSkillIDs(resp.Skills); len(ids) != 0 {
 		input["used_skills"] = jsonText(ids)
 	}
+	if figures := resp.UnverifiedFigures(); len(figures) != 0 {
+		// Figures in the answer that no source contained: the lead computed
+		// them in its head or invented them. Recorded, never enforced.
+		input["unverified_figures"] = jsonText(figures)
+	}
 	if ids := usedMemoryIDs(resp.Memories); len(ids) != 0 {
 		input["used_memories"] = jsonText(ids)
 	}
@@ -765,6 +770,7 @@ tokens_out BIGINT NOT NULL DEFAULT 0,
 llm_calls BIGINT NOT NULL DEFAULT 0,
 used_skills TEXT,
 used_memories TEXT,
+unverified_figures TEXT,
 error TEXT NOT NULL DEFAULT '',
 account_id TEXT NOT NULL DEFAULT '',
 owner_id TEXT NOT NULL DEFAULT '',
@@ -830,6 +836,7 @@ tokens_out BIGINT NOT NULL DEFAULT 0,
 llm_calls BIGINT NOT NULL DEFAULT 0,
 used_skills TEXT,
 used_memories TEXT,
+unverified_figures TEXT,
 error LONGTEXT NOT NULL,
 account_id VARCHAR(191) NOT NULL DEFAULT '',
 owner_id VARCHAR(191) NOT NULL DEFAULT '',
@@ -898,6 +905,7 @@ tokens_out INTEGER NOT NULL DEFAULT 0,
 llm_calls INTEGER NOT NULL DEFAULT 0,
 used_skills TEXT,
 used_memories TEXT,
+unverified_figures TEXT,
 error TEXT NOT NULL DEFAULT '',
 account_id TEXT NOT NULL DEFAULT '',
 owner_id TEXT NOT NULL DEFAULT '',
@@ -943,7 +951,7 @@ func migrateThreadSchema(ctx context.Context, db *sql.DB, dbType, schema string)
 	if dbType == "sqlite" {
 		counter = "INTEGER NOT NULL DEFAULT 0"
 	}
-	for _, col := range [][2]string{{"llm_calls", counter}, {"used_skills", "TEXT"}, {"used_memories", "TEXT"}} {
+	for _, col := range [][2]string{{"llm_calls", counter}, {"used_skills", "TEXT"}, {"used_memories", "TEXT"}, {"unverified_figures", "TEXT"}} {
 		if err := ensureSQLColumn(ctx, db, dbType, runs, col[0], col[1]); err != nil {
 			return err
 		}

@@ -203,7 +203,7 @@ export function markThreadSeen(threadID) {
 // memories that shaped each answer.
 export async function runsForThread(threadID) {
   const data = await gql(
-    `query ($id: String!) { gj_thread_run(where: { thread_id: { eq: $id } }) { id status tokens_in tokens_out llm_calls used_skills used_memories created_at finished_at } }`,
+    `query ($id: String!) { gj_thread_run(where: { thread_id: { eq: $id } }) { id status tokens_in tokens_out llm_calls used_skills used_memories unverified_figures created_at finished_at } }`,
     { id: threadID },
   );
   return data.gj_thread_run || [];

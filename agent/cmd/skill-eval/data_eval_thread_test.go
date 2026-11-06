@@ -21,6 +21,7 @@ type threadServer struct {
 	turns   []string
 	deleted []string
 	answer  string
+	figures []map[string]any
 }
 
 func (f *threadServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +60,7 @@ func (f *threadServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f.turns = append(f.turns, req.Instruction)
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status": "answered", "answer": f.answer, "thread_id": req.ThreadID, "run_id": "run-1",
+			"status": "answered", "answer": f.answer, "thread_id": req.ThreadID, "run_id": "run-1", "figures": f.figures,
 			"data": map[string]any{"delegations": []any{
 				map[string]any{"question": "total MRR?"}, map[string]any{"question": "open tickets?"},
 			}},
@@ -118,7 +119,9 @@ func TestThreadCaseRunsEveryTurnInOneThreadAndScoresEachPart(t *testing.T) {
 // A multi-part answer that gets one part wrong fails the case, and the report
 // says which part.
 func TestThreadCaseFailsOnAnyWrongPart(t *testing.T) {
-	fake := &threadServer{answer: "Total MRR is $19,800 and 7 tickets are open."}
+	fake := &threadServer{answer: "Total MRR is $19,800 and 7 tickets are open.", figures: []map[string]any{
+		{"text": "$19,800", "source": "data_agent"}, {"text": "7"},
+	}}
 	server := httptest.NewServer(fake)
 	defer server.Close()
 	profile := endpointProfile{Name: "user", URL: server.URL + "/api/v1/agent"}
@@ -134,6 +137,11 @@ func TestThreadCaseFailsOnAnyWrongPart(t *testing.T) {
 	metrics := calculateDataMetrics(aggregateDataVerdicts([]dataEvalCase{threadCase()}, []runResult{result}), []runResult{result})
 	if metrics.PartRecall != 0.5 || metrics.MedianDelegations != 2 {
 		t.Fatalf("part recall = %v, delegations = %v", metrics.PartRecall, metrics.MedianDelegations)
+	}
+	// The run's answer carried one figure with no source.
+	if len(result.UnverifiedFigures) != 1 || result.UnverifiedFigures[0] != "7" || metrics.RunsWithUnverifiedFigures != 1 || metrics.RunsWithoutDelegation != 0 {
+		t.Fatalf("unverified = %v, runs with unverified = %d, without delegation = %d",
+			result.UnverifiedFigures, metrics.RunsWithUnverifiedFigures, metrics.RunsWithoutDelegation)
 	}
 }
 

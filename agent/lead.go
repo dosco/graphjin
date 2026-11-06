@@ -252,15 +252,29 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 	if req.Profile != nil {
 		run.grounding.Add(req.Profile.Instructions)
 	}
+	run.figures.add(FigureSourceUser, req.Instruction)
+	for _, turn := range req.History {
+		if strings.EqualFold(turn.Role, "assistant") {
+			run.figures.add(FigureSourceConversation, turn.Content)
+		} else {
+			run.figures.add(FigureSourceUser, turn.Content)
+		}
+	}
+	run.figures.add(FigureSourceUser, req.Memories...)
+	run.figures.addValue(FigureSourceUser, req.Context)
+	if req.Profile != nil {
+		run.figures.add(FigureSourceUser, req.Profile.Instructions)
+	}
 
 	tools := []ax.Tool{run.askTool(ctx)}
 	if l.Store != nil && !l.config.ReadOnly {
 		tools = append(tools, run.rememberTool(ctx))
 	}
-	runtime := axgoja.NewRuntime()
+	gojaRuntime := axgoja.NewRuntime()
+	runtime := figureRecordingRuntime{CodeRuntime: gojaRuntime, record: run.figures.recordCodeResult}
 	for _, tool := range tools {
 		t := tool
-		runtime.RegisterCallable(t.Name, func(params ax.Value) (ax.Value, error) {
+		gojaRuntime.RegisterCallable(t.Name, func(params ax.Value) (ax.Value, error) {
 			return t.Handler(asMap(params))
 		})
 	}
@@ -354,6 +368,16 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 		}
 	}
 	resp.Skills, resp.Memories = run.shapedBy(usedSkills.snapshot(), usedMemories.snapshot())
+	if resp.Status == StatusAnswered && resp.Answer != "" {
+		resp.Figures = run.figures.attribute(resp.Answer)
+		if unverified := resp.UnverifiedFigures(); len(unverified) != 0 {
+			resp.Notices = append(resp.Notices, ResponseNotice{
+				Kind:    noticeUnverifiedFigures,
+				Message: "Not returned by the data agent or computed in code this turn: " + strings.Join(unverified, ", "),
+				Count:   len(unverified),
+			})
+		}
+	}
 	return run.finish(resp, usage), nil
 }
 
@@ -466,6 +490,7 @@ func (m leadMemorySource) values(docs []MemoryDoc, skip map[string]bool) []ax.Va
 		}
 		m.run.mu.Lock()
 		m.run.grounding.Add(doc.Content)
+		m.run.figures.add(FigureSourceUser, doc.Content)
 		m.run.loadedMemories = append(m.run.loadedMemories, MemoryUsage{ID: doc.ID, Reason: "recalled"})
 		m.run.mu.Unlock()
 		out = append(out, ax.Object("id", doc.ID, "content", doc.Content))
@@ -522,6 +547,7 @@ func (s leadSkillSource) load(requested []ax.Value) []ax.Value {
 			seen[doc.ID] = true
 			s.run.mu.Lock()
 			s.run.grounding.Add(doc.Content)
+			s.run.figures.add(FigureSourceUser, doc.Content)
 			s.run.loadedSkills = append(s.run.loadedSkills, SkillUsage{ID: doc.ID, Name: doc.Name, Reason: "loaded"})
 			s.run.mu.Unlock()
 			out = append(out, ax.Object("id", doc.ID, "name", doc.Name, "content", doc.Content))
@@ -607,6 +633,7 @@ type leadRun struct {
 	actionIndex    int
 	delegations    []leadDelegation
 	grounding      GroundingCorpus
+	figures        figureLedger
 }
 
 type leadDelegation struct {
@@ -773,6 +800,7 @@ func (r *leadRun) runOne(ctx context.Context, index int, question string) leadDe
 	r.mu.Lock()
 	r.grounding.Add(question, resp.Answer, resp.Data, resp.Errors)
 	r.mu.Unlock()
+	r.figures.add(FigureSourceDataAgent, resp.Answer)
 	finish := ActionEvent{
 		Source: "lead", Tool: toolAskGraphJin, Status: d.status(), Delegate: index, Question: question,
 		ElapsedMS: time.Since(start).Milliseconds(),

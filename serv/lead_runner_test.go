@@ -117,7 +117,7 @@ func TestThreadTurnRunsTheLeadOverStatelessWorkers(t *testing.T) {
 		leadAsks("How many open tickets are there?", "How many roast batches ran this week?"),
 		leadAnswers("There are 2 open tickets and 5 roast batches this week."),
 		leadAsks("Which of Harbor Cafe's tickets are open?"),
-		leadAnswers("Ticket 7 is open."),
+		leadAnswers("Ticket 7 is open, worth $1,250."),
 	}}
 	svc.agentClientFactory = func(gjagent.Config) (ax.AIClient, error) { return model, nil }
 
@@ -144,6 +144,10 @@ func TestThreadTurnRunsTheLeadOverStatelessWorkers(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("second turn = %d: %s", rec.Code, rec.Body.String())
 	}
+	var second threadAgentResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &second); err != nil {
+		t.Fatal(err)
+	}
 	// The follow-up's lead call saw the first turn; no worker ever did.
 	// Each lead turn is four model calls; the follow-up starts at the fifth.
 	if !strings.Contains(model.requests[4], "2 open tickets and 5 roast batches") {
@@ -167,6 +171,19 @@ func TestThreadTurnRunsTheLeadOverStatelessWorkers(t *testing.T) {
 	})
 	if err != nil || len(runs) != 1 || runs[0]["llm_calls"].(int64) < 4 {
 		t.Fatalf("gj_thread_run for the first turn = %+v err=%v, want llm_calls counted", runs, err)
+	}
+	if runs[0]["unverified_figures"] != nil {
+		t.Fatalf("first turn's figures all came from the worker, got unverified %v", runs[0]["unverified_figures"])
+	}
+	// A figure no worker returned is recorded on the run; the answer is kept.
+	if second.Answer != "Ticket 7 is open, worth $1,250." {
+		t.Fatalf("second answer = %q, the figure check must not change it", second.Answer)
+	}
+	runs, err = newThreadControlPlane(svc).queryRows(ctx, core.ManagedQueryRoot{
+		Table: threadRunsRootTable, Where: map[string]any{"id": map[string]any{"eq": second.RunID}},
+	})
+	if err != nil || len(runs) != 1 || fmt.Sprint(runs[0]["unverified_figures"]) != "[$1,250]" {
+		t.Fatalf("gj_thread_run for the second turn = %+v err=%v, want unverified_figures [$1,250]", runs, err)
 	}
 
 	// Both questions' steps are in the run log, tagged, with unique ordered seq.

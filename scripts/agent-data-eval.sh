@@ -263,6 +263,7 @@ run_eval() {
       "by group: \(.data_metrics.ground_truth_recall_by_group // {} | to_entries | map("\(.key)=\(.value)") | join(" "))",
       "failure buckets: \(.data_metrics.failure_buckets // {} | to_entries | map("\(.key)=\(.value)") | join(" "))",
       "part recall: \(.data_metrics.part_recall // "n/a")  median latency: \(.data_metrics.median_latency_ms // "n/a")ms  median tokens: \(.data_metrics.median_total_tokens // "n/a")  median delegations: \(.data_metrics.median_delegations // "n/a")",
+      "runs with unverified figures: \(.data_metrics.runs_with_unverified_figures // "n/a")  runs without delegation: \(.data_metrics.runs_without_delegation // "n/a")",
       "hard pass: \(.acceptance.hard_pass)"' "$report"
   fi
   if [ "$gating" = "gating" ]; then

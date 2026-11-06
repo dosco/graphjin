@@ -219,7 +219,10 @@ type Response struct {
 	Answer string       `json:"answer,omitempty"`
 	Skills []SkillUsage `json:"skills,omitempty"`
 	// Memories names the saved memories that shaped a lead's answer.
-	Memories    []MemoryUsage     `json:"memories,omitempty"`
+	Memories []MemoryUsage `json:"memories,omitempty"`
+	// Figures names where each figure in a lead's answer came from; a figure
+	// with no source is listed in an unverified_figures notice.
+	Figures     []Figure          `json:"figures,omitempty"`
 	Skill       string            `json:"skill,omitempty"` // Deprecated through v3.
 	Data        any               `json:"data,omitempty"`
 	Evidence    any               `json:"evidence,omitempty"`

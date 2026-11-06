@@ -501,6 +501,7 @@ func runDataOne(client *http.Client, item dataTask, order int) runResult {
 			}
 		}
 	}
+	result.UnverifiedFigures = agentResponse.UnverifiedFigures()
 
 	methodPass := true
 	for _, part := range parts {
@@ -1056,6 +1057,10 @@ type dataMetrics struct {
 	MedianLatencyMS   int64   `json:"median_latency_ms,omitempty"`
 	MedianTotalTokens int64   `json:"median_total_tokens,omitempty"`
 	MedianDelegations float64 `json:"median_delegations,omitempty"`
+	// Provenance counters over thread runs: answers that carried a figure no
+	// source held, and answers given without asking the data agent anything.
+	RunsWithUnverifiedFigures int `json:"runs_with_unverified_figures"`
+	RunsWithoutDelegation     int `json:"runs_without_delegation"`
 }
 
 func calculateDataMetrics(verdicts []dataCaseVerdict, results []runResult) dataMetrics {
@@ -1106,6 +1111,12 @@ func calculateDataMetrics(verdicts []dataCaseVerdict, results []runResult) dataM
 		tokens = append(tokens, float64(result.Tokens.Total))
 		if result.Route == routeThread {
 			delegations = append(delegations, float64(result.Delegations))
+			if result.Delegations == 0 {
+				out.RunsWithoutDelegation++
+			}
+			if len(result.UnverifiedFigures) != 0 {
+				out.RunsWithUnverifiedFigures++
+			}
 		}
 	}
 	out.PartRecall = ratio(partsPassed, partsTotal)

@@ -114,8 +114,11 @@ type runResult struct {
 	TurnStatuses []string `json:"turn_statuses,omitempty"`
 	Delegations  int      `json:"delegations,omitempty"`
 	Delegated    []string `json:"delegated_questions,omitempty"`
-	PartsPassed  int      `json:"parts_passed,omitempty"`
-	PartsTotal   int      `json:"parts_total,omitempty"`
+	// UnverifiedFigures are figures in the lead's answer that no source held:
+	// not a data-agent answer, the conversation, the user, or the lead's code.
+	UnverifiedFigures []string `json:"unverified_figures,omitempty"`
+	PartsPassed       int      `json:"parts_passed,omitempty"`
+	PartsTotal        int      `json:"parts_total,omitempty"`
 }
 
 type metrics struct {
