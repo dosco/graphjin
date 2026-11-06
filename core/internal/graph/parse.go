@@ -346,7 +346,12 @@ func (p *Parser) parseFragment() (frag Fragment, err error) {
 }
 
 func (p *Parser) parseOp() (op Operation, err error) {
-	s := p.curr().pos + 1
+	// Start at the operation's first token. When nothing precedes the
+	// operation, start at the beginning so a leading comment is kept.
+	s := 0
+	if p.pos >= 0 && p.pos+1 < len(p.items) {
+		s = int(p.items[p.pos+1].pos)
+	}
 
 	if p.peekVal(queryToken, mutationToken, subscriptionToken) {
 		err = p.parseOpTypeAndArgs(&op)
@@ -377,7 +382,7 @@ func (p *Parser) parseOp() (op Operation, err error) {
 	}
 
 	e := p.curr().pos + 1
-	op.Query = p.input[s-1 : e]
+	op.Query = p.input[s:e]
 
 	return op, nil
 }
