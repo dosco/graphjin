@@ -46,7 +46,7 @@ function MarkdownContent({ value, className }) {
             </a>
           ),
           table: ({ children }) => (
-            <div className="overflow-x-auto rounded-2xl bg-card">
+            <div className="overflow-x-auto [&_td:first-child]:pl-0 [&_th:first-child]:pl-0">
               <table className="w-full border-collapse text-left text-xs">{children}</table>
             </div>
           ),

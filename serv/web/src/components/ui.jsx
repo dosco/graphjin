@@ -44,7 +44,7 @@ export function Metric({ label, value, detail, tone = "neutral", className }) {
   return (
     <div className={cx("flex flex-col gap-2 py-3", className)}>
       <span className={cx("hud-label", toneClass)}>{label}</span>
-      <strong className="font-mono text-[1.625rem] font-semibold leading-none tracking-tight text-foreground tabular-nums">{value ?? 0}</strong>
+      <strong className="break-words font-mono text-[1.375rem] font-semibold leading-tight tracking-tight text-foreground tabular-nums sm:text-[1.625rem]">{value ?? 0}</strong>
       {detail && <small className="text-xs leading-5 text-muted-foreground">{detail}</small>}
     </div>
   );

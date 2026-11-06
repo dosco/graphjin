@@ -51,7 +51,7 @@ const ConfigViewer = () => {
         />
       ) : row ? (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-x-8 gap-y-2 xl:grid-cols-4">
             <Metric label="Active DB" value={row.active_database || "none"} />
             <Metric label="Sources" value={row.sources_used ? "On" : "Off"} />
             <Metric label="Catalog" value={row.catalog_revision ? "Ready" : "Pending"} detail={row.catalog_revision ? row.catalog_revision.slice(0, 12) : undefined} />

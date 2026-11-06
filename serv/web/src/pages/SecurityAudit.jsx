@@ -53,7 +53,7 @@ const SecurityAudit = () => {
         />
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-x-8 gap-y-2 xl:grid-cols-4">
             <Metric label="Mode" value={summary?.mode || "unknown"} />
             <Metric label="Findings" value={findings.length} detail={`${highCount} high or critical`} tone={highCount ? "warn" : "good"} />
             <Metric label="Policies" value={policies.length} detail={`${weakenedCount} weaken defaults`} tone={weakenedCount ? "warn" : "good"} />

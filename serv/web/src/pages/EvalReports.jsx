@@ -104,7 +104,7 @@ function EvalReportDetail({ report }) {
   return (
     <div className="grid min-w-0 gap-5">
       {complete ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-x-8 gap-y-2 xl:grid-cols-5">
           <Metric label="Questions passed reliably" value={countOf(summary.questions_passed_reliably, summary.question_count)} detail={formatPercent(report.recall)} tone={report.accepted ? "good" : "warn"} />
           <Metric label="Solved at least once" value={countOf(summary.questions_solved_at_least_once, summary.question_count)} detail={formatPercent(report.pass_at_k)} />
           <Metric label="Solved every time" value={countOf(summary.questions_solved_every_time, summary.question_count)} detail={formatPercent(report.pass_power_k)} />
@@ -112,7 +112,7 @@ function EvalReportDetail({ report }) {
           <Metric label="Rules followed" value={formatPercent(report.safety_precision)} detail={report.safety_precision === 1 ? "all safety checks passed" : "a safety check failed"} tone={report.safety_precision === 1 ? "good" : "warn"} />
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-x-8 gap-y-2">
           <Metric label="Test attempts" value={countOf(summary.completed_test_attempts, summary.planned_test_attempts)} detail="completed work is saved" tone="warn" />
           <Metric label="Questions" value={summary.question_count || "n/a"} detail="no overall score is available" />
         </div>

@@ -401,6 +401,8 @@ const AgentChat = () => {
                 </Button>
                 {returnTrace && <Badge variant="muted">Trace</Badge>}
               </div>
+              <div className="flex items-center gap-3">
+              {!pending && <kbd aria-hidden="true" className="hidden font-mono text-[0.6875rem] text-muted-foreground sm:inline">⌘↵ to send</kbd>}
               {pending && activeRunID ? (
                 <Button type="button" size="icon" variant="secondary" onClick={() => void stopRun()} aria-label="Stop the run">
                   <Square aria-hidden="true" />
@@ -410,6 +412,7 @@ const AgentChat = () => {
                   <Send aria-hidden="true" />
                 </Button>
               )}
+              </div>
             </div>
           </div>
           {advancedOpen && (
@@ -425,10 +428,10 @@ const AgentChat = () => {
 
   return (
     <div className="h-[calc(100dvh-var(--chrome-top)-var(--chrome-bottom))] min-h-[38rem] overflow-hidden">
-      {statusQuery.isLoading ? (
+      {statusQuery.isPending && !statusQuery.error ? (
         <div className="p-6"><LoadingState /></div>
-      ) : statusQuery.error ? (
-        <div className="p-6"><DataErrorState error={statusQuery.error} permissionMessage="Sign in as an operator or admin to use the agent." unavailableMessage="The agent status endpoint could not be reached from /api/v1/agent/status." /></div>
+      ) : statusQuery.error || !status ? (
+        <div className="p-6"><DataErrorState error={statusQuery.error || { kind: "unavailable" }} permissionMessage="Sign in to use the agent." unavailableMessage="Couldn't reach the agent." /></div>
       ) : (
         <div className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)]">
           <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-2 sm:px-6">
@@ -710,12 +713,12 @@ export function AgentInspector({ inspection, onClose, compact = false }) {
                 <li key={`delegation-${index}`} className="grid gap-2">
                   <div className="flex items-start justify-between gap-3"><span className="min-w-0 break-words text-sm font-medium">{delegation?.question || `Question ${index + 1}`}</span><StatusPill status={delegation?.status || "unknown"} /></div>
                   {hasValue(delegation?.answer) && <MarkdownContent value={String(delegation.answer)} className="text-sm" />}
-                  {hasValue(delegation?.data) && <pre className="overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/55 p-3 text-xs leading-5"><code>{JSON.stringify(delegation.data, null, 2)}</code></pre>}
+                  {hasValue(delegation?.data) && <pre className="overflow-auto whitespace-pre-wrap break-words rounded-md bg-accent p-3 text-xs leading-5"><code>{JSON.stringify(delegation.data, null, 2)}</code></pre>}
                 </li>
               ))}
             </ol>
           ) : (
-            <pre className="min-h-full overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/55 p-4 text-xs leading-5 text-foreground"><code>{JSON.stringify(selected.value, null, 2)}</code></pre>
+            <pre className="min-h-full overflow-auto whitespace-pre-wrap break-words rounded-md bg-accent p-4 text-xs leading-5 text-foreground"><code>{JSON.stringify(selected.value, null, 2)}</code></pre>
           )
         ) : <p className="text-sm text-muted-foreground">Nothing to show.</p>}
       </div>
@@ -727,7 +730,7 @@ function InspectorAction({ action, index, className }) {
   return (
     <li className={cn("grid gap-1", className)}>
       <div className="flex items-center justify-between gap-3"><span className="font-mono text-sm font-medium">{action?.tool || `Action ${index + 1}`}</span><StatusPill status={action?.status || "completed"} /></div>
-      {action?.args && <pre className="overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/55 p-3 text-xs leading-5"><code>{JSON.stringify(action.args, null, 2)}</code></pre>}
+      {action?.args && <pre className="overflow-auto whitespace-pre-wrap break-words rounded-md bg-accent p-3 text-xs leading-5"><code>{JSON.stringify(action.args, null, 2)}</code></pre>}
     </li>
   );
 }
@@ -772,11 +775,10 @@ export function ThinkingMessage({ actions = [] }) {
     <Message role="assistant">
       <MessageContent>
         <Marker status="loading" label="working" />
+        {entries.length > 0 && (
         <Bubble variant="muted" className="w-fit max-w-full">
           <BubbleContent>
-          <span>Working</span>
-          {entries.length > 0 && (
-            <ol className="mt-2 grid gap-1 font-mono text-xs text-muted-foreground">
+            <ol className="grid gap-1 font-mono text-xs text-muted-foreground">
               {entries.map((entry) => entry.kind === "question" ? (
                 <li key={`question-${entry.delegate}`} className="grid gap-1">
                   <div className="flex items-start gap-2 font-sans text-foreground">
@@ -794,9 +796,9 @@ export function ThinkingMessage({ actions = [] }) {
                 <TrailAction key={`${entry.action.index}-${entry.action.tool}`} action={entry.action} />
               ))}
             </ol>
-          )}
           </BubbleContent>
         </Bubble>
+        )}
       </MessageContent>
     </Message>
   );
@@ -930,7 +932,6 @@ function AgentStatusDetails({ status }) {
   return (
     <div className="grid content-start gap-5 overflow-y-auto py-5">
       <dl className="grid gap-2.5 text-sm">
-        <StatusRow label="Status" value={status.status} />
         <StatusRow label="Enabled" value={status.enabled ? "yes" : "no"} />
         <StatusRow label="API key" value={status.api_key_configured ? `set · ${status.api_key_env || "OPENAI_API_KEY"}` : `missing · ${status.api_key_env || "OPENAI_API_KEY"}`} />
         <StatusRow label="Model" value={[status.provider, status.model].filter(Boolean).join(" / ") || "openai"} />
@@ -985,7 +986,7 @@ function ChatMessage({ message, onPinTask, onInspect }) {
             {!isUser && <CopyButton text={message.content} label="Copy answer" copiedLabel="Copied answer" />}
           </div>
         )}
-        <Bubble variant={isUser ? "default" : "ghost"} align={isUser ? "end" : "start"} className="max-w-full overflow-hidden">
+        <Bubble variant={isUser ? "secondary" : "ghost"} align={isUser ? "end" : "start"} className="max-w-full overflow-hidden">
           <BubbleContent>
             {isUser ? <div className="whitespace-pre-wrap break-words">{message.content}</div> : <MarkdownContent value={message.content} />}
           </BubbleContent>
@@ -1064,7 +1065,7 @@ function AgentNotice({ notice, onPinTask }) {
   if (kind === "watch_created") {
     return (
       <NoticeFrame title="Watch created" message={notice.message}>
-        <Button asChild variant="secondary" size="sm">
+        <Button asChild variant="link" size="sm" className="h-auto p-0">
           <Link to="/user/watches">Open watches</Link>
         </Button>
       </NoticeFrame>
@@ -1073,7 +1074,7 @@ function AgentNotice({ notice, onPinTask }) {
   if (kind === "watch_events_unseen") {
     return (
       <NoticeFrame title={`${notice.count || "New"} unseen watch ${notice.count === 1 ? "event" : "events"}`}>
-        <Button asChild variant="secondary" size="sm">
+        <Button asChild variant="link" size="sm" className="h-auto p-0">
           <Link to="/user/watches">Open watch inbox</Link>
         </Button>
       </NoticeFrame>
@@ -1084,7 +1085,7 @@ function AgentNotice({ notice, onPinTask }) {
       <NoticeFrame title="Open tasks aren’t linked to this run" message={notice.message}>
         <div className="flex flex-wrap gap-2">
           {taskIDs.map((taskID) => (
-            <Button key={taskID} type="button" variant="secondary" size="sm" onClick={() => onPinTask(taskID)}>
+            <Button key={taskID} type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => onPinTask(taskID)}>
               Continue {shortID(taskID)}
             </Button>
           ))}
@@ -1096,7 +1097,7 @@ function AgentNotice({ notice, onPinTask }) {
     return (
       <NoticeFrame title="Task context loaded" message={notice.message} variant="success">
         {taskIDs[0] && (
-          <Button asChild variant="ghost" size="sm">
+          <Button asChild variant="link" size="sm" className="h-auto p-0">
             <Link to={`/user/tasks?task_id=${encodeURIComponent(taskIDs[0])}`}>View trail</Link>
           </Button>
         )}
@@ -1108,7 +1109,7 @@ function AgentNotice({ notice, onPinTask }) {
       <NoticeFrame title="Task verification failed" message={notice.message} variant="destructive">
         <div className="flex flex-wrap gap-2">
           {taskIDs.map((taskID) => (
-            <Button key={taskID} asChild variant="secondary" size="sm">
+            <Button key={taskID} asChild variant="link" size="sm" className="h-auto p-0">
               <Link to={`/user/tasks?task_id=${encodeURIComponent(taskID)}`}>Inspect {shortID(taskID)}</Link>
             </Button>
           ))}
@@ -1119,7 +1120,7 @@ function AgentNotice({ notice, onPinTask }) {
   if (kind === "annotations_unshared") {
     return (
       <NoticeFrame title={`${notice.count || "Annotation"} ${notice.count === 1 ? "draft" : "drafts"} awaiting review`} message={notice.message}>
-        <Button asChild variant="secondary" size="sm">
+        <Button asChild variant="link" size="sm" className="h-auto p-0">
           <Link to="/user/artifacts">Review</Link>
         </Button>
       </NoticeFrame>
@@ -1138,7 +1139,7 @@ function NoticeFrame({ title, message, children, variant = "default" }) {
         )}>{title}</p>
         {message && <p className="mt-1 text-xs leading-5 text-muted-foreground">{message}</p>}
       </div>
-      {children && <div className="flex flex-wrap gap-2">{children}</div>}
+      {children && <div className="flex flex-wrap gap-x-4 gap-y-1">{children}</div>}
     </div>
   );
 }

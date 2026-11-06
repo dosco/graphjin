@@ -362,7 +362,7 @@ function MetricWatchEditor({ watch, profiles, onClose, onSaved }) {
           <Field label="Name">
             <Input value={form.name} onChange={set("name")} placeholder="open_tickets_over_20" disabled={Boolean(form.id)} required />
           </Field>
-          <Field label="Query" hint="A GraphQL query with an aggregate.">
+          <Field label="Query">
             <Textarea value={form.query} onChange={set("query")} rows={4} className="font-mono text-xs" placeholder={'query { orders { count_id } }'} required />
             <div className="mt-2 flex items-center gap-2">
               <Button type="button" size="sm" variant="secondary" disabled={!form.query.trim() || run.isPending} onClick={() => run.mutate()}>

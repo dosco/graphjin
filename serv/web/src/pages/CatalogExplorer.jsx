@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { graphqlRequest, parseJSON } from "../services/graphql";
+import { graphqlRequest, parseJSON, relativeTime } from "../services/graphql";
 import { DataErrorState, EmptyState, LoadingState, PageHeader, Panel, StatusPill } from "../components/ui";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -112,21 +112,21 @@ const CatalogInspector = ({ item }) => {
   const safety = parseJSON(item.safety_json, null);
   const location = [item.database_name, item.schema_name, item.table_name, item.column_name].filter(Boolean).join(".");
   const query = item.graphql_query || item.graphql_mutation || exampleText(examples?.[0]);
+  const heading = item.title || item.name || item.id;
   const metadata = [
-    ["Kind", formatKind(item.kind)],
-    ["Location", location],
+    ["Location", location === heading ? "" : location],
     ["Source", item.source],
     ["Source kind", item.source_kind],
     ["Risk", item.risk_level],
     ["Sensitivity", item.sensitivity],
     ["Confidence", item.confidence],
-    ["Updated", item.updated_at],
+    ["Updated", item.updated_at ? relativeTime(item.updated_at) : ""],
   ].filter(([, value]) => value != null && value !== "");
   return (
     <>
       <SheetHeader className="px-5 py-5 pr-12 text-left">
         <div className="flex flex-wrap items-center gap-2"><span className="hud-label">{formatKind(item.kind)}</span>{typeof item.enabled === "boolean" && <StatusPill status={item.enabled ? "enabled" : "disabled"} />}</div>
-        <SheetTitle className="mt-2 text-xl">{item.title || item.name || item.id}</SheetTitle>
+        <SheetTitle className="mt-2 text-xl">{heading}</SheetTitle>
         {item.summary && <SheetDescription>{item.summary}</SheetDescription>}
       </SheetHeader>
       <div className="min-h-0 overflow-y-auto px-5 py-5">

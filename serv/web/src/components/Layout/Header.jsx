@@ -64,6 +64,12 @@ const Header = () => {
     }
   }, [location.pathname, location.search, workspaceID]);
 
+  // On phones the view list is a scrolling bottom bar; keep the current view in it.
+  const viewNavRef = React.useRef(null);
+  React.useEffect(() => {
+    viewNavRef.current?.querySelector("[aria-current=page]")?.scrollIntoView?.({ block: "nearest", inline: "center" });
+  }, [location.pathname]);
+
   React.useEffect(() => {
     if (!identityOpen) {
       setDraft(identity);
@@ -169,6 +175,7 @@ const Header = () => {
       </div>
 
       <nav
+        ref={viewNavRef}
         className="scrollbar-none fixed inset-x-0 bottom-0 z-40 flex h-[var(--chrome-bottom)] items-stretch overflow-x-auto bg-background/85 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:static md:mt-6 md:h-auto md:flex-col md:gap-0.5 md:overflow-visible md:bg-transparent md:p-0 md:backdrop-blur-none"
         aria-label={`${workspace?.label || "Console"} workspace`}
       >
@@ -244,7 +251,7 @@ const Header = () => {
           </SheetTrigger>
           <SheetContent side="right" className="grid w-[min(92vw,26rem)] grid-rows-[auto_1fr] sm:w-[26rem]">
             <SheetHeader className="pr-8">
-              <SheetTitle>{session.required ? (session.signedIn ? "Session" : "Sign in") : "Operator identity"}</SheetTitle>
+              <SheetTitle>{session.required ? (session.signedIn ? "Session" : "Sign in") : "Identity"}</SheetTitle>
               <SheetDescription className={session.required ? "sr-only" : undefined}>
                 {session.required
                   ? "Your console session on this server."

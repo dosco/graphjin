@@ -228,7 +228,7 @@ const MissionControl = ({ section }) => {
       )}
 
       <TaskDrawer task={selectedTask} identityKey={identityKey} onClose={closeTask} />
-      <WatchEventDrawer event={selectedEvent} watches={watches} onClose={() => setSelectedEvent(null)} />
+      <WatchEventDrawer event={selectedEvent} watches={watches} identityKey={identityKey} onClose={() => setSelectedEvent(null)} />
     </div>
   );
 };
@@ -327,8 +327,8 @@ function TaskDrawer({ task, identityKey, onClose }) {
                 <DetailRow label="Verification attempts" value={task.verify_attempts || 0} />
                 {task.outcome && <DetailRow label="Outcome" value={task.outcome} />}
                 {task.verify_after && <DetailRow label="Verify after" value={formatDate(task.verify_after)} />}
-                {task.verify_json && <JSONBlock title="Verification contract" value={task.verify_json} />}
               </dl>
+              {task.verify_json && <JSONBlock title="Verification contract" value={task.verify_json} />}
               <Button asChild variant="secondary" size="sm" className="justify-self-start">
                 <Link to={`/user/agent?task_id=${encodeURIComponent(task.id)}`}>Continue in Agent</Link>
               </Button>
@@ -368,8 +368,8 @@ function TaskEntry({ entry }) {
       {entry.body && <p className="text-sm leading-6 text-foreground">{entry.body}</p>}
       {verification ? (
         <div className="grid gap-2 sm:grid-cols-2">
-          <JSONBlock title="Expected" value={detail?.expect ?? "not recorded"} />
-          <JSONBlock title="Observed" value={detail?.observed ?? detail?.error ?? "not recorded"} />
+          <JSONBlock title="Expected" value={detail?.expect ?? "not recorded"} open />
+          <JSONBlock title="Observed" value={detail?.observed ?? detail?.error ?? "not recorded"} open />
         </div>
       ) : detail && Object.keys(detail).length > 0 ? (
         <JSONBlock title="Entry detail" value={detail} />
@@ -540,32 +540,41 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
   );
 }
 
-function WatchEventDrawer({ event, watches, onClose }) {
+function WatchEventDrawer({ event, watches, identityKey, onClose }) {
   const watch = event ? watches.find((item) => item.id === event.watch_id) : null;
+  const queryClient = useQueryClient();
+  const seen = useMutation({
+    mutationFn: markWatchEventSeen,
+    onSuccess: () => {
+      onClose();
+      return queryClient.invalidateQueries({ queryKey: ["mission", "watches", identityKey] });
+    },
+  });
   return (
     <Sheet open={Boolean(event)} onOpenChange={(open) => !open && onClose()}>
       <SheetContent side="right" className="grid w-[min(96vw,38rem)] grid-rows-[auto_minmax(0,1fr)] sm:w-[38rem]">
         {event && (
           <>
             <SheetHeader className="pr-8">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="warning">unseen</Badge>
-                <StatusPill status={event.delivery_status || "inbox"} />
-              </div>
               <SheetTitle>{watch?.name || event.watch_id}</SheetTitle>
-              <SheetDescription className="font-mono text-xs">{event.id}</SheetDescription>
+              <SheetDescription className="font-mono text-xs">
+                {event.delivery_status || "inbox"} · {timeLabel(event.created_at)}
+              </SheetDescription>
             </SheetHeader>
-            <div className="grid content-start gap-4 overflow-y-auto py-5">
+            <div className="grid content-start gap-5 overflow-y-auto py-5">
+              <div className="flex items-center gap-3">
+                <Button type="button" size="sm" disabled={seen.isPending} onClick={() => seen.mutate(event.id)}>
+                  Mark seen
+                </Button>
+                {seen.error && <span className="text-xs text-destructive">Couldn&apos;t mark this as seen.</span>}
+              </div>
               <dl className="grid gap-2 text-sm">
-                <DetailRow label="Created" value={formatDate(event.created_at)} />
+                <DetailRow label="Fired" value={formatDate(event.created_at)} />
                 <DetailRow label="Delivery attempts" value={event.delivery_attempts || 0} />
-                <DetailRow label="Data hash" value={event.data_hash || "not recorded"} />
                 {event.snoozed_until && <DetailRow label="Snoozed until" value={formatDate(event.snoozed_until)} />}
+                <DetailRow label="Event" value={event.id} />
               </dl>
-              <JSONBlock title="Event payload" value={parseJSON(event.data_json, event.data_json)} />
-              {event.data_truncated && (
-                <p className="text-sm text-warning">Payload truncated.</p>
-              )}
+              <JSONBlock title={event.data_truncated ? "Payload · truncated" : "Payload"} value={parseJSON(event.data_json, event.data_json)} open />
               <JSONBlock title="Delivery" value={parseJSON(event.delivery_json, event.delivery_json)} />
               <JSONBlock title="Receipt" value={parseJSON(event.receipt_json, event.receipt_json)} />
               <JSONBlock title="Evidence" value={parseJSON(event.evidence_json, event.evidence_json)} />
@@ -712,17 +721,20 @@ function AnnotationSummary({ annotation, task, onOpenTask }) {
   );
 }
 
-function JSONBlock({ title, value }) {
+// JSONBlock folds raw JSON under its title; only what the reader opens takes room.
+function JSONBlock({ title, value, open = false }) {
   if (value == null || value === "") {
     return null;
   }
   return (
-    <div className="min-w-0 rounded-lg bg-accent p-3">
-      <p className="hud-label mb-2">{title}</p>
-      <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground">
+    <details className="group min-w-0" open={open}>
+      <summary className="hud-label cursor-pointer list-none select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <span className="mr-1.5 inline-block transition-transform group-open:rotate-90">›</span>{title}
+      </summary>
+      <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-accent p-3 font-mono text-xs leading-5 text-foreground">
         <code>{formatJSON(value)}</code>
       </pre>
-    </div>
+    </details>
   );
 }
 
