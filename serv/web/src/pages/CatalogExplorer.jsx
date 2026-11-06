@@ -1,10 +1,8 @@
 import React, { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, Search } from "lucide-react";
 
 import { graphqlRequest, parseJSON } from "../services/graphql";
 import { DataErrorState, EmptyState, LoadingState, PageHeader, Panel, StatusPill } from "../components/ui";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -43,17 +41,14 @@ const CatalogExplorer = ({ initialKind = "all", title = "Catalog", description }
   }, [items, kind, search]);
 
   return (
-    <div className="mx-auto grid max-w-7xl gap-6">
+    <div className="grid max-w-6xl gap-6">
       <PageHeader
         title={title}
         description={description}
       />
 
-      <div className="grid gap-3 border-y bg-muted/20 px-3 py-3 md:grid-cols-[minmax(0,1fr)_14rem] md:items-center">
-        <label className="relative block">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-          <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search catalog rows" />
-        </label>
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_14rem] md:items-center">
+        <Input aria-label="Search catalog" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search" />
         <Select aria-label="Catalog row kind" value={kind} onChange={(event) => setKind(event.target.value)}>
           {kinds.map((value) => (
             <option key={value} value={value}>
@@ -63,7 +58,7 @@ const CatalogExplorer = ({ initialKind = "all", title = "Catalog", description }
         </Select>
       </div>
 
-      <Panel title="Rows" description={`${filtered.length} of ${items.length}`} contentClassName="p-0 sm:p-0">
+      <Panel contentClassName="p-0 sm:p-0">
         {isLoading ? (
           <LoadingState />
         ) : error ? (
@@ -73,9 +68,9 @@ const CatalogExplorer = ({ initialKind = "all", title = "Catalog", description }
             unavailableMessage="Couldn't load the catalog."
           />
         ) : filtered.length ? (
-          <div className="divide-y">
-            <div className="hidden grid-cols-[8rem_minmax(0,1fr)_minmax(9rem,0.7fr)_7rem_1.5rem] gap-4 bg-muted/25 px-4 py-2 text-xs font-medium text-muted-foreground md:grid">
-              <span>Kind</span><span>Name</span><span>Location</span><span>Status</span><span />
+          <div className="-mx-3 grid gap-0.5">
+            <div className="hud-label hidden grid-cols-[8rem_minmax(0,1fr)_minmax(9rem,0.7fr)_7rem] gap-4 px-3 pb-2 md:grid">
+              <span>Kind</span><span>Name · {filtered.length} of {items.length}</span><span>Location</span><span>Status</span>
             </div>
             {filtered.map((item, index) => (
               <CatalogRow key={`${item.kind}:${item.id || item.name || item.title || "row"}:${index}`} item={item} onOpen={setSelected} />
@@ -98,15 +93,14 @@ const CatalogRow = ({ item, onOpen }) => {
   const details = parseJSON(item.details_json, {});
   const location = [item.database_name, item.schema_name, item.table_name, item.column_name].filter(Boolean).join(".");
   return (
-    <button type="button" onClick={() => onOpen(item)} className="grid w-full gap-2 px-4 py-3 text-left transition hover:bg-muted/45 md:grid-cols-[8rem_minmax(0,1fr)_minmax(9rem,0.7fr)_7rem_1.5rem] md:items-center md:gap-4">
-      <Badge variant="outline" className="w-fit">{formatKind(item.kind)}</Badge>
+    <button type="button" onClick={() => onOpen(item)} className="grid w-full gap-1 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent md:grid-cols-[8rem_minmax(0,1fr)_minmax(9rem,0.7fr)_7rem] md:items-center md:gap-4">
+      <span className="font-mono text-[0.6875rem] text-muted-foreground">{formatKind(item.kind)}</span>
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold">{item.title || item.name || item.id}</p>
         {item.summary && <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{item.summary}</p>}
       </div>
-      <span className="truncate text-xs text-muted-foreground">{location || item.source || details?.root || "—"}</span>
-      <span>{typeof item.enabled === "boolean" ? <StatusPill status={item.enabled ? "enabled" : "disabled"} /> : item.risk_level ? <StatusPill severity={item.risk_level} /> : <span className="text-xs text-muted-foreground">—</span>}</span>
-      <ChevronRight className="hidden size-4 text-muted-foreground md:block" aria-hidden="true" />
+      <span className="hidden truncate font-mono text-[0.6875rem] text-muted-foreground md:block">{location || item.source || details?.root || ""}</span>
+      <span>{typeof item.enabled === "boolean" ? <StatusPill status={item.enabled ? "enabled" : "disabled"} /> : item.risk_level ? <StatusPill severity={item.risk_level} /> : null}</span>
     </button>
   );
 };
@@ -130,18 +124,18 @@ const CatalogInspector = ({ item }) => {
   ].filter(([, value]) => value != null && value !== "");
   return (
     <>
-      <SheetHeader className="border-b px-5 py-5 pr-12 text-left">
-        <div className="flex flex-wrap items-center gap-2"><Badge variant="outline">{formatKind(item.kind)}</Badge>{typeof item.enabled === "boolean" && <StatusPill status={item.enabled ? "enabled" : "disabled"} />}</div>
+      <SheetHeader className="px-5 py-5 pr-12 text-left">
+        <div className="flex flex-wrap items-center gap-2"><span className="hud-label">{formatKind(item.kind)}</span>{typeof item.enabled === "boolean" && <StatusPill status={item.enabled ? "enabled" : "disabled"} />}</div>
         <SheetTitle className="mt-2 text-xl">{item.title || item.name || item.id}</SheetTitle>
-        <SheetDescription>{item.summary || "Catalog metadata and executable references from GraphJin."}</SheetDescription>
+        {item.summary && <SheetDescription>{item.summary}</SheetDescription>}
       </SheetHeader>
       <div className="min-h-0 overflow-y-auto px-5 py-5">
         {metadata.length > 0 && (
-          <dl className="divide-y border-y text-sm">
-            {metadata.map(([label, value]) => <div key={label} className="grid grid-cols-[8rem_minmax(0,1fr)] gap-4 py-2.5"><dt className="text-muted-foreground">{label}</dt><dd className="min-w-0 break-words font-medium">{String(value)}</dd></div>)}
+          <dl className="grid gap-2 text-sm">
+            {metadata.map(([label, value]) => <div key={label} className="grid grid-cols-[8rem_minmax(0,1fr)] gap-4"><dt className="text-muted-foreground">{label}</dt><dd className="min-w-0 break-words font-medium">{String(value)}</dd></div>)}
           </dl>
         )}
-        {query && <InspectorSection title="GraphQL"><pre className="overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/55 p-4 text-xs leading-5"><code>{query}</code></pre></InspectorSection>}
+        {query && <InspectorSection title="GraphQL"><pre className="overflow-auto whitespace-pre-wrap break-words rounded-md bg-accent p-4 text-xs leading-5"><code>{query}</code></pre></InspectorSection>}
         {Object.keys(details || {}).length > 0 && <InspectorSection title="Details"><JSONBlock value={details} /></InspectorSection>}
         {hasInspectorValue(evidence) && <InspectorSection title="Evidence"><JSONBlock value={evidence} /></InspectorSection>}
         {hasInspectorValue(safety) && <InspectorSection title="Safety"><JSONBlock value={safety} /></InspectorSection>}
@@ -151,13 +145,13 @@ const CatalogInspector = ({ item }) => {
 };
 
 const InspectorSection = ({ title, children }) => (
-  <section className="mt-6 border-t pt-4">
-    <h3 className="mb-3 text-sm font-semibold">{title}</h3>
+  <section className="mt-8">
+    <h3 className="hud-label mb-3">{title}</h3>
     {children}
   </section>
 );
 
-const JSONBlock = ({ value }) => <pre className="overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/55 p-4 text-xs leading-5"><code>{JSON.stringify(value, null, 2)}</code></pre>;
+const JSONBlock = ({ value }) => <pre className="overflow-auto whitespace-pre-wrap break-words rounded-md bg-accent p-4 text-xs leading-5"><code>{JSON.stringify(value, null, 2)}</code></pre>;
 
 function hasInspectorValue(value) {
   if (Array.isArray(value)) {

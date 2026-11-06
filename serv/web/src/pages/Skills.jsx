@@ -1,11 +1,9 @@
 import React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Trash2, Users, User } from "lucide-react";
 
 import { DataErrorState, EmptyState, LoadingState, PageHeader, Panel } from "../components/ui";
 import { addSkill, deleteSkill, listSkills, updateSkill } from "../services/agent";
 import { operatorIdentityKey, useOperatorIdentity } from "../services/identity";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -56,7 +54,7 @@ const Skills = () => {
   const set = (field) => (event) => setDraft((current) => ({ ...current, [field]: event.target.value }));
   const skills = skillsQuery.data || [];
   return (
-    <div className="grid gap-6 px-4 py-6 sm:px-6">
+    <div className="grid max-w-3xl gap-6">
       <PageHeader
         title="Skills"
         description="Instructions the agent follows when a request matches."
@@ -104,19 +102,17 @@ const Skills = () => {
         ) : skills.length === 0 ? (
           <EmptyState title="No skills yet" />
         ) : (
-          <ul className="grid divide-y">
+          <ul className="grid gap-1">
             {skills.map((skill) => (
-              <li key={skill.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start sm:justify-between">
+              <li key={skill.id} className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-start sm:justify-between">
                 <div className="grid min-w-0 gap-1">
                   <p className="text-sm font-medium">{skill.name}</p>
                   <p className="text-sm text-muted-foreground">{skill.description}</p>
                   <p className="line-clamp-3 whitespace-pre-wrap break-words text-sm">{skill.content}</p>
                   <div className="flex items-center gap-2">
-                    <Badge variant="muted">
-                      {skill.scope === "team" ? <Users aria-hidden="true" /> : <User aria-hidden="true" />}
-                      {skill.scope === "team" ? "Team" : "Personal"}
-                    </Badge>
-                    {!skill.mine && <span className="text-xs text-muted-foreground">Shared by a teammate</span>}
+                    <span className="font-mono text-[0.6875rem] text-muted-foreground">
+                      {skill.scope === "team" ? "team" : "personal"}{!skill.mine && " · shared by a teammate"}
+                    </span>
                   </div>
                 </div>
                 {skill.mine && (
@@ -130,11 +126,11 @@ const Skills = () => {
                     >
                       {skill.scope === "team" ? "Make personal" : "Share with team"}
                     </Button>
-                    <Button type="button" variant="ghost" size="icon" aria-label="Edit skill" onClick={() => edit(skill)}>
-                      <Pencil aria-hidden="true" />
+                    <Button type="button" variant="ghost" size="sm" aria-label="Edit skill" onClick={() => edit(skill)}>
+                      Edit
                     </Button>
-                    <Button type="button" variant="ghost" size="icon" aria-label="Delete skill" disabled={remove.isPending} onClick={() => remove.mutate(skill.id)}>
-                      <Trash2 aria-hidden="true" />
+                    <Button type="button" variant="ghost" size="sm" aria-label="Delete skill" disabled={remove.isPending} onClick={() => remove.mutate(skill.id)}>
+                      Delete
                     </Button>
                   </div>
                 )}

@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertCircle, Loader2, ShieldAlert } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -26,7 +26,7 @@ export function Panel({ title, description, children, action, className, content
   return (
     <section className={cx("min-w-0", className)}>
       {(title || action) && (
-        <header className="flex flex-col gap-3 px-1 pt-2 pb-1 sm:flex-row sm:items-start sm:justify-between">
+        <header className="flex flex-col gap-3 pt-2 pb-1 sm:flex-row sm:items-start sm:justify-between">
           <div>
             {title && <h2 className="text-[1.1875rem] font-extrabold tracking-tight text-foreground">{title}</h2>}
             {description && <p className="mt-0.5 font-mono text-xs leading-5 text-muted-foreground">{description}</p>}
@@ -34,7 +34,7 @@ export function Panel({ title, description, children, action, className, content
           {action}
         </header>
       )}
-      <div className={cx("px-1 py-3", !(title || action) && "py-4", contentClassName)}>{children}</div>
+      <div className={cx("py-3", !(title || action) && "py-4", contentClassName)}>{children}</div>
     </section>
   );
 }
@@ -42,7 +42,7 @@ export function Panel({ title, description, children, action, className, content
 export function Metric({ label, value, detail, tone = "neutral", className }) {
   const toneClass = tone === "good" ? "text-success" : tone === "warn" ? "text-warning" : "text-muted-foreground";
   return (
-    <div className={cx("flex min-h-24 flex-col justify-between gap-2 py-3", className)}>
+    <div className={cx("flex flex-col gap-2 py-3", className)}>
       <span className={cx("hud-label", toneClass)}>{label}</span>
       <strong className="font-mono text-[1.625rem] font-semibold leading-none tracking-tight text-foreground tabular-nums">{value ?? 0}</strong>
       {detail && <small className="text-xs leading-5 text-muted-foreground">{detail}</small>}
@@ -92,7 +92,6 @@ export function EmptyState({ title = "Nothing here", message, children }) {
 export function ErrorState({ title = "Unavailable", message }) {
   return (
     <Alert variant="destructive">
-      <AlertCircle aria-hidden="true" className="size-4" />
       <AlertTitle>{title}</AlertTitle>
       <AlertDescription>{message}</AlertDescription>
     </Alert>
@@ -102,7 +101,6 @@ export function ErrorState({ title = "Unavailable", message }) {
 export function PermissionState({ title = "No access", message }) {
   return (
     <Alert variant="warning">
-      <ShieldAlert aria-hidden="true" className="size-4" />
       <AlertTitle>{title}</AlertTitle>
       <AlertDescription>{message}</AlertDescription>
     </Alert>

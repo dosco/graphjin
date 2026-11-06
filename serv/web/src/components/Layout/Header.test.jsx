@@ -77,6 +77,6 @@ describe("console header", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Signed in as Ana Ruiz" }));
     expect(screen.getByRole("button", { name: /Sign out/ })).toBeInTheDocument();
-    expect(screen.getByText("Role: admin")).toBeInTheDocument();
+    expect(screen.getByText("admin")).toBeInTheDocument();
   });
 });

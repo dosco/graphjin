@@ -1,6 +1,5 @@
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, FlaskConical } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 
 import { DataErrorState, EmptyState, LoadingState, Metric, PageHeader, Panel, StatusPill } from "../components/ui";
@@ -35,7 +34,7 @@ const EvalReports = () => {
   };
 
   return (
-    <div className="mx-auto grid max-w-[92rem] gap-6">
+    <div className="grid max-w-6xl gap-6">
       <PageHeader
         title="Eval reports"
       />
@@ -54,17 +53,17 @@ const EvalReports = () => {
         <div className="grid min-w-0 gap-5 lg:grid-cols-[20rem_minmax(0,1fr)]">
           <Panel
             title="Runs"
-            description={`${reports.length} stored report${reports.length === 1 ? "" : "s"}`}
+            description={`${reports.length}`}
             contentClassName="p-0 sm:p-0"
           >
-            <div className="divide-y">
+            <div className="grid gap-0.5">
               {reports.map((report) => (
                 <button
                   key={report.run_id}
                   type="button"
                   onClick={() => selectRun(report.run_id)}
                   aria-pressed={selectedRun === report.run_id}
-                  className={`grid w-full gap-2 px-4 py-4 text-left transition hover:bg-muted/45 ${selectedRun === report.run_id ? "bg-muted/60" : "bg-background"}`}
+                  className={`grid w-full gap-1.5 rounded-md px-3 py-3 text-left transition-colors hover:bg-accent ${selectedRun === report.run_id ? "bg-accent" : ""}`}
                 >
                   <div className="flex min-w-0 items-center justify-between gap-3">
                     <strong className="truncate text-sm font-medium">{report.provenance?.model || "Unknown model"}</strong>
@@ -149,16 +148,11 @@ function EvalReportDetail({ report }) {
 function EvalReportsEmpty({ stateDir, available }) {
   const location = stateDir || ".graphjin-evals";
   return (
-    <Panel title="No reports yet" description={available ? "The eval store is ready." : "GraphJin did not find an eval store at the configured path."}>
-      <EmptyState
-        title="Run the public benchmark"
-        message={`GraphJin looked in ${location}. Run “graphjin eval bench --public --yes” to create the first report, then refresh this page.`}
-      />
-      <div className="mt-4 flex items-start gap-3 rounded-lg bg-muted/45 p-4 text-sm text-muted-foreground">
-        {available ? <FileText className="mt-0.5 size-4" aria-hidden="true" /> : <FlaskConical className="mt-0.5 size-4" aria-hidden="true" />}
-        <code className="break-all font-mono text-xs">{location}</code>
-      </div>
-    </Panel>
+    <div className="grid gap-3">
+      <EmptyState title="No reports yet" message="Run a benchmark to create one:" />
+      <pre className="overflow-x-auto rounded-md bg-accent p-3 font-mono text-xs">graphjin eval bench --public --yes</pre>
+      <p className="break-all font-mono text-[0.6875rem] text-muted-foreground">{available ? "Store" : "Looked in"} {location}</p>
+    </div>
   );
 }
 

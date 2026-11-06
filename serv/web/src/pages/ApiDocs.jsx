@@ -14,7 +14,7 @@ const ApiDocs = () => {
   });
 
   return (
-    <div className="mx-auto grid max-w-7xl gap-6">
+    <div className="grid max-w-6xl gap-6">
       <PageHeader
         title="API"
       />

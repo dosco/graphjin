@@ -1,11 +1,9 @@
 import React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2, Users, User } from "lucide-react";
 
 import { DataErrorState, EmptyState, LoadingState, PageHeader, Panel } from "../components/ui";
 import { addMemory, deleteMemory, listMemories, updateMemory } from "../services/agent";
 import { operatorIdentityKey, useOperatorIdentity } from "../services/identity";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -32,7 +30,7 @@ const Memory = () => {
 
   const memories = memoriesQuery.data || [];
   return (
-    <div className="grid gap-6 px-4 py-6 sm:px-6">
+    <div className="grid max-w-3xl gap-6">
       <PageHeader
         title="Memory"
         description="Facts the agent remembers."
@@ -60,17 +58,15 @@ const Memory = () => {
         ) : memories.length === 0 ? (
           <EmptyState title="No memories yet" />
         ) : (
-          <ul className="grid divide-y">
+          <ul className="grid gap-1">
             {memories.map((memory) => (
-              <li key={memory.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start sm:justify-between">
+              <li key={memory.id} className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-start sm:justify-between">
                 <div className="grid min-w-0 gap-1">
                   <p className="whitespace-pre-wrap break-words text-sm">{memory.content}</p>
                   <div className="flex items-center gap-2">
-                    <Badge variant="muted">
-                      {memory.scope === "team" ? <Users aria-hidden="true" /> : <User aria-hidden="true" />}
-                      {memory.scope === "team" ? "Team" : "Personal"}
-                    </Badge>
-                    {!memory.mine && <span className="text-xs text-muted-foreground">Shared by a teammate</span>}
+                    <span className="font-mono text-[0.6875rem] text-muted-foreground">
+                      {memory.scope === "team" ? "team" : "personal"}{!memory.mine && " · shared by a teammate"}
+                    </span>
                   </div>
                 </div>
                 {memory.mine && (
@@ -84,8 +80,8 @@ const Memory = () => {
                     >
                       {memory.scope === "team" ? "Make personal" : "Share with team"}
                     </Button>
-                    <Button type="button" variant="ghost" size="icon" aria-label="Delete memory" disabled={remove.isPending} onClick={() => remove.mutate(memory.id)}>
-                      <Trash2 aria-hidden="true" />
+                    <Button type="button" variant="ghost" size="sm" aria-label="Delete memory" disabled={remove.isPending} onClick={() => remove.mutate(memory.id)}>
+                      Delete
                     </Button>
                   </div>
                 )}

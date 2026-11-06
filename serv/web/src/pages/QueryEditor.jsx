@@ -9,10 +9,7 @@ import "graphiql/style.css";
 
 const defaultEndpoint = import.meta.env.VITE_DEFAULT_ENDPOINT || "/api/v1/graphql";
 
-const defaultQuery = `# GraphJin Workbench
-# Query application roots or GraphJin system roots through the normal GraphQL endpoint.
-
-query SourceHealth {
+const defaultQuery = `query SourceHealth {
   gj_runtime(where: { kind: { eq: "source" } }, order_by: { source: asc }) {
     source
     source_kind
@@ -48,7 +45,7 @@ const QueryEditor = () => {
 
   return (
     <div className="grid h-[calc(100dvh-var(--chrome-top)-var(--chrome-bottom))] min-h-[38rem] grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-      <div className="border-b px-4 py-4 sm:px-6">
+      <div className="px-4 py-4 sm:px-6">
         <PageHeader title="Workbench" />
       </div>
       <div className="graphiql-shell min-h-0">

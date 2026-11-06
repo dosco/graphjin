@@ -1,10 +1,7 @@
 import React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import {
-  Check,
-  Search,
-} from "lucide-react";
+import { Search } from "lucide-react";
 
 import { availableWorkspaces, commandItems, workspaceDefinitions, workspaceIDFromPath } from "@/app/workspaces";
 import { cn } from "@/lib/utils";
@@ -55,6 +52,8 @@ const Header = () => {
   const workspaceID = workspaceIDFromPath(location.pathname);
   const workspace = workspaceDefinitions[workspaceID];
   const workspaces = availableWorkspaces(bootstrap);
+  // A workspace reached by URL still gets its tab, so the nav always shows where you are.
+  const workspaceTabs = workspace && !workspaces.some((item) => item.id === workspace.id) ? [...workspaces, workspace] : workspaces;
   const scopeLabel = bootstrap?.scope?.environment || bootstrap?.scope?.source || "local";
   const session = signInState(bootstrap);
   const promptedSignIn = React.useRef(false);
@@ -148,7 +147,7 @@ const Header = () => {
       </Link>
 
       <div role="group" aria-label="Workspace" className="flex items-center gap-4 md:mt-8 md:px-2">
-        {workspaces.map((item) => {
+        {workspaceTabs.map((item) => {
           const current = item.id === workspaceID;
           return (
             <button
@@ -246,17 +245,16 @@ const Header = () => {
           <SheetContent side="right" className="grid w-[min(92vw,26rem)] grid-rows-[auto_1fr] sm:w-[26rem]">
             <SheetHeader className="pr-8">
               <SheetTitle>{session.required ? (session.signedIn ? "Session" : "Sign in") : "Operator identity"}</SheetTitle>
-              <SheetDescription>
+              <SheetDescription className={session.required ? "sr-only" : undefined}>
                 {session.required
                   ? "Your console session on this server."
-                  : "Development headers for owner-scoped console data. Authenticated deployments continue using their same-origin session."}
+                  : "Sent as headers in development to scope your data."}
               </SheetDescription>
             </SheetHeader>
             {session.required ? <SignInPanel state={session} onChange={sessionChanged} /> : <form className="grid content-start gap-4 overflow-y-auto py-5" onSubmit={saveIdentity}>
               <label className="grid gap-1.5 text-sm"><span className="font-medium">User ID</span><Input value={draft.userId} onChange={(event) => setDraft((current) => ({ ...current, userId: event.target.value }))} placeholder="operator-1" autoComplete="off" /></label>
               <label className="grid gap-1.5 text-sm"><span className="font-medium">Role</span><Select value={draft.role} onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value }))}><option value="">Default role</option><option value="user">User</option><option value="operator">Operator</option><option value="admin">Admin</option></Select></label>
               <label className="grid gap-1.5 text-sm"><span className="font-medium">Account ID</span><Input value={draft.accountId} onChange={(event) => setDraft((current) => ({ ...current, accountId: event.target.value }))} placeholder="account-1" autoComplete="off" /></label>
-              <p className="text-xs leading-5 text-muted-foreground">Stored in this browser and sent only as development identity headers.</p>
               <div className="flex items-center justify-between gap-3"><Button type="button" variant="ghost" onClick={clearIdentity} disabled={!hasOperatorIdentity(identity)}>Clear</Button><Button type="submit" disabled={!draft.userId.trim()}>Use identity</Button></div>
             </form>}
             {/* Phones have no rail footer, so appearance lives in the session sheet there. */}
@@ -273,15 +271,15 @@ const Header = () => {
       </div>
 
       <CommandDialog open={commandOpen} onOpenChange={setCommandOpen}>
-        <CommandInput placeholder="Search views and actions…" autoFocus />
+        <CommandInput placeholder="Search" autoFocus />
         <CommandList>
-          <CommandEmpty>No matching console view.</CommandEmpty>
+          <CommandEmpty>No matches</CommandEmpty>
           {workspaces.map((item) => (
             <CommandGroup key={item.id} heading={item.label}>
               {commandItems(bootstrap).filter((command) => command.workspace.id === item.id).map((command) => (
                 <CommandItem key={command.path} value={`${item.label} ${command.label}`} onSelect={() => selectCommand(command.path)}>
                   <span>{command.label}</span>
-                  {location.pathname.startsWith(command.path) && <Check className="ml-auto" aria-hidden="true" />}
+                  {location.pathname.startsWith(command.path) && <span className="ml-auto font-mono text-[0.6875rem] text-brand">current</span>}
                 </CommandItem>
               ))}
             </CommandGroup>

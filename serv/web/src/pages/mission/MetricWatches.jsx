@@ -1,7 +1,6 @@
 import React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Activity, MessageSquare, Pause, Play, Plus, Trash2 } from "lucide-react";
 
 import { listProfiles } from "../../services/agent";
 import { deleteWatch, previewQuery, saveMetricWatch, setWatchEnabled } from "../../services/mission";
@@ -179,19 +178,17 @@ function MetricWatchCard({ watch, profiles, onEdit, onChanged }) {
         <p className="truncate text-xs text-destructive" title={state.last_error || watch.last_error}>{state.last_error || watch.last_error}</p>
       )}
 
-      <footer className="flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-xs text-muted-foreground">
+      <footer className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
         <span>{state.last_checked_at ? `Checked ${relativeTime(state.last_checked_at)}` : "Not checked yet"}</span>
         <div className="flex items-center gap-1">
           {delivery.kind === "agent" && watch.last_fired_at && (
             <Button asChild type="button" size="sm" variant="ghost" title="Open the thread the agent answers in">
               <Link to={`/user/agent?thread=${encodeURIComponent(watch.routine_thread_id || delivery.thread_id || "")}`}>
-                <MessageSquare aria-hidden="true" />
                 {profiles.find((p) => p.id === delivery.profile)?.name || "Agent"}
               </Link>
             </Button>
           )}
           <Button type="button" size="sm" variant="ghost" disabled={toggle.isPending} onClick={() => toggle.mutate()}>
-            {watch.enabled ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
             {watch.enabled ? "Pause" : "Resume"}
           </Button>
           <Button
@@ -201,8 +198,7 @@ function MetricWatchCard({ watch, profiles, onEdit, onChanged }) {
             disabled={remove.isPending}
             onClick={() => window.confirm(`Delete the watch "${watch.name}"?`) && remove.mutate()}
           >
-            <Trash2 aria-hidden="true" />
-            <span className="sr-only">Delete</span>
+            Delete
           </Button>
         </div>
       </footer>
@@ -224,19 +220,16 @@ export function MetricWatchGrid({ watches, identityKey }) {
     <div className="grid gap-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold">Metric watches</h3>
-          <p className="text-sm text-muted-foreground">Numbers from aggregate queries, checked on a schedule.</p>
+          <h2 className="text-[1.1875rem] font-extrabold tracking-tight">Metric watches</h2>
         </div>
         <Button type="button" size="sm" onClick={() => setEditing({})}>
-          <Plus aria-hidden="true" />
           New metric watch
         </Button>
       </div>
       {metricWatches.length === 0 ? (
-        <div className="flex items-center gap-3 rounded-lg bg-card p-4 text-sm text-muted-foreground">
-          <Activity aria-hidden="true" className="size-4 shrink-0" />
-          <span>Watch a count, sum or average and get told when it crosses a line. You can also ask the agent: "tell me when open tickets go above 20".</span>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          Get told when a count, sum or average crosses a line. Or ask the agent: "tell me when open tickets go above 20".
+        </p>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {metricWatches.map((watch) => (
@@ -354,7 +347,7 @@ function MetricWatchEditor({ watch, profiles, onClose, onSaved }) {
         <SheetHeader>
           <SheetTitle>{form.id ? "Edit metric watch" : "New metric watch"}</SheetTitle>
           <SheetDescription>
-            GraphJin runs the query on the schedule and fires once each time the number crosses the threshold.
+            Runs a query on a schedule and fires when the number crosses the line.
           </SheetDescription>
         </SheetHeader>
         <form
@@ -369,10 +362,10 @@ function MetricWatchEditor({ watch, profiles, onClose, onSaved }) {
           <Field label="Name">
             <Input value={form.name} onChange={set("name")} placeholder="open_tickets_over_20" disabled={Boolean(form.id)} required />
           </Field>
-          <Field label="Query" hint="A plain GraphQL query with an aggregate, e.g. query { customer_tickets(where: { status: { eq: &quot;open&quot; } }) { count_id } }">
+          <Field label="Query" hint="A GraphQL query with an aggregate.">
             <Textarea value={form.query} onChange={set("query")} rows={4} className="font-mono text-xs" placeholder={'query { orders { count_id } }'} required />
             <div className="mt-2 flex items-center gap-2">
-              <Button type="button" size="sm" variant="outline" disabled={!form.query.trim() || run.isPending} onClick={() => run.mutate()}>
+              <Button type="button" size="sm" variant="secondary" disabled={!form.query.trim() || run.isPending} onClick={() => run.mutate()}>
                 Run query
               </Button>
               {run.error && <span className="truncate text-xs text-destructive">{run.error.message}</span>}
@@ -386,8 +379,8 @@ function MetricWatchEditor({ watch, profiles, onClose, onSaved }) {
                   key={`${c.path}:${c.value || ""}`}
                   type="button"
                   className={cn(
-                    "flex items-center justify-between gap-3 rounded-lg border px-3 py-1.5 text-left text-sm hover:bg-muted/50",
-                    form.path === c.path && (form.value || "") === (c.value || "") && "border-primary bg-primary/5"
+                    "flex items-center justify-between gap-3 rounded-md px-3 py-1.5 text-left text-sm text-muted-foreground hover:bg-accent hover:text-foreground",
+                    form.path === c.path && (form.value || "") === (c.value || "") && "bg-accent text-foreground"
                   )}
                   onClick={() => setForm((prev) => ({ ...prev, path: c.path, key: c.key || "", value: c.value || "" }))}
                 >
@@ -440,7 +433,7 @@ function MetricWatchEditor({ watch, profiles, onClose, onSaved }) {
               <Input value={form.cron} onChange={set("cron")} className="font-mono text-xs" />
             </Field>
           )}
-          <Field label="When it fires, ask the agent (optional)" hint="Leave both empty to only notify the inbox. The agent answers read-only.">
+          <Field label="When it fires, ask the agent (optional)" hint="Leave empty to only notify the inbox.">
             <Textarea value={form.prompt} onChange={set("prompt")} rows={3} placeholder="Which customers are behind the spike?" />
           </Field>
           {profiles.length > 0 && (

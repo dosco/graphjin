@@ -1,10 +1,8 @@
 import React, { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Code2, FileCode, Search } from "lucide-react";
 
-import { graphqlRequest, parseJSON } from "../services/graphql";
+import { errorText, graphqlRequest, parseJSON } from "../services/graphql";
 import { DataErrorState, EmptyState, LoadingState, PageHeader, Panel, StatusPill } from "../components/ui";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 
@@ -41,16 +39,13 @@ const CodeInsight = () => {
   }, [rows, kind, search]);
 
   return (
-    <div className="mx-auto grid max-w-7xl gap-6">
+    <div className="grid max-w-6xl gap-6">
       <PageHeader
         title="Code"
       />
 
-      <div className="grid gap-3 rounded-lg bg-card p-4 md:grid-cols-[minmax(0,1fr)_14rem] md:items-center">
-        <label className="relative block">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-          <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search files, symbols, references" />
-        </label>
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_14rem] md:items-center">
+        <Input aria-label="Search code" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search files and symbols" />
         <Select aria-label="Code row kind" value={kind} onChange={(event) => setKind(event.target.value)}>
           {kinds.map((value) => (
             <option key={value} value={value}>
@@ -60,9 +55,11 @@ const CodeInsight = () => {
         </Select>
       </div>
 
-      <Panel title="Files" description={`${visible.length} of ${rows.length}`}>
+      <Panel description={error ? undefined : `${visible.length} of ${rows.length}`}>
         {isLoading ? (
           <LoadingState />
+        ) : error && /table not found/i.test(errorText(error, "")) ? (
+          <EmptyState title="No code source" message="Add a code source to search files and symbols." />
         ) : error ? (
           <DataErrorState
             error={error}
@@ -70,7 +67,7 @@ const CodeInsight = () => {
             unavailableMessage="Couldn't load code."
           />
         ) : visible.length ? (
-          <div className="grid gap-3">
+          <div className="grid gap-6">
             {visible.map((row) => (
               <CodeRow key={row.id} row={row} />
             ))}
@@ -88,10 +85,7 @@ const CodeRow = ({ row }) => {
   const title = row.title || row.name || row.path || row.id;
   const location = row.path ? `${row.path}${row.start_row ? `:${row.start_row}` : ""}` : row.db_object_id;
   return (
-    <article className="grid gap-3 rounded-md border bg-background p-4 md:grid-cols-[2.5rem_minmax(0,1fr)]">
-      <div className="flex size-10 items-center justify-center text-muted-foreground">
-        {row.kind === "file" ? <FileCode size={18} aria-hidden="true" /> : <Code2 size={18} aria-hidden="true" />}
-      </div>
+    <article className="min-w-0">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="min-w-0 truncate text-sm font-semibold">{title}</h3>
@@ -99,17 +93,13 @@ const CodeRow = ({ row }) => {
         </div>
         {row.summary && <p className="mt-2 text-sm leading-6 text-muted-foreground">{row.summary}</p>}
         {row.signature && (
-          <pre className="mt-3 max-w-full overflow-auto rounded-md bg-muted p-3 text-xs leading-5">
+          <pre className="mt-3 max-w-full overflow-auto rounded-md bg-accent p-3 text-xs leading-5">
             <code>{row.signature}</code>
           </pre>
         )}
-        <div className="mt-3 flex flex-wrap gap-2">
-          {location && <Badge variant="outline">{location}</Badge>}
-          {row.language && <Badge variant="secondary">{row.language}</Badge>}
-          {row.symbol_kind && <Badge variant="outline">{row.symbol_kind}</Badge>}
-          {row.database_name && <Badge variant="outline">{[row.database_name, row.table_name, row.column_name].filter(Boolean).join(".")}</Badge>}
-          {details?.kind && <Badge variant="outline">{details.kind}</Badge>}
-        </div>
+        <p className="mt-1.5 font-mono text-[0.6875rem] text-muted-foreground">
+          {[location, row.language, row.symbol_kind, row.database_name && [row.database_name, row.table_name, row.column_name].filter(Boolean).join("."), details?.kind].filter(Boolean).join(" · ")}
+        </p>
       </div>
     </article>
   );

@@ -291,16 +291,40 @@ html {
   height: 100%;
   border-radius: 0;
   overflow: hidden;
-  background: var(--card);
 }
 
-.graphiql-container .graphiql-sessions,
-.graphiql-container .graphiql-toolbar {
-  border-color: var(--border);
+/*
+ * GraphiQL themes itself with HSL triplets. Point them at the console palette
+ * (neutral greys, the pink accent, near-square corners) so the workbench sits
+ * on the same canvas instead of its own slate-blue one. The html prefix
+ * outranks GraphiQL's body.graphiql-dark selectors, which load later.
+ */
+html body .graphiql-container,
+html body .graphiql-dialog,
+html body .graphiql-dialog-overlay,
+html body .graphiql-tooltip,
+html body [data-radix-popper-content-wrapper] {
+  --color-primary: 340, 80%, 50%;
+  --color-neutral: 0, 0%, 30%;
+  --color-base: 0, 0%, 100%;
+  --font-family: var(--font-sans);
+  --font-family-mono: var(--font-mono);
+  --border-radius-2: 2px;
+  --border-radius-4: 3px;
+  --border-radius-8: 4px;
+  --border-radius-12: 5px;
+  --popover-box-shadow: var(--float-shadow);
 }
 
-.graphiql-container .graphiql-session-header {
-  background: var(--card);
+html body.graphiql-dark .graphiql-container,
+html body.graphiql-dark .graphiql-dialog,
+html body.graphiql-dark .graphiql-dialog-overlay,
+html body.graphiql-dark .graphiql-tooltip,
+html body.graphiql-dark [data-radix-popper-content-wrapper] {
+  --color-primary: 340, 90%, 66%;
+  --color-neutral: 0, 0%, 78%;
+  --color-base: 0, 0%, 0%;
+  --popover-border: 1px solid var(--border);
 }
 
 .swagger-shell .swagger-ui {

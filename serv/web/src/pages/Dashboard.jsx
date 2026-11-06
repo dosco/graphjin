@@ -1,10 +1,9 @@
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Database, RefreshCw, ShieldCheck } from "lucide-react";
+import { Link } from "react-router-dom";
 
-import { compactNumber, graphqlRequest, parseJSON, relativeTime } from "../services/graphql";
+import { compactNumber, graphqlRequest, relativeTime } from "../services/graphql";
 import { DataErrorState, EmptyState, LoadingState, Metric, PageHeader, Panel, StatusPill } from "../components/ui";
-import { Badge } from "@/components/ui/badge";
 
 const runtimeQuery = `query RuntimeDashboard {
   status: gj_runtime(where: { kind: { eq: "status" } }, limit: 1) {
@@ -61,22 +60,14 @@ const Dashboard = () => {
   const events = runtime.data?.data?.events || [];
   const capabilities = catalog.data?.data?.capabilities || [];
   const findings = security.data?.data?.findings || [];
-  const securitySummary = security.data?.data?.summary;
   const readySources = sources.filter((source) => source.status === "ready").length;
   const degradedSources = sources.filter((source) => source.status !== "ready").length;
-  const runtimeDetails = parseJSON(status?.details_json, {});
-  const runtimeRead = runtimeDetails?.runtime_read === true;
 
   return (
-    <div className="mx-auto grid max-w-7xl gap-6">
+    <div className="grid max-w-6xl gap-8">
       <PageHeader
         title="Runtime"
-        actions={
-          <Badge variant="outline" className="gap-2 px-3 py-1.5">
-            <RefreshCw className="size-3.5" aria-hidden="true" />
-            refreshes every 10s
-          </Badge>
-        }
+        description={runtime.isLoading || runtime.error ? undefined : status?.summary || "Status unavailable"}
       />
 
       {runtime.isLoading ? (
@@ -89,56 +80,39 @@ const Dashboard = () => {
         />
       ) : (
         <>
-          <section className="grid gap-6 py-2 md:py-6 xl:grid-cols-[1.25fr_0.75fr] xl:items-stretch" aria-label="Runtime summary">
-              <div className="flex flex-col justify-center gap-4 md:min-h-48">
-                <div className="flex flex-wrap items-center gap-2">
-                  <StatusPill status={status?.status} severity={status?.severity} />
-                  <Badge variant="outline">{status?.mode || "mode unknown"}</Badge>
-                  {status?.store && <Badge variant="secondary">{status.store}</Badge>}
-                </div>
-                <div className="grid gap-3">
-                  <h2 className="max-w-3xl text-2xl font-extrabold leading-tight tracking-[-0.03em] md:text-4xl">
-                    {status?.summary || "Status unavailable"}
-                  </h2>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-x-8">
-                <Metric label="Sources" value={compactNumber(sources.length)} detail={`${readySources} ready`} tone={degradedSources ? "warn" : "good"} />
-                <Metric label="Tables" value={compactNumber(status?.table_count)} detail={status?.schema_ready ? "schema ready" : "schema pending"} />
-                <Metric label="Catalog" value={status?.catalog_revision ? "Ready" : "Pending"} detail={status?.active_database || "no active database"} />
-                <Metric label="Runtime Read" value={runtimeRead ? "On" : "Limited"} detail="current node" tone={runtimeRead ? "good" : "warn"} />
-              </div>
+          <section className="grid grid-cols-2 gap-x-8 gap-y-5 lg:grid-cols-4" aria-label="Runtime summary">
+            <Metric label="Status" value={capitalize(status?.status || "unknown")} detail={[status?.mode, status?.store].filter(Boolean).join(" · ")} tone={status?.status === "ready" ? "good" : "warn"} />
+            <Metric label="Sources" value={compactNumber(sources.length)} detail={`${readySources} ready`} tone={degradedSources ? "warn" : "good"} />
+            <Metric label="Tables" value={compactNumber(status?.table_count)} detail={status?.schema_ready ? "schema ready" : "schema pending"} />
+            <Metric label="Catalog" value={status?.catalog_revision ? "Ready" : "Pending"} detail={status?.active_database || "no active database"} />
           </section>
 
-          <div className="grid gap-4 xl:grid-cols-2">
+          <div className="grid gap-x-12 gap-y-8 xl:grid-cols-2">
             <Panel title="Sources">
               {sources.length ? (
-                <div className="divide-y">
+                <ul className="grid gap-3">
                   {sources.map((source) => (
-                    <div className="grid gap-3 py-3 first:pt-0 last:pb-0 sm:grid-cols-[2.25rem_minmax(0,1fr)_auto] sm:items-center" key={source.id || source.source}>
-                      <div className="flex size-9 items-center justify-center text-muted-foreground">
-                        <Database size={17} aria-hidden="true" />
-                      </div>
+                    <li className="flex items-baseline justify-between gap-4" key={source.id || source.source}>
                       <div className="min-w-0">
-                        <strong className="block truncate text-sm font-medium">{source.source}</strong>
-                        <p className="mt-1 truncate text-sm text-muted-foreground">{source.summary}</p>
-                        <span className="mt-1 block text-xs text-muted-foreground">
-                          {source.source_kind || "source"} · {source.database_name || "no database"} · {compactNumber(source.table_count)} tables
+                        <strong className="block truncate text-sm font-semibold">{source.source}</strong>
+                        <span className="block truncate font-mono text-[0.6875rem] text-muted-foreground">
+                          {source.source_kind || "source"} · {compactNumber(source.table_count)} tables{source.duration_ms > 0 ? ` · ${source.duration_ms} ms` : ""}
                         </span>
+                        {source.status !== "ready" && source.summary && <p className="mt-1 text-sm text-muted-foreground">{source.summary}</p>}
                       </div>
-                      <div className="flex items-center gap-2 sm:flex-col sm:items-end">
-                        <StatusPill status={source.status} severity={source.severity} />
-                        {source.duration_ms > 0 && <small className="text-xs text-muted-foreground">{source.duration_ms} ms</small>}
-                      </div>
-                    </div>
+                      <StatusPill status={source.status} severity={source.severity} />
+                    </li>
                   ))}
-                </div>
+                </ul>
               ) : (
                 <EmptyState title="No sources" />
               )}
             </Panel>
 
-            <Panel title="Security">
+            <Panel
+              title="Security"
+              action={<Link to="/admin/security" className="text-xs font-medium text-muted-foreground hover:text-foreground">All findings</Link>}
+            >
               {security.isLoading ? (
                 <LoadingState />
               ) : security.error ? (
@@ -147,30 +121,21 @@ const Dashboard = () => {
                   permissionMessage="Your role needs security.read to see this."
                   unavailableMessage="Couldn't load security."
                 />
+              ) : findings.length ? (
+                <ul className="grid gap-2.5">
+                  {findings.map((finding) => (
+                    <li className="flex items-center gap-3" key={finding.id}>
+                      <StatusPill status={finding.severity} />
+                      <span className="min-w-0 truncate text-sm">{finding.title}</span>
+                    </li>
+                  ))}
+                </ul>
               ) : (
-                <div className="grid gap-4">
-                  <div className="flex gap-3 border-b pb-4">
-                    <ShieldCheck className="mt-0.5 size-5 text-success" aria-hidden="true" />
-                    <div>
-                      <strong className="text-sm font-medium">{securitySummary?.title || securitySummary?.summary || "Security summary"}</strong>
-                      <p className="mt-1 text-sm leading-6 text-muted-foreground">{summaryText(securitySummary)}</p>
-                    </div>
-                  </div>
-                  <div className="divide-y">
-                    {findings.length ? findings.map((finding) => (
-                      <div className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0" key={finding.id}>
-                        <StatusPill status={finding.severity} />
-                        <span className="min-w-0 truncate text-sm">{finding.title}</span>
-                      </div>
-                    )) : <EmptyState title="No findings" />}
-                  </div>
-                </div>
+                <EmptyState title="No findings" />
               )}
             </Panel>
-          </div>
 
-          <div className="grid gap-4 xl:grid-cols-2">
-            <Panel title="Catalog">
+            <Panel title={capabilities.length ? `Capabilities · ${capabilities.length}` : "Capabilities"}>
               {catalog.isLoading ? (
                 <LoadingState />
               ) : catalog.error ? (
@@ -179,36 +144,30 @@ const Dashboard = () => {
                   permissionMessage="Your role needs catalog.read to see this."
                   unavailableMessage="Couldn't load the catalog."
                 />
+              ) : capabilities.length ? (
+                <ul className="grid gap-x-6 gap-y-1.5 font-mono text-xs text-muted-foreground sm:grid-cols-2">
+                  {capabilities.map((capability) => (
+                    <li className="truncate" key={capability.id || capability.name}>{capability.name}</li>
+                  ))}
+                </ul>
               ) : (
-                <div className="grid gap-4">
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <Metric label="Capabilities" value={compactNumber(capabilities.length)} />
-                    <Metric label="Tables" value={catalog.data?.data?.tables?.length ? "Visible" : "Hidden"} />
-                    <Metric label="Relationships" value={catalog.data?.data?.relationships?.length ? "Visible" : "Hidden"} />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {capabilities.slice(0, 8).map((capability) => (
-                      <Badge variant="outline" key={capability.id || capability.name}>{capability.name}</Badge>
-                    ))}
-                  </div>
-                </div>
+                <EmptyState title="No capabilities" />
               )}
             </Panel>
 
             <Panel title="Recent events">
               {events.length ? (
-                <div className="divide-y">
+                <ul className="grid gap-3">
                   {events.map((event) => (
-                    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3 first:pt-0 last:pb-0" key={event.id}>
-                      <StatusPill status={event.status} severity={event.severity} />
+                    <li className="flex items-baseline justify-between gap-4" key={event.id}>
                       <div className="min-w-0">
                         <strong className="block truncate text-sm font-medium">{event.summary}</strong>
-                        <span className="text-xs text-muted-foreground">{event.phase || "runtime"} · {relativeTime(event.created_at)}</span>
+                        <span className="font-mono text-[0.6875rem] text-muted-foreground">{event.phase || "runtime"} · {relativeTime(event.created_at)}</span>
                       </div>
-                      <ArrowRight className="size-4 text-muted-foreground" aria-hidden="true" />
-                    </div>
+                      <StatusPill status={event.status} severity={event.severity} />
+                    </li>
                   ))}
-                </div>
+                </ul>
               ) : (
                 <EmptyState title="No recent events" />
               )}
@@ -220,12 +179,8 @@ const Dashboard = () => {
   );
 };
 
-function summaryText(summary) {
-  const data = parseJSON(summary?.summary_json, {});
-  if (typeof data?.summary === "string") {
-    return data.summary;
-  }
-  return summary?.summary || "Security rows are available through gj_security.";
+function capitalize(value) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 export default Dashboard;

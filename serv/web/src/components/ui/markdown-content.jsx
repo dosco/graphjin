@@ -51,8 +51,8 @@ function MarkdownContent({ value, className }) {
             </div>
           ),
           thead: ({ children }) => <thead className="text-foreground">{children}</thead>,
-          th: ({ children }) => <th className="border-b px-3 py-2 font-mono text-[0.6875rem] font-medium uppercase tracking-[0.06em] text-muted-foreground">{children}</th>,
-          td: ({ children }) => <td className="border-t px-3 py-2 align-top tabular-nums">{children}</td>,
+          th: ({ children }) => <th className="px-3 py-2 font-mono text-[0.6875rem] font-medium uppercase tracking-[0.06em] text-muted-foreground">{children}</th>,
+          td: ({ children }) => <td className="px-3 py-1.5 align-top tabular-nums">{children}</td>,
           pre: ({ children }) => {
             const text = extractText(children);
             return (

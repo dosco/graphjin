@@ -1,28 +1,7 @@
 import React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
-import {
-  AlertTriangle,
-  BellRing,
-  Radar,
-  BookOpenCheck,
-  Bot,
-  CheckCircle2,
-  CircleHelp,
-  KeyRound,
-  ListTodo,
-  Loader2,
-  MessageSquarePlus,
-  Pin,
-  PanelRightClose,
-  Plus,
-  Send,
-  Settings2,
-  Sparkles,
-  Square,
-  Timer,
-  X,
-} from "lucide-react";
+import { Loader2, Send, Square } from "lucide-react";
 
 import { DataErrorState, LoadingState, StatusPill } from "../components/ui";
 import {
@@ -405,7 +384,7 @@ const AgentChat = () => {
           {pinnedTaskID && (
             <PinnedTask taskID={pinnedTaskID} task={pinnedTaskQuery.data} isLoading={pinnedTaskQuery.isLoading} onClear={clearPinnedTask} />
           )}
-          <div className="min-w-0 overflow-hidden rounded-lg bg-card/85 shadow-[0_0_0_1px_var(--border),0_24px_60px_-24px_var(--glow)] backdrop-blur-xl transition-shadow focus-within:shadow-[0_0_0_1px_var(--glow-edge),0_0_32px_-6px_var(--glow)]">
+          <div className="min-w-0 overflow-hidden rounded-lg bg-card/85 shadow-[0_0_0_1px_var(--border)] backdrop-blur-xl transition-shadow focus-within:shadow-[0_0_0_1px_var(--glow-edge),0_0_28px_-10px_var(--glow)]">
             <Textarea
               value={instruction}
               onChange={(event) => setInstruction(event.target.value)}
@@ -417,13 +396,13 @@ const AgentChat = () => {
             />
             <div className="flex flex-wrap items-center justify-between gap-3 px-2.5 pb-2.5">
               <div className="flex min-w-0 items-center gap-1">
-                <Button type="button" variant="ghost" size="sm" onClick={() => setAdvancedOpen((open) => !open)} disabled={inputDisabled}>
-                  <Settings2 aria-hidden="true" />Run settings
+                <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setAdvancedOpen((open) => !open)} disabled={inputDisabled}>
+                  Run settings
                 </Button>
                 {returnTrace && <Badge variant="muted">Trace</Badge>}
               </div>
               {pending && activeRunID ? (
-                <Button type="button" size="icon" variant="outline" onClick={() => void stopRun()} aria-label="Stop the run">
+                <Button type="button" size="icon" variant="secondary" onClick={() => void stopRun()} aria-label="Stop the run">
                   <Square aria-hidden="true" />
                 </Button>
               ) : (
@@ -459,11 +438,10 @@ const AgentChat = () => {
             <div className="flex shrink-0 items-center gap-2">
               {threadsEnabled && (
                 <Button type="button" variant="ghost" size="sm" onClick={() => selectThread("")} disabled={pending}>
-                  <MessageSquarePlus aria-hidden="true" /><span className="sr-only sm:not-sr-only">New chat</span>
+                  New chat
                 </Button>
               )}
-              <Badge variant="muted" className="hidden max-w-56 truncate md:inline-flex" title={providerLabel}><Sparkles aria-hidden="true" />{providerLabel}</Badge>
-              {inspection && <Button type="button" variant="ghost" size="sm" className="hidden lg:inline-flex" onClick={() => setInspection(null)}><PanelRightClose aria-hidden="true" />Close inspector</Button>}
+              <span className="hidden max-w-56 truncate font-mono text-[0.6875rem] text-muted-foreground md:inline" title={providerLabel}>{providerLabel}</span>
               <AgentStatusAction status={status} />
             </div>
           </div>
@@ -525,8 +503,8 @@ export function ThreadList({ threads, profiles = [], activeID, onSelect, onSelec
         <div className="flex items-center justify-between gap-2 px-2 pt-1">
           <h2 className="hud-label">Agents</h2>
           {onNewAgent && (
-            <Button type="button" variant="ghost" size="icon-sm" onClick={onNewAgent} disabled={disabled} aria-label="New agent">
-              <Plus aria-hidden="true" />
+            <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={onNewAgent} disabled={disabled} aria-label="New agent">
+              New
             </Button>
           )}
         </div>
@@ -567,7 +545,7 @@ export function ThreadList({ threads, profiles = [], activeID, onSelect, onSelec
 
 function ThreadItems({ threads, activeID, onSelect, disabled, nested = false }) {
   return (
-    <ul className={cn("grid grid-cols-[minmax(0,1fr)] gap-0.5", nested && "ml-4 border-l pl-1")}>
+    <ul className={cn("grid grid-cols-[minmax(0,1fr)] gap-0.5", nested && "ml-3")}>
       {threads.map((thread) => (
         <li key={thread.id}>
           <button
@@ -581,7 +559,7 @@ function ThreadItems({ threads, activeID, onSelect, disabled, nested = false }) 
             )}
           >
             <span className="min-w-0 flex-1 truncate">{thread.title || "New conversation"}</span>
-            {thread.active_run_id && <Timer className="size-3.5 shrink-0 text-muted-foreground" aria-label="Running" />}
+            {thread.active_run_id && <span className="shrink-0 font-mono text-[0.625rem] text-brand">running</span>}
             {thread.unread && <UnreadDot />}
           </button>
         </li>
@@ -628,8 +606,8 @@ function NewAgentDialog({ open, onOpenChange, onCreate }) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="grid w-[min(92vw,28rem)] content-start gap-5 sm:w-[28rem]">
         <SheetHeader className="pr-8">
-          <SheetTitle className="flex items-center gap-2"><Bot className="size-4" aria-hidden="true" />New agent</SheetTitle>
-          <SheetDescription>An agent keeps its own conversation and follows your instructions on every answer. It only sees what you can see.</SheetDescription>
+          <SheetTitle>New agent</SheetTitle>
+          <SheetDescription>Keeps its own chat and follows your instructions. It sees only what you can see.</SheetDescription>
         </SheetHeader>
         <form className="grid gap-4" onSubmit={handleSubmit}>
           <label className="grid gap-1.5 text-sm">
@@ -694,43 +672,42 @@ export function AgentInspector({ inspection, onClose, compact = false }) {
 
   const selected = payloads.find((item) => item.id === tab) || payloads[0];
   return (
-    <aside className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] bg-background" aria-label="Agent result inspector">
-      <div className={cn("flex items-start justify-between gap-4 border-b px-4 py-4", compact && "pr-12")}>
+    <aside className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_auto_minmax(0,1fr)] bg-background" aria-label="Agent result inspector">
+      <div className={cn("flex items-start justify-between gap-4 px-4 py-4", compact && "pr-12")}>
         <div className="min-w-0">
-          <p className="hud-label">Inspector</p>
-          <h2 className="mt-1 truncate text-base font-semibold">{inspection?.title || "Run details"}</h2>
+          <h2 className="truncate text-base font-semibold">{inspection?.title || "Run details"}</h2>
           {response.trace_id && <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{response.trace_id}</p>}
         </div>
-        {!compact && <Button type="button" variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close inspector"><X aria-hidden="true" /></Button>}
+        {!compact && <Button type="button" variant="ghost" size="sm" onClick={onClose} aria-label="Close inspector">Close</Button>}
       </div>
       {payloads.length > 0 && (
-        <Tabs value={tab} onValueChange={setTab} className="border-b px-3 py-2">
+        <Tabs value={tab} onValueChange={setTab} className="px-3 pb-2">
           <TabsList className="scrollbar-none h-auto max-w-full justify-start overflow-x-auto border-0 bg-transparent p-0 shadow-none">
-            {payloads.map((item) => <TabsTrigger key={item.id} value={item.id} className="shrink-0">{item.label}<Badge variant="muted">{payloadSummary(item.value)}</Badge></TabsTrigger>)}
+            {payloads.map((item) => <TabsTrigger key={item.id} value={item.id} className="shrink-0">{item.label}<span className="font-mono text-[0.625rem] font-normal text-muted-foreground">{payloadSummary(item.value)}</span></TabsTrigger>)}
           </TabsList>
         </Tabs>
       )}
       <div className="min-h-0 overflow-auto p-4">
         {selected ? (
           selected.id === "actions" && Array.isArray(selected.value) ? (
-            <ol className="divide-y">
+            <ol className="grid gap-4">
               {groupActionsByDelegate(selected.value, delegations).map((entry, index) => entry.kind === "question" ? (
-                <li key={`question-${entry.delegate}`} className="grid gap-2 py-3 first:pt-0">
+                <li key={`question-${entry.delegate}`} className="grid gap-2">
                   <div className="flex items-start justify-between gap-3"><span className="min-w-0 break-words text-sm font-medium">{entry.question || `Question ${entry.delegate}`}</span><StatusPill status={entry.status} /></div>
                   {entry.actions.length > 0 && (
-                    <ol className="grid gap-3 border-l pl-3">
+                    <ol className="grid gap-3 pl-3">
                       {entry.actions.map((action, actionIndex) => <InspectorAction key={`${entry.delegate}-${action?.index ?? actionIndex}-${action?.tool || "action"}`} action={action} index={actionIndex} />)}
                     </ol>
                   )}
                 </li>
               ) : (
-                <InspectorAction key={`${entry.action?.index ?? index}-${entry.action?.tool || "action"}`} action={entry.action} index={index} className="py-3 first:pt-0" />
+                <InspectorAction key={`${entry.action?.index ?? index}-${entry.action?.tool || "action"}`} action={entry.action} index={index} />
               ))}
             </ol>
           ) : selected.id === "questions" ? (
-            <ol className="divide-y">
+            <ol className="grid gap-4">
               {selected.value.map((delegation, index) => (
-                <li key={`delegation-${index}`} className="grid gap-2 py-3 first:pt-0">
+                <li key={`delegation-${index}`} className="grid gap-2">
                   <div className="flex items-start justify-between gap-3"><span className="min-w-0 break-words text-sm font-medium">{delegation?.question || `Question ${index + 1}`}</span><StatusPill status={delegation?.status || "unknown"} /></div>
                   {hasValue(delegation?.answer) && <MarkdownContent value={String(delegation.answer)} className="text-sm" />}
                   {hasValue(delegation?.data) && <pre className="overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/55 p-3 text-xs leading-5"><code>{JSON.stringify(delegation.data, null, 2)}</code></pre>}
@@ -740,7 +717,7 @@ export function AgentInspector({ inspection, onClose, compact = false }) {
           ) : (
             <pre className="min-h-full overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/55 p-4 text-xs leading-5 text-foreground"><code>{JSON.stringify(selected.value, null, 2)}</code></pre>
           )
-        ) : <p className="text-sm text-muted-foreground">No structured payload is available for this response.</p>}
+        ) : <p className="text-sm text-muted-foreground">Nothing to show.</p>}
       </div>
     </aside>
   );
@@ -794,15 +771,12 @@ export function ThinkingMessage({ actions = [] }) {
   return (
     <Message role="assistant">
       <MessageContent>
-        <div className="flex items-center gap-2">
-          <Marker status="loading" label="working" />
-          <span className="text-xs text-muted-foreground">catalog-first loop active</span>
-        </div>
+        <Marker status="loading" label="working" />
         <Bubble variant="muted" className="w-fit max-w-full">
           <BubbleContent>
-          <span>GraphJin is working</span>
+          <span>Working</span>
           {entries.length > 0 && (
-            <ol className="mt-2 grid gap-1 border-t pt-2 font-mono text-xs text-muted-foreground">
+            <ol className="mt-2 grid gap-1 font-mono text-xs text-muted-foreground">
               {entries.map((entry) => entry.kind === "question" ? (
                 <li key={`question-${entry.delegate}`} className="grid gap-1">
                   <div className="flex items-start gap-2 font-sans text-foreground">
@@ -811,7 +785,7 @@ export function ThinkingMessage({ actions = [] }) {
                   </div>
                   {entry.status === "error" && entry.error && <p className="ml-5 font-sans text-destructive">{entry.error}</p>}
                   {entry.actions.length > 0 && (
-                    <ol className="ml-[0.4rem] grid gap-1 border-l pl-3">
+                    <ol className="ml-4 grid gap-1">
                       {entry.actions.map((action) => <TrailAction key={`${entry.delegate}-${action.index}-${action.tool}`} action={action} />)}
                     </ol>
                   )}
@@ -830,14 +804,7 @@ export function ThinkingMessage({ actions = [] }) {
 
 function TrailAction({ action }) {
   return (
-    <li className="flex items-center gap-2">
-      {action.status === "error" ? (
-        <AlertTriangle className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
-      ) : (
-        <CheckCircle2 className="size-3.5 shrink-0 text-success" aria-hidden="true" />
-      )}
-      <span className="truncate">{actionLabel(action)}</span>
-    </li>
+    <li className={cn("truncate", action.status === "error" && "text-destructive")}>{actionLabel(action)}</li>
   );
 }
 
@@ -846,9 +813,9 @@ function QuestionStatusIcon({ status }) {
     return <Loader2 className="mt-0.5 size-3.5 shrink-0 animate-spin text-muted-foreground" aria-label="Running" role="img" />;
   }
   if (questionFailed(status)) {
-    return <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" aria-label="Failed" role="img" />;
+    return <span className="mt-[0.45rem] size-1.5 shrink-0 bg-destructive" aria-label="Failed" role="img" />;
   }
-  return <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-success" aria-label="Done" role="img" />;
+  return <span className="mt-[0.45rem] size-1.5 shrink-0 bg-success" aria-label="Done" role="img" />;
 }
 
 function questionRunning(status) {
@@ -949,10 +916,7 @@ function AgentStatusAction({ status }) {
         </SheetTrigger>
         <SheetContent side="right" className="grid w-[min(92vw,28rem)] grid-rows-[auto_1fr] sm:w-[28rem]">
           <SheetHeader className="pr-8">
-            <SheetTitle className="flex items-center gap-2">
-              <Bot className="size-4" aria-hidden="true" />
-              Agent Readiness
-            </SheetTitle>
+            <SheetTitle>Agent</SheetTitle>
             <SheetDescription>{status.message}</SheetDescription>
           </SheetHeader>
           <AgentStatusDetails status={status} />
@@ -965,44 +929,27 @@ function AgentStatusAction({ status }) {
 function AgentStatusDetails({ status }) {
   return (
     <div className="grid content-start gap-5 overflow-y-auto py-5">
-      <div className="flex flex-wrap gap-2">
-        <StatusPill status={status.status} />
-        <Badge variant={status.enabled ? "success" : "warning"}>{status.enabled ? "enabled" : "disabled"}</Badge>
-        <Badge variant={status.api_key_configured ? "success" : "warning"}>{status.api_key_configured ? "key set" : "key missing"}</Badge>
-      </div>
-      <dl className="grid gap-2 text-sm">
-        <StatusRow icon={Settings2} label="Provider" value={[status.provider, status.model].filter(Boolean).join(" / ") || "openai"} />
-        <StatusRow icon={KeyRound} label="API key env" value={status.api_key_env || "OPENAI_API_KEY"} />
-        <StatusRow icon={CircleHelp} label="REST endpoint" value={status.endpoint || "/api/v1/agent"} />
-        <StatusRow icon={Bot} label="MCP tool" value={status.mcp_tool || "ask_graphjin_agent"} />
-        <StatusRow icon={Timer} label="Timeout" value={`${status.timeout_seconds || 50}s`} />
+      <dl className="grid gap-2.5 text-sm">
+        <StatusRow label="Status" value={status.status} />
+        <StatusRow label="Enabled" value={status.enabled ? "yes" : "no"} />
+        <StatusRow label="API key" value={status.api_key_configured ? `set · ${status.api_key_env || "OPENAI_API_KEY"}` : `missing · ${status.api_key_env || "OPENAI_API_KEY"}`} />
+        <StatusRow label="Model" value={[status.provider, status.model].filter(Boolean).join(" / ") || "openai"} />
+        <StatusRow label="Endpoint" value={status.endpoint || "/api/v1/agent"} />
+        <StatusRow label="MCP tool" value={status.mcp_tool || "ask_graphjin_agent"} />
+        <StatusRow label="Timeout" value={`${status.timeout_seconds || 50}s`} />
+        <StatusRow label="Max steps" value={status.max_steps} />
+        <StatusRow label="Read-only" value={status.read_only ? "on" : "off"} />
+        <StatusRow label="Trace" value={status.return_trace ? "on" : "off"} />
       </dl>
-      <div className="grid gap-2 rounded-lg bg-card p-3 text-sm text-muted-foreground">
-        <div className="flex items-center justify-between gap-3">
-          <span>Read-only override</span>
-          <Badge variant={status.read_only ? "warning" : "muted"}>{status.read_only ? "on" : "off"}</Badge>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span>Default trace</span>
-          <Badge variant={status.return_trace ? "success" : "muted"}>{status.return_trace ? "on" : "off"}</Badge>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span>Default max steps</span>
-          <Badge variant="outline">{status.max_steps}</Badge>
-        </div>
-      </div>
     </div>
   );
 }
 
-function StatusRow({ icon: Icon, label, value }) {
+function StatusRow({ label, value }) {
   return (
-    <div className="grid grid-cols-[2rem_7rem_minmax(0,1fr)] items-center gap-2 rounded-lg bg-card p-2">
-      <span className="flex size-8 items-center justify-center text-foreground">
-        <Icon className="size-4" aria-hidden="true" />
-      </span>
+    <div className="grid grid-cols-[7rem_minmax(0,1fr)] items-baseline gap-3">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 truncate font-medium">{value}</dd>
+      <dd className="min-w-0 truncate font-mono text-xs">{value}</dd>
     </div>
   );
 }
@@ -1011,7 +958,6 @@ function AgentDisabledAlert({ status }) {
   const missingKey = status?.enabled && !status?.api_key_configured;
   return (
     <Alert variant="warning">
-      <AlertTriangle className="size-4" aria-hidden="true" />
       <AlertTitle>{missingKey ? "Agent key is missing" : "Agent is not enabled"}</AlertTitle>
       <AlertDescription>
         {missingKey ? (
@@ -1045,7 +991,7 @@ function ChatMessage({ message, onPinTask, onInspect }) {
           </BubbleContent>
         </Bubble>
         {response && <NoticeList notices={response.notices} onPinTask={onPinTask} />}
-        {response?.errors?.length > 0 && <NoticeFrame icon={AlertTriangle} title="Agent errors" message={response.errors.map((error) => error.message).filter(Boolean).join(" · ")} variant="destructive" />}
+        {response?.errors?.length > 0 && <NoticeFrame title="Agent errors" message={response.errors.map((error) => error.message).filter(Boolean).join(" · ")} variant="destructive" />}
       </MessageContent>
     </Message>
   );
@@ -1079,22 +1025,19 @@ export function ResponseSummaryBadges({ response, onInspect }) {
 
 function PinnedTask({ taskID, task, isLoading, onClear }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-warning/10 px-3 py-2">
-      <div className="flex min-w-0 items-center gap-2">
-        <Pin className="size-4 shrink-0 text-warning" aria-hidden="true" />
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase text-warning">Pinned task</p>
-          <p className="truncate text-sm text-foreground">
-            {isLoading ? "Loading declared goal…" : task?.goal || taskID}
-          </p>
-        </div>
+    <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+      <div className="min-w-0">
+        <p className="hud-label text-warning">Pinned task</p>
+        <p className="truncate text-sm text-foreground">
+          {isLoading ? "Loading…" : task?.goal || taskID}
+        </p>
       </div>
       <div className="flex items-center gap-1">
         <Button asChild type="button" variant="ghost" size="sm">
           <Link to={`/user/tasks?task_id=${encodeURIComponent(taskID)}`}>Open trail</Link>
         </Button>
-        <Button type="button" variant="ghost" size="icon" className="size-8" onClick={onClear} aria-label="Unpin task">
-          <X aria-hidden="true" />
+        <Button type="button" variant="ghost" size="sm" onClick={onClear} aria-label="Unpin task">
+          Unpin
         </Button>
       </div>
     </div>
@@ -1120,8 +1063,8 @@ function AgentNotice({ notice, onPinTask }) {
 
   if (kind === "watch_created") {
     return (
-      <NoticeFrame icon={Radar} title="Watch created" message={notice.message}>
-        <Button asChild variant="outline" size="sm">
+      <NoticeFrame title="Watch created" message={notice.message}>
+        <Button asChild variant="secondary" size="sm">
           <Link to="/user/watches">Open watches</Link>
         </Button>
       </NoticeFrame>
@@ -1129,8 +1072,8 @@ function AgentNotice({ notice, onPinTask }) {
   }
   if (kind === "watch_events_unseen") {
     return (
-      <NoticeFrame icon={BellRing} title={`${notice.count || "New"} unseen watch ${notice.count === 1 ? "event" : "events"}`} message={notice.message}>
-        <Button asChild variant="outline" size="sm">
+      <NoticeFrame title={`${notice.count || "New"} unseen watch ${notice.count === 1 ? "event" : "events"}`}>
+        <Button asChild variant="secondary" size="sm">
           <Link to="/user/watches">Open watch inbox</Link>
         </Button>
       </NoticeFrame>
@@ -1138,11 +1081,10 @@ function AgentNotice({ notice, onPinTask }) {
   }
   if (kind === "task_open_unlinked") {
     return (
-      <NoticeFrame icon={ListTodo} title="Open tasks are not linked to this run" message={notice.message}>
+      <NoticeFrame title="Open tasks aren’t linked to this run" message={notice.message}>
         <div className="flex flex-wrap gap-2">
           {taskIDs.map((taskID) => (
-            <Button key={taskID} type="button" variant="outline" size="sm" onClick={() => onPinTask(taskID)}>
-              <Pin aria-hidden="true" />
+            <Button key={taskID} type="button" variant="secondary" size="sm" onClick={() => onPinTask(taskID)}>
               Continue {shortID(taskID)}
             </Button>
           ))}
@@ -1152,7 +1094,7 @@ function AgentNotice({ notice, onPinTask }) {
   }
   if (kind === "task_context_loaded") {
     return (
-      <NoticeFrame icon={CheckCircle2} title="Declared task context loaded" message={notice.message} variant="success">
+      <NoticeFrame title="Task context loaded" message={notice.message} variant="success">
         {taskIDs[0] && (
           <Button asChild variant="ghost" size="sm">
             <Link to={`/user/tasks?task_id=${encodeURIComponent(taskIDs[0])}`}>View trail</Link>
@@ -1163,10 +1105,10 @@ function AgentNotice({ notice, onPinTask }) {
   }
   if (kind === "task_verify_failed") {
     return (
-      <NoticeFrame icon={AlertTriangle} title="Task verification failed" message={notice.message} variant="destructive">
+      <NoticeFrame title="Task verification failed" message={notice.message} variant="destructive">
         <div className="flex flex-wrap gap-2">
           {taskIDs.map((taskID) => (
-            <Button key={taskID} asChild variant="outline" size="sm">
+            <Button key={taskID} asChild variant="secondary" size="sm">
               <Link to={`/user/tasks?task_id=${encodeURIComponent(taskID)}`}>Inspect {shortID(taskID)}</Link>
             </Button>
           ))}
@@ -1176,31 +1118,27 @@ function AgentNotice({ notice, onPinTask }) {
   }
   if (kind === "annotations_unshared") {
     return (
-      <NoticeFrame icon={BookOpenCheck} title={`${notice.count || "Annotation"} ${notice.count === 1 ? "draft" : "drafts"} awaiting review`} message={notice.message}>
-        <Button asChild variant="outline" size="sm">
-          <Link to="/user/artifacts">Open review queue</Link>
+      <NoticeFrame title={`${notice.count || "Annotation"} ${notice.count === 1 ? "draft" : "drafts"} awaiting review`} message={notice.message}>
+        <Button asChild variant="secondary" size="sm">
+          <Link to="/user/artifacts">Review</Link>
         </Button>
       </NoticeFrame>
     );
   }
-  return <NoticeFrame icon={CircleHelp} title={kind.replaceAll("_", " ")} message={notice.message || "GraphJin returned an agent notice."} />;
+  return <NoticeFrame title={kind.replaceAll("_", " ")} message={notice.message} />;
 }
 
-function NoticeFrame({ icon: Icon, title, message, children, variant = "default" }) {
+function NoticeFrame({ title, message, children, variant = "default" }) {
   return (
-    <div className={cn(
-      "grid gap-3 rounded-lg bg-card p-3 text-sm",
-      variant === "destructive" && "border-destructive/45",
-      variant === "success" && "border-success/40"
-    )}>
-      <div className="flex items-start gap-2">
-        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <div className="min-w-0">
-          <p className="font-semibold capitalize text-foreground">{title}</p>
-          {message && <p className="mt-1 text-xs leading-5 text-muted-foreground">{message}</p>}
-        </div>
+    <div className="grid gap-2 rounded-lg bg-card p-3 text-sm">
+      <div className="min-w-0">
+        <p className={cn(
+          "font-semibold first-letter:uppercase",
+          variant === "destructive" ? "text-destructive" : variant === "success" ? "text-success" : "text-foreground"
+        )}>{title}</p>
+        {message && <p className="mt-1 text-xs leading-5 text-muted-foreground">{message}</p>}
       </div>
-      {children}
+      {children && <div className="flex flex-wrap gap-2">{children}</div>}
     </div>
   );
 }

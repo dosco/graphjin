@@ -2,19 +2,6 @@ import React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import {
-  Bell,
-  BookOpenCheck,
-  Bot,
-  Check,
-  CircleAlert,
-  Eye,
-  FileCheck2,
-  Link2,
-  ShieldCheck,
-  X,
-} from "lucide-react";
-
-import {
   approveAnnotation,
   demoteAnnotation,
   fetchMissionAnnotations,
@@ -34,13 +21,11 @@ import { MetricWatchGrid, isMetricWatch, metricEventSummary } from "./mission/Me
 import { DataErrorState, EmptyState, LoadingState, PageHeader, Panel, StatusPill } from "../components/ui";
 import { useConsole } from "@/components/Layout/console-context";
 import { signInState } from "../services/session";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn } from "@/lib/utils";
 
 const validTabs = new Set(["tasks", "watches", "annotations"]);
 const refreshInterval = 15000;
@@ -159,7 +144,7 @@ const MissionControl = ({ section }) => {
 
   const openTasks = tasks.filter((task) => task.status === "open" || task.status === "verifying").length;
   return (
-    <div className="grid w-full min-w-0 gap-6">
+    <div className="grid w-full min-w-0 max-w-6xl gap-6">
       <PageHeader
         eyebrow={meta.eyebrow}
         title={meta.title}
@@ -170,9 +155,6 @@ const MissionControl = ({ section }) => {
               {tab === "tasks" && <Badge variant={openTasks ? "warning" : "muted"}>{openTasks} open</Badge>}
               {tab === "watches" && <Badge variant={events.length ? "warning" : "muted"}>{events.length} unseen</Badge>}
               {tab === "annotations" && <Badge variant={drafts.length ? "warning" : "muted"}>{drafts.length} drafts</Badge>}
-              <Badge variant={identity.role === "admin" ? "warning" : "outline"}>
-                {identity.userId || session.name || "Session"}
-              </Badge>
             </div>
           ) : null
         }
@@ -196,21 +178,18 @@ const MissionControl = ({ section }) => {
                 <TabsList className="h-auto max-w-full flex-wrap justify-start">
                   {!unavailable.tasks && (
                     <TabsTrigger value="tasks">
-                      <FileCheck2 aria-hidden="true" />
                       Tasks
                       {openTasks > 0 && <Badge variant="muted">{openTasks}</Badge>}
                     </TabsTrigger>
                   )}
                   {!unavailable.watches && (
                     <TabsTrigger value="watches">
-                      <Bell aria-hidden="true" />
                       Watch inbox
                       {events.length > 0 && <Badge variant="warning">{events.length}</Badge>}
                     </TabsTrigger>
                   )}
                   {!unavailable.annotations && (
                     <TabsTrigger value="annotations">
-                      <BookOpenCheck aria-hidden="true" />
                       Annotations
                       {drafts.length > 0 && <Badge variant="warning">{drafts.length}</Badge>}
                     </TabsTrigger>
@@ -310,7 +289,7 @@ function TasksPanel({ query, tasks, onOpenTask }) {
                 <TableCell><StatusPill status={task.status} /></TableCell>
                 <TableCell><StatusPill status={task.verify_status || "not requested"} /></TableCell>
                 <TableCell>{task.verify_attempts || 0}</TableCell>
-                <TableCell className="whitespace-nowrap text-muted-foreground">{timeLabel(task.last_entry_at || task.updated_at)}</TableCell>
+                <TableCell className="whitespace-nowrap text-muted-foreground" title={formatDate(task.last_entry_at || task.updated_at)}>{timeLabel(task.last_entry_at || task.updated_at)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -342,26 +321,20 @@ function TaskDrawer({ task, identityKey, onClose }) {
               <SheetDescription className="font-mono text-xs">{task.id}</SheetDescription>
             </SheetHeader>
             <div className="grid content-start gap-5 overflow-y-auto py-5">
-              <div className="grid gap-3 rounded-lg bg-card p-4 text-sm">
+              <dl className="grid gap-2 text-sm">
                 <DetailRow label="Owner" value={task.owner_ref || "current operator"} />
                 <DetailRow label="Updated" value={timeLabel(task.updated_at)} />
                 <DetailRow label="Verification attempts" value={task.verify_attempts || 0} />
                 {task.outcome && <DetailRow label="Outcome" value={task.outcome} />}
                 {task.verify_after && <DetailRow label="Verify after" value={formatDate(task.verify_after)} />}
                 {task.verify_json && <JSONBlock title="Verification contract" value={task.verify_json} />}
-                <Button asChild variant="outline" size="sm" className="justify-self-start">
-                  <Link to={`/user/agent?task_id=${encodeURIComponent(task.id)}`}>
-                    <Bot aria-hidden="true" />
-                    Continue in Agent
-                  </Link>
-                </Button>
-              </div>
+              </dl>
+              <Button asChild variant="secondary" size="sm" className="justify-self-start">
+                <Link to={`/user/agent?task_id=${encodeURIComponent(task.id)}`}>Continue in Agent</Link>
+              </Button>
 
               <section className="grid gap-3">
-                <div>
-                  <h3 className="text-sm font-semibold">Trail</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Newest first · provenance is assigned by GraphJin.</p>
-                </div>
+                <h3 className="hud-label">History</h3>
                 {entriesQuery.isLoading ? (
                   <LoadingState />
                 ) : entriesQuery.error ? (
@@ -384,13 +357,13 @@ function TaskEntry({ entry }) {
   const detail = parseJSON(entry.detail_json, entry.detail_json) || {};
   const verification = entry.origin === "verification";
   return (
-    <article className={cn("grid gap-3 rounded-lg bg-card p-4", verification && entry.status === "failed" && "border-destructive/45")}>
+    <article className="grid gap-3 py-1">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={originVariant(entry.origin)}>{entry.origin || "unknown"}</Badge>
           {entry.status && <StatusPill status={entry.status} />}
         </div>
-        <time className="text-xs text-muted-foreground" dateTime={entry.created_at}>{timeLabel(entry.created_at)}</time>
+        <time className="text-xs text-muted-foreground" dateTime={entry.created_at} title={formatDate(entry.created_at)}>{timeLabel(entry.created_at)}</time>
       </div>
       {entry.body && <p className="text-sm leading-6 text-foreground">{entry.body}</p>}
       {verification ? (
@@ -416,10 +389,9 @@ function WatchStarterHint() {
   return (
     <div className="grid gap-3">
       <p className="leading-6 text-muted-foreground">
-        A standing question is a cursor-paginated subscription. GraphJin keeps it running,
-        resumes it from its stored cursor, and files what it finds here.
+        Ask the agent to watch something, or add one with a mutation:
       </p>
-      <pre className="overflow-x-auto rounded-md border bg-muted/40 p-3 font-mono text-xs leading-5">
+      <pre className="overflow-x-auto rounded-md bg-accent p-3 font-mono text-xs leading-5">
 {`mutation {
   gj_watch(insert: {
     name: "urgent_tickets"
@@ -439,6 +411,8 @@ function WatchStarterHint() {
   );
 }
 
+const eventPageSize = 20;
+
 function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onOpenTask, tasks }) {
   const queryClient = useQueryClient();
   const seenMutation = useMutation({
@@ -446,6 +420,8 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["mission", "watches", identityKey] }),
   });
   const watchesByID = React.useMemo(() => new Map(watches.map((watch) => [watch.id, watch])), [watches]);
+  const [showAllEvents, setShowAllEvents] = React.useState(false);
+  const visibleEvents = showAllEvents ? events : events.slice(0, eventPageSize);
   const otherWatches = watches.filter((watch) => !isMetricWatch(watch));
 
   return (
@@ -462,53 +438,46 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
         ) : events.length === 0 ? (
           <EmptyState title="All caught up" />
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Watch</TableHead>
-                <TableHead>Delivery</TableHead>
-                <TableHead>Fired</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {events.map((event) => {
-                const watch = watchesByID.get(event.watch_id);
-                const summary = metricEventSummary(parseJSON(event.data_json), watch);
-                const threadID = parseJSON(event.receipt_json)?.thread_id;
-                return (
-                <TableRow key={event.id}>
-                  <TableCell className="min-w-56">
-                    <button type="button" className="w-full text-left" onClick={() => onOpenEvent(event)}>
-                      <span className="block truncate font-medium">{watch?.name || event.watch_id}</span>
-                      <span className={cn("mt-1 block truncate text-xs text-muted-foreground", !summary && "font-mono")}>{summary || event.id}</span>
+          <ul className="-mx-3 grid gap-0.5">
+            {visibleEvents.map((event) => {
+              const watch = watchesByID.get(event.watch_id);
+              const summary = metricEventSummary(parseJSON(event.data_json), watch);
+              const threadID = parseJSON(event.receipt_json)?.thread_id;
+              return (
+                <li key={event.id} className="flex items-start justify-between gap-3 rounded-md px-3 py-2.5 transition-colors hover:bg-accent/50">
+                  <div className="min-w-0">
+                    <button type="button" className="block max-w-full text-left" onClick={() => onOpenEvent(event)}>
+                      <span className="block truncate text-sm font-medium">{watch?.name || event.watch_id}</span>
+                      {summary && <span className="mt-0.5 block truncate text-xs text-muted-foreground">{summary}</span>}
                     </button>
+                    <span className="mt-1 block font-mono text-[0.6875rem] text-muted-foreground" title={formatDate(event.created_at)}>
+                      {event.delivery_status || "inbox"} · {timeLabel(event.created_at)}
+                    </span>
                     {threadID && (
-                      <Link className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline" to={`/user/agent?thread=${encodeURIComponent(threadID)}`}>
-                        <Bot aria-hidden="true" className="size-3" />
+                      <Link className="mt-1 inline-block text-xs text-brand hover:underline" to={`/user/agent?thread=${encodeURIComponent(threadID)}`}>
                         Read the agent&apos;s answer
                       </Link>
                     )}
-                  </TableCell>
-                  <TableCell><StatusPill status={event.delivery_status || "inbox"} /></TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">{timeLabel(event.created_at)}</TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={seenMutation.isPending && seenMutation.variables === event.id}
-                      onClick={() => seenMutation.mutate(event.id)}
-                    >
-                      <Check aria-hidden="true" />
-                      Mark seen
-                    </Button>
-                  </TableCell>
-                </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="shrink-0"
+                    disabled={seenMutation.isPending && seenMutation.variables === event.id}
+                    onClick={() => seenMutation.mutate(event.id)}
+                  >
+                    Mark seen
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {events.length > visibleEvents.length && (
+          <Button type="button" variant="ghost" size="sm" className="mt-2" onClick={() => setShowAllEvents(true)}>
+            Show all {events.length}
+          </Button>
         )}
         {seenMutation.error && (
           <div className="mt-4">
@@ -550,8 +519,7 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
                       <TableCell className="whitespace-nowrap text-muted-foreground">{watch.last_fired_at ? timeLabel(watch.last_fired_at) : "never"}</TableCell>
                       <TableCell>
                         {linkedTask ? (
-                          <Button type="button" variant="link" size="sm" onClick={() => onOpenTask(linkedTask)}>
-                            <Link2 aria-hidden="true" />
+                          <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => onOpenTask(linkedTask)}>
                             Open
                           </Button>
                         ) : watch.task_id ? (
@@ -581,26 +549,22 @@ function WatchEventDrawer({ event, watches, onClose }) {
           <>
             <SheetHeader className="pr-8">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="warning"><Eye aria-hidden="true" />unseen</Badge>
+                <Badge variant="warning">unseen</Badge>
                 <StatusPill status={event.delivery_status || "inbox"} />
               </div>
               <SheetTitle>{watch?.name || event.watch_id}</SheetTitle>
               <SheetDescription className="font-mono text-xs">{event.id}</SheetDescription>
             </SheetHeader>
             <div className="grid content-start gap-4 overflow-y-auto py-5">
-              <div className="grid gap-2 rounded-lg bg-card p-4 text-sm">
+              <dl className="grid gap-2 text-sm">
                 <DetailRow label="Created" value={formatDate(event.created_at)} />
                 <DetailRow label="Delivery attempts" value={event.delivery_attempts || 0} />
                 <DetailRow label="Data hash" value={event.data_hash || "not recorded"} />
                 {event.snoozed_until && <DetailRow label="Snoozed until" value={formatDate(event.snoozed_until)} />}
-              </div>
+              </dl>
               <JSONBlock title="Event payload" value={parseJSON(event.data_json, event.data_json)} />
               {event.data_truncated && (
-                <Alert variant="warning">
-                  <CircleAlert aria-hidden="true" className="size-4" />
-                  <AlertTitle>Payload truncated</AlertTitle>
-                  <AlertDescription>The stored inbox projection contains a bounded snapshot.</AlertDescription>
-                </Alert>
+                <p className="text-sm text-warning">Payload truncated.</p>
               )}
               <JSONBlock title="Delivery" value={parseJSON(event.delivery_json, event.delivery_json)} />
               <JSONBlock title="Receipt" value={parseJSON(event.receipt_json, event.receipt_json)} />
@@ -650,25 +614,14 @@ function AnnotationsPanel({ query, drafts, approved, identity, identityKey, onOp
               const task = tasks.find((item) => item.id === annotation.task_id);
               const confirming = confirmingID === annotation.id;
               return (
-                <article key={annotation.id} className="grid gap-4 rounded-lg bg-card p-4">
+                <article key={annotation.id} className="grid gap-4 py-2">
                   <AnnotationSummary annotation={annotation} task={task} onOpenTask={onOpenTask} />
                   {confirming ? (
-                    <div className="grid gap-3 rounded-lg bg-warning/10 p-4">
-                      <div className="flex items-start gap-3">
-                        <ShieldCheck className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-                        <div>
-                          <p className="text-sm font-semibold">Publish this note to your account’s agents?</p>
-                          <blockquote className="mt-2 border-l-2 border-warning pl-3 text-sm leading-6 text-foreground">
-                            “{annotation.content}”
-                          </blockquote>
-                          <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                            Approval is attributed to the current operator. The note remains organizational data, never an instruction or permission grant.
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex justify-end gap-2">
+                    <div className="grid gap-3">
+                      <p className="text-sm font-semibold">Share this note with your account’s agents?</p>
+                      <div className="flex gap-2">
                         <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmingID("")}>
-                          <X aria-hidden="true" />Cancel
+                          Cancel
                         </Button>
                         <Button
                           type="button"
@@ -676,13 +629,13 @@ function AnnotationsPanel({ query, drafts, approved, identity, identityKey, onOp
                           disabled={approveMutation.isPending}
                           onClick={() => approveMutation.mutate(annotation.id)}
                         >
-                          <Check aria-hidden="true" />Approve and publish
+                          Approve
                         </Button>
                       </div>
                     </div>
                   ) : (
-                    <Button type="button" size="sm" className="justify-self-start" onClick={() => setConfirmingID(annotation.id)}>
-                      <ShieldCheck aria-hidden="true" />Review approval
+                    <Button type="button" size="sm" variant="secondary" className="justify-self-start" onClick={() => setConfirmingID(annotation.id)}>
+                      Approve
                     </Button>
                   )}
                 </article>
@@ -709,12 +662,12 @@ function AnnotationsPanel({ query, drafts, approved, identity, identityKey, onOp
               {approved.map((annotation) => {
                 const task = tasks.find((item) => item.id === annotation.task_id);
                 return (
-                  <article key={annotation.id} className="grid gap-4 rounded-lg bg-card p-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                  <article key={annotation.id} className="grid gap-4 py-2 md:grid-cols-[minmax(0,1fr)_auto]">
                     <AnnotationSummary annotation={annotation} task={task} onOpenTask={onOpenTask} />
                     {identity.role === "admin" && (
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
                         disabled={demoteMutation.isPending}
                         onClick={() => demoteMutation.mutate(annotation.id)}
@@ -738,9 +691,9 @@ function AnnotationSummary({ annotation, task, onOpenTask }) {
     <div className="min-w-0">
       <div className="flex flex-wrap items-center gap-2">
         <StatusPill status={annotation.tier} />
-        <Badge variant="outline" className="max-w-full truncate font-mono" title={annotation.target_ref}>
+        <span className="max-w-full truncate font-mono text-xs text-muted-foreground" title={annotation.target_ref}>
           {annotation.target_ref || "unaddressed"}
-        </Badge>
+        </span>
       </div>
       <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-foreground">{annotation.content}</p>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
@@ -749,7 +702,6 @@ function AnnotationSummary({ annotation, task, onOpenTask }) {
         {annotation.approved_at && <span>{timeLabel(annotation.approved_at)}</span>}
         {task ? (
           <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => onOpenTask(task)}>
-            <Link2 aria-hidden="true" />
             Source task
           </Button>
         ) : annotation.task_id ? (
@@ -766,7 +718,7 @@ function JSONBlock({ title, value }) {
   }
   return (
     <div className="min-w-0 rounded-lg bg-accent p-3">
-      <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">{title}</p>
+      <p className="hud-label mb-2">{title}</p>
       <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground">
         <code>{formatJSON(value)}</code>
       </pre>
@@ -823,7 +775,7 @@ function timeLabel(value) {
   if (!value) {
     return "not recorded";
   }
-  return `${relativeTime(value)} · ${formatDate(value)}`;
+  return relativeTime(value);
 }
 
 function titleCase(value) {

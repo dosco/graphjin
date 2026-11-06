@@ -37,7 +37,6 @@ describe("mission control identity", () => {
     renderTasks({ identity: { role: "admin", authenticated: true, session: true, display_name: "Ana Ruiz" } });
     expect(await screen.findByText("No tasks")).toBeInTheDocument();
     expect(screen.queryByText(/Set an identity/)).not.toBeInTheDocument();
-    expect(screen.getByText("Ana Ruiz")).toBeInTheDocument();
   });
 
   it("asks for an identity when there is neither a session nor a dev identity", async () => {

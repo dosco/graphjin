@@ -1,8 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ShieldAlert, ShieldCheck } from "lucide-react";
 
-import { graphqlRequest, parseJSON } from "../services/graphql";
+import { graphqlRequest, relativeTime } from "../services/graphql";
 import { DataErrorState, EmptyState, LoadingState, Metric, PageHeader, Panel, StatusPill } from "../components/ui";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -35,12 +34,11 @@ const SecurityAudit = () => {
     () => findings.filter((finding) => severity === "all" || finding.severity === severity),
     [findings, severity]
   );
-  const summaryJSON = parseJSON(summary?.summary_json, {});
   const highCount = findings.filter((finding) => ["critical", "high"].includes(finding.severity)).length;
   const weakenedCount = policies.filter((policy) => policy.weakens_default).length;
 
   return (
-    <div className="mx-auto grid max-w-7xl gap-6">
+    <div className="grid max-w-6xl gap-6">
       <PageHeader
         title="Security"
       />
@@ -56,27 +54,14 @@ const SecurityAudit = () => {
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Metric label="Mode" value={summary?.mode || "unknown"} detail={summary?.status || "status unknown"} />
+            <Metric label="Mode" value={summary?.mode || "unknown"} />
             <Metric label="Findings" value={findings.length} detail={`${highCount} high or critical`} tone={highCount ? "warn" : "good"} />
             <Metric label="Policies" value={policies.length} detail={`${weakenedCount} weaken defaults`} tone={weakenedCount ? "warn" : "good"} />
-            <Metric label="Updated" value={summary?.updated_at ? "Current" : "Pending"} detail={summary?.updated_at || "no timestamp"} />
+            <Metric label="Updated" value={summary?.updated_at ? relativeTime(summary.updated_at) : "Pending"} />
           </div>
-
-          <Panel title={summary?.title || "Summary"} description={summaryText(summary, summaryJSON)}>
-            <div className="flex gap-3 rounded-md border bg-muted/30 p-4">
-              <ShieldCheck className="mt-0.5 size-5 text-success" aria-hidden="true" />
-              <div>
-                <strong className="text-sm font-medium">{summaryJSON?.recommendation || summary?.summary || "Review visible findings before writes."}</strong>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  {summaryJSON?.scope || "Use gj_catalog for ordinary discovery; detailed audit roots may be restricted by role."}
-                </p>
-              </div>
-            </div>
-          </Panel>
 
           <Panel
             title="Findings"
-            description={`${visibleFindings.length}`}
             action={
               <Tabs value={severity} onValueChange={setSeverity}>
                 <TabsList>
@@ -90,20 +75,19 @@ const SecurityAudit = () => {
             }
           >
             {visibleFindings.length ? (
-              <div className="grid gap-3">
+              <div className="grid gap-5">
                 {visibleFindings.map((finding) => (
-                  <article className="grid gap-3 rounded-md border bg-background p-4 md:grid-cols-[minmax(0,1fr)_auto]" key={finding.id}>
+                  <article className="min-w-0" key={finding.id}>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <StatusPill status={finding.severity} />
                         <h3 className="min-w-0 truncate text-sm font-semibold">{finding.title}</h3>
                       </div>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{finding.summary || finding.recommendation}</p>
-                      <span className="mt-2 block text-xs text-muted-foreground">
+                      <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{finding.summary || finding.recommendation}</p>
+                      <span className="mt-1 block font-mono text-[0.6875rem] text-muted-foreground">
                         {[finding.mode, finding.surface, finding.source || finding.database_name, finding.capability].filter(Boolean).join(" · ")}
                       </span>
                     </div>
-                    <ShieldAlert className="size-5 text-muted-foreground" aria-hidden="true" />
                   </article>
                 ))}
               </div>
@@ -145,9 +129,5 @@ const SecurityAudit = () => {
     </div>
   );
 };
-
-function summaryText(summary, data) {
-  return data?.summary || summary?.summary || "";
-}
 
 export default SecurityAudit;

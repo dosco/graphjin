@@ -1,7 +1,6 @@
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Command as CommandPrimitive } from "cmdk";
-import { Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -26,8 +25,7 @@ function CommandDialog({ open, onOpenChange, children, title = "Command menu" })
 
 function CommandInput({ className, ...props }) {
   return (
-    <div className="flex h-14 items-center gap-3 border-b px-5">
-      <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+    <div className="flex h-14 items-center px-5">
       <CommandPrimitive.Input className={cn("h-12 w-full bg-transparent text-[0.9375rem] outline-none placeholder:text-muted-foreground", className)} {...props} />
     </div>
   );

@@ -2,7 +2,6 @@ import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 
-import ContextRail from "./ContextRail";
 import Header from "./Header";
 import { ConsoleProvider } from "./console-context";
 import { routeDefinition } from "@/app/workspaces";
@@ -58,7 +57,6 @@ const Layout = ({ children }) => {
           >
             {children}
           </main>
-          {route.layout !== "canvas" && <ContextRail />}
         </div>
       </div>
     </ConsoleProvider>
