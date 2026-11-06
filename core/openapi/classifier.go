@@ -569,7 +569,7 @@ func deriveResultPath(schema *openapi3.SchemaRef) ([]string, bool) {
 	if schema == nil || schema.Value == nil {
 		return nil, false
 	}
-	s := schema.Value
+	s := responseSchemaShape(schema.Value, nil)
 
 	// Top-level array — no wrapper.
 	if isType(s, "array") {
@@ -601,8 +601,12 @@ func deriveResultPath(schema *openapi3.SchemaRef) ([]string, bool) {
 }
 
 func isType(s *openapi3.Schema, t string) bool {
+	s = responseSchemaShape(s, nil)
 	if s == nil {
 		return false
+	}
+	if t == "null" && s.Nullable {
+		return true
 	}
 	for _, x := range s.Type.Slice() {
 		if x == t {
