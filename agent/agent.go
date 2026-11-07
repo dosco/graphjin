@@ -670,12 +670,12 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	runtime.WithClarificationNudge(protocol.state.clarificationNudge)
 	for _, tool := range tools {
 		t := tool
-		runtime.RegisterCallable(t.Name, func(params ax.Value) (ax.Value, error) {
+		registerAdvertisedCallable(runtime.RegisterCallable, t.Name, func(params ax.Value) (ax.Value, error) {
 			return t.Handler(asMap(params))
 		})
 	}
 	if prepared != nil {
-		runtime.RegisterCallable("use_prepared_catalog", func(params ax.Value) (ax.Value, error) {
+		registerAdvertisedCallable(runtime.RegisterCallable, "use_prepared_catalog", func(params ax.Value) (ax.Value, error) {
 			action := protocol.state.startAction("model", "use_prepared_catalog", nil)
 			prepared.revalidate(ctx, a.runtime, req.Namespace)
 			out, err := prepared.consume(protocol)
