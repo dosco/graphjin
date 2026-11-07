@@ -19,7 +19,8 @@
 # --corpus lead scores the lead agent instead of the worker: every case runs
 # as a console thread turn (follow-ups replay their earlier turns), and
 # multi-part questions pass only when every part matches its oracle. Compare
-# lead reports only with lead reports.
+# lead reports only with lead reports. GJ_DATA_CORPUS=<file> runs a subset
+# of the lead corpus (same case format), for a focused A/B.
 set -euo pipefail
 
 INVOKE_DIR="$PWD"
@@ -41,7 +42,7 @@ ALLOW_WEAK=0
 JWT_SECRET="saas-ops-demo-jwt-secret"
 CORPUS="worker"
 
-usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -274,7 +275,7 @@ run_eval() {
 
 case "$CORPUS" in
   worker) DATA_CORPUS="$ROOT/agent/testdata/data_eval_cases.json" ;;
-  lead) DATA_CORPUS="$ROOT/agent/testdata/lead_eval_cases.json" ;;
+  lead) DATA_CORPUS="${GJ_DATA_CORPUS:-$ROOT/agent/testdata/lead_eval_cases.json}" ;;
   *) echo "--corpus must be worker or lead, got $CORPUS" >&2; exit 1 ;;
 esac
 

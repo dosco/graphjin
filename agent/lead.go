@@ -253,6 +253,7 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 	if req.Profile != nil {
 		run.grounding.Add(req.Profile.Instructions)
 	}
+	run.referents = newLeadReferentCheck(req.Instruction, req.History)
 	run.figures.add(FigureSourceUser, req.Instruction)
 	for _, turn := range req.History {
 		if strings.EqualFold(turn.Role, "assistant") {
@@ -635,6 +636,10 @@ type leadRun struct {
 	delegations    []leadDelegation
 	grounding      GroundingCorpus
 	figures        figureLedger
+	// referents holds back, once per turn, a follow-up question that takes
+	// nothing from the conversation the user points at (lead_referents.go).
+	referents      *leadReferentCheck
+	referentsFired bool
 }
 
 type leadDelegation struct {
@@ -725,6 +730,15 @@ func (r *leadRun) ask(ctx context.Context, args map[string]ax.Value) (ax.Value, 
 		}
 		fresh = append(fresh, question)
 		freshAt = append(freshAt, i)
+	}
+	if !r.referentsFired {
+		for _, question := range fresh {
+			if refs, carried := r.referents.unresolved(question); len(refs) != 0 {
+				r.referentsFired = true
+				r.mu.Unlock()
+				return nil, r.referents.refusal(question, refs, carried)
+			}
+		}
 	}
 	remaining := r.cfg.MaxQuestions - r.asked
 	if len(fresh) != 0 && remaining <= 0 {
