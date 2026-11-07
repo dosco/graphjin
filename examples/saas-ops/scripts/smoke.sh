@@ -25,12 +25,14 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/smoke-common.sh"
 smoke_parse_args "$@"
 
 # --- domain agent runners (scripted churn-risk discovery flow) -----------------
+# The data agent never sees saved queries, so the scripted flow inspects the
+# accounts table detail and authors the query.
 
 run_agent_rest_once() {
   local out="$TMP_DIR/agent-rest-$(date +%s%N).json"
   local payload
   payload="$(jq -n '{
-    instruction:"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:churn_risk_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const account = result.data.accounts.find(a => a.status === \"churn_risk\"); await final({status:\"answered\", answer:`${account.name} is the top churn risk, renewing on ${account.renewal_date}.`, data:{account}, evidence:{saved_query:\"churn_risk_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
+    instruction:"Use the JavaScript runtime globals to run this exact discovery flow: const tableId = async (name) => (await query_catalog({kind:\"table\", search:name, limit:10})).cards.find(c => c.table_name === name || c.name === name).id; const detail = await query_catalog({ids:[await tableId(\"accounts\")]}); const result = await execute_graphql({query:`query { accounts(where: { status: { eq: \"churn_risk\" } }, order_by: { renewal_date: asc }, limit: 20) { id name plan status mrr_cents renewal_date last_active_at } }`}); const account = result.data.accounts.find(a => a.status === \"churn_risk\"); await final({status:\"answered\", answer:`${account.name} is the top churn risk, renewing on ${account.renewal_date}.`, data:{account}, evidence:{tables:[\"accounts\"], table_detail:detail.cards}});",
     max_steps:10,
     return_trace:false
   }')"
@@ -40,7 +42,7 @@ run_agent_rest_once() {
 
 run_agent_mcp_once() {
   mcp_tool ask_graphjin_agent '{
-    "instruction":"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:churn_risk_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const account = result.data.accounts.find(a => a.status === \"churn_risk\"); await final({status:\"answered\", answer:`${account.name} is the top churn risk, renewing on ${account.renewal_date}.`, data:{account}, evidence:{saved_query:\"churn_risk_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
+    "instruction":"Use the JavaScript runtime globals to run this exact discovery flow: const tableId = async (name) => (await query_catalog({kind:\"table\", search:name, limit:10})).cards.find(c => c.table_name === name || c.name === name).id; const detail = await query_catalog({ids:[await tableId(\"accounts\")]}); const result = await execute_graphql({query:`query { accounts(where: { status: { eq: \"churn_risk\" } }, order_by: { renewal_date: asc }, limit: 20) { id name plan status mrr_cents renewal_date last_active_at } }`}); const account = result.data.accounts.find(a => a.status === \"churn_risk\"); await final({status:\"answered\", answer:`${account.name} is the top churn risk, renewing on ${account.renewal_date}.`, data:{account}, evidence:{tables:[\"accounts\"], table_detail:detail.cards}});",
     "max_steps":10,
     "return_trace":false
   }'
@@ -50,7 +52,7 @@ saas_agent_expr='
   (.status // .result.structuredContent.status) == "answered"
   and ((.answer // .result.structuredContent.answer // "") | test("Meridian"; "i"))
   and ((.actions // .result.structuredContent.actions // []) | tostring | test("query_catalog"))
-  and ((.evidence // .result.structuredContent.evidence // {}) | tostring | test("churn_risk_context"))
+  and ((.evidence // .result.structuredContent.evidence // {}) | tostring | test("accounts"))
 '
 
 # --- domain agent eval suite ---------------------------------------------------
@@ -60,17 +62,17 @@ run_agent_eval_suite() {
 
   log "checking open-ended agent discovery protocol evals"
 
-  out="$(run_agent_rest_prompt "Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:churn_risk_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const account = result.data.accounts.find(a => a.status === \"churn_risk\"); await final({status:\"answered\", answer:account.name + \" is the top churn risk, renewing on \" + account.renewal_date + \".\", data:{account}, evidence:{saved_query:\"churn_risk_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});")"
+  out="$(run_agent_rest_prompt "Use the JavaScript runtime globals to run this exact discovery flow: const tableId = async (name) => (await query_catalog({kind:\"table\", search:name, limit:10})).cards.find(c => c.table_name === name || c.name === name).id; const detail = await query_catalog({ids:[await tableId(\"accounts\")]}); const result = await execute_graphql({query:\`query { accounts(where: { status: { eq: \"churn_risk\" } }, order_by: { renewal_date: asc }, limit: 20) { id name plan status mrr_cents renewal_date last_active_at } }\`}); const account = result.data.accounts.find(a => a.status === \"churn_risk\"); await final({status:\"answered\", answer:\`\${account.name} is the top churn risk, renewing on \${account.renewal_date}.\`, data:{account}, evidence:{tables:[\"accounts\"], table_detail:detail.cards}});")"
   assert_jq "$out" '
     .status == "answered"
     and (.answer | test("Meridian|churn"; "i"))
     and (.actions | tostring | test("query_catalog"))
     and (.actions | tostring | test("execute_graphql"))
     and ((.actions | tostring | test("execute_saved_query")) | not)
-    and (.evidence | tostring | test("churn_risk_context"))
-  ' "agent eval: churn risk answered by running the saved query's definition"
+    and (.evidence | tostring | test("accounts"))
+  ' "agent eval: churn risk answered from an authored accounts query"
 
-  out="$(run_agent_rest_prompt "Inventory the approved saved queries and workflows this SaaS ops demo exposes. Do discovery only; do not execute anything.")"
+  out="$(run_agent_rest_prompt "Inventory the workflows and tables this SaaS ops demo exposes. Do discovery only; do not execute anything.")"
   assert_jq "$out" '
     (.status == "answered" or .status == "blocked")
     and (.actions | tostring | test("query_catalog|graphql_help"))

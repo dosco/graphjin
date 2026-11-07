@@ -27,9 +27,12 @@ invalidation status even when it is not selected for the public board.
 ## Frozen suite, live verification
 
 The current `2028.5` test version uses generator contract
-`graphjin.eval.generator/v18` (104 of its tasks are unchanged from the v12-built
-`2028.4`) and a committed, deterministic 113-task suite
-built from the bundled SaaS Ops demo at seed `23`. Alongside organizational
+`graphjin.eval.generator/v19` and a committed, deterministic 113-task suite
+built from the bundled SaaS Ops demo at seed `23`. 104 of its tasks are
+unchanged from the v12-built `2028.4`; the nine saved-metric tasks were
+dropped, because the server agent now authors every query itself and its
+catalog no longer lists saved queries, and nine new aggregate, window, ranking,
+discovery and refusal questions took their slots. Alongside organizational
 questions and governed refusals, it measures writes with post-state and
 collateral-safety checks, standing-watch definition and delivery,
 history-grounded follow-ups, and work that joins database evidence with file or

@@ -60,12 +60,14 @@ smoke_extra_cleanup() {
 }
 
 # --- domain agent runners (scripted Northstar discovery flow) -----------------
+# The data agent never sees saved queries, so the scripted flow inspects the
+# production_orders and subscriptions table detail and authors the query.
 
 run_agent_rest_once() {
   local out="$TMP_DIR/agent-rest-$(date +%s%N).json"
   local payload
   payload="$(jq -n '{
-    instruction:"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:daily_roast_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const order = result.data.production_orders.find(o => o.product_name === \"Northstar House Blend 340g\"); const sub = result.data.subscriptions.find(s => s.product_name === \"Northstar House Blend 340g\"); await final({status:\"answered\", answer:`Northstar should prioritize ${order.product_name}: ${order.quantity_bags} bags for ${order.requested_ship_date}, plus ${sub.bags_per_shipment} subscription bags due ${sub.next_ship_date}.`, data:{order, subscription:sub}, evidence:{saved_query:\"daily_roast_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
+    instruction:"Use the JavaScript runtime globals to run this exact discovery flow: const tableId = async (name) => (await query_catalog({kind:\"table\", search:name, limit:10})).cards.find(c => c.table_name === name || c.name === name).id; const detail = await query_catalog({ids:[await tableId(\"production_orders\"), await tableId(\"subscriptions\")]}); const result = await execute_graphql({query:`query { production_orders(order_by: { priority: asc }, limit: 10) { id product_name quantity_bags requested_ship_date status priority } subscriptions(where: { active: { eq: true } }, order_by: { next_ship_date: asc }, limit: 10) { id product_name next_ship_date bags_per_shipment } }`}); const order = result.data.production_orders.find(o => o.product_name === \"Northstar House Blend 340g\"); const sub = result.data.subscriptions.find(s => s.product_name === \"Northstar House Blend 340g\"); await final({status:\"answered\", answer:`Northstar should prioritize ${order.product_name}: ${order.quantity_bags} bags for ${order.requested_ship_date}, plus ${sub.bags_per_shipment} subscription bags due ${sub.next_ship_date}.`, data:{order, subscription:sub}, evidence:{tables:[\"production_orders\",\"subscriptions\"], table_detail:detail.cards}});",
     max_steps:10,
     return_trace:false
   }')"
@@ -75,7 +77,7 @@ run_agent_rest_once() {
 
 run_agent_mcp_once() {
   mcp_tool ask_graphjin_agent '{
-    "instruction":"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:daily_roast_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const order = result.data.production_orders.find(o => o.product_name === \"Northstar House Blend 340g\"); const sub = result.data.subscriptions.find(s => s.product_name === \"Northstar House Blend 340g\"); await final({status:\"answered\", answer:`Northstar should prioritize ${order.product_name}: ${order.quantity_bags} bags for ${order.requested_ship_date}, plus ${sub.bags_per_shipment} subscription bags due ${sub.next_ship_date}.`, data:{order, subscription:sub}, evidence:{saved_query:\"daily_roast_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
+    "instruction":"Use the JavaScript runtime globals to run this exact discovery flow: const tableId = async (name) => (await query_catalog({kind:\"table\", search:name, limit:10})).cards.find(c => c.table_name === name || c.name === name).id; const detail = await query_catalog({ids:[await tableId(\"production_orders\"), await tableId(\"subscriptions\")]}); const result = await execute_graphql({query:`query { production_orders(order_by: { priority: asc }, limit: 10) { id product_name quantity_bags requested_ship_date status priority } subscriptions(where: { active: { eq: true } }, order_by: { next_ship_date: asc }, limit: 10) { id product_name next_ship_date bags_per_shipment } }`}); const order = result.data.production_orders.find(o => o.product_name === \"Northstar House Blend 340g\"); const sub = result.data.subscriptions.find(s => s.product_name === \"Northstar House Blend 340g\"); await final({status:\"answered\", answer:`Northstar should prioritize ${order.product_name}: ${order.quantity_bags} bags for ${order.requested_ship_date}, plus ${sub.bags_per_shipment} subscription bags due ${sub.next_ship_date}.`, data:{order, subscription:sub}, evidence:{tables:[\"production_orders\",\"subscriptions\"], table_detail:detail.cards}});",
     "max_steps":10,
     "return_trace":false
   }'
@@ -97,7 +99,7 @@ northstar_agent_expr='
   and ((.answer // .result.structuredContent.answer // "") | test("Northstar"; "i"))
   and ((.answer // .result.structuredContent.answer // "") | test("House Blend|420"; "i"))
   and ((.actions // .result.structuredContent.actions // []) | tostring | test("query_catalog"))
-  and ((.evidence // .result.structuredContent.evidence // {}) | tostring | test("saved_query:daily_roast_context|daily_roast_context"))
+  and ((.evidence // .result.structuredContent.evidence // {}) | tostring | test("production_orders"))
 '
 
 # Two same-owner MCP sessions must wake only for the watch URI they subscribed
@@ -404,7 +406,7 @@ run_task_agent_eval_suite() {
   local suffix goal marker create_out task_id note_out unlinked_out first_out second_out entries_out close_out verify_entries_out
   suffix="$(date +%s)_$$"
   marker="FIRST-TRAIL-${suffix}"
-  goal="Coffee warm-start ${suffix}: keep Northstar production planning grounded in approved saved-query evidence."
+  goal="Coffee warm-start ${suffix}: keep Northstar production planning grounded in production order rows."
   create_out="$(graphql task-create "mutation { gj_task(insert: { goal: \"${goal}\", snapshot_json: { product: \"Northstar House Blend 340g\" } }) { id goal status } }")"
   task_id="$(jq -r '[.data.gj_task] | flatten | .[0].id' "$create_out")"
   assert_jq_args "$create_out" "[TASK-CONTINUITY] declared task created explicitly" --arg goal "$goal" '
@@ -413,16 +415,16 @@ run_task_agent_eval_suite() {
   '
   COFFEE_TASK_IDS+=("$task_id")
 
-  note_out="$(graphql task-note "mutation { gj_task_entry(insert: { task_id: \"${task_id}\", body: \"Prioritize approved saved-query evidence.\" }) { id origin body } }")"
+  note_out="$(graphql task-note "mutation { gj_task_entry(insert: { task_id: \"${task_id}\", body: \"Ground answers in production_orders rows.\" }) { id origin body } }")"
   assert_jq "$note_out" '([.data.gj_task_entry] | flatten | .[0]) as $entry | ($entry.id | startswith("te:")) and $entry.origin == "caller"' "[TASK-CONTINUITY] caller task journal appended"
 
-  unlinked_out="$(run_agent_rest_prompt "Inventory the approved saved queries for a separate smoke check. Do discovery only and answer briefly.")"
+  unlinked_out="$(run_agent_rest_prompt "Inventory the workflows for a separate smoke check. Do discovery only and answer briefly.")"
   assert_jq_args "$unlinked_out" "[TASK-CONTINUITY] unlinked agent run advertises the caller's open task" --arg task_id "$task_id" '
     .status == "answered"
     and any(.notices[]?; .kind == "task_open_unlinked" and (.task_ids | index($task_id)) != null)
   '
 
-  first_out="$(run_agent_rest_task "$task_id" "Inspect the declared task context, discover the saved query daily_roast_context and its detail, then answer with exactly this marker after the evidence check: ${marker}")"
+  first_out="$(run_agent_rest_task "$task_id" "Inspect the declared task context, discover the production_orders table and its detail, then answer with exactly this marker after the evidence check: ${marker}")"
   assert_jq_args "$first_out" "[TASK-CONTINUITY] first task agent run used declared context" --arg marker "$marker" --arg task_id "$task_id" '
     .status == "answered"
     and (.answer | contains($marker))
@@ -568,9 +570,9 @@ run_agent_eval_suite() {
   # coversCommittedShipments verdict absent from the data.
   #
   # It asserts the run reached its decision through the governed path and
-  # grounded the answer in returned rows: the approved saved query executed,
-  # real seeded values are quoted, a coverage verdict is actually stated, and
-  # no schema-blaming excuse appears. The verdict itself (covered vs short) is
+  # grounded the answer in returned rows: the agent authored and executed its
+  # own query from table detail, real seeded values are quoted, a coverage
+  # verdict is actually stated, and no schema-blaming excuse appears. The verdict itself (covered vs short) is
   # deliberately not pinned: the prompt leaves the scope undefined — today's
   # roasts vs all scheduled, orders alone vs orders plus subscriptions — so
   # both readings are defensible from the same rows. Pin the exact figures once
@@ -589,24 +591,24 @@ run_agent_eval_suite() {
     fi
   done
   if [ -n "$natural_ok" ]; then
-    pass "agent eval: natural-language roast planning decided through the approved saved query"
+    pass "agent eval: natural-language roast planning decided from returned rows"
   else
-    echo "assertion failed: agent eval: natural-language roast planning decided through the approved saved query" >&2
+    echo "assertion failed: agent eval: natural-language roast planning decided from returned rows" >&2
     jq . "$out" >&2 || cat "$out" >&2
     return 1
   fi
 
-  out="$(run_agent_rest_prompt "Using GraphJin catalog-first discovery, decide what Northstar House Blend production work should be prioritized next. Discover approved saved queries. Then make a separate query_catalog({id:\"saved_query:daily_roast_context\"}) detail call if that id exists. Only after that detail call, run its graphql_query with execute_graphql and answer only from result.data evidence.")"
+  out="$(run_agent_rest_prompt "Using GraphJin catalog-first discovery, decide what Northstar House Blend production work should be prioritized next. Answer only from result.data evidence returned in this run.")"
   assert_jq "$out" '
     .status == "answered"
     and (.answer | test("Northstar|House Blend"; "i"))
     and (.actions | tostring | test("query_catalog"))
     and (.actions | tostring | test("execute_graphql"))
     and ((.actions | tostring | test("execute_saved_query")) | not)
-    and (.evidence | tostring | test("daily_roast_context"))
-  ' "agent eval: daily roast planning ran the saved query's definition"
+    and (.evidence | tostring | test("production_orders|roast_schedule"))
+  ' "agent eval: daily roast planning authored its own query from table detail"
 
-  out="$(run_agent_rest_prompt "Inventory the approved saved queries and workflows that this coffee roastery demo exposes. Do discovery only; do not execute anything.")"
+  out="$(run_agent_rest_prompt "Inventory the workflows and tables that this coffee roastery demo exposes. Do discovery only; do not execute anything.")"
   assert_jq "$out" '
     (.status == "answered" or .status == "blocked")
     and (.actions | tostring | test("query_catalog|graphql_help"))
@@ -624,7 +626,7 @@ run_agent_eval_suite() {
       (((.evidence.protocol.raw_graphql // .evidence.raw_graphql // []) | length) == 0)
       or (((.evidence.protocol.catalog_detail_ids // .evidence.catalog_detail_ids // []) | length) > 0)
     )
-    and (.evidence | tostring | test("query_catalog|roast|quality|saved_query"))
+    and (.evidence | tostring | test("query_catalog|roast|quality"))
   ' "agent eval: raw GraphQL never executes without same-run discovery"
 
   out="$(run_agent_rest_prompt "Find whether an existing workflow can do broad production risk review across roast batches, QC scores, and customer issues. Execute it only if the narrow agent surface makes that safe; otherwise block with the missing capability.")"
@@ -632,26 +634,26 @@ run_agent_eval_suite() {
     (.status == "blocked" or .status == "answered")
     and (.actions | tostring | test("query_catalog|graphql_help"))
     and ([.actions[]? | select(.tool == "execute_graphql" and .status == "ok")] | length) == 0
-    and (.evidence | tostring | test("workflow|saved_query|capability|blocked|gj_workflow_execution"))
+    and (.evidence | tostring | test("workflow|capability|blocked|gj_workflow_execution"))
   ' "agent eval: broad workflow-style prompt stayed on safe surface"
 
   # Multi-turn: a follow-up that only makes sense against the prior exchange.
-  # A request carrying history runs the lead, which resolves "the saved query
-  # you found" into a self-contained question; the worker that answers it still
+  # A request carrying history runs the lead, which resolves "the table you
+  # named" into a self-contained question; the worker that answers it still
   # does its own discovery.
   local history
   history="$(jq -n '[
-    {role:"user", content:"Which saved query summarizes daily roast planning context?"},
-    {role:"assistant", content:"The daily_roast_context saved query summarizes production orders and subscriptions.", status:"answered"}
+    {role:"user", content:"Which table holds the daily roast production orders?"},
+    {role:"assistant", content:"The production_orders table holds customer production orders with product, quantity, and requested ship date.", status:"answered"}
   ]')"
   local history_ok="" history_attempt
   for history_attempt in 1 2; do
-    out="$(run_agent_rest_history "Run the saved query you found in the previous turn and summarize what Northstar House Blend needs." "$history")"
+    out="$(run_agent_rest_history "Query the table you named in the previous turn and summarize what Northstar House Blend needs." "$history")"
     if jq -e '
       .status == "answered"
       and (.answer | test("Northstar|House Blend"; "i"))
       and (.actions | tostring | test("query_catalog"))
-      and (.evidence | tostring | test("daily_roast_context"))
+      and (.evidence | tostring | test("production_orders"))
     ' "$out" >/dev/null; then
       history_ok=1
       break
@@ -667,7 +669,7 @@ run_agent_eval_suite() {
 
   # Streaming: the SSE variant emits per-action progress frames before the result.
   local sse_out
-  sse_out="$(run_agent_rest_sse "List the approved saved queries for this demo. Discovery only; do not execute anything.")"
+  sse_out="$(run_agent_rest_sse "List the workflows for this demo. Discovery only; do not execute anything.")"
   if grep -q "^event: action" "$sse_out" && grep -q "^event: result" "$sse_out"; then
     pass "agent eval: SSE stream emitted action and result events"
   else

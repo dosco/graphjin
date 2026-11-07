@@ -336,6 +336,7 @@ func TestGenerateCatalogCandidatesKeepsOnlyObjectiveBusinessTasks(t *testing.T) 
 		{ID: "relationship:orders.customer", Kind: "relationship", Name: "orders customer", TableName: "orders"},
 		{ID: "saved_query:row_page", Kind: "saved_query", Name: "row_page", DetailsJSON: map[string]any{"query": `query row_page { orders(limit: 10) { id amount_cents } }`}},
 		{ID: "saved_query:total", Kind: "saved_query", Name: "total", DetailsJSON: map[string]any{"query": `query total { orders { sum_amount_cents } }`}},
+		{ID: "annotation:order_total", Kind: "annotation", Name: "order_total", DetailsJSON: map[string]any{"query": `query order_total { orders { sum_amount_cents } }`}},
 	}
 	tasks := generateCatalogCandidates(CatalogSnapshot{Rows: rows}, 23)
 	var sawAmountAggregate, sawAmountRanking, sawNullableCompleteness, sawSavedAggregate, sawDatePrompt, sawDateAggregate, sawDateRanking bool
@@ -364,13 +365,18 @@ func TestGenerateCatalogCandidatesKeepsOnlyObjectiveBusinessTasks(t *testing.T) 
 				t.Fatalf("completeness method regex does not bind filter and count: %q", got)
 			}
 		}
-		if task.Provenance.Source == "saved-query" && task.Oracle != nil {
+		// The data agent's catalog lists no saved queries, so none may become
+		// a task; an annotation's approved metric still does.
+		if strings.HasPrefix(task.Provenance.SourceID, "saved_query:") || task.Provenance.Source == "saved-query" {
+			t.Fatalf("generated a task from a saved query the agent cannot see: %+v", task)
+		}
+		if task.Provenance.Source == "annotation" && task.Oracle != nil {
 			sawSavedAggregate = true
-			// The data agent authors saved metrics itself: the method rule is
-			// the saved query's aggregate, observed in its own execute_graphql.
+			// The method rule is the metric's aggregate, observed in the
+			// agent's own execute_graphql.
 			if len(task.Method.RequireQueryMatch) != 1 || len(task.Method.RequireTools) != 0 ||
 				!reflect.DeepEqual(task.Behavior.RequiredActions, []string{"query_catalog", "execute_graphql"}) {
-				t.Fatalf("saved aggregate must be scored on the agent's own query: %+v %+v", task.Method, task.Behavior)
+				t.Fatalf("annotation metric must be scored on the agent's own query: %+v %+v", task.Method, task.Behavior)
 			}
 		}
 		if strings.Contains(task.Prompt, "orders.created_at") {

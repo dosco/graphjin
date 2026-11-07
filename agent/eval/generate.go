@@ -615,7 +615,10 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 	}
 	for _, row := range snapshot.Rows {
 		switch row.Kind {
-		case "saved_query", "annotation":
+		// Saved queries are not generated: the data agent's catalog does not
+		// list them, so a task naming one would ask for something it cannot
+		// see. An approved annotation carrying a metric query still can.
+		case "annotation":
 			if query := queryFromDetails(row.DetailsJSON); query != "" && readOnlyGraphQL(query) {
 				oracle, method, ok := aggregateOracleFromQuery(query)
 				if !ok {
@@ -624,10 +627,7 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 					// has a task-specific oracle for them.
 					continue
 				}
-				source := "saved-query"
-				if row.Kind == "annotation" {
-					source = "annotation"
-				}
+				source := "annotation"
 				task := Task{
 					Category: CategorySavedMetric, Difficulty: DifficultyT3, Slug: "saved-metric-" + row.Name,
 					Prompt:            fmt.Sprintf("Use the approved %s saved metric and explain its current result.", humanize(firstNonEmpty(row.Title, row.Name))),

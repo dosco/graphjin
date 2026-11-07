@@ -168,10 +168,11 @@ was skipped, and model-claimed actions never count, only real tool results.
 
 Internally it is an RLM (reasoning-with-code) loop: the model writes JavaScript
 that calls the same catalog tools as runtime globals (`query_catalog`,
-`graphql_help`, `validate_where_clause`, `execute_graphql`, `final`). Saved
-queries appear in the catalog as approved definitions: the agent reads one and
-runs its GraphQL, or its own adaptation, through `execute_graphql`; it has no
-saved-query callable. The typed result is parsed from `key: value`
+`graphql_help`, `validate_where_clause`, `execute_graphql`, `final`). It
+authors every query itself: its catalog leaves saved queries out, so it never
+adopts a definition picked by name in place of answering the question. MCP
+clients, REST and the production allow-list still use saved queries. The typed
+result is parsed from `key: value`
 output. There is no dependency on
 provider tool-calling, but Ax requests structured JSON for each typed stage.
 Which mechanism it uses is not GraphJin's decision: `agent.provider` names an Ax
@@ -203,8 +204,8 @@ distillation. Missing guides remain discoverable during execution. Selection is
 disabled by default; see the [server agent configuration](https://graphjin.com/agentic/server-agent/).
 Without it, a plain question (no caller context) still skips distillation: the
 executor receives a compact `seed_digest` in `catalog_facets` — the seed's top
-tables with their real column names and types, plus seed saved queries and
-workflows by id — and inspects and executes in its first step. A simple count
+tables with their real column names and types, plus seed workflows by id —
+and inspects and executes in its first step. A simple count
 is then two model calls, one to execute and one to answer.
 Read-only posture removes all write guides; workflow,
 watch, and admin guides require their governed roots, and admin guides also
@@ -214,8 +215,8 @@ Skills guide the model but never authorize it. Access stays enforced by core
 roles and row-level security, while Go protocol guards add per-call gates. A
 raw application mutation is rejected until this run gathered mutation-shape
 evidence for every target table; workflow execution is rejected until the
-chosen workflow detail was inspected; security/runtime and saved-query detail
-requirements remain in force. Ax `used(...)` reports the guides that actually
+chosen workflow detail was inspected; security/runtime detail requirements
+remain in force. Ax `used(...)` reports the guides that actually
 influenced a run through the plural `skills` response field. The deprecated
 singular `skill` field is the first used skill for v3 compatibility.
 

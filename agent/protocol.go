@@ -45,10 +45,6 @@ type discoveryState struct {
 	modelDiscoveryAction bool
 	catalogIDs           map[string]bool
 	catalogKinds         map[string]bool
-	// savedQueriesDiscovered names the saved queries the catalog showed this
-	// run. They are approved definitions the agent reads and borrows from when
-	// it authors its own query; it never executes them.
-	savedQueriesDiscovered  map[string]bool
 	securityRuntimeEvidence bool
 	// A run's writes are accounted for at finalization: an "answered" final
 	// after nothing but failed writes reports work that never happened. Ten of
@@ -62,8 +58,7 @@ type discoveryState struct {
 	watchDefinitionMutated    bool
 	annotationMutated         bool
 	// Per-target mutation evidence, populated only by id-detail lookups and
-	// validations in THIS run (search hits never count, mirroring the
-	// saved-query detail rule).
+	// validations in THIS run (search hits never count).
 	detailKinds       map[string]bool
 	tablesDetailed    map[string]bool
 	tablesValidated   map[string]bool
@@ -315,7 +310,6 @@ func newDiscoveryState(instruction string) *discoveryState {
 		instruction:            strings.TrimSpace(instruction),
 		catalogIDs:             map[string]bool{},
 		catalogKinds:           map[string]bool{},
-		savedQueriesDiscovered: map[string]bool{},
 		detailKinds:            map[string]bool{},
 		tablesDetailed:         map[string]bool{},
 		tablesValidated:        map[string]bool{},
@@ -361,7 +355,7 @@ func (r *protocolRuntime) GraphQLHelp(ctx context.Context, args map[string]any) 
 			topic = "discovery"
 		}
 		r.state.helpTopics = appendUniqueString(r.state.helpTopics, topic)
-		r.state.recordCatalogRows(out, true)
+		r.state.recordCatalogRows(out)
 		r.state.recordNext(out)
 	}
 	return out, err
@@ -891,7 +885,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		}
 		r.state.noteInterceptedWrite(query, "the write was refused pending catalog discovery and was not successfully retried")
 		if ContainsMutationOperation(query) {
-			err := fmt.Errorf("this write did NOT execute: inspect the target's catalog detail with query_catalog({id:\"...\"}) first, then re-execute the mutation.%s", approvedSavedQuerySuffix(r.state))
+			err := fmt.Errorf("this write did NOT execute: inspect the target's catalog detail with query_catalog({id:\"...\"}) first, then re-execute the mutation")
 			r.state.addViolation("raw_graphql_discovery_required", err.Error(), "execute_graphql", true, map[string]any{"candidate_ids": r.state.knownCatalogIDs(emptySearchKnownIDLimit)})
 			action := r.state.startAction("model", "execute_graphql", args)
 			r.state.finishAction(action, "execute_graphql", args, nil, err)
@@ -907,10 +901,8 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		if len(known) != 0 {
 			exact = fmt.Sprintf(" Candidate ids: query_catalog({ids:[\"%s\"]}).", strings.Join(known, `","`))
 		}
-		err := fmt.Errorf("this query did NOT execute: the seed and broad catalog results are not discovery detail; inspect the relevant catalog item with query_catalog({id:\"...\"}) first, then re-execute it.%s%s", exact, approvedSavedQuerySuffix(r.state))
-		details := map[string]any{
-			"approved_saved_queries": sortedBoolKeys(r.state.savedQueriesDiscovered),
-		}
+		err := fmt.Errorf("this query did NOT execute: the seed and broad catalog results are not discovery detail; inspect the relevant catalog item with query_catalog({id:\"...\"}) first, then re-execute it.%s", exact)
+		details := map[string]any{}
 		if len(known) != 0 {
 			details["candidate_ids"] = known
 		}
@@ -1598,7 +1590,7 @@ func (s *discoveryState) recordCatalogWithRoutes(args map[string]any, out any, s
 			s.securityRuntimeEvidence = true
 		}
 	}
-	s.recordCatalogRows(out, selectRoutes)
+	s.recordCatalogRows(out)
 	if len(ids) != 0 {
 		s.recordDetailEvidence(ids, out)
 	}
@@ -1713,14 +1705,11 @@ func tableNameFromCatalogID(id string) string {
 	return strings.TrimSpace(name)
 }
 
-func (s *discoveryState) recordCatalogRows(out any, discoverSavedQueries bool) {
+func (s *discoveryState) recordCatalogRows(out any) {
 	for _, card := range catalogCards(out) {
 		id := stringFromMap(card, "id")
 		kind := stringFromMap(card, "kind")
 		name := stringFromMap(card, "name")
-		if name == "" {
-			name = savedQueryNameFromID(id)
-		}
 		// A remote_join relationship names the only route into its from-table.
 		// Remember it: a top-level query on that table cannot return data, and the
 		// interception that redirects it needs to know the parent.
@@ -1773,14 +1762,6 @@ func (s *discoveryState) recordCatalogRows(out any, discoverSavedQueries bool) {
 		}
 		if kind != "" {
 			s.catalogKinds[kind] = true
-		}
-		if kind == "saved_query" && discoverSavedQueries {
-			if name == "" {
-				name = strings.TrimPrefix(id, "saved_query:")
-			}
-			if name != "" {
-				s.markSavedQueryDiscovered(name)
-			}
 		}
 		if kind == "system_capability" && strings.Contains(strings.ToLower(id+" "+name+" "+stringFromMap(card, "title")), "gj_security") {
 			s.securityRuntimeEvidence = true
@@ -2040,7 +2021,7 @@ func (s *discoveryState) clarificationNudge() string {
 		return ""
 	}
 	s.clarificationNudgeUsed = true
-	return "A clarification this early usually means discovery has not been tried yet. Before asking the user: enumerate what exists with query_catalog({kind:\"table\", limit:20}) — and kinds saved_query and workflow if relevant — and run one query_catalog({search: <the user's own words>}) coverage search. Ask the user only if the target is still ambiguous after inspecting those results."
+	return "A clarification this early usually means discovery has not been tried yet. Before asking the user: enumerate what exists with query_catalog({kind:\"table\", limit:20}) — and kind workflow if relevant — and run one query_catalog({search: <the user's own words>}) coverage search. Ask the user only if the target is still ambiguous after inspecting those results."
 }
 
 func (s *discoveryState) answerReadyForCompletion() bool {
@@ -3087,7 +3068,6 @@ func (s *discoveryState) mergeEvidence(model any) any {
 		"catalog_detail_ids":       s.catalogDetails,
 		"catalog_ids":              sortedBoolKeys(s.catalogIDs),
 		"catalog_kinds":            sortedBoolKeys(s.catalogKinds),
-		"saved_queries_discovered": sortedBoolKeys(s.savedQueriesDiscovered),
 		"tables_detailed":          sortedBoolKeys(s.tablesDetailed),
 		"tables_validated":         sortedBoolKeys(s.tablesValidated),
 		"workflows_detailed":       sortedBoolKeys(s.workflowsDetailed),
@@ -3376,16 +3356,6 @@ func sortedBoolKeys(values map[string]bool) []string {
 	return keys
 }
 
-func canonicalSavedQueryName(name string) string {
-	return strings.TrimSpace(strings.TrimPrefix(name, "saved_query:"))
-}
-
-func (s *discoveryState) markSavedQueryDiscovered(name string) {
-	for _, candidate := range savedQueryNameCandidates(name) {
-		s.savedQueriesDiscovered[candidate] = true
-	}
-}
-
 // noteInterceptedWrite records that a mutation was stopped before execution.
 // Run ab4-trt measured the hole this closes: 26 action episodes made exactly
 // one write call, had it consumed by an evidence supply or a guard refusal,
@@ -3406,25 +3376,6 @@ func (s *discoveryState) noteInterceptedWrite(query, reason string) {
 		// rejects that repeat without ever mentioning the write still waiting.
 		s.interceptedWriteQuery = strings.TrimSpace(query)
 	}
-}
-
-func savedQueryNameCandidates(name string) []string {
-	name = canonicalSavedQueryName(name)
-	if name == "" {
-		return nil
-	}
-	out := []string{name}
-	if idx := strings.LastIndex(name, "."); idx >= 0 && idx+1 < len(name) {
-		out = append(out, name[idx+1:])
-	}
-	return out
-}
-
-func savedQueryNameFromID(id string) string {
-	if strings.HasPrefix(id, "saved_query:") {
-		return strings.TrimSpace(strings.TrimPrefix(id, "saved_query:"))
-	}
-	return ""
 }
 
 func isSecurityRuntimeID(id string) bool {
@@ -4371,14 +4322,6 @@ func catalogCardEvidence(tool string, args map[string]any, out any) map[string]a
 		for _, key := range []string{"examples_json", "evidence_json", "safety_json", "suggested_next_json", "summary"} {
 			if value := truncateString(stringFromMap(card, key), catalogEvidenceFieldLimit); value != "" {
 				fields[key] = value
-			}
-		}
-		// Preserve a complete, already caller-visible saved-query definition
-		// for execution-method scoring. Never record a truncated definition:
-		// its catalog source hash must verify the exact source bytes.
-		if stringFromMap(card, "kind") == "saved_query" {
-			if query := stringFromMap(card, "graphql_query"); query != "" && len(query) <= catalogEvidenceFieldLimit {
-				fields["graphql_query"] = query
 			}
 		}
 		if len(fields) != 0 {

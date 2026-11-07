@@ -159,13 +159,15 @@ func TestEmbeddedPublicBenchmarkSuiteMatchesPinnedSpec(t *testing.T) {
 	}
 	for category, want := range map[gjeval.Category]int{
 		// Generation 2028.1 counts include execution twins alongside their intent
-		// tasks, which is why the write-side families grew.
-		gjeval.CategoryAggregate:   15,
-		gjeval.CategoryWindow:      15,
-		gjeval.CategoryRanking:     12,
-		gjeval.CategoryDiscovery:   10,
-		gjeval.CategorySavedMetric: 9,
-		gjeval.CategoryRefusal:     10,
+		// tasks, which is why the write-side families grew. Generation 2028.5
+		// has no saved-metric family: its nine slots went to the backfill
+		// families in the sampler's round-robin order.
+		gjeval.CategoryAggregate:   17,
+		gjeval.CategoryWindow:      17,
+		gjeval.CategoryRanking:     14,
+		gjeval.CategoryDiscovery:   12,
+		gjeval.CategorySavedMetric: 0,
+		gjeval.CategoryRefusal:     11,
 		gjeval.CategoryAction:      15,
 		gjeval.CategoryReactive:    12,
 		gjeval.CategoryMultiTurn:   7,

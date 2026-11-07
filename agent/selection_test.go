@@ -115,7 +115,6 @@ func selectionFixture() *selectionRuntime {
 		Cards: []core.CatalogCard{
 			{ID: "table:db:public.invoices", Kind: "table", Title: "invoices", TableName: "invoices", Summary: "invoice amounts"},
 			{ID: "table:db:public.customers", Kind: "table", Title: "customers", TableName: "customers", Summary: "invoice customers"},
-			{ID: "saved_query:invoices", Kind: "saved_query", Title: "invoices", GraphQLQuery: `query { invoices { id } }`},
 			{ID: "table:db:public.unrelated", Kind: "table", Title: "unrelated", TableName: "unrelated"},
 		},
 		Nodes: []core.CatalogNode{{ID: "n1", CardID: "table:db:public.invoices"}, {ID: "n2", CardID: "table:db:public.customers"}},
@@ -143,7 +142,7 @@ func TestPreparationDiscoversOutsideSeedAndRequiresConsumption(t *testing.T) {
 	rt := selectionFixture()
 	a := newSelectionAgent(rt, selectionFactory(selectRelevant))
 	result, protocol := prepareForTest(t, a, Request{Instruction: "show invoice customers"})
-	if !reflect.DeepEqual(result.stats.DetailIDs, []string{"saved_query:invoices", "table:db:public.customers", "table:db:public.invoices"}) {
+	if !reflect.DeepEqual(result.stats.DetailIDs, []string{"table:db:public.customers", "table:db:public.invoices"}) {
 		t.Fatalf("prefetched %v", result.stats.DetailIDs)
 	}
 	if protocol.state.hasCatalogDetailEvidence() || protocol.state.modelDiscoveryAction {
@@ -154,9 +153,6 @@ func TestPreparationDiscoversOutsideSeedAndRequiresConsumption(t *testing.T) {
 	}
 	if !protocol.state.tablesDetailed["invoices"] || !protocol.state.tablesDetailed["customers"] {
 		t.Fatalf("detail evidence not adopted: %+v", protocol.state.catalogDetails)
-	}
-	if len(protocol.state.savedQueriesDiscovered) != 0 {
-		t.Fatal("prefetch chose an implicit saved-query route")
 	}
 	if !protocol.state.modelDiscoveryAction || !result.stats.Consumed {
 		t.Fatal("consumption did not satisfy discovery")
@@ -175,7 +171,7 @@ func TestPreparationLargeCatalogUsesScopesBeyondSeed(t *testing.T) {
 		rt.snapshot.Cards = append(rt.snapshot.Cards, core.CatalogCard{ID: fmt.Sprintf("table:db:public.z%d", i), Kind: "table", Title: fmt.Sprintf("noise%d", i)})
 	}
 	result, _ := prepareForTest(t, newSelectionAgent(rt, selectionFactory(selectRelevant)), Request{Instruction: "show invoice customers"})
-	if len(result.stats.DetailIDs) != 3 {
+	if !reflect.DeepEqual(result.stats.DetailIDs, []string{"table:db:public.customers", "table:db:public.invoices"}) {
 		t.Fatalf("scope discovery missed target: %+v", result.stats)
 	}
 }
@@ -595,42 +591,6 @@ func TestDiscoveryHierarchyStartsWithRootsBeforeColumns(t *testing.T) {
 	})
 	if len(groups) != 3 || !discoveryRootKind(groups[0].Cards[0].Kind) || !discoveryRootKind(groups[1].Cards[0].Kind) || groups[2].Cards[0].Kind != "column" {
 		t.Fatalf("root-first hierarchy = %+v", groups)
-	}
-}
-
-func TestPreparedScopePrefersExactRootOverFilteredShortcut(t *testing.T) {
-	rt := selectionFixture()
-	rt.snapshot.Cards[2].GraphQLQuery = `query { invoices(where: {status: {eq: "paid"}}) { sum_amount_cents } }`
-	checkedDefinition := false
-	factory := selectionFactory(func(ctx context.Context, candidates []map[string]any) (ax.Value, error) {
-		out, err := selectRelevant(ctx, candidates)
-		for i, candidate := range candidates {
-			if candidate["scope_check"] == true {
-				if candidate["id"] == "saved_query:invoices" {
-					checkedDefinition = candidate["definition"] == rt.snapshot.Cards[2].GraphQLQuery
-				}
-				mapValue(mapValue(out)[fmt.Sprintf("slot%d", i)])["value"] = candidate["id"] == "table:db:public.invoices"
-			}
-		}
-		return out, err
-	})
-	prepared, _ := prepareForTest(t, newSelectionAgent(rt, factory), Request{Instruction: "Total invoice amount across all invoices"})
-	digest := prepared.digest()
-	if !checkedDefinition || len(digest) == 0 || mapValue(digest[0])["id"] != "table:db:public.invoices" || mapValue(digest[0])["scope_match"] != true {
-		t.Fatalf("actual filter scope was not checked before choosing a root: checked=%t digest=%v", checkedDefinition, digest)
-	}
-	found := false
-	for _, item := range digest {
-		ref := mapValue(item)
-		if ref["id"] == "saved_query:invoices" {
-			found = true
-			if ref["scope_match"] != false || ref["preference"] != "supporting_alternative" {
-				t.Fatalf("filtered shortcut became an execution target: %v", ref)
-			}
-		}
-	}
-	if !found {
-		t.Fatal("scope check pruned supporting metadata")
 	}
 }
 

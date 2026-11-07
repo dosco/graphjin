@@ -142,7 +142,7 @@ func remoteJoinTestRuntime(t *testing.T) (*protocolRuntime, *remoteJoinRuntime) 
 		"kind":          "relationship",
 		"source":        "remote_join",
 		"evidence_json": `{"FromTableName":"account_health","ToTableName":"accounts","Source":"remote_join"}`,
-	}}}, false)
+	}}})
 	return runtime, base
 }
 
@@ -243,7 +243,7 @@ func TestRemoteJoinRegistersFromEdges(t *testing.T) {
 		"kind":       "table",
 		"table_name": "account_health",
 		"edges_json": `[{"id":"relationship:app:main.account_health.__account_health_id->app:main.accounts.id","kind":"relationship"}]`,
-	}}}, false)
+	}}})
 
 	_, err := runtime.ExecuteGraphQL(context.Background(),
 		map[string]any{"query": `query { account_health { health } }`})

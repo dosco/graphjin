@@ -111,7 +111,7 @@ The agent is caller-aware. From the request's identity it derives a capability p
 
 There is no lexical router, embedding search, skill catalog, search callback, or skill-discovery turn. Global read-only posture removes every write guide. Workflow, watch, and admin guides are included only when their governed roots are visible; admin guides also require the admin role. Multi-domain requests can use more than one preloaded guide.
 
-Skills only shape the guidance the model sees. **They never grant access.** GraphJin core roles and row-level security remain authoritative, and protocol preflight enforces mutation shape, saved-query detail, security/runtime evidence, and workflow detail before execution. Ax's `used(...)` primitive supplies self-reported usage telemetry; it cannot change authorization.
+Skills only shape the guidance the model sees. **They never grant access.** GraphJin core roles and row-level security remain authoritative, and protocol preflight enforces mutation shape, security/runtime evidence, and workflow detail before execution. Ax's `used(...)` primitive supplies self-reported usage telemetry; it cannot change authorization.
 
 For standing requests, the watch skills apply the two-axis decision in [Choosing Watches, Flows, and Workflows](/agentic/watch-automation/): deterministic versus semantic/noisy, and notification versus an explicitly requested action. The agent may propose an action watch, but a protocol guard prevents it from creating/changing and approving that autonomous action in the same run.
 
@@ -248,7 +248,7 @@ is at that moment.
 An optional Ax decision stage prepares catalog evidence and skill guides before
 the main agent runs. It searches independently of the keyword seed, ranks
 starting roots before supporting columns, and fetches relevant schemas, relationship
-dependencies, saved-query contracts, and documentation. The existing agent
+dependencies, and documentation. The existing agent
 retains discovery tools for gaps and corrections.
 
 ```yaml
@@ -279,9 +279,9 @@ initial context stage and the executor, so early tool execution follows the same
 computation and syntax rules.
 
 After prefetch, a separate decision checks starting roots against the exact
-requested scope using saved-query definitions and table metadata. Matching
-roots take priority over related shortcuts; a query's added filter or limited
-row page cannot stand in for a requested full-scope aggregate. The digest
+requested scope using table and workflow metadata. Matching roots take priority
+over related shortcuts; an added filter or limited row page cannot stand in for
+a requested full-scope aggregate. The digest
 reports `scope_match` when checked. Nonmatching roots remain available as
 supporting context, and failed or unfinished checks retain normal discovery.
 

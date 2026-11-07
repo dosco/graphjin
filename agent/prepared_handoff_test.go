@@ -21,7 +21,7 @@ func (c *preparedRecordingClient) Chat(ctx context.Context, values, options map[
 func TestPreparedRequestExecutesOnFirstCoreModelTurn(t *testing.T) {
 	rt := selectionFixture()
 	// Keep a distractor in the seed, with one relevant executable root.
-	rt.snapshot.Cards = append(rt.snapshot.Cards[:1:1], rt.snapshot.Cards[3])
+	rt.snapshot.Cards = append(rt.snapshot.Cards[:1:1], rt.snapshot.Cards[2])
 	rt.snapshot.Nodes, rt.snapshot.Edges = nil, nil
 	client := &preparedRecordingClient{recordingClient{responses: []string{
 		`{"javascriptCode":"const preferred = inputs.context._graphjin_prepared.preferred; await query_catalog({id:preferred.id}); const execution = await execute_graphql({query:'query { invoices { id } }'}); await final('Answer from the returned invoice data.', {execution});"}`,
@@ -134,20 +134,20 @@ func TestPreparedHandoffEligibility(t *testing.T) {
 func TestSeedDigestGroupsColumnsUnderTheirTables(t *testing.T) {
 	seed := map[string]any{"cards": []any{
 		map[string]any{"id": "column:roast_warehouse:.roast_batches.batch_code", "kind": "column", "table_name": "roast_batches", "column_name": "batch_code", "summary": "string, not null"},
-		map[string]any{"id": "saved_query:daily_roast_context", "kind": "saved_query", "title": "daily_roast_context", "summary": "long prose that stays out"},
+		map[string]any{"id": "workflow:daily_roast_context", "kind": "workflow", "title": "daily_roast_context", "summary": "long prose that stays out"},
 		map[string]any{"id": "column:roast_warehouse:.roast_batches.final_temp_c", "kind": "column", "table_name": "roast_batches", "column_name": "final_temp_c", "summary": "float64"},
 		map[string]any{"id": "table:ops:public.customer_tickets", "kind": "table", "table_name": "customer_tickets"},
 		map[string]any{"id": "help:discovery", "kind": "help"},
 	}}
 	got := seedDigest(seed)
 	if len(got) != 3 {
-		t.Fatalf("digest = %v, want two tables and one saved query", got)
+		t.Fatalf("digest = %v, want two tables and one workflow", got)
 	}
 	first := mapValue(got[0])
 	if first["id"] != "table:roast_warehouse:.roast_batches" || strings.Join(anyStrings(first["columns"]), ",") != "batch_code:string,final_temp_c:float64" {
 		t.Fatalf("first table = %v", first)
 	}
-	if mapValue(got[1])["id"] != "table:ops:public.customer_tickets" || mapValue(got[2])["id"] != "saved_query:daily_roast_context" {
+	if mapValue(got[1])["id"] != "table:ops:public.customer_tickets" || mapValue(got[2])["id"] != "workflow:daily_roast_context" {
 		t.Fatalf("digest order = %v", got)
 	}
 	if strings.Contains(stringify(got), "long prose") {

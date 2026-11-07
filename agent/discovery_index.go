@@ -12,7 +12,7 @@ const selectionShardSize = 24
 
 func discoveryRootKind(kind string) bool {
 	switch kind {
-	case "table", "saved_query", "workflow", "entrypoint", "api_operation":
+	case "table", "workflow", "entrypoint", "api_operation":
 		return true
 	}
 	return false

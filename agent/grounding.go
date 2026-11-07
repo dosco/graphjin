@@ -22,9 +22,6 @@ const (
 	// minGroundedTokenLength skips short incidental tokens such as ids in
 	// prose; real field references (plan_status, remaining_kg) are longer.
 	minGroundedTokenLength = 5
-	// maxRecoverySavedQueries caps already-discovered candidates mentioned by
-	// the raw-GraphQL guard so recovery cannot flood the prompt.
-	maxRecoverySavedQueries = 8
 	// maxUngroundedTokens caps the reported token list in the violation.
 	maxUngroundedTokens = 8
 )
@@ -484,26 +481,6 @@ func joinRecoveryMessage(message, directive string) string {
 
 const recoveryDirectivePrefix = "GraphJin recovery:"
 
-// recommendedSavedQueryNames returns saved queries already discovered in this
-// run. Recovery never performs hidden catalog calls or injects extra cards.
-func recommendedSavedQueryNames(s *discoveryState) []string {
-	return sortedBoolKeys(s.savedQueriesDiscovered)
-}
-
-// approvedSavedQuerySuffix names the approved saved-query definitions discovered
-// for this run, for appending to a protocol rejection message: a working form
-// to read and adapt, never a call.
-func approvedSavedQuerySuffix(s *discoveryState) string {
-	names := recommendedSavedQueryNames(s)
-	if len(names) > maxRecoverySavedQueries {
-		names = names[:maxRecoverySavedQueries]
-	}
-	if len(names) == 0 {
-		return ""
-	}
-	return " Author the query from the returned column names; an approved saved query that matches (" +
-		strings.Join(names, ", ") + ") shows a working form: read query_catalog({id:\"saved_query:<name>\"}) and adapt its graphql_query with execute_graphql."
-}
 
 // recoveryDirective is the single sentence appended to execution errors; the
 // structured recovery.next field carries the actionable tool pointer.

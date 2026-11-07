@@ -58,7 +58,11 @@ const (
 	// approved definitions and authors its own query. Saved-metric tasks now
 	// require execute_graphql with the saved query's aggregate as the method
 	// rule, the form annotation-sourced metrics already used.
-	GeneratorVersion = "graphjin.eval.generator/v18"
+	// v19: saved queries no longer generate saved-metric tasks. The data
+	// agent's catalog leaves them out, so a prompt naming "the approved X
+	// saved metric" pointed at something it could not see; annotation-sourced
+	// metrics, which it can read, still generate.
+	GeneratorVersion = "graphjin.eval.generator/v19"
 	// RewardVersion v6: a dimension that starts with a number is no longer
 	// satisfied by a larger number ending in the same digits. "24 hours"
 	// contains "4 hours", so an answer stating the wrong service level scored as
@@ -95,6 +99,7 @@ var SupportedGeneratorVersions = []string{
 	"graphjin.eval.generator/v15",
 	"graphjin.eval.generator/v16",
 	"graphjin.eval.generator/v17",
+	"graphjin.eval.generator/v18",
 	GeneratorVersion,
 }
 

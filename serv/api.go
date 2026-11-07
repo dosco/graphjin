@@ -143,6 +143,9 @@ type graphjinService struct {
 	revisionSignalWG     sync.WaitGroup
 	revisionConsumerWG   sync.WaitGroup
 	catalogMu            sync.Mutex
+	// agentCatalogViews caches the data agent's saved-query-free view of each
+	// caller snapshot.
+	agentCatalogViews    gjagent.CatalogViews
 	catalogCache         *catalogCacheEntry
 	contextCatalogCache  map[string]contextCatalogEntry
 	onboardingMu         sync.RWMutex

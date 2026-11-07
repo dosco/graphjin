@@ -1293,7 +1293,7 @@ run_model_credentials_suite() {
   log "checking fail-closed behavior without server model credentials"
   mcp_initialize || fail "legacy MCP initialize failed"
   local out
-  out="$(mcp_tool_session ask_graphjin_agent '{"instruction":"List one saved query."}')"
+  out="$(mcp_tool_session ask_graphjin_agent '{"instruction":"List one table."}')"
   assert_jq "$out" '.result.isError == true and ((.result.structuredContent.code // "") == "model_credentials_required")' "MCP requires GraphJin-owned model credentials"
 
   local rest_out="$TMP_DIR/agent-no-server-model.json" rest_code

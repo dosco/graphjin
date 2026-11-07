@@ -93,7 +93,7 @@ Workflow writes use the same rule. `gj_workflow` and `save_workflow` write user 
 
 ## Reads and execution
 
-REST saved-query routes, MCP `execute_saved_query`, workflow scripts, `gj_workflow_execution`, and catalog discovery (which is how the server-side agent reads saved queries) all use the merged resolver. This means a user artifact can override a global saved query or workflow for that caller without changing what another caller sees.
+REST saved-query routes, MCP `execute_saved_query`, workflow scripts, `gj_workflow_execution`, and catalog discovery all use the merged resolver. The server-side agent's catalog leaves saved queries out: it authors every query itself. This means a user artifact can override a global saved query or workflow for that caller without changing what another caller sees.
 
 Artifact-backed saved queries can import artifact-backed fragments with the same `#import "./fragments/name"` syntax as files. Import traversal and absolute paths are rejected by the same resolver used for filesystem saved queries.
 

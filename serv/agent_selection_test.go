@@ -59,7 +59,9 @@ func TestAgentSelectionChangesEvaluationFingerprint(t *testing.T) {
 func TestAgentDiscoveryIndexKeepsAccountArtifactsPrivate(t *testing.T) {
 	svc := newArtifactOverlayTestService(t, map[string]string{"/queries/global_query.gql": `query global_query { users { id } }`})
 	ctx := artifactUserCtx("selector_owner")
-	if _, err := svc.saveUserArtifact(ctx, artifactKindSavedQuery, "private_selector_query", `query private_selector_query { users { id name } }`, map[string]any{"operation": "query"}); err != nil {
+	// A workflow, because the agent's catalog leaves saved queries out
+	// (agent/catalog_view.go) and a private one would prove nothing here.
+	if _, err := svc.saveUserArtifact(ctx, artifactKindWorkflow, "private_selector_flow", `function main() { return { ok: true }; }`, workflowMetaMap(WorkflowMeta{Description: "Private selector flow"})); err != nil {
 		t.Fatal(err)
 	}
 	runtime := &serviceAgentRuntime{service: svc}
@@ -73,7 +75,7 @@ func TestAgentDiscoveryIndexKeepsAccountArtifactsPrivate(t *testing.T) {
 	}
 	contains := func(index *gjagent.CatalogDiscoveryIndex) bool {
 		for _, card := range index.Cards {
-			if strings.Contains(card.ID, "private_selector_query") {
+			if strings.Contains(card.ID, "private_selector_flow") {
 				return true
 			}
 		}
@@ -86,5 +88,49 @@ func TestAgentDiscoveryIndexKeepsAccountArtifactsPrivate(t *testing.T) {
 	cancel()
 	if _, err := runtime.CatalogDiscovery(cancelled, nil); err == nil {
 		t.Fatal("cancelled discovery proceeded")
+	}
+}
+
+// The data agent authors every query itself, so the service runtime it reads
+// the catalog through never returns a saved query — by kind, by id or by
+// search — while the service's own catalog, which MCP and REST read, keeps it.
+func TestAgentRuntimeCatalogLeavesOutSavedQueries(t *testing.T) {
+	svc := newArtifactOverlayTestService(t, map[string]string{"/queries/global_query.gql": `query global_query { users { id } }`})
+	ctx := artifactUserCtx("catalog_owner")
+	full, err := svc.catalogSnapshotForContext(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := full.Card("saved_query:global_query"); !ok {
+		t.Fatal("fixture: the service catalog must list the saved query")
+	}
+	runtime := &serviceAgentRuntime{service: svc}
+	for _, args := range []map[string]any{
+		{"kind": "saved_query"},
+		{"id": "saved_query:global_query"},
+		{"search": "global_query"},
+	} {
+		out, err := runtime.QueryCatalog(ctx, args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, ok := out.(agentCatalogResult)
+		if !ok {
+			t.Fatalf("result type %T", out)
+		}
+		for _, card := range result.Cards {
+			if card.Kind == "saved_query" || strings.Contains(card.ID, "global_query") {
+				t.Fatalf("%v returned %s", args, card.ID)
+			}
+		}
+	}
+	if index, err := runtime.CatalogDiscovery(ctx, nil); err != nil {
+		t.Fatal(err)
+	} else {
+		for _, card := range index.Cards {
+			if strings.Contains(card.ID, "saved_query:") {
+				t.Fatalf("discovery index listed %s", card.ID)
+			}
+		}
 	}
 }

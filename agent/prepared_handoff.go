@@ -83,7 +83,7 @@ const (
 
 // seedDigest condenses the catalog seed into what an executor needs to act
 // without printing it: each seed table's id and real column names (with
-// types), and the ids of seed saved queries and workflows. Cards keep seed
+// types), and the ids of seed workflows and other discovery roots. Cards keep seed
 // order, which is relevance order.
 func seedDigest(seed any) []any {
 	type table struct {

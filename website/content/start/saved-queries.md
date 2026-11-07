@@ -42,7 +42,7 @@ The exact route shape depends on the service mode and client, but the important 
 
 For MCP clients, prefer saved-query execution tools when a production server disables raw GraphQL.
 
-REST saved-query routes, MCP `execute_saved_query`, and catalog discovery, where the server-side agent reads saved queries as definitions, all use the same merged resolver. A user artifact can override a global saved query for that caller without changing another caller's result.
+REST saved-query routes, MCP `execute_saved_query`, and MCP catalog discovery all use the same merged resolver. The server-side agent's catalog leaves saved queries out: it authors every query itself. A user artifact can override a global saved query for that caller without changing another caller's result.
 
 ## What this protects
 

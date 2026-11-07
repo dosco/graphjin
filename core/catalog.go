@@ -286,6 +286,17 @@ func (s *CatalogSnapshot) QueryResultWithHints(q CatalogQuery, hints []CatalogCa
 	return (*catalog.Snapshot)(s).QueryWithHints(q, hints)
 }
 
+// Without returns a copy of the snapshot that leaves out the cards drop
+// selects, with their details, graph nodes, edges and capabilities, indexed
+// for search. It returns the snapshot itself when drop selects nothing.
+// Build the copy once per snapshot and reuse it.
+func (s *CatalogSnapshot) Without(drop func(CatalogCard) bool) *CatalogSnapshot {
+	if s == nil {
+		return nil
+	}
+	return (*CatalogSnapshot)((*catalog.Snapshot)(s).Without(drop))
+}
+
 func (s *CatalogSnapshot) Card(id string) (CatalogCard, bool) {
 	if s == nil {
 		return CatalogCard{}, false

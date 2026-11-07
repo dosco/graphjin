@@ -59,7 +59,7 @@ func (c *recordingClient) Stream(context.Context, map[string]ax.Value, map[strin
 //	go test ./agent -run TestCaptureRenderedPromptPerStage -v
 func TestCaptureRenderedPromptPerStage(t *testing.T) {
 	const (
-		seedID          = "saved_query:seed_prompt_leak_sentinel"
+		seedID          = "workflow:seed_prompt_leak_sentinel"
 		seedSummary     = "SEED_SUMMARY_MUST_STAY_IN_RUNTIME_7F3A"
 		facetKindAudit  = "facet_digest_sentinel_kind"
 		toolResultAudit = "TOOL_RESULT_STAGING_AUDIT_91C2"
@@ -83,7 +83,7 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 			"count":  1,
 			"facets": map[string]any{facetKindAudit: 17},
 			"cards": []any{map[string]any{
-				"id": seedID, "kind": "saved_query", "summary": seedSummary,
+				"id": seedID, "kind": "workflow", "summary": seedSummary,
 			}},
 		}
 	}

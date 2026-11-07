@@ -1189,8 +1189,8 @@ deployments. `SG_AGENT_SERVICE_TIER` and `SJ_AGENT_SERVICE_TIER` remain accepted
 as compatibility aliases.
 
 There are no per-request agent modes. The server-side agent's internal runtime
-always includes discovery, validation, and guarded GraphQL execution; saved
-queries are catalog definitions it reads, not calls. `agent.read_only: true` is
+always includes discovery, validation, and guarded GraphQL execution, and it
+authors every query itself: its catalog leaves saved queries out. `agent.read_only: true` is
 the operator kill-switch that rejects mutations before execution. Otherwise
 the agent always runs as the caller, so core roles, row-level security,
 source/table `read_only`, and protocol evidence gates decide what can run. The

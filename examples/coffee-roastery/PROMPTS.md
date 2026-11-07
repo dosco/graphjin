@@ -12,11 +12,13 @@ To verify the same surfaces from the command line, run:
 examples/coffee-roastery/scripts/smoke.sh
 ```
 
-Run `examples/coffee-roastery/scripts/smoke.sh --agent` when the server-side agent is enabled. Use `--agent-eval` for stricter open-ended checks that assert catalog discovery, saved-query detail inspection, safe-mode raw GraphQL blocking, and evidence-shaped responses.
+Run `examples/coffee-roastery/scripts/smoke.sh --agent` when the server-side agent is enabled. Use `--agent-eval` for stricter open-ended checks that assert catalog discovery, table detail inspection, safe-mode raw GraphQL blocking, and evidence-shaped responses.
 
-The prompts below are plain business questions on purpose: discovering the
-approved saved query and staying on the governed path is the agent's job, not
-the reader's. That does require a capable model. Set one explicitly:
+The prompts below are plain business questions on purpose: finding the right
+tables, authoring the query, and staying on the governed path is the agent's
+job, not the reader's. The server-side agent does not see saved queries; the
+"Useful saved query" hints are for MCP clients and REST callers. That does
+require a capable model. Set one explicitly:
 
 ```bash
 GJ_AGENT_MODEL=gpt-4.1 graphjin serve --demo --path examples/coffee-roastery

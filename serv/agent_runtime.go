@@ -214,6 +214,17 @@ func newServiceAgentRuntime(s *graphjinService, conf gjagent.Config) (gjagent.Gr
 	return &serviceAgentRuntime{service: s, base: base, conf: conf}, nil
 }
 
+// agentCatalogSnapshot is the caller-visible catalog as the data agent reads
+// it: without saved queries (agent/catalog_view.go). Caller snapshots are
+// cached by the service, so their views are cached alongside.
+func (r *serviceAgentRuntime) agentCatalogSnapshot(ctx context.Context) (*core.CatalogSnapshot, error) {
+	snap, err := r.service.catalogSnapshotForContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return r.service.agentCatalogViews.Get(snap), nil
+}
+
 func (r *serviceAgentRuntime) GraphQLHelp(ctx context.Context, args map[string]any) (any, error) {
 	if err := r.requireCatalogAccess(ctx); err != nil {
 		return nil, err
@@ -222,7 +233,7 @@ func (r *serviceAgentRuntime) GraphQLHelp(ctx context.Context, args map[string]a
 	if topic == "" {
 		topic = "discovery"
 	}
-	snap, err := r.service.catalogSnapshotForContext(ctx)
+	snap, err := r.agentCatalogSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +271,7 @@ func (r *serviceAgentRuntime) QueryCatalog(ctx context.Context, args map[string]
 	if err := r.requireCatalogAccess(ctx); err != nil {
 		return nil, err
 	}
-	snap, err := r.service.catalogSnapshotForContext(ctx)
+	snap, err := r.agentCatalogSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +288,7 @@ func (r *serviceAgentRuntime) CatalogDiscovery(ctx context.Context, args map[str
 	if err := r.requireCatalogAccess(ctx); err != nil {
 		return nil, err
 	}
-	snap, err := r.service.catalogSnapshotForContext(ctx)
+	snap, err := r.agentCatalogSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -579,6 +590,9 @@ func agentCatalogNext(tool, reason string) map[string]any {
 func agentCatalogNextForQuery(q core.CatalogQuery, cards []core.CatalogCard) map[string]any {
 	count := len(cards)
 	kind := agentCatalogQueryKind(q)
+	if kind == "saved_query" {
+		return agentCatalogNext("query_catalog", gjagent.SavedQueriesAbsentReason)
+	}
 	if count == 0 {
 		next := agentCatalogNext("query_catalog", "No catalog rows matched. Broaden the search before acting.")
 		args := map[string]any{}
@@ -594,29 +608,8 @@ func agentCatalogNextForQuery(q core.CatalogQuery, cards []core.CatalogCard) map
 		if q.Limit > 0 {
 			args["limit"] = q.Limit
 		}
-		if kind == "saved_query" && q.Search != "" {
-			next["reason"] = "No saved_query rows matched the search text. Live row values are not catalog metadata; broaden to query_catalog({kind:\"saved_query\"}), then inspect a returned saved_query:<name> detail and adapt its graphql_query with execute_graphql."
-		}
 		if len(args) != 0 {
 			next["args"] = args
-		}
-		return next
-	}
-	if kind == "saved_query" {
-		next := agentCatalogNext("query_catalog", "Inspect the most relevant saved_query:<name> row with query_catalog({id:\"saved_query:<name>\"}) and adapt its graphql_query with execute_graphql.")
-		if count == 1 && cards[0].ID != "" {
-			next["args"] = map[string]any{"id": cards[0].ID}
-			next["reason"] = "Inspect this saved query detail and adapt its graphql_query with execute_graphql."
-		} else {
-			ids := make([]string, 0, len(cards))
-			for _, card := range cards {
-				if card.ID != "" {
-					ids = append(ids, card.ID)
-				}
-			}
-			if len(ids) != 0 {
-				next["candidate_ids"] = ids
-			}
 		}
 		return next
 	}

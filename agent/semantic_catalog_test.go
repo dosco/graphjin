@@ -96,8 +96,6 @@ func TestSemanticCatalogGuidanceAndToolSchemaAreConditional(t *testing.T) {
 func TestRuntimeSeedUsageInstructionsNameExactCodePathsAndShapes(t *testing.T) {
 	for _, phrase := range []string{
 		"inputs.context._graphjin_discovery",
-		"Saved-query cards are approved definitions, never callables",
-		"take its graphql_query as the approved form",
 		"never put them in Promise.then callbacks",
 		"inputs.distilledContext does not exist",
 		"result.cards[0]",
@@ -108,11 +106,10 @@ func TestRuntimeSeedUsageInstructionsNameExactCodePathsAndShapes(t *testing.T) {
 		"globalThis.graphjinLastExecution",
 		"graphjinLastExecution.result.data",
 		"Never infer that business data is absent from catalog-card prose",
-		// Dynamic-first identity: authoring is the only path, saved queries
-		// are definitions to read, and aggregate questions re-author past
-		// row-page saved results.
+		// Dynamic-first identity: authoring is the only path, with
+		// aggregate fields for any total, count, extreme or ranking.
 		"primary path is dynamic authoring",
-		"re-author with aggregate fields",
+		"DB-side aggregate fields",
 		"current_date",
 	} {
 		if !strings.Contains(runtimeSeedUsageInstructions, phrase) {
@@ -122,11 +119,14 @@ func TestRuntimeSeedUsageInstructionsNameExactCodePathsAndShapes(t *testing.T) {
 	if strings.Contains(runtimeSeedUsageInstructions, "The normal governed path is") {
 		t.Fatal("runtime seed guidance regressed to saved-query-first choreography")
 	}
-	// The data agent has no saved-query callable; naming one sends it to a
-	// ReferenceError.
-	for _, text := range []string{runtimeSeedUsageInstructions, runtimeUsageInstructions, dataDiscoveryInstruction, dataWriteInstruction, preparedDiscoveryInstructions} {
-		if strings.Contains(text, "execute_saved_query") {
-			t.Fatalf("instructions still name execute_saved_query: %q", text)
+	// The data agent's catalog lists no saved queries (catalog_view.go), so
+	// no instruction may send it looking for one: naming execute_saved_query
+	// is a ReferenceError and a saved_query kind search returns nothing.
+	for _, text := range []string{runtimeSeedUsageInstructions, runtimeUsageInstructions, executorHandoffInstructions, dataDiscoveryInstruction, dataWriteInstruction, preparedDiscoveryInstructions, selectionInstruction, rootScopeInstruction} {
+		for _, stale := range []string{"execute_saved_query", "saved_query", "saved quer", "saved-quer"} {
+			if strings.Contains(strings.ToLower(text), stale) {
+				t.Fatalf("instructions still teach saved queries (%q): %q", stale, text)
+			}
 		}
 	}
 }
@@ -294,7 +294,6 @@ func TestExecutorHandoffInstructionsRequireExplicitDiscovery(t *testing.T) {
 	for _, phrase := range []string{
 		"initial catalog seed is orientation only",
 		"never satisfies the required model-driven discovery action",
-		`query_catalog({kind:"saved_query", limit:10})`,
 		"globalThis.graphjinDistilledContext",
 		"globalThis.graphjinExecutorRequest",
 		"normalized user request",

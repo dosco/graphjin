@@ -53,12 +53,14 @@ smoke_parse_args "$@"
 start_supplier_mock
 
 # --- domain agent runners (scripted release-readiness discovery flow) ----------
+# The data agent never sees saved queries, so the scripted flow inspects the
+# fab_orders and customers table detail and authors the query.
 
 run_agent_rest_once() {
   local out="$TMP_DIR/agent-rest-$(date +%s%N).json"
   local payload
   payload="$(jq -n '{
-    instruction:"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:fab_order_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const order = result.data.fab_orders.find(o => o.priority === 1); await final({status:\"answered\", answer:`${order.order_code} for ${order.customers.name} is the highest priority fab order and is still ${order.status}.`, data:{order}, evidence:{saved_query:\"fab_order_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
+    instruction:"Use the JavaScript runtime globals to run this exact discovery flow: const tableId = async (name) => (await query_catalog({kind:\"table\", search:name, limit:10})).cards.find(c => c.table_name === name || c.name === name).id; const detail = await query_catalog({ids:[await tableId(\"fab_orders\"), await tableId(\"customers\")]}); const result = await execute_graphql({query:`query { fab_orders(order_by: { priority: asc }, limit: 10) { id order_code status priority due_date panel_qty customers { name priority_tier } } }`}); const order = result.data.fab_orders.find(o => o.priority === 1); await final({status:\"answered\", answer:`${order.order_code} for ${order.customers.name} is the highest priority fab order and is still ${order.status}.`, data:{order}, evidence:{tables:[\"fab_orders\",\"customers\"], table_detail:detail.cards}});",
     max_steps:10,
     return_trace:false
   }')"
@@ -68,7 +70,7 @@ run_agent_rest_once() {
 
 run_agent_mcp_once() {
   mcp_tool ask_graphjin_agent '{
-    "instruction":"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:fab_order_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const order = result.data.fab_orders.find(o => o.priority === 1); await final({status:\"answered\", answer:`${order.order_code} for ${order.customers.name} is the highest priority fab order and is still ${order.status}.`, data:{order}, evidence:{saved_query:\"fab_order_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
+    "instruction":"Use the JavaScript runtime globals to run this exact discovery flow: const tableId = async (name) => (await query_catalog({kind:\"table\", search:name, limit:10})).cards.find(c => c.table_name === name || c.name === name).id; const detail = await query_catalog({ids:[await tableId(\"fab_orders\"), await tableId(\"customers\")]}); const result = await execute_graphql({query:`query { fab_orders(order_by: { priority: asc }, limit: 10) { id order_code status priority due_date panel_qty customers { name priority_tier } } }`}); const order = result.data.fab_orders.find(o => o.priority === 1); await final({status:\"answered\", answer:`${order.order_code} for ${order.customers.name} is the highest priority fab order and is still ${order.status}.`, data:{order}, evidence:{tables:[\"fab_orders\",\"customers\"], table_detail:detail.cards}});",
     "max_steps":10,
     "return_trace":false
   }'
@@ -78,7 +80,7 @@ pcb_agent_expr='
   (.status // .result.structuredContent.status) == "answered"
   and ((.answer // .result.structuredContent.answer // "") | test("FO-260701|Lumen"; "i"))
   and ((.actions // .result.structuredContent.actions // []) | tostring | test("query_catalog"))
-  and ((.evidence // .result.structuredContent.evidence // {}) | tostring | test("fab_order_context"))
+  and ((.evidence // .result.structuredContent.evidence // {}) | tostring | test("fab_orders"))
 '
 
 # --- domain agent eval suite ---------------------------------------------------
@@ -93,17 +95,17 @@ run_agent_eval_suite() {
     .status == "answered"
     and (.answer | test("FO-260701|Lumen"; "i"))
     and (.actions | tostring | test("query_catalog"))
-    and (.evidence | tostring | test("fab_order_context"))
-  ' "agent eval: fab priority answered from saved-query evidence"
+    and (.evidence | tostring | test("fab_orders"))
+  ' "agent eval: fab priority answered from fab_orders table evidence"
 
-  out="$(run_agent_rest_prompt "Inventory the approved saved queries, workflows, code sources, API surfaces, and measurement data in this PCB demo. Do discovery only; do not execute anything.")"
+  out="$(run_agent_rest_prompt "Inventory the workflows, code sources, API surfaces, and measurement data in this PCB demo. Do discovery only; do not execute anything.")"
   assert_jq "$out" '
     (.status == "answered" or .status == "blocked")
     and (.actions | tostring | test("query_catalog|graphql_help"))
     and ((.actions | tostring | test("execute_saved_query|execute_graphql")) | not)
   ' "agent eval: discovery-only inventory avoided execution"
 
-  out="$(run_agent_rest_prompt "Use the JavaScript runtime globals to run this exact discovery flow: const yieldDetail = await query_catalog({id:\"saved_query:yield_context\"}); const dfmDetail = await query_catalog({id:\"saved_query:dfm_review_context\"}); const yieldResult = await execute_graphql({query: yieldDetail.cards[0].graphql_query}); const dfmResult = await execute_graphql({query: dfmDetail.cards[0].graphql_query}); const weak = yieldResult.data.yield_by_layer_count.find(r => Number(r.layer_count) === 8 && Number(r.yield_pct) < 88); const topDefect = yieldResult.data.defect_pareto[0]; const risk = dfmResult.data.bom_items.find(i => i.sku === \"IC-AFE-8CH-MED\"); await final({status:\"answered\", answer:\`8-layer yield is \${weak.yield_pct}% with \${topDefect.station} as the top defect station; \${risk.sku} is \${risk.supplier_part.lifecycle} with \${risk.supplier_part.lead_time_days} day lead time.\`, data:{weak,topDefect,risk}, evidence:{saved_queries:[\"yield_context\",\"dfm_review_context\"], yield_detail:yieldDetail.cards, dfm_detail:dfmDetail.cards}});")"
+  out="$(run_agent_rest_prompt "Use the JavaScript runtime globals to run this exact discovery flow: const tableId = async (name) => (await query_catalog({kind:\"table\", search:name, limit:10})).cards.find(c => c.table_name === name || c.name === name).id; const detail = await query_catalog({ids:[await tableId(\"yield_by_layer_count\"), await tableId(\"defect_pareto\"), await tableId(\"bom_items\")]}); const yieldResult = await execute_graphql({query:\`query { yield_by_layer_count(order_by: { week_start: desc }, limit: 6) { id week_start layer_count started_panels passed_panels yield_pct } defect_pareto(order_by: { defect_count: desc }, limit: 5) { id week_start defect_code station defect_count escaped_count } }\`}); const dfmResult = await execute_graphql({query:\`query { bom_items(where: { design_id: { eq: 1 } }, order_by: { id: asc }, limit: 10) { id sku description criticality supplier_part { sku name lifecycle inventory_qty lead_time_days } } }\`}); const weak = yieldResult.data.yield_by_layer_count.find(r => Number(r.layer_count) === 8 && Number(r.yield_pct) < 88); const topDefect = yieldResult.data.defect_pareto[0]; const risk = dfmResult.data.bom_items.find(i => i.sku === \"IC-AFE-8CH-MED\"); await final({status:\"answered\", answer:\`8-layer yield is \${weak.yield_pct}% with \${topDefect.station} as the top defect station; \${risk.sku} is \${risk.supplier_part.lifecycle} with \${risk.supplier_part.lead_time_days} day lead time.\`, data:{weak,topDefect,risk}, evidence:{tables:[\"yield_by_layer_count\",\"defect_pareto\",\"bom_items\"], table_detail:detail.cards}});")"
   assert_jq "$out" '
     .status == "answered"
     and (.actions | tostring | test("query_catalog|execute_graphql"))
