@@ -207,7 +207,11 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		// soonest filter the date column from current_date on). Without it the
 		// data agent ordered by date asc, limit 1, and returned a past row for
 		// every such question, across tables (16 of 16 on flash-lite).
-		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3*1024 + 128 + 128},
+		// +160: data_discovery's naming clause (select a row's name column,
+		// through the relationship for a foreign key). Without it the data
+		// agent answered "account ID 2": it selected only the columns that
+		// rank, and grounding then lets it state nothing else.
+		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3*1024 + 128 + 128 + 160},
 		// +192: watch_write's schedule clause (cron + IANA timezone, no query)
 		// so agents can create time-triggered watches.
 		// +416: watch_write's metric clause (schedule + query + metric
@@ -215,7 +219,8 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		// and select metric_state so the answer states the current number.
 		// +192: the read-only agent routine delivery (kind "agent").
 		// +128: data_aggregation's forward-looking clause, as above.
-		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 18*512 + 128 + 192 + 416 + 192 + 128},
+		// +160: data_discovery's naming clause, as above.
+		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 18*512 + 128 + 192 + 416 + 192 + 128 + 160},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			definitions := allowedSkills(false, tc.profile)

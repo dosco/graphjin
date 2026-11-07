@@ -367,7 +367,7 @@ func profileHasAllSystemRoots(profile *CapabilityProfile, roots []string) bool {
 }
 
 const dataDiscoveryInstruction = `Skill: data_discovery. Before querying, inspect relevant GraphJin source:<name>, table, column, relationship, or saved-query details by reusing exact catalog IDs; never shorten or invent them. For cross-source work, inspect the named source and application relationship, then query the joined field instead of a same-named local table. ` +
-	`Prefer dynamic authoring: validate the shape, then execute_graphql; an approved saved query is a governed shortcut. Answer only from observed results and fields, stating derived numbers plainly. ` +
+	`Prefer dynamic authoring: validate the shape, then execute_graphql; an approved saved query is a governed shortcut. Answer only from observed results and fields, stating derived numbers plainly. An id names nothing to the user: select a row's name column too, through its relationship for a foreign key ({ products { price categories { name } } }). ` +
 	`On graphjin_repair, treat the failure as a query-authoring error: re-discover real fields, re-author, and retry in the same run; never advise schema or data changes.`
 
 const dataAggregationInstruction = `Skill: data_aggregation. The model plans, the database computes. Limited lists are pages; never compute totals, counts, averages, extremes, or rankings from rows. ` +
