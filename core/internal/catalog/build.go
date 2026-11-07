@@ -1098,6 +1098,8 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 		}
 	}
 
+	links := indexTableLinks(snapshot.Tables, snapshot.Relationships, columnsByTable, snapshot.Databases)
+
 	for _, t := range snapshot.Tables {
 		cardID := "table:" + t.ID
 		nodeID := "node:" + cardID
@@ -1117,7 +1119,7 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 			RiskLevel:        "low",
 			Confidence:       "high",
 			EvidenceJSON:     mustJSON(t),
-			ExamplesJSON:     tableExamples(t, keyCols, remoteJoins, columnsByTable),
+			ExamplesJSON:     tableExamples(t, keyCols, remoteJoins, columnsByTable, links),
 			SuggestedNext:    suggestedNextJSON(opts, "query_catalog", "validate_where_clause"),
 			DetailRef:        cardID,
 		})
@@ -1134,6 +1136,15 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 				"remaining_via":  columnListRemainingVia(t, allColumnsListed),
 			}),
 		})
+		if related := links.related(t.ID); len(related) != 0 {
+			out.Details = append(out.Details, CardDetail{
+				ID:       cardID + ":relationships",
+				CardID:   cardID,
+				Section:  "relationships",
+				Content:  relationshipsContent,
+				DataJSON: mustJSON(map[string]any{"relationships": related}),
+			})
+		}
 		out.Details = append(out.Details, CardDetail{
 			ID:      cardID + ":samples_profile",
 			CardID:  cardID,
@@ -2110,7 +2121,7 @@ func columnSummary(c MetadataColumn, sensitive bool, sensitivity string) string 
 	return strings.Join(parts, ", ")
 }
 
-func tableExamples(t MetadataTable, keyCols []MetadataColumn, remoteJoins map[string]MetadataRelationship, columnsByTable map[string][]MetadataColumn) string {
+func tableExamples(t MetadataTable, keyCols []MetadataColumn, remoteJoins map[string]MetadataRelationship, columnsByTable map[string][]MetadataColumn, links tableLinks) string {
 	// A join-only remote table has no rows of its own. The generic example below
 	// would teach a top-level read that can only ever error, and models copy the
 	// one example on the card they fetch: benchmark episodes reproduced this
@@ -2130,27 +2141,7 @@ func tableExamples(t MetadataTable, keyCols []MetadataColumn, remoteJoins map[st
 			fmt.Sprintf("{ %s(key: \"<key>\") { key content_type text data } }", t.TableName),
 		})
 	}
-	// Only lead with id when the table actually has one; remote tables often do
-	// not, and an invented field in the one example a model reads is a trap.
-	fields := []string{}
-	for _, c := range keyCols {
-		if c.ColumnName == "id" {
-			fields = append(fields, "id")
-			break
-		}
-	}
-	for _, c := range keyCols {
-		if len(fields) >= 4 {
-			break
-		}
-		if c.ColumnName != "id" {
-			fields = append(fields, c.ColumnName)
-		}
-	}
-	if len(fields) == 0 {
-		fields = append(fields, "id")
-	}
-	return mustJSON([]string{fmt.Sprintf("{ %s(limit: 10) { %s } }", t.TableName, strings.Join(fields, " "))})
+	return mustJSON(links.examples(t, keyCols))
 }
 
 // isFilesystemShapedTable recognises the fixed column shape the filesystem

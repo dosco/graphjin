@@ -62,8 +62,11 @@ func PublicBenchmark() PublicBenchmarkSpec {
 // execute_saved_query was unpassable for every model. Each now requires
 // execute_graphql with the saved query's aggregate as its method rule; prompt,
 // oracle and answer rule are unchanged, and the other 104 tasks are
-// byte-identical to 2028.4.
-const publicBenchmarkSuiteFingerprint = "deaaed0de91e2d355f442b1529250b4a"
+// byte-identical to 2028.4. The generation also carries a catalog change made
+// before any 2028.5 run existed: table cards now teach a read that names its
+// rows and the parents its foreign keys reach, a database aggregate, and a
+// relationships detail, so the suite targets that catalog's fingerprint.
+const publicBenchmarkSuiteFingerprint = "c81ab84669f7753a2def2d1ec6a65e4d"
 
 // PublicBenchmarkRollupVersion freezes the capability-rollup mapping below.
 // The board's single recall conflates two different deployment questions —

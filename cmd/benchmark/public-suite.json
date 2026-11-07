@@ -2,7 +2,7 @@
   "schema_version": "graphjin.eval.suite/v1",
   "name": "DeepORG Public Benchmark 2028.5",
   "description": "Deterministic catalog-derived organizational agent evaluation suite.",
-  "target_catalog_fingerprint": "c4ee2c0d346f636f9230881f7fa9d912",
+  "target_catalog_fingerprint": "195acfbc6c775e21708414163728e2fd",
   "generator": {
     "version": "graphjin.eval.generator/v18",
     "seed": 23,

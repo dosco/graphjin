@@ -2,8 +2,8 @@ package core
 
 import (
 	"encoding/json"
-	"strings"
 
+	"github.com/dosco/graphjin/core/v3/internal/catalog"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
@@ -70,34 +70,14 @@ func (gj *graphjinEngine) namingLookup(database, schema, table string) (sdata.DB
 	return t, true
 }
 
-// nameColumnCandidates are the column names that name a row, in order of
-// preference. A table with none of them falls back to its first unique,
-// non-key text column (a reference, a slug, an email).
-var nameColumnCandidates = []string{"name", "title", "full_name", "display_name", "label", "username"}
-
 // nameColumn returns the column that names t's rows, or "" when t has none.
+// The choice is the catalog's, so the column a table card teaches is the one
+// this check asks for.
 func nameColumn(t sdata.DBTable) string {
-	for _, want := range nameColumnCandidates {
-		for _, col := range t.Columns {
-			if col.Name == want && namingColumnUsable(col) {
-				return col.Name
-			}
-		}
-	}
-	for _, col := range t.Columns {
-		if col.UniqueKey && namingColumnUsable(col) {
-			return col.Name
-		}
-	}
-	return ""
-}
-
-func namingColumnUsable(col sdata.DBColumn) bool {
-	if col.PrimaryKey || col.Blocked || col.Array || col.FKeyTable != "" {
-		return false
-	}
-	typ := strings.ToLower(col.Type)
-	return strings.Contains(typ, "text") || strings.Contains(typ, "char") || strings.Contains(typ, "string")
+	return catalog.PickNameColumn(len(t.Columns), func(i int) catalog.NamingColumn {
+		col := &t.Columns[i]
+		return catalog.NamingColumn{Name: col.Name, Type: col.Type, Unique: col.UniqueKey, Excluded: col.PrimaryKey || col.Blocked || col.Array || col.FKeyTable != ""}
+	})
 }
 
 // namingGapsFromQCode finds, for every rendered select of a compiled query,
