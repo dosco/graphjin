@@ -88,3 +88,34 @@ func TestAddRemoteRelWithParentStillWorks(t *testing.T) {
 		t.Fatalf("row-join remote (parented) should still build: %v", err)
 	}
 }
+
+func TestNewDBInfoFunctionOutputColumns(t *testing.T) {
+	fn := DBFunction{
+		Schema: "public",
+		Name:   "get_users",
+		Type:   "record",
+		Inputs: []DBFuncParam{{ID: 1, Name: "max_id", Type: "bigint"}},
+		Outputs: []DBFuncParam{
+			{ID: 1, Name: "id", Type: "bigint"},
+			{ID: 2, Name: "password", Type: "text"},
+			{ID: 3, Name: "tags", Type: "text[]", Array: true},
+		},
+	}
+	di := NewDBInfo("postgres", 140000, "public", "db", nil, []DBFunction{fn}, []string{"password"})
+
+	if len(di.Tables) != 1 || di.Tables[0].Type != "function" {
+		t.Fatalf("expected one function table, got %+v", di.Tables)
+	}
+	want := map[string]struct{ blocked, array bool }{
+		"id":       {},
+		"password": {blocked: true},
+		"tags":     {array: true},
+	}
+	for _, col := range di.Tables[0].Columns {
+		w := want[col.Name]
+		if col.Blocked != w.blocked || col.Array != w.array {
+			t.Errorf("column %s: blocked=%v array=%v, want blocked=%v array=%v",
+				col.Name, col.Blocked, col.Array, w.blocked, w.array)
+		}
+	}
+}

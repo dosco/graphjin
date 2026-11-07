@@ -50,6 +50,37 @@ func TestCreateSchema(t *testing.T) {
 
 }
 
+func TestCreateSchemaFunctionArrayParams(t *testing.T) {
+	var buf bytes.Buffer
+
+	fn := sdata.DBFunction{
+		Schema:  "public",
+		Name:    "get_products",
+		Type:    "record",
+		Inputs:  []sdata.DBFuncParam{{ID: 1, Name: "ids", Type: "bigint[]", Array: true}},
+		Outputs: []sdata.DBFuncParam{{ID: 1, Name: "tags", Type: "text[]", Array: true}},
+	}
+	di := sdata.NewDBInfo("postgres", 140000, "public", "db", nil, []sdata.DBFunction{fn}, nil)
+	if err := writeSchema(di, &buf); err != nil {
+		t.Fatal(err)
+	}
+
+	ds, err := qcode.ParseSchema(buf.Bytes())
+	if err != nil {
+		t.Fatalf("parse exported schema: %v\n%s", err, buf.String())
+	}
+	if len(ds.Functions) != 1 {
+		t.Fatalf("expected one function, got %+v", ds.Functions)
+	}
+	got := ds.Functions[0]
+	if len(got.Inputs) != 1 || got.Inputs[0].Type != "bigint" || !got.Inputs[0].Array {
+		t.Errorf("input changed through schema export: %+v", got.Inputs)
+	}
+	if len(got.Outputs) != 1 || got.Outputs[0].Type != "text" || !got.Outputs[0].Array {
+		t.Errorf("output changed through schema export: %+v", got.Outputs)
+	}
+}
+
 func TestWriteSchemaWithDatabase(t *testing.T) {
 	var buf bytes.Buffer
 
