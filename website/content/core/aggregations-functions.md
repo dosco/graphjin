@@ -167,6 +167,21 @@ query {
 {{< verified by="Example_queryWithFunctionFields" file="tests/query_pg_test.go" line="140" >}}
 {{< verified by="Example_queryWithFunctionReturingTablesWithNamedArgs" file="tests/query_pg_test.go" line="270" >}}
 
+Functions that return rows of a table, view, or composite type expose that row's columns. This covers `RETURNS SETOF users`, `RETURNS users`, and `RETURNS TABLE (LIKE users)`. The configured blocklist applies to these columns as it does to table columns.
+
+```graphql
+query {
+  get_users_up_to(order_by: { id: asc }, args: { max_id: 2 }) {
+    id
+    full_name
+    email
+  }
+}
+```
+
+{{< verified by="Example_queryWithFunctionReturningTableLike" file="tests/query_pg_test.go" line="332" >}}
+{{< verified by="Example_queryWithFunctionReturningSetofTable" file="tests/query_pg_test.go" line="363" >}}
+
 ## Dialect boundaries
 
 | Feature | Boundary |

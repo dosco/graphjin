@@ -268,6 +268,18 @@ SELECT EXISTS (
     where p.product_id = id
   );
 $$ LANGUAGE SQL;
+CREATE OR REPLACE FUNCTION get_users_up_to(max_id bigint) RETURNS TABLE (LIKE users) AS $$
+SELECT u.*
+FROM users u
+WHERE u.id <= max_id $$ LANGUAGE SQL;
+CREATE OR REPLACE FUNCTION get_products_up_to(max_id bigint) RETURNS SETOF products AS $$
+SELECT p.*
+FROM products p
+WHERE p.id <= max_id $$ LANGUAGE SQL;
+CREATE OR REPLACE FUNCTION get_user_row(user_id bigint) RETURNS users AS $$
+SELECT u.*
+FROM users u
+WHERE u.id = user_id $$ LANGUAGE SQL;
 -- graph relationships
 CREATE TABLE graph_node (id TEXT PRIMARY KEY, label TEXT);
 CREATE TABLE graph_edge (
