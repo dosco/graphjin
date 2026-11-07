@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 )
 
-const PublicBenchmarkGeneration = "2028.4"
+const PublicBenchmarkGeneration = "2028.5"
 
 type PublicBenchmarkSpec struct {
 	Generation       string  `json:"generation"`
@@ -55,7 +55,15 @@ func PublicBenchmark() PublicBenchmarkSpec {
 // (reward/v5). The SLA policy the agent can read also states that closing a
 // ticket records the time it was resolved, which the close-ticket post-state has
 // always required and no readable evidence mentioned.
-const publicBenchmarkSuiteFingerprint = "8f31247903e5b5cbc49501e3632968d6"
+//
+// Generation 2028.5 rebuilds the nine saved-metric tasks with generator v18.
+// The data agent no longer executes saved queries: it reads one as an approved
+// definition and runs its GraphQL itself, so a task requiring
+// execute_saved_query was unpassable for every model. Each now requires
+// execute_graphql with the saved query's aggregate as its method rule; prompt,
+// oracle and answer rule are unchanged, and the other 104 tasks are
+// byte-identical to 2028.4.
+const publicBenchmarkSuiteFingerprint = "deaaed0de91e2d355f442b1529250b4a"
 
 // PublicBenchmarkRollupVersion freezes the capability-rollup mapping below.
 // The board's single recall conflates two different deployment questions —

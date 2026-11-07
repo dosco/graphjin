@@ -1,10 +1,10 @@
 {
   "schema_version": "graphjin.eval.suite/v1",
-  "name": "DeepORG Public Benchmark 2028.4",
+  "name": "DeepORG Public Benchmark 2028.5",
   "description": "Deterministic catalog-derived organizational agent evaluation suite.",
   "target_catalog_fingerprint": "c4ee2c0d346f636f9230881f7fa9d912",
   "generator": {
-    "version": "graphjin.eval.generator/v12",
+    "version": "graphjin.eval.generator/v18",
     "seed": 23,
     "scale": 100
   },
@@ -5531,13 +5531,13 @@
     },
     {
       "schema_version": "graphjin.eval.task/v1",
-      "id": "gjv1_f05f41f0e1197c20f6d9ece4",
+      "id": "gjv1_0b53cae2ea1df0859d98dd16",
       "slug": "saved-metric-open-critical-ticket-count",
       "category": "saved-metric",
       "difficulty": "T3",
       "prompt": "Use the approved open critical ticket count saved metric and explain its current result.",
       "provenance": {
-        "generator_version": "graphjin.eval.generator/v12",
+        "generator_version": "graphjin.eval.generator/v18",
         "source": "saved-query",
         "generation_seed": 23,
         "source_id": "saved_query:open_critical_ticket_count"
@@ -5586,13 +5586,14 @@
         "kind": "number"
       },
       "method": {
-        "require_tools": [
-          "execute_saved_query"
-        ]
+        "require_query_match": [
+          "count_id"
+        ],
+        "forbid_finalize_from_list_only": true
       },
       "behavior": {
         "required_actions": [
-          "execute_saved_query",
+          "execute_graphql",
           "query_catalog"
         ],
         "forbidden_actions": [
@@ -5606,13 +5607,13 @@
     },
     {
       "schema_version": "graphjin.eval.task/v1",
-      "id": "gjv1_6ef19c55b289dbd68466391b",
+      "id": "gjv1_be3958b4d8d9a79d91ee8c18",
       "slug": "saved-metric-recent-usage-quantity",
       "category": "saved-metric",
       "difficulty": "T3",
       "prompt": "Use the approved recent usage quantity saved metric and explain its current result.",
       "provenance": {
-        "generator_version": "graphjin.eval.generator/v12",
+        "generator_version": "graphjin.eval.generator/v18",
         "source": "saved-query",
         "generation_seed": 23,
         "source_id": "saved_query:recent_usage_quantity"
@@ -5661,13 +5662,14 @@
         "kind": "number"
       },
       "method": {
-        "require_tools": [
-          "execute_saved_query"
-        ]
+        "require_query_match": [
+          "sum_quantity"
+        ],
+        "forbid_finalize_from_list_only": true
       },
       "behavior": {
         "required_actions": [
-          "execute_saved_query",
+          "execute_graphql",
           "query_catalog"
         ],
         "forbidden_actions": [
@@ -5681,13 +5683,13 @@
     },
     {
       "schema_version": "graphjin.eval.task/v1",
-      "id": "gjv1_0f923eeaf2d68637625a92c2",
+      "id": "gjv1_bdd4a7fdab90e490f7a887fb",
       "slug": "saved-metric-active-subscription-seats",
       "category": "saved-metric",
       "difficulty": "T3",
       "prompt": "Use the approved active subscription seats saved metric and explain its current result.",
       "provenance": {
-        "generator_version": "graphjin.eval.generator/v12",
+        "generator_version": "graphjin.eval.generator/v18",
         "source": "saved-query",
         "generation_seed": 23,
         "source_id": "saved_query:active_subscription_seats"
@@ -5736,13 +5738,14 @@
         "kind": "number"
       },
       "method": {
-        "require_tools": [
-          "execute_saved_query"
-        ]
+        "require_query_match": [
+          "sum_seats"
+        ],
+        "forbid_finalize_from_list_only": true
       },
       "behavior": {
         "required_actions": [
-          "execute_saved_query",
+          "execute_graphql",
           "query_catalog"
         ],
         "forbidden_actions": [
@@ -5756,13 +5759,13 @@
     },
     {
       "schema_version": "graphjin.eval.task/v1",
-      "id": "gjv1_7ce7ca995542a8a8cd691091",
+      "id": "gjv1_501247c547bdb05e89785d90",
       "slug": "saved-metric-churn-risk-account-count",
       "category": "saved-metric",
       "difficulty": "T3",
       "prompt": "Use the approved churn risk account count saved metric and explain its current result.",
       "provenance": {
-        "generator_version": "graphjin.eval.generator/v12",
+        "generator_version": "graphjin.eval.generator/v18",
         "source": "saved-query",
         "generation_seed": 23,
         "source_id": "saved_query:churn_risk_account_count"
@@ -5811,13 +5814,14 @@
         "kind": "number"
       },
       "method": {
-        "require_tools": [
-          "execute_saved_query"
-        ]
+        "require_query_match": [
+          "count_id"
+        ],
+        "forbid_finalize_from_list_only": true
       },
       "behavior": {
         "required_actions": [
-          "execute_saved_query",
+          "execute_graphql",
           "query_catalog"
         ],
         "forbidden_actions": [
@@ -5831,13 +5835,13 @@
     },
     {
       "schema_version": "graphjin.eval.task/v1",
-      "id": "gjv1_ce3f6af82a129ecfc72dd98d",
+      "id": "gjv1_58d8aca92eec7a7b252a042a",
       "slug": "saved-metric-subscription-seat-average",
       "category": "saved-metric",
       "difficulty": "T3",
       "prompt": "Use the approved subscription seat average saved metric and explain its current result.",
       "provenance": {
-        "generator_version": "graphjin.eval.generator/v12",
+        "generator_version": "graphjin.eval.generator/v18",
         "source": "saved-query",
         "generation_seed": 23,
         "source_id": "saved_query:subscription_seat_average"
@@ -5886,13 +5890,14 @@
         "kind": "number"
       },
       "method": {
-        "require_tools": [
-          "execute_saved_query"
-        ]
+        "require_query_match": [
+          "avg_seats"
+        ],
+        "forbid_finalize_from_list_only": true
       },
       "behavior": {
         "required_actions": [
-          "execute_saved_query",
+          "execute_graphql",
           "query_catalog"
         ],
         "forbidden_actions": [
@@ -5906,13 +5911,13 @@
     },
     {
       "schema_version": "graphjin.eval.task/v1",
-      "id": "gjv1_4721ad4f91d6e2057af819c2",
+      "id": "gjv1_756143c845504c832f19596d",
       "slug": "saved-metric-active-subscription-mrr",
       "category": "saved-metric",
       "difficulty": "T3",
       "prompt": "Use the approved active subscription mrr saved metric and explain its current result.",
       "provenance": {
-        "generator_version": "graphjin.eval.generator/v12",
+        "generator_version": "graphjin.eval.generator/v18",
         "source": "saved-query",
         "generation_seed": 23,
         "source_id": "saved_query:active_subscription_mrr"
@@ -5961,13 +5966,14 @@
         "kind": "number"
       },
       "method": {
-        "require_tools": [
-          "execute_saved_query"
-        ]
+        "require_query_match": [
+          "sum_mrr_cents"
+        ],
+        "forbid_finalize_from_list_only": true
       },
       "behavior": {
         "required_actions": [
-          "execute_saved_query",
+          "execute_graphql",
           "query_catalog"
         ],
         "forbidden_actions": [
@@ -6621,13 +6627,13 @@
     },
     {
       "schema_version": "graphjin.eval.task/v1",
-      "id": "gjv1_3a963d26f4435c5751c97938",
+      "id": "gjv1_62941cf21357e6c72728136f",
       "slug": "saved-metric-failed-invoice-count",
       "category": "saved-metric",
       "difficulty": "T3",
       "prompt": "Use the approved failed invoice count saved metric and explain its current result.",
       "provenance": {
-        "generator_version": "graphjin.eval.generator/v12",
+        "generator_version": "graphjin.eval.generator/v18",
         "source": "saved-query",
         "generation_seed": 23,
         "source_id": "saved_query:failed_invoice_count"
@@ -6676,13 +6682,14 @@
         "kind": "number"
       },
       "method": {
-        "require_tools": [
-          "execute_saved_query"
-        ]
+        "require_query_match": [
+          "count_id"
+        ],
+        "forbid_finalize_from_list_only": true
       },
       "behavior": {
         "required_actions": [
-          "execute_saved_query",
+          "execute_graphql",
           "query_catalog"
         ],
         "forbidden_actions": [
@@ -7066,13 +7073,13 @@
     },
     {
       "schema_version": "graphjin.eval.task/v1",
-      "id": "gjv1_5502dc8e55c2b206640880ab",
+      "id": "gjv1_4705034a7df9479821633757",
       "slug": "saved-metric-failed-invoice-amount",
       "category": "saved-metric",
       "difficulty": "T3",
       "prompt": "Use the approved failed invoice amount saved metric and explain its current result.",
       "provenance": {
-        "generator_version": "graphjin.eval.generator/v12",
+        "generator_version": "graphjin.eval.generator/v18",
         "source": "saved-query",
         "generation_seed": 23,
         "source_id": "saved_query:failed_invoice_amount"
@@ -7121,13 +7128,14 @@
         "kind": "number"
       },
       "method": {
-        "require_tools": [
-          "execute_saved_query"
-        ]
+        "require_query_match": [
+          "sum_amount_cents"
+        ],
+        "forbid_finalize_from_list_only": true
       },
       "behavior": {
         "required_actions": [
-          "execute_saved_query",
+          "execute_graphql",
           "query_catalog"
         ],
         "forbidden_actions": [
@@ -7510,13 +7518,13 @@
     },
     {
       "schema_version": "graphjin.eval.task/v1",
-      "id": "gjv1_7649f3b54856c78f3e92e87b",
+      "id": "gjv1_0e947226ef94ce59efcc383b",
       "slug": "saved-metric-open-ticket-count",
       "category": "saved-metric",
       "difficulty": "T3",
       "prompt": "Use the approved open ticket count saved metric and explain its current result.",
       "provenance": {
-        "generator_version": "graphjin.eval.generator/v12",
+        "generator_version": "graphjin.eval.generator/v18",
         "source": "saved-query",
         "generation_seed": 23,
         "source_id": "saved_query:open_ticket_count"
@@ -7565,13 +7573,14 @@
         "kind": "number"
       },
       "method": {
-        "require_tools": [
-          "execute_saved_query"
-        ]
+        "require_query_match": [
+          "count_id"
+        ],
+        "forbid_finalize_from_list_only": true
       },
       "behavior": {
         "required_actions": [
-          "execute_saved_query",
+          "execute_graphql",
           "query_catalog"
         ],
         "forbidden_actions": [

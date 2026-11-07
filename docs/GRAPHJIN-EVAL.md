@@ -41,7 +41,7 @@ consequences downstream; not moving one when semantics changed is worse.
 | `GeneratorVersion` | Generated task semantics change | Older binaries refuse the suite. Append the previous literal to `SupportedGeneratorVersions` so new binaries still read old suites. |
 | `RewardVersion` | Any scoring rule changes | Runs either side are not comparable. Published board rows record which version graded them. |
 | `SuiteSchemaVersion` / `SplitSchemaVersion` | The file shape changes | `LoadSuite` uses `DisallowUnknownFields`; a new field is a breaking read for old binaries. |
-| `PublicBenchmarkGeneration` | The frozen public suite is regenerated | Earlier generations keep their own cohort and history. Currently `2028.4`. |
+| `PublicBenchmarkGeneration` | The frozen public suite is regenerated | Earlier generations keep their own cohort and history. Currently `2028.5`. |
 
 A suite whose generator this binary does not know is refused at load and at
 serve, rather than run under rules never written for it.

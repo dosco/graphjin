@@ -26,8 +26,9 @@ invalidation status even when it is not selected for the public board.
 
 ## Frozen suite, live verification
 
-The current `2028.4` test version uses generator contract
-`graphjin.eval.generator/v12` and a committed, deterministic 113-task suite
+The current `2028.5` test version uses generator contract
+`graphjin.eval.generator/v18` (104 of its tasks are unchanged from the v12-built
+`2028.4`) and a committed, deterministic 113-task suite
 built from the bundled SaaS Ops demo at seed `23`. Alongside organizational
 questions and governed refusals, it measures writes with post-state and
 collateral-safety checks, standing-watch definition and delivery,
