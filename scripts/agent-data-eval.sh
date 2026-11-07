@@ -205,7 +205,7 @@ boot_server() {
   if [ "$CORPUS" = "lead" ]; then
     lead_enabled=true
   fi
-  GO_ENV=agentic GJ_AGENT_MODEL="$model" GJ_DEFAULT_LIMIT="$DEFAULT_LIMIT" GJ_AGENT_LEAD_ENABLED="$lead_enabled" \
+  PORT="$PORT" GO_ENV=agentic GJ_AGENT_MODEL="$model" GJ_DEFAULT_LIMIT="$DEFAULT_LIMIT" GJ_AGENT_LEAD_ENABLED="$lead_enabled" \
     "$SERVER_BIN" serve --demo --path "$DEMO_PATH" \
     >"$SERVER_LOG" 2>&1 &
   SERVER_PID=$!
