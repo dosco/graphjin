@@ -373,7 +373,7 @@ const dataDiscoveryInstruction = `Skill: data_discovery. Before querying, inspec
 const dataAggregationInstruction = `Skill: data_aggregation. The model plans, the database computes. Limited lists are pages; never compute totals, counts, averages, extremes, or rankings from rows. ` +
 	`Prefer native: { products { count_id sum_price avg_price min_price max_price } }. Alias count(column: id) as count_id: count(column: id). Hasura-compatible: { products_aggregate { aggregate { count sum { price } avg { price } min { price } max { price } } } }. ` +
 	`Never omit aggregate: { products_aggregate { count } } is invalid. On an aggregate error, copy its Supported form or Native equivalent; do not repeat it or restart discovery. ` +
-	`max_<date_col> is latest. Group by selecting dimension plus aggregate; no group_by argument. For top-N, order_by aggregate desc, limit N: { products(order_by:{sum_price:desc},limit:1){category sum_price} }. Anchor relative windows on inputs.current_date (UTC), query max_<date_col>, and state the window. On result.truncation, re-author with aggregates.`
+	`max_<date_col> is latest. Group by selecting dimension plus aggregate; no group_by argument. For top-N, order_by aggregate desc, limit N: { products(order_by:{sum_price:desc},limit:1){category sum_price} }. Anchor relative windows on inputs.current_date (UTC), query max_<date_col>, and state the window. Next, upcoming or soonest means from current_date on: filter the date column {gte: current_date} before order_by asc. On result.truncation, re-author with aggregates.`
 
 const dataWriteInstruction = `Skill: data_write. ` +
 	`Inspect exact catalog IDs for help:security, help:runtime, mutation_pattern, and target table details; validate, then use execute_graphql. ` +

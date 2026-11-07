@@ -203,14 +203,19 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		// +128: the column-arg aggregate aliasing clause in data_aggregation —
 		// the engine accepts count(column: id) and the alias keeps every
 		// aggregate detector and frozen method pattern matching.
-		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3*1024 + 128},
+		// +128: data_aggregation's forward-looking clause (next, upcoming,
+		// soonest filter the date column from current_date on). Without it the
+		// data agent ordered by date asc, limit 1, and returned a past row for
+		// every such question, across tables (16 of 16 on flash-lite).
+		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3*1024 + 128 + 128},
 		// +192: watch_write's schedule clause (cron + IANA timezone, no query)
 		// so agents can create time-triggered watches.
 		// +416: watch_write's metric clause (schedule + query + metric
 		// threshold) so agents can watch aggregates, which have no cursor,
 		// and select metric_state so the answer states the current number.
 		// +192: the read-only agent routine delivery (kind "agent").
-		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 18*512 + 128 + 192 + 416 + 192},
+		// +128: data_aggregation's forward-looking clause, as above.
+		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 18*512 + 128 + 192 + 416 + 192 + 128},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			definitions := allowedSkills(false, tc.profile)
