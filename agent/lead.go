@@ -272,13 +272,7 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 	if l.Store != nil && !l.config.ReadOnly {
 		tools = append(tools, run.rememberTool(ctx))
 	}
-	// goja interrupts any code block still running after its timeoutMs (5s by
-	// default), counting time spent inside host calls. A delegation is a whole
-	// data-agent run, 8 to 40s on the demo, so the default threw away
-	// answers that had already arrived: the block was interrupted as soon as
-	// ask_graphjin returned, the model saw "goja execution timed out", and
-	// asked again. The turn's own deadline bounds a block instead.
-	gojaRuntime := axgoja.NewRuntime(axgoja.WithRuntimePolicy(map[string]ax.Value{"timeoutMs": lc.TimeoutSeconds * 1000}))
+	gojaRuntime := axgoja.NewRuntime(codeBlockPolicy(lc.TimeoutSeconds))
 	runtime := figureRecordingRuntime{CodeRuntime: gojaRuntime, record: run.figures.recordCodeResult}
 	for _, tool := range tools {
 		t := tool

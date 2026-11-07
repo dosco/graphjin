@@ -39,6 +39,13 @@ type graphJinCodeRuntime struct {
 // stage patch, but a weak distiller can still discard a useful catalog result
 // by ending with final(request, {}). Keep the governed result on the same Goja
 // session instead of asking the executor to rediscover or guess it.
+// WithCodeBlockBudget lets a code block run as long as the turn, when the
+// turn is longer than minCodeBlockSeconds. Call it before sessions exist.
+func (r *graphJinCodeRuntime) WithCodeBlockBudget(turnSeconds int) *graphJinCodeRuntime {
+	codeBlockPolicy(turnSeconds)(r.base)
+	return r
+}
+
 func (r *graphJinCodeRuntime) WithHandoffFallback(fallback func() any) *graphJinCodeRuntime {
 	r.handoffFallback = fallback
 	return r
@@ -53,7 +60,7 @@ func (r *graphJinCodeRuntime) WithClarificationNudge(nudge func() string) *graph
 
 func newGraphJinCodeRuntime(lastExecution func() any, onDistilledResult func(any), pendingFinal func() string, pendingContinuation func() string, completionContinuation ...func() string) *graphJinCodeRuntime {
 	runtime := &graphJinCodeRuntime{
-		base:                axgoja.NewRuntime(),
+		base:                axgoja.NewRuntime(codeBlockPolicy(0)),
 		lastExecution:       lastExecution,
 		onDistilledResult:   onDistilledResult,
 		pendingFinal:        pendingFinal,

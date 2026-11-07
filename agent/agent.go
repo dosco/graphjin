@@ -666,6 +666,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		protocol.state.pendingRequiredFinalizationContinuation,
 		protocol.state.completionContinuation,
 	)
+	runtime.WithCodeBlockBudget(cfg.TimeoutSeconds)
 	runtime.WithHandoffFallback(protocol.state.runtimeHandoffEvidence)
 	runtime.WithClarificationNudge(protocol.state.clarificationNudge)
 	for _, tool := range tools {
