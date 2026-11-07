@@ -2820,6 +2820,20 @@ func TestResultNamingGaps(t *testing.T) {
 	if got := gaps(`query { purchases(limit: 2, order_by: { id: asc }) { quantity product_id products { name } } }`); len(got) != 0 {
 		t.Fatalf("name selected through the relationship, yet reported: %+v", got)
 	}
+	// A nested row's key back to a parent that is already named is the join:
+	// the products row above says which product these purchases belong to.
+	if got := gaps(`query { products(limit: 2, order_by: { id: asc }) { name purchases(limit: 2, order_by: { id: asc }) { quantity product_id } } }`); len(got) != 0 {
+		t.Fatalf("key back to a named parent reported: %+v", got)
+	}
+	// A sibling root returning the products' key and name maps the ids.
+	if got := gaps(`query { products(limit: 2, order_by: { id: asc }) { id name } purchases(limit: 2, order_by: { id: asc }) { quantity product_id } }`); len(got) != 0 {
+		t.Fatalf("key mapped by a sibling root reported: %+v", got)
+	}
+	// The parent unnamed, the same key still hides which product it is.
+	got = gaps(`query { products(limit: 2, order_by: { id: asc }) { price purchases(limit: 2, order_by: { id: asc }) { quantity product_id } } }`)
+	if len(got) != 1 || got[0].Path != "products.purchases" || got[0].KeyColumn != "product_id" {
+		t.Fatalf("key back to an unnamed parent = %+v", got)
+	}
 }
 
 // TestResultTruncatedRoots covers the compiled-limit truncation signal end

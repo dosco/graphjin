@@ -118,8 +118,30 @@ func namingGapsFromQCode(qc *qcode.QCode, lookup func(database, schema, table st
 		seen[key] = true
 		out = append(out, namingGapCandidate{info: info, path: path})
 	}
-	var walk func(id int32, prefix []string, depth int)
-	walk = func(id int32, prefix []string, depth int) {
+	// mapped holds the tables some select in this query returns with both key
+	// and name: the result carries its own id-to-name map for them, the way a
+	// query lists accounts { id name } beside invoices { account_id }.
+	mapped := map[string]bool{}
+	for i := range qc.Selects {
+		sel := &qc.Selects[i]
+		if sel.SkipRender != qcode.SkipTypeNone || sel.GlobalAgg {
+			continue
+		}
+		selected := selectedColumns(sel)
+		if name := nameColumn(sel.Ti); name != "" && selected[name] {
+			for _, pk := range primaryColumns(sel.Ti) {
+				if selected[pk] {
+					mapped[sel.Table] = true
+					break
+				}
+			}
+		}
+	}
+	// named holds, for the selects enclosing the current one, the tables
+	// whose name is already selected: a nested row's foreign key back to such
+	// a parent is the join, and the parent row already says who it is.
+	var walk func(id int32, prefix []string, depth int, named map[string]bool)
+	walk = func(id int32, prefix []string, depth int, named map[string]bool) {
 		if depth > 3 || int(id) >= len(qc.Selects) {
 			return
 		}
@@ -159,7 +181,7 @@ func namingGapsFromQCode(qc *qcode.QCode, lookup func(database, schema, table st
 					continue
 				}
 				name := nameColumn(target)
-				if name == "" || childSelectsName(qc, sel, col.FKeyTable, name) {
+				if name == "" || named[col.FKeyTable] || mapped[col.FKeyTable] || childSelectsName(qc, sel, col.FKeyTable, name) {
 					continue
 				}
 				relationship := col.FKeyAlias
@@ -169,12 +191,20 @@ func namingGapsFromQCode(qc *qcode.QCode, lookup func(database, schema, table st
 				add(path, NamingGapInfo{Table: col.FKeyTable, KeyColumn: col.Name, NameColumn: name, Relationship: relationship})
 			}
 		}
+		inner := named
+		if name := nameColumn(sel.Ti); name != "" && selectedColumns(sel)[name] {
+			inner = make(map[string]bool, len(named)+1)
+			for table := range named {
+				inner[table] = true
+			}
+			inner[sel.Table] = true
+		}
 		for _, child := range sel.Children {
-			walk(child, path, depth+1)
+			walk(child, path, depth+1, inner)
 		}
 	}
 	for _, root := range qc.Roots {
-		walk(root, nil, 0)
+		walk(root, nil, 0, nil)
 	}
 	return out
 }
