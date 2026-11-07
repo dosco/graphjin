@@ -748,6 +748,7 @@ type Result struct {
 	cacheHit     bool
 	subCursors   map[string]string
 	rootLimits   []RootLimitInfo
+	namingGaps   []namingGapCandidate
 	Vars         json.RawMessage   `json:"-"`
 	Data         json.RawMessage   `json:"data,omitempty"`
 	Hash         [sha256.Size]byte `json:"-"`
@@ -1081,6 +1082,7 @@ func (gj *graphjinEngine) query(c context.Context, r GraphqlReq) (
 
 	resp.qc = s.qcode()
 	resp.res.rootLimits = rootLimitInfoFromQCode(resp.qc)
+	resp.res.namingGaps = namingGapsFromQCode(resp.qc, gj.namingLookup)
 	resp.res.sql = s.sql()
 	resp.res.cacheControl = s.cacheHeader()
 	resp.res.Vars = r.vars

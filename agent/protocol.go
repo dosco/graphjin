@@ -139,6 +139,9 @@ type discoveryState struct {
 	// already surfaced by this run remains eligible for lookup so following the
 	// recovery guidance can resolve and reset the streak.
 	emptyDetailStreak  int
+	// namingRefused records that this run already refused one result whose
+	// rows carried keys without names; the next such result goes through.
+	namingRefused bool
 	capabilities       *CapabilityProfile
 	observe            func(ActionEvent)
 	coverageSearchUsed bool
@@ -1421,6 +1424,20 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 				"operation":  graphQLOperationKind(query),
 				"write_like": writeLikeGraphQL(query),
 			})
+			return nil, thrown
+		}
+	}
+	// Rows named only by key: the author selected the columns that rank or
+	// filter, and the answer can state only what was selected, so it says
+	// "account 1". Straight-line code finals in the same block as the
+	// query, so a notice on the value arrives too late; the first such
+	// result is thrown with the exact selection that names the rows, and
+	// any later one goes through.
+	if err == nil && !r.state.namingRefused && !executionFailed(out) && !ContainsMutationOperation(query) {
+		if message := namingRefusal(query, out); message != "" {
+			r.state.namingRefused = true
+			thrown := fmt.Errorf("%s", message)
+			r.state.finishAction(action, "execute_graphql", args, out, thrown)
 			return nil, thrown
 		}
 	}
@@ -3572,6 +3589,11 @@ func resultSummary(tool string, args map[string]any, out any) map[string]any {
 			}
 			if trunc := mapValue(m["truncation"]); trunc != nil {
 				summary["truncated"] = trunc["roots"]
+			}
+			// Rows the result identified only by key, so a trace shows the
+			// naming notice was given and whether a later query took it.
+			if naming := mapValue(m["naming"]); naming != nil {
+				summary["unnamed"] = naming["rows"]
 			}
 		}
 		return summary

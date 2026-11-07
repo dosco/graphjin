@@ -2765,6 +2765,63 @@ func TestStage3_DistinctAggregateNestedJoinThroughNonDistinctColumn(t *testing.T
 	}
 }
 
+// TestResultNamingGaps covers the naming signal end to end, compiled from
+// real queries: rows carrying their key without their name are reported,
+// with the name to select, and so is a foreign key without the name of the
+// row it points to; selecting the name, directly or through the
+// relationship, clears the report.
+func TestResultNamingGaps(t *testing.T) {
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gj.Close()
+
+	gaps := func(query string) []core.NamingGapInfo {
+		t.Helper()
+		res, err := gj.GraphQL(context.Background(), query, nil, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", query, err)
+		}
+		return res.NamingGaps()
+	}
+
+	got := gaps(`query { products(limit: 2, order_by: { id: asc }) { id price } }`)
+	if len(got) != 1 || got[0].Path != "products" || got[0].Table != "products" ||
+		got[0].KeyColumn != "id" || got[0].NameColumn != "name" || got[0].Relationship != "" {
+		t.Fatalf("key without name = %+v", got)
+	}
+	if got := gaps(`query { products(limit: 2, order_by: { id: asc }) { id name price } }`); len(got) != 0 {
+		t.Fatalf("named rows reported: %+v", got)
+	}
+	if got := gaps(`query { products(where: { id: { eq: -1 } }) { id price } }`); len(got) != 0 {
+		t.Fatalf("no rows, yet reported: %+v", got)
+	}
+	lookup, err := gj.GraphQL(context.Background(), `query { products(where: { name: { eq: "Product 1" } }) { id price } }`, nil, nil)
+	if err != nil || !strings.Contains(string(lookup.Data), `"id"`) {
+		t.Fatalf("lookup by name returned no rows: %v %s", err, lookup.Data)
+	}
+	if got := lookup.NamingGaps(); len(got) != 0 {
+		t.Fatalf("a lookup by name reported: %+v", got)
+	}
+
+	if dbType == "mongodb" || dbType == "cassandra" {
+		return // aggregates and relationship nesting differ on these harnesses
+	}
+	if got := gaps(`query { products { count_id max_price } }`); len(got) != 0 {
+		t.Fatalf("pure aggregate reported: %+v", got)
+	}
+	got = gaps(`query { purchases(limit: 2, order_by: { id: asc }) { quantity product_id } }`)
+	if len(got) != 1 || got[0].Path != "purchases" || got[0].Table != "products" ||
+		got[0].KeyColumn != "product_id" || got[0].NameColumn != "name" || got[0].Relationship != "products" {
+		t.Fatalf("foreign key without name = %+v", got)
+	}
+	if got := gaps(`query { purchases(limit: 2, order_by: { id: asc }) { quantity product_id products { name } } }`); len(got) != 0 {
+		t.Fatalf("name selected through the relationship, yet reported: %+v", got)
+	}
+}
+
 // TestResultTruncatedRoots covers the compiled-limit truncation signal end
 // to end: a limit-clamped list flags, a pure aggregate (NoLimit) does not,
 // and a mixed dimension+aggregate selection keeps its limit and flags.

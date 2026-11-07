@@ -1881,6 +1881,60 @@ type executeResult struct {
 	// Truncation marks result lists that reached their compiled row limit:
 	// pages, not populations. Aggregates over such lists are unsafe.
 	Truncation *TruncationInfo `json:"truncation,omitempty"`
+	// Naming marks rows the result identifies only by key while the schema
+	// has a column that names them.
+	Naming *NamingInfo `json:"naming,omitempty"`
+}
+
+// NamingInfo is attached to execution results whose rows carry a key (their
+// own id, or a foreign key) without the name the schema has for them.
+// Exported so the serv layer can reuse it on its execute results.
+type NamingInfo struct {
+	Rows    []core.NamingGapInfo `json:"rows"`
+	Message string               `json:"message"`
+}
+
+// NamingMessage renders the model-facing notice for rows identified only by
+// key. It names the exact selection that adds each name, because that is what
+// the author lacks: it chose the columns that rank or filter, and the answer
+// can state only what was selected.
+func NamingMessage(gaps []core.NamingGapInfo) string {
+	var b strings.Builder
+	b.WriteString("GraphJin naming:")
+	for i, gap := range gaps {
+		if i > 0 {
+			b.WriteString(";")
+		}
+		if gap.Relationship != "" {
+			fmt.Fprintf(&b, " %s identifies %s only by %s; select %s { %s } inside %s to name them", gap.Path, gap.Table, gap.KeyColumn, gap.Relationship, gap.NameColumn, gap.Path)
+		} else {
+			fmt.Fprintf(&b, " %s rows carry %s without %s; select %s", gap.Path, gap.KeyColumn, gap.NameColumn, gap.NameColumn)
+		}
+	}
+	b.WriteString(". An id names nothing to the user: if the answer says which rows these are, add the names to this query and run it again in this run before answering.")
+	return b.String()
+}
+
+// NamingFor returns the naming notice for a successful result, or nil.
+func NamingFor(res *core.Result) *NamingInfo {
+	if res == nil {
+		return nil
+	}
+	gaps := res.NamingGaps()
+	if len(gaps) == 0 {
+		return nil
+	}
+	return &NamingInfo{Rows: gaps, Message: NamingMessage(gaps)}
+}
+
+// attachNaming decorates a successful execution result with the naming
+// notice. The agent protocol throws the first such result back (see
+// namingRefusal); MCP clients read the notice from the value.
+func attachNaming(result executeResult, res *core.Result) executeResult {
+	if naming := NamingFor(res); naming != nil {
+		result.Naming = naming
+	}
+	return result
 }
 
 // TruncationInfo is attached to execution results whose lists hit their
@@ -2321,6 +2375,7 @@ func executeResultFromCore(res *core.Result, err error) executeResult {
 	}
 	if len(result.Errors) == 0 {
 		result = attachTruncation(result, res.TruncatedRoots())
+		result = attachNaming(result, res)
 	}
 	return result
 }

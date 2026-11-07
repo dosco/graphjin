@@ -57,6 +57,9 @@ type ExecuteResult struct {
 	// Truncation marks result lists that reached their compiled row limit —
 	// pages, not populations. Callers must not aggregate over them.
 	Truncation *gjagent.TruncationInfo `json:"truncation,omitempty"`
+	// Naming marks rows identified only by key while the schema has a
+	// column that names them.
+	Naming *gjagent.NamingInfo `json:"naming,omitempty"`
 }
 
 // attachExecuteTruncation decorates a successful execution result with the
@@ -68,6 +71,7 @@ func attachExecuteTruncation(result ExecuteResult, res *core.Result) ExecuteResu
 	if roots := res.TruncatedRoots(); len(roots) != 0 {
 		result.Truncation = &gjagent.TruncationInfo{Roots: roots, Message: gjagent.TruncationMessage(roots)}
 	}
+	result.Naming = gjagent.NamingFor(res)
 	return result
 }
 
