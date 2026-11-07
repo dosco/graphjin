@@ -175,34 +175,14 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 						s.handoffRead = true
 						return s.base.Execute(continuation, options)
 					}
-					if protocolCode != "saved_query_execution_required" {
-						return map[string]any{
-							"kind": "result",
-							"result": map[string]any{
-								"graphjin_protocol": protocolCode,
-								"message":           publicMessage,
-								"next":              publicMessage,
-							},
-						}
+					return map[string]any{
+						"kind": "result",
+						"result": map[string]any{
+							"graphjin_protocol": protocolCode,
+							"message":           publicMessage,
+							"next":              publicMessage,
+						},
 					}
-					// The model already chose to terminate, so execute the narrow,
-					// protocol-derived continuation in the same runtime session and
-					// return its live result to the next actor step. This is limited to
-					// an exact saved-query route selected from same-run discovery; the
-					// model still owns interpretation and the final response.
-					s.handoffRead = true
-					continued := s.base.Execute(continuation, options)
-					if evidence, ok := runtimeFinalEvidence(continued); ok {
-						return map[string]any{
-							"kind": "result",
-							"result": map[string]any{
-								"graphjin_protocol": "saved_query_execution_completed",
-								"message":           "The required governed execution completed. Interpret continuation.execution.data and finalize the user's answer now.",
-								"continuation":      evidence,
-							},
-						}
-					}
-					return continued
 				}
 			}
 			return map[string]any{
@@ -268,7 +248,7 @@ func pendingFinalProtocol(message string) (string, string) {
 			return item.code, strings.TrimSpace(strings.TrimPrefix(message, item.prefix))
 		}
 	}
-	return "saved_query_execution_required", message
+	return "finalization_requirement_pending", message
 }
 
 func (s *graphJinCodeSession) Inspect(options map[string]ax.Value) ax.Value {
@@ -324,7 +304,7 @@ func referencesRuntimeHandoff(code string) bool {
 func referencesGraphJinCallable(code string) bool {
 	for _, name := range []string{
 		"query_catalog", "graphql_help", "validate_where_clause",
-		"execute_saved_query", "execute_graphql", "use_prepared_catalog",
+		"execute_graphql", "use_prepared_catalog",
 	} {
 		if referencesCallableInvocation(code, name) {
 			return true

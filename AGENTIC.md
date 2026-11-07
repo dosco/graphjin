@@ -161,15 +161,17 @@ agent:
 See [`CONFIG.md`](CONFIG.md#agent-configuration) for every knob.
 
 It is the same catalog-first contract, enforced the same way: discover before
-acting, inspect a `saved_query` row before running it, check `gj_security` and
+acting, inspect a table's detail before writing to it, check `gj_security` and
 `gj_runtime` before control-plane changes. The guards are authoritative — an
 `answered` result is downgraded to `blocked` with evidence when a required step
 was skipped, and model-claimed actions never count, only real tool results.
 
 Internally it is an RLM (reasoning-with-code) loop: the model writes JavaScript
 that calls the same catalog tools as runtime globals (`query_catalog`,
-`graphql_help`, `validate_where_clause`, `execute_saved_query`,
-`execute_graphql`, `final`), and the typed result is parsed from `key: value`
+`graphql_help`, `validate_where_clause`, `execute_graphql`, `final`). Saved
+queries appear in the catalog as approved definitions: the agent reads one and
+runs its GraphQL, or its own adaptation, through `execute_graphql`; it has no
+saved-query callable. The typed result is parsed from `key: value`
 output. There is no dependency on
 provider tool-calling, but Ax requests structured JSON for each typed stage.
 Which mechanism it uses is not GraphJin's decision: `agent.provider` names an Ax

@@ -235,7 +235,7 @@ func (r *serviceAgentRuntime) GraphQLHelp(ctx context.Context, args map[string]a
 			Cards:       []core.CatalogCard{card},
 			Details:     snap.CardDetails(id),
 			Edges:       snap.CardEdges(id),
-			Next:        agentCatalogNext("query_catalog", "Continue with filtered catalog discovery or execute an approved saved query when this detail row supports it."),
+			Next:        agentCatalogNext("query_catalog", "Continue with filtered catalog discovery, or author the query from this detail row with execute_graphql."),
 		}, nil
 	}
 	q := core.CatalogQuery{Search: topic, Kind: "help", Limit: 5, Explain: true}
@@ -502,43 +502,10 @@ func (r *serviceAgentRuntime) ValidateWhereClause(ctx context.Context, args map[
 	return r.base.ValidateWhereClause(ctx, args)
 }
 
-// ExecuteSavedQuery and ExecuteGraphQL run through the service-level mutation
-// kill switches before delegating to core. Core remains the authoritative
-// source/role/RLS boundary, but an agent must not bypass mcp.allow_mutations by
-// calling its internal runtime instead of the public MCP tool handler.
-func (r *serviceAgentRuntime) ExecuteSavedQuery(ctx context.Context, args map[string]any) (any, error) {
-	if r == nil || r.service == nil {
-		return r.base.ExecuteSavedQuery(ctx, args)
-	}
-	name := stringArg(args, "name")
-	if name == "" {
-		return nil, fmt.Errorf("query name is required")
-	}
-	varsJSON, err := agentVariablesJSON(args["variables"])
-	if err != nil {
-		return nil, err
-	}
-	var rc core.RequestConfig
-	if namespace := stringArg(args, "namespace"); namespace != "" {
-		rc.SetNamespace(namespace)
-	}
-	mutationsAllowed := r.service.conf != nil && r.service.conf.MCP.AllowMutations
-	if r.conf.ReadOnly || !mutationsAllowed {
-		mutation, err := r.service.savedQueryIsMutation(ctx, name, &rc)
-		if err != nil {
-			return nil, err
-		}
-		if mutation {
-			if r.conf.ReadOnly {
-				return nil, fmt.Errorf("agent is in read-only mode: saved query %q is a mutation", name)
-			}
-			return nil, fmt.Errorf("mutations are not allowed: saved query %q is a mutation", name)
-		}
-	}
-	res, err := r.service.executeSavedQueryByName(ctx, name, varsJSON, &rc)
-	return annotateAgentPolicyErrors(executeAgentResultFromCore(res, err)), nil
-}
-
+// ExecuteGraphQL runs through the service-level mutation kill switch before
+// delegating to core. Core remains the authoritative source/role/RLS boundary,
+// but an agent must not bypass mcp.allow_mutations by calling its internal
+// runtime instead of the public MCP tool handler.
 func (r *serviceAgentRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (any, error) {
 	if r != nil && r.service != nil && r.service.conf != nil && !r.service.conf.MCP.AllowMutations {
 		if query := stringArg(args, "query"); isMutation(query) {
@@ -592,46 +559,6 @@ func annotateAgentPolicyErrors(out any) any {
 	return value
 }
 
-func agentVariablesJSON(value any) (json.RawMessage, error) {
-	if value == nil {
-		return nil, nil
-	}
-	if raw, ok := value.(json.RawMessage); ok {
-		return raw, nil
-	}
-	if text, ok := value.(string); ok {
-		text = strings.TrimSpace(text)
-		if text == "" {
-			return nil, nil
-		}
-		if !json.Valid([]byte(text)) {
-			return nil, fmt.Errorf("variables must be valid JSON")
-		}
-		return json.RawMessage(text), nil
-	}
-	data, err := json.Marshal(value)
-	if err != nil {
-		return nil, fmt.Errorf("invalid variables: %w", err)
-	}
-	return data, nil
-}
-
-func executeAgentResultFromCore(res *core.Result, err error) ExecuteResult {
-	result := ExecuteResult{}
-	if err != nil {
-		result.Errors = []ErrorInfo{{Message: err.Error()}}
-		return result
-	}
-	if res == nil {
-		return result
-	}
-	result.Data = res.Data
-	for _, e := range res.Errors {
-		result.Errors = append(result.Errors, ErrorInfo{Message: e.Message, Extensions: e.Extensions})
-	}
-	return attachExecuteTruncation(result, res)
-}
-
 func (r *serviceAgentRuntime) requireCatalogAccess(ctx context.Context) error {
 	if r == nil || r.service == nil || r.service.conf == nil || !r.service.conf.Core.IsSourcesUsed() {
 		return nil
@@ -668,7 +595,7 @@ func agentCatalogNextForQuery(q core.CatalogQuery, cards []core.CatalogCard) map
 			args["limit"] = q.Limit
 		}
 		if kind == "saved_query" && q.Search != "" {
-			next["reason"] = "No saved_query rows matched the search text. Live row values are not catalog metadata; broaden to query_catalog({kind:\"saved_query\"}), then inspect a returned saved_query:<name> detail before execute_saved_query."
+			next["reason"] = "No saved_query rows matched the search text. Live row values are not catalog metadata; broaden to query_catalog({kind:\"saved_query\"}), then inspect a returned saved_query:<name> detail and adapt its graphql_query with execute_graphql."
 		}
 		if len(args) != 0 {
 			next["args"] = args
@@ -676,10 +603,10 @@ func agentCatalogNextForQuery(q core.CatalogQuery, cards []core.CatalogCard) map
 		return next
 	}
 	if kind == "saved_query" {
-		next := agentCatalogNext("query_catalog", "Inspect the most relevant saved_query:<name> row with query_catalog({id:\"saved_query:<name>\"}) before execute_saved_query.")
+		next := agentCatalogNext("query_catalog", "Inspect the most relevant saved_query:<name> row with query_catalog({id:\"saved_query:<name>\"}) and adapt its graphql_query with execute_graphql.")
 		if count == 1 && cards[0].ID != "" {
 			next["args"] = map[string]any{"id": cards[0].ID}
-			next["reason"] = "Inspect this saved query detail before execute_saved_query."
+			next["reason"] = "Inspect this saved query detail and adapt its graphql_query with execute_graphql."
 		} else {
 			ids := make([]string, 0, len(cards))
 			for _, card := range cards {

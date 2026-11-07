@@ -151,10 +151,6 @@ func (r *qualifiedOnlyRuntime) ValidateWhereClause(context.Context, map[string]a
 	return map[string]any{}, nil
 }
 
-func (r *qualifiedOnlyRuntime) ExecuteSavedQuery(context.Context, map[string]any) (any, error) {
-	return map[string]any{}, nil
-}
-
 func (r *qualifiedOnlyRuntime) ExecuteGraphQL(context.Context, map[string]any) (any, error) {
 	return map[string]any{}, nil
 }

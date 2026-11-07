@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -365,8 +366,11 @@ func TestGenerateCatalogCandidatesKeepsOnlyObjectiveBusinessTasks(t *testing.T) 
 		}
 		if task.Provenance.Source == "saved-query" && task.Oracle != nil {
 			sawSavedAggregate = true
-			if len(task.Method.RequireTools) != 1 || task.Method.RequireTools[0] != "execute_saved_query" {
-				t.Fatalf("saved aggregate method rule cannot observe execution: %+v", task.Method)
+			// The data agent authors saved metrics itself: the method rule is
+			// the saved query's aggregate, observed in its own execute_graphql.
+			if len(task.Method.RequireQueryMatch) != 1 || len(task.Method.RequireTools) != 0 ||
+				!reflect.DeepEqual(task.Behavior.RequiredActions, []string{"query_catalog", "execute_graphql"}) {
+				t.Fatalf("saved aggregate must be scored on the agent's own query: %+v %+v", task.Method, task.Behavior)
 			}
 		}
 		if strings.Contains(task.Prompt, "orders.created_at") {

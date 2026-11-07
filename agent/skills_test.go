@@ -25,7 +25,7 @@ func profileWithRoleAndRoots(role string, roots ...string) *CapabilityProfile {
 	return &CapabilityProfile{
 		RoleClass:            role,
 		AllowedActions:       actions,
-		AvailableTools:       []string{toolGraphQLHelp, toolQueryCatalog, toolValidateWhere, toolExecuteSavedQuery, toolExecuteGraphQL},
+		AvailableTools:       []string{toolGraphQLHelp, toolQueryCatalog, toolValidateWhere, toolExecuteGraphQL},
 		AvailableSystemRoots: roots,
 	}
 }

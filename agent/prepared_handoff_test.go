@@ -72,24 +72,6 @@ func TestPreparedHandoffDoesNotGrantDiscoveryOrExecutionEvidence(t *testing.T) {
 	}
 }
 
-func TestPreparedSavedQueryExecutesOnFirstCoreModelTurn(t *testing.T) {
-	rt := selectionFixture()
-	client := &recordingClient{responses: []string{
-		`{"javascriptCode":"const preferred = inputs.context._graphjin_prepared.preferred; await query_catalog({id:preferred.id}); const execution = await execute_saved_query({name:preferred.name}); await final('Answer from the returned invoice data.', {execution});"}`,
-		`{"status":"answered","answer":"Found invoice 1."}`,
-	}}
-	a := newAgent(Config{Selection: SelectionConfig{Enabled: true, Provider: "typesafe"}}, rt,
-		WithClientFactory(func(Config) (ax.AIClient, error) { return client, nil }),
-		WithSelectionProgramFactory(selectionFactory(selectRelevant)))
-	response, err := a.Run(context.Background(), Request{Instruction: "show invoices"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response.Status != StatusAnswered || rt.executions != 1 || len(client.calls) != 2 || response.Preparation.DetailCacheHits != 1 {
-		t.Fatalf("saved-query first-turn execution: %+v calls=%d executions=%d", response, len(client.calls), rt.executions)
-	}
-}
-
 func TestPreparedExecutionSurvivesLaterJavaScriptError(t *testing.T) {
 	rt := selectionFixture()
 	client := &recordingClient{responses: []string{

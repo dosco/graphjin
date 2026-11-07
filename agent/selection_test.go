@@ -66,9 +66,6 @@ func (r *selectionRuntime) GraphQLHelp(ctx context.Context, args map[string]any)
 func (r *selectionRuntime) ValidateWhereClause(context.Context, map[string]any) (any, error) {
 	return map[string]any{"valid": true}, nil
 }
-func (r *selectionRuntime) ExecuteSavedQuery(ctx context.Context, args map[string]any) (any, error) {
-	return r.ExecuteGraphQL(ctx, args)
-}
 func (r *selectionRuntime) ExecuteGraphQL(context.Context, map[string]any) (any, error) {
 	r.mu.Lock()
 	r.executions++
@@ -155,7 +152,7 @@ func TestPreparationDiscoversOutsideSeedAndRequiresConsumption(t *testing.T) {
 	if _, err := result.consume(protocol); err != nil {
 		t.Fatal(err)
 	}
-	if !protocol.state.tablesDetailed["invoices"] || !protocol.state.tablesDetailed["customers"] || !protocol.state.savedQueriesDetailed["invoices"] {
+	if !protocol.state.tablesDetailed["invoices"] || !protocol.state.tablesDetailed["customers"] {
 		t.Fatalf("detail evidence not adopted: %+v", protocol.state.catalogDetails)
 	}
 	if len(protocol.state.savedQueriesDiscovered) != 0 {

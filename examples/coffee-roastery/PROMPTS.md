@@ -24,7 +24,7 @@ GJ_AGENT_MODEL=gpt-4.1 graphjin serve --demo --path examples/coffee-roastery
 
 With no `agent.model` configured the provider default applies, which for OpenAI
 is `gpt-5-mini`. That model does not reliably complete these multi-step runs: it
-tends to stall or return blocked rather than execute the saved query. GraphJin's
+tends to stall or return blocked rather than run the query. GraphJin's
 protocol guards keep a weak model from publishing an ungrounded answer, but they
 cannot make it finish the work.
 

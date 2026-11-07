@@ -58,7 +58,7 @@ run_agent_rest_once() {
   local out="$TMP_DIR/agent-rest-$(date +%s%N).json"
   local payload
   payload="$(jq -n '{
-    instruction:"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:fab_order_context\"}); const result = await execute_saved_query({name:\"fab_order_context\"}); const order = result.data.fab_orders.find(o => o.priority === 1); await final({status:\"answered\", answer:`${order.order_code} for ${order.customers.name} is the highest priority fab order and is still ${order.status}.`, data:{order}, evidence:{saved_query:\"fab_order_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
+    instruction:"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:fab_order_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const order = result.data.fab_orders.find(o => o.priority === 1); await final({status:\"answered\", answer:`${order.order_code} for ${order.customers.name} is the highest priority fab order and is still ${order.status}.`, data:{order}, evidence:{saved_query:\"fab_order_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
     max_steps:10,
     return_trace:false
   }')"
@@ -68,7 +68,7 @@ run_agent_rest_once() {
 
 run_agent_mcp_once() {
   mcp_tool ask_graphjin_agent '{
-    "instruction":"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:fab_order_context\"}); const result = await execute_saved_query({name:\"fab_order_context\"}); const order = result.data.fab_orders.find(o => o.priority === 1); await final({status:\"answered\", answer:`${order.order_code} for ${order.customers.name} is the highest priority fab order and is still ${order.status}.`, data:{order}, evidence:{saved_query:\"fab_order_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
+    "instruction":"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:fab_order_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const order = result.data.fab_orders.find(o => o.priority === 1); await final({status:\"answered\", answer:`${order.order_code} for ${order.customers.name} is the highest priority fab order and is still ${order.status}.`, data:{order}, evidence:{saved_query:\"fab_order_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
     "max_steps":10,
     "return_trace":false
   }'
@@ -103,10 +103,10 @@ run_agent_eval_suite() {
     and ((.actions | tostring | test("execute_saved_query|execute_graphql")) | not)
   ' "agent eval: discovery-only inventory avoided execution"
 
-  out="$(run_agent_rest_prompt "Use the JavaScript runtime globals to run this exact discovery flow: const yieldDetail = await query_catalog({id:\"saved_query:yield_context\"}); const dfmDetail = await query_catalog({id:\"saved_query:dfm_review_context\"}); const yieldResult = await execute_saved_query({name:\"yield_context\"}); const dfmResult = await execute_saved_query({name:\"dfm_review_context\"}); const weak = yieldResult.data.yield_by_layer_count.find(r => Number(r.layer_count) === 8 && Number(r.yield_pct) < 88); const topDefect = yieldResult.data.defect_pareto[0]; const risk = dfmResult.data.bom_items.find(i => i.sku === \"IC-AFE-8CH-MED\"); await final({status:\"answered\", answer:\`8-layer yield is \${weak.yield_pct}% with \${topDefect.station} as the top defect station; \${risk.sku} is \${risk.supplier_part.lifecycle} with \${risk.supplier_part.lead_time_days} day lead time.\`, data:{weak,topDefect,risk}, evidence:{saved_queries:[\"yield_context\",\"dfm_review_context\"], yield_detail:yieldDetail.cards, dfm_detail:dfmDetail.cards}});")"
+  out="$(run_agent_rest_prompt "Use the JavaScript runtime globals to run this exact discovery flow: const yieldDetail = await query_catalog({id:\"saved_query:yield_context\"}); const dfmDetail = await query_catalog({id:\"saved_query:dfm_review_context\"}); const yieldResult = await execute_graphql({query: yieldDetail.cards[0].graphql_query}); const dfmResult = await execute_graphql({query: dfmDetail.cards[0].graphql_query}); const weak = yieldResult.data.yield_by_layer_count.find(r => Number(r.layer_count) === 8 && Number(r.yield_pct) < 88); const topDefect = yieldResult.data.defect_pareto[0]; const risk = dfmResult.data.bom_items.find(i => i.sku === \"IC-AFE-8CH-MED\"); await final({status:\"answered\", answer:\`8-layer yield is \${weak.yield_pct}% with \${topDefect.station} as the top defect station; \${risk.sku} is \${risk.supplier_part.lifecycle} with \${risk.supplier_part.lead_time_days} day lead time.\`, data:{weak,topDefect,risk}, evidence:{saved_queries:[\"yield_context\",\"dfm_review_context\"], yield_detail:yieldDetail.cards, dfm_detail:dfmDetail.cards}});")"
   assert_jq "$out" '
     .status == "answered"
-    and (.actions | tostring | test("query_catalog|execute_saved_query"))
+    and (.actions | tostring | test("query_catalog|execute_graphql"))
     and (.answer | test("8|IC-AFE|allocation|plating"; "i"))
   ' "agent eval: yield and supplier risk discovered through approved surfaces"
 

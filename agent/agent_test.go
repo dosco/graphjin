@@ -96,12 +96,6 @@ func (r *successfulExecutionRuntime) ExecuteGraphQL(_ context.Context, args map[
 	return map[string]any{"data": map[string]any{"invoices": []any{map[string]any{"id": "INV-1", "status": "paid"}}}}, nil
 }
 
-func (r *successfulExecutionRuntime) ExecuteSavedQuery(_ context.Context, args map[string]any) (any, error) {
-	r.savedCalls++
-	r.calls = append(r.calls, toolExecuteSavedQuery)
-	return map[string]any{"data": map[string]any{"invoices": []any{map[string]any{"id": "INV-1", "status": "paid"}}}}, nil
-}
-
 // structGraphQLRuntime re-shapes an inner fake's successful execute_graphql
 // maps into a struct, mirroring the serv result contract: the policy annotator
 // returns a map only when it rewrites a policy error, so results otherwise
@@ -143,15 +137,6 @@ func (r *fakeRuntime) QueryCatalog(_ context.Context, args map[string]any) (any,
 
 func (r *fakeRuntime) ValidateWhereClause(_ context.Context, args map[string]any) (any, error) {
 	return r.record("validate_where_clause", args), nil
-}
-
-func (r *fakeRuntime) ExecuteSavedQuery(_ context.Context, args map[string]any) (any, error) {
-	r.record("execute_saved_query", args)
-	return map[string]any{
-		"data": map[string]any{
-			"production_orders": []any{map[string]any{"product_name": "Northstar House Blend 340g"}},
-		},
-	}, nil
 }
 
 func (r *fakeRuntime) ExecuteGraphQL(_ context.Context, args map[string]any) (any, error) {
@@ -268,7 +253,7 @@ func TestRunSafeModeCapsStepsAndExposesSafeTools(t *testing.T) {
 	}
 
 	tools := toolsByName(t, programOptions)
-	want := []string{"execute_graphql", "execute_saved_query", "graphql_help", "query_catalog", "validate_where_clause"}
+	want := []string{"execute_graphql", "graphql_help", "query_catalog", "validate_where_clause"}
 	if got := sortedKeys(tools); !reflect.DeepEqual(got, want) {
 		t.Fatalf("tools = %v, want %v", got, want)
 	}
@@ -289,7 +274,7 @@ func TestRunAlwaysRegistersFullToolSurface(t *testing.T) {
 	// by core (role + RLS), not by hiding tools. read_only rejects mutations at
 	// execution time (see coreRuntime), not by removing tools.
 	fullTools := []string{
-		"execute_graphql", "execute_saved_query", "graphql_help", "query_catalog", "validate_where_clause",
+		"execute_graphql", "graphql_help", "query_catalog", "validate_where_clause",
 	}
 	for _, tc := range []struct {
 		name      string
@@ -490,111 +475,6 @@ func TestSpecificRawGraphQLRefusalWinsGenericModelDiscovery(t *testing.T) {
 	}
 	if !resp.Refusal.Retryable || len(resp.Refusal.Unblock) == 0 {
 		t.Fatalf("refusal = %+v, want retryable catalog-first unblock steps", resp.Refusal)
-	}
-}
-
-func TestRunRejectsSavedQueryExecutionBeforeDetailLookup(t *testing.T) {
-	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
-	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
-		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
-		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
-			program.options = options
-			program.onForward = func(p *fakeProgram) {
-				_, _ = callProgramToolError(p, "execute_saved_query", map[string]ax.Value{"name": "daily_roast_context"})
-			}
-			return program
-		}),
-	)
-
-	resp, err := runner.Run(context.Background(), Request{
-		Instruction: "run saved query",
-		TaskID:      "task:correlation-only",
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if resp.Status != StatusBlocked {
-		t.Fatalf("status = %s, want blocked: %+v", resp.Status, resp)
-	}
-	if !responseHasProtocolError(resp, "saved_query_detail_required") {
-		t.Fatalf("missing saved_query_detail_required error: %+v", resp.Errors)
-	}
-	if resp.Refusal == nil {
-		t.Fatal("missing structured refusal")
-	}
-	if resp.Refusal.Code != "saved_query_detail_required" || resp.Refusal.BlockedAction != toolExecuteSavedQuery || !resp.Refusal.Retryable || resp.Refusal.PolicyFinal {
-		t.Fatalf("unexpected refusal: %+v", resp.Refusal)
-	}
-	if len(resp.Refusal.Unblock) != 1 || resp.Refusal.Unblock[0].Tool != toolQueryCatalog {
-		t.Fatalf("unexpected unblock steps: %+v", resp.Refusal.Unblock)
-	}
-	if got := resp.Refusal.Unblock[0].Args["id"]; got != "saved_query:daily_roast_context" {
-		t.Fatalf("unblock id = %v, want saved_query detail", got)
-	}
-}
-
-func TestRunAllowsSavedQueryExecutionAfterDetailLookup(t *testing.T) {
-	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
-	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
-		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
-		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
-			program.options = options
-			program.onForward = func(p *fakeProgram) {
-				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "saved_query:daily_roast_context"})
-				callProgramTool(t, p, "execute_saved_query", map[string]ax.Value{"name": "daily_roast_context"})
-			}
-			return program
-		}),
-	)
-
-	resp, err := runner.Run(context.Background(), Request{Instruction: "run daily roast context"})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if resp.Status != StatusAnswered {
-		t.Fatalf("status = %s, want answered: %+v", resp.Status, resp)
-	}
-	evidence, ok := resp.Evidence.(map[string]any)
-	if !ok {
-		t.Fatalf("evidence type = %T", resp.Evidence)
-	}
-	if !stringSliceEvidenceContains(evidence["saved_queries_detailed"], "daily_roast_context") {
-		t.Fatalf("saved query detail missing from evidence: %+v", evidence)
-	}
-	if len(resp.Errors) != 0 {
-		t.Fatalf("unexpected errors: %+v", resp.Errors)
-	}
-	if resp.Refusal != nil {
-		t.Fatalf("answered response should not carry refusal: %+v", resp.Refusal)
-	}
-}
-
-func TestRunRecoversSavedQueryExecutionAfterRejectedOutOfOrderAttempt(t *testing.T) {
-	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
-	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
-		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
-		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
-			program.options = options
-			program.onForward = func(p *fakeProgram) {
-				_, _ = callProgramToolError(p, "execute_saved_query", map[string]ax.Value{"name": "daily_roast_context"})
-				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "saved_query:daily_roast_context"})
-				callProgramTool(t, p, "execute_saved_query", map[string]ax.Value{"name": "daily_roast_context"})
-			}
-			return program
-		}),
-	)
-
-	resp, err := runner.Run(context.Background(), Request{Instruction: "run daily roast context"})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if resp.Status != StatusAnswered || len(resp.Errors) != 0 || resp.Refusal != nil {
-		t.Fatalf("recovered response = %+v, want answered without terminal protocol error", resp)
-	}
-	evidence := mapValue(resp.Evidence)
-	violations := anySlice(evidence["violations"])
-	if len(violations) != 1 || mapValue(violations[0])["blocking"] != false || mapValue(mapValue(violations[0])["details"])["resolved"] != true {
-		t.Fatalf("resolved violation evidence = %+v", violations)
 	}
 }
 
@@ -1363,11 +1243,11 @@ func TestFinalizeRecoversSuccessfulExecutionDataIgnoredByModel(t *testing.T) {
 		},
 	}
 	state.addGrounding(result)
-	state.recordExecution("execute_saved_query", map[string]any{"name": "daily_roast_context"}, result)
+	state.recordExecution("execute_graphql", map[string]any{"query": "query { production_orders { product_name } }"}, result)
 
 	resp := state.finalize(Response{
 		Status: StatusBlocked,
-		Answer: "There is no `result.data` from the saved query provided, so I cannot answer.",
+		Answer: "There is no `result.data` from the query provided, so I cannot answer.",
 	})
 	if resp.Status != StatusAnswered {
 		t.Fatalf("status = %q, want %q; response = %+v", resp.Status, StatusAnswered, resp)
@@ -1435,22 +1315,6 @@ func TestDistinctExecutionClearsDuplicateCompletionLatch(t *testing.T) {
 	}
 }
 
-func TestDuplicateSuccessfulSavedQueryIsSuppressed(t *testing.T) {
-	base := &successfulExecutionRuntime{}
-	runtime := newProtocolRuntime(base, "Show the invoice snapshot", "", 8, nil, nil, CatalogSearchFeatures{})
-	runtime.state.seedOK = true
-	runtime.state.modelDiscoveryAction = true
-	runtime.state.markSavedQueryDetailed("invoice_snapshot")
-	args := map[string]any{"name": "invoice_snapshot", "variables": map[string]any{"account": 7}}
-	if _, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args)); err != nil {
-		t.Fatal(err)
-	}
-	duplicate, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args))
-	if err != nil || base.savedCalls != 1 || mapValue(duplicate)["cached"] != true {
-		t.Fatalf("saved-query duplicate = %+v calls=%d err=%v", duplicate, base.savedCalls, err)
-	}
-}
-
 func TestDuplicateSuccessfulMutationIsNotExecutedTwice(t *testing.T) {
 	base := &successfulExecutionRuntime{}
 	runtime := newProtocolRuntime(base, "Mark invoice INV-1 paid", "", 8, profileWithRoleAndRoots("user"), nil, CatalogSearchFeatures{})
@@ -1504,7 +1368,7 @@ func TestFinalizeDoesNotRecoverLostResultClaimAcrossBlockingViolation(t *testing
 	state.modelDiscoveryAction = true
 	result := map[string]any{"data": map[string]any{"production_orders": []any{"restricted"}}}
 	state.addGrounding(result)
-	state.recordExecution("execute_saved_query", map[string]any{"name": "daily_roast_context"}, result)
+	state.recordExecution("execute_graphql", map[string]any{"query": "query { production_orders { product_name } }"}, result)
 	state.addViolation("access_blocked", "caller cannot access this result", toolExecuteGraphQL, true, nil)
 
 	resp := state.finalize(Response{
@@ -1513,79 +1377,6 @@ func TestFinalizeDoesNotRecoverLostResultClaimAcrossBlockingViolation(t *testing
 	})
 	if resp.Status != StatusBlocked || resp.Refusal == nil || resp.Refusal.Code != "access_blocked" {
 		t.Fatalf("blocking violation was incorrectly recovered: %+v", resp)
-	}
-}
-
-func TestExplicitlyRequiredSavedQueryName(t *testing.T) {
-	tests := []struct {
-		instruction string
-		want        string
-	}{
-		{`Inspect the detail, then execute_saved_query({name:"daily_roast_context"}) and answer.`, "daily_roast_context"},
-		{`Only after discovery, execute_saved_query({ name: 'batch_quality_snapshot' }).`, "batch_quality_snapshot"},
-		{`const result = await execute_saved_query({name:"customer_issue_context"});`, "customer_issue_context"},
-		{`Explain execute_saved_query({name:"daily_roast_context"}) without executing it.`, ""},
-		{`Inventory saved queries. Do discovery only; do not execute_saved_query({name:"daily_roast_context"}).`, ""},
-		{`The execute_saved_query tool accepts a name.`, ""},
-	}
-	for _, test := range tests {
-		if got := explicitlyRequiredSavedQueryName(test.instruction); got != test.want {
-			t.Errorf("explicitlyRequiredSavedQueryName(%q) = %q, want %q", test.instruction, got, test.want)
-		}
-	}
-}
-
-func TestPendingRequiredSavedQueryExecutionForNaturalLiveData(t *testing.T) {
-	state := newDiscoveryState("Find today's queued production orders and decide the next operational action.")
-	state.savedQueriesDiscovered["daily_roast_context"] = true
-	if pending := state.pendingRequiredSavedQueryExecution(); !strings.Contains(pending, `query_catalog({id:"saved_query:daily_roast_context"})`) || !strings.Contains(pending, `execute_saved_query({name:"daily_roast_context"})`) {
-		t.Fatalf("pending = %q, want exact detail and execution continuation", pending)
-	}
-	if continuation := state.pendingRequiredSavedQueryContinuation(); !strings.Contains(continuation, `query_catalog({id:"saved_query:daily_roast_context"})`) || !strings.Contains(continuation, `execute_saved_query({name:"daily_roast_context"})`) {
-		t.Fatalf("continuation = %q, want executable exact route", continuation)
-	}
-
-	state.savedQueriesDiscovered["batch_quality_snapshot"] = true
-	if pending := state.pendingRequiredSavedQueryExecution(); pending != "" {
-		t.Fatalf("ambiguous saved queries should not force execution: %q", pending)
-	}
-
-	inventory := newDiscoveryState("Inventory the approved saved queries and workflows. Do discovery only.")
-	inventory.savedQueriesDiscovered["daily_roast_context"] = true
-	if pending := inventory.pendingRequiredSavedQueryExecution(); pending != "" {
-		t.Fatalf("discovery-only inventory should not force execution: %q", pending)
-	}
-
-	completed := newDiscoveryState("Find today's queued production orders.")
-	completed.savedQueriesDiscovered["daily_roast_context"] = true
-	completed.recordExecution("execute_saved_query", map[string]any{"name": "daily_roast_context"}, map[string]any{"data": map[string]any{"production_orders": []any{1}}})
-	if pending := completed.pendingRequiredSavedQueryExecution(); pending != "" {
-		t.Fatalf("successful execution should satisfy final guard: %q", pending)
-	}
-}
-
-func TestSeedCatalogSavedQueryDoesNotBecomeRequiredRoute(t *testing.T) {
-	state := newDiscoveryState("What is the latest subscription renewal date?")
-	result := map[string]any{
-		"cards": []any{
-			map[string]any{"id": "table:app:main.subscriptions", "kind": "table"},
-			map[string]any{"id": "saved_query:churn_risk_context", "kind": "saved_query", "name": "churn_risk_context"},
-		},
-	}
-	state.recordCatalog(map[string]any{"search": state.instruction}, result, true)
-	if state.savedQueriesDiscovered["churn_risk_context"] {
-		t.Fatal("broad seed result became an implicit saved-query route")
-	}
-	if pending := state.pendingRequiredSavedQueryExecution(); pending != "" {
-		t.Fatalf("seed result forced unrelated saved-query execution: %q", pending)
-	}
-
-	state.recordCatalog(map[string]any{"search": "churn risk context"}, result, false)
-	if !state.savedQueriesDiscovered["churn_risk_context"] {
-		t.Fatal("model-driven saved-query discovery was not recorded")
-	}
-	if pending := state.pendingRequiredSavedQueryExecution(); !strings.Contains(pending, `execute_saved_query({name:"churn_risk_context"})`) {
-		t.Fatalf("model-driven unambiguous route was not enforced: %q", pending)
 	}
 }
 
@@ -1760,41 +1551,6 @@ func TestRunPassesSeedAsTheOnlyContextField(t *testing.T) {
 	seed, ok := contextValue[protocolContextKey].(map[string]any)
 	if !ok || len(catalogCards(seed)) == 0 {
 		t.Fatalf("inputs.context.%s = %+v, want reachable seed cards", protocolContextKey, contextValue[protocolContextKey])
-	}
-}
-
-func TestRunAllowsSavedQueryExecutionAfterBatchedDetailLookup(t *testing.T) {
-	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
-	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
-		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
-		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
-			program.options = options
-			program.onForward = func(p *fakeProgram) {
-				callProgramTool(t, p, "query_catalog", map[string]ax.Value{
-					"ids": []ax.Value{"saved_query:daily_roast_context", "table:db:public.orders"},
-				})
-				callProgramTool(t, p, "execute_saved_query", map[string]ax.Value{"name": "daily_roast_context"})
-			}
-			return program
-		}),
-	)
-
-	resp, err := runner.Run(context.Background(), Request{Instruction: "run daily roast context"})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if resp.Status != StatusAnswered {
-		t.Fatalf("status = %s, want answered: %+v", resp.Status, resp)
-	}
-	evidence, ok := resp.Evidence.(map[string]any)
-	if !ok {
-		t.Fatalf("evidence type = %T", resp.Evidence)
-	}
-	if !stringSliceEvidenceContains(evidence["saved_queries_detailed"], "daily_roast_context") {
-		t.Fatalf("batched detail should mark saved query: %+v", evidence)
-	}
-	if !stringSliceEvidenceContains(evidence["tables_detailed"], "orders") {
-		t.Fatalf("batched detail should mark table: %+v", evidence)
 	}
 }
 

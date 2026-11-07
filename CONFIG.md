@@ -1161,7 +1161,7 @@ they inherit that deployment's capabilities rather than OpenAI's.
 | `agent.timeout_seconds` | integer | `50` | Request timeout for agent runs; values below 50 are raised to the 50-second minimum |
 | `agent.rate_limit.requests_per_minute` | integer | `0` | Process-local rolling-minute ceiling for outbound model requests; zero disables request limiting |
 | `agent.rate_limit.tokens_per_minute` | integer | `0` | Process-local rolling-minute ceiling charged from provider-reported token usage; zero disables token limiting |
-| `agent.read_only` | boolean | `false` | Force the server-side agent to reject mutations, including saved-query mutations |
+| `agent.read_only` | boolean | `false` | Force the server-side agent to reject mutations before execution |
 | `agent.return_trace` | boolean | `false` | Include agent action/trace data in responses |
 | `agent.seed_limit` | integer | `40` | Initial `query_catalog(search: instruction)` seed row cap |
 | `agent.catalog_default_limit` | integer | `20` | Default row limit for model-issued catalog queries |
@@ -1189,9 +1189,9 @@ deployments. `SG_AGENT_SERVICE_TIER` and `SJ_AGENT_SERVICE_TIER` remain accepted
 as compatibility aliases.
 
 There are no per-request agent modes. The server-side agent's internal runtime
-always includes discovery, validation, saved-query execution, and guarded raw
-GraphQL execution. `agent.read_only: true` is the operator kill-switch that
-rejects mutations before execution, including saved-query mutations. Otherwise
+always includes discovery, validation, and guarded GraphQL execution; saved
+queries are catalog definitions it reads, not calls. `agent.read_only: true` is
+the operator kill-switch that rejects mutations before execution. Otherwise
 the agent always runs as the caller, so core roles, row-level security,
 source/table `read_only`, and protocol evidence gates decide what can run. The
 public MCP `execute_graphql` tool is separate and is listed only when

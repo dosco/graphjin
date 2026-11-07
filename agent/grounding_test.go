@@ -483,21 +483,6 @@ func TestDatabaseComputationFinalGuard(t *testing.T) {
 		t.Fatalf("order_by+limit bypassed strict count guard: %q", message)
 	}
 
-	savedRows := newDiscoveryState("How many accounts are active?")
-	savedRows.recordExecution(toolExecuteSavedQuery, map[string]any{"name": "account_rows"}, executeResult{
-		Data: map[string]any{"accounts": []any{map[string]any{"id": 1}, map[string]any{"id": 2}}},
-	})
-	if message := savedRows.pendingDatabaseComputation(); !strings.HasPrefix(message, "database_computation_required:") {
-		t.Fatalf("row-returning saved query bypassed computation guard: %q", message)
-	}
-	savedAggregate := newDiscoveryState("What is the total monthly recurring revenue?")
-	savedAggregate.savedQueryGraphQL["mrr_summary"] = "query { accounts { total: sum_mrr } }"
-	savedAggregate.recordExecution(toolExecuteSavedQuery, map[string]any{"name": "mrr_summary"}, executeResult{
-		Data: map[string]any{"accounts": []any{map[string]any{"total": 42}}},
-	})
-	if message := savedAggregate.pendingDatabaseComputation(); message != "" {
-		t.Fatalf("aggregate saved query remained blocked: %q", message)
-	}
 }
 
 func TestResultContainsHasuraCompatibleAggregate(t *testing.T) {
@@ -542,69 +527,6 @@ func TestCachedExecutionRecoveryKeepsPendingRequirement(t *testing.T) {
 	}
 	if runtime.state.completionLatchKey != "" || runtime.state.completionReady {
 		t.Fatalf("pending requirement armed completion latch: %+v", runtime.state)
-	}
-}
-
-func TestCachedSavedQueryWithPendingRequirementWithholdsRows(t *testing.T) {
-	base := &successfulExecutionRuntime{}
-	runtime := newProtocolRuntime(base, "How many invoices are there?", "", 8, nil, nil, CatalogSearchFeatures{})
-	runtime.state.seedOK = true
-	runtime.state.modelDiscoveryAction = true
-	runtime.state.markSavedQueryDetailed("invoice_snapshot")
-	args := map[string]any{"name": "invoice_snapshot"}
-	if _, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args)); err != nil {
-		t.Fatal(err)
-	}
-	_, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args))
-	if err == nil || base.savedCalls != 1 {
-		t.Fatalf("the cached saved-query rejection must throw without re-executing: calls=%d err=%v", base.savedCalls, err)
-	}
-	for _, want := range []string{"a saved query is fixed, so re-running it will keep failing", "database_computation_required", "count_", "do not calculate from fetched rows"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("the exception must carry %q: %v", want, err)
-		}
-	}
-}
-
-// TestCachedSavedQueryRejectionPointsAtAuthoring pins the distinction that broke a
-// run: raw GraphQL can be re-authored in place, a saved query cannot. Generation
-// 2028.1 recorded the same saved query re-run ten times, each rejection sending the
-// model to a catalog search that returned nothing, until the step budget ran out.
-func TestCachedSavedQueryRejectionPointsAtAuthoring(t *testing.T) {
-	base := &successfulExecutionRuntime{}
-	runtime := newProtocolRuntime(base, "How many invoices are there?", "", 8, nil, nil, CatalogSearchFeatures{})
-	runtime.state.seedOK = true
-	runtime.state.modelDiscoveryAction = true
-	runtime.state.markSavedQueryDetailed("invoice_snapshot")
-	args := map[string]any{"name": "invoice_snapshot"}
-	if _, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args)); err != nil {
-		t.Fatal(err)
-	}
-	_, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args))
-	if err == nil {
-		t.Fatal("the cached saved-query rejection must throw")
-	}
-	for _, want := range []string{"Author the required query with execute_graphql", "count_", "do not calculate from fetched rows"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("the exception must carry %q: %v", want, err)
-		}
-	}
-	if !strings.Contains(err.Error(), "re-running it will keep failing") {
-		t.Fatalf("saved-query message must say repetition cannot work: %v", err)
-	}
-
-	// Raw GraphQL keeps the repeat-differently repair, because the caller owns the query.
-	graphqlOut, rejected := pendingCachedExecutionRejection(runtime.state, "{ invoices { id } }", false)
-	if !rejected {
-		t.Fatal("a pending requirement must reject the cached GraphQL execution")
-	}
-	graphqlResult, _ := graphqlOut.(executeResult)
-	graphqlRepair := mapValue(graphqlResult.Errors[0].Extensions["graphjin_repair"])
-	if kind := stringFromMap(graphqlRepair, "kind"); kind != "distinct_aggregate_required" {
-		t.Fatalf("raw GraphQL repair kind = %q, want the re-author path", kind)
-	}
-	if tool := stringFromMap(graphqlRepair, "recommended_tool"); tool != "" {
-		t.Fatalf("raw GraphQL needs no tool redirect, got %q", tool)
 	}
 }
 
@@ -757,9 +679,9 @@ func groundedAnswerState(t *testing.T) *discoveryState {
 	state := newDiscoveryState("does the roast plan cover committed shipments")
 	state.seedOK = true
 	state.modelDiscoveryAction = true
-	args := map[string]any{"name": "daily_roast_context"}
-	index := state.startAction("model", "execute_saved_query", args)
-	state.finishAction(index, "execute_saved_query", args, map[string]any{
+	args := map[string]any{"query": "query { production_orders { quantity_bags requested_ship_date } roast_schedule { target_output_kg } }"}
+	index := state.startAction("model", "execute_graphql", args)
+	state.finishAction(index, "execute_graphql", args, map[string]any{
 		"data": map[string]any{
 			"production_orders": []any{map[string]any{"quantity_bags": 240, "requested_ship_date": "2026-07-28"}},
 			"roast_schedule":    []any{map[string]any{"target_output_kg": 132}},
@@ -809,7 +731,7 @@ func TestFinalizeAllowsProtocolVocabularyAndInstructionTokens(t *testing.T) {
 	state.modelDiscoveryAction = true
 	resp := state.finalize(Response{
 		Status: StatusAnswered,
-		Answer: "The coversCommittedShipments wording comes from your request; per gj_catalog discovery, use an approved saved_query via execute_saved_query.",
+		Answer: "The coversCommittedShipments wording comes from your request; per gj_catalog discovery, read an approved saved_query and run it via execute_graphql.",
 	})
 	if resp.Status != StatusAnswered {
 		t.Fatalf("status = %s, want %s (violations: %v)", resp.Status, StatusAnswered, ProtocolViolationCodes(resp))
@@ -1007,15 +929,6 @@ func TestStoredCountColumnDischargesCountIntent(t *testing.T) {
 	}
 	if got := discharge(t, healthQuestion, `query { accounts { account_health { risks: open_risk_count } } }`); got != "" {
 		t.Fatalf("alias-target read must discharge, got %q", got)
-	}
-	// (9) The saved-query path discharges symmetrically.
-	saved := newDiscoveryState(healthQuestion)
-	saved.savedQueryGraphQL["account_health_snapshot"] = nested
-	saved.executions = []map[string]any{{
-		"tool": toolExecuteSavedQuery, "name": "account_health_snapshot", "has_data": true, "error_count": 0,
-	}}
-	if got := saved.pendingDatabaseComputation(); got != "" {
-		t.Fatalf("saved-query stored count must discharge, got %q", got)
 	}
 	// (10) The two patterns partition: the aggregate pattern does not claim
 	// stored counts, and the stored-count pattern does not scalar-claim

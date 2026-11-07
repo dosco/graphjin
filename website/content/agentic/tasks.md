@@ -91,7 +91,7 @@ establish mutation evidence. `task_id` never grants access and never satisfies
 a protocol guard.
 
 {{< verified by="TestTaskAgentHTTPFlowWarmStartsAndJournals" file="serv/tasks_flow_test.go" line="63" >}}
-{{< verified by="TestRunRejectsSavedQueryExecutionBeforeDetailLookup" file="agent/agent_test.go" line="375" >}}
+{{< verified by="TestMutationEvidenceRepairRequiresSuccessfulRetryBeforeFinal" file="agent/semantic_catalog_test.go" line="526" >}}
 
 ## Link a watch
 

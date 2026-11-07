@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	gjagent "github.com/dosco/graphjin/agent/v3"
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/spf13/afero"
 )
@@ -238,34 +237,13 @@ function main() {
 	}
 }
 
-func TestReadOnlyAgentSavedQueryMutationCannotBypassGate(t *testing.T) {
-	svc := newArtifactOverlayTestService(t, nil)
-	ctx := artifactUserCtx("user_1")
-	if _, err := svc.saveUserArtifact(ctx, artifactKindSavedQuery, "blocked_agent_write", `mutation blocked_agent_write { users(delete: true) { id } }`, map[string]any{"operation": "mutation"}); err != nil {
-		t.Fatalf("save mutation artifact: %v", err)
-	}
-
-	runtime := &serviceAgentRuntime{service: svc, conf: gjagent.Config{ReadOnly: true}}
-	_, err := runtime.ExecuteSavedQuery(ctx, map[string]any{"name": "blocked_agent_write"})
-	if err == nil || !strings.Contains(err.Error(), "agent is in read-only mode") {
-		t.Fatalf("read-only agent saved mutation gate error = %v", err)
-	}
-}
-
 func TestAgentMutationCannotBypassMCPGate(t *testing.T) {
 	svc := newArtifactOverlayTestService(t, nil)
 	svc.conf.MCP.AllowMutations = false
 	ctx := artifactUserCtx("user_1")
-	if _, err := svc.saveUserArtifact(ctx, artifactKindSavedQuery, "blocked_agent_mcp_write", `mutation blocked_agent_mcp_write { users(delete: true) { id } }`, map[string]any{"operation": "mutation"}); err != nil {
-		t.Fatalf("save mutation artifact: %v", err)
-	}
 
 	runtime := &serviceAgentRuntime{service: svc}
-	_, err := runtime.ExecuteSavedQuery(ctx, map[string]any{"name": "blocked_agent_mcp_write"})
-	if err == nil || !strings.Contains(err.Error(), "mutations are not allowed") {
-		t.Fatalf("agent saved mutation MCP gate error = %v", err)
-	}
-	_, err = runtime.ExecuteGraphQL(ctx, map[string]any{"query": `mutation { users(delete: true) { id } }`})
+	_, err := runtime.ExecuteGraphQL(ctx, map[string]any{"query": `mutation { users(delete: true) { id } }`})
 	if err == nil || !strings.Contains(err.Error(), "mutations are not allowed") {
 		t.Fatalf("agent raw mutation MCP gate error = %v", err)
 	}

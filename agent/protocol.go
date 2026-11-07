@@ -39,22 +39,16 @@ type protocolRuntime struct {
 }
 
 type discoveryState struct {
-	instruction            string
-	seedOK                 bool
-	seedResult             any
-	modelDiscoveryAction   bool
-	catalogIDs             map[string]bool
-	catalogKinds           map[string]bool
-	savedQueriesDiscovered map[string]bool
-	savedQueriesDetailed   map[string]bool
-	// savedQueryDetailMissed records the names a detail lookup in THIS run
-	// asked for and the catalog did not return. Absence has to be tracked
-	// separately from presence: an empty lookup deliberately does not mark a
-	// query detailed, so without this the run cannot tell "not looked up yet"
-	// from "looked up, does not exist" — and the guard demanded the lookup
-	// again either way.
-	savedQueryDetailMissed  map[string]bool
-	savedQueryGraphQL       map[string]string
+	instruction          string
+	seedOK               bool
+	seedResult           any
+	modelDiscoveryAction bool
+	catalogIDs           map[string]bool
+	catalogKinds         map[string]bool
+	// savedQueriesDiscovered names the saved queries the catalog showed this
+	// run. They are approved definitions the agent reads and borrows from when
+	// it authors its own query; it never executes them.
+	savedQueriesDiscovered  map[string]bool
 	securityRuntimeEvidence bool
 	// A run's writes are accounted for at finalization: an "answered" final
 	// after nothing but failed writes reports work that never happened. Ten of
@@ -138,10 +132,10 @@ type discoveryState struct {
 	// guidance. A second unknown guess is rejected before dispatch. A detail id
 	// already surfaced by this run remains eligible for lookup so following the
 	// recovery guidance can resolve and reset the streak.
-	emptyDetailStreak  int
+	emptyDetailStreak int
 	// namingRefused records that this run already refused one result whose
 	// rows carried keys without names; the next such result goes through.
-	namingRefused bool
+	namingRefused      bool
 	capabilities       *CapabilityProfile
 	observe            func(ActionEvent)
 	coverageSearchUsed bool
@@ -322,8 +316,6 @@ func newDiscoveryState(instruction string) *discoveryState {
 		catalogIDs:             map[string]bool{},
 		catalogKinds:           map[string]bool{},
 		savedQueriesDiscovered: map[string]bool{},
-		savedQueriesDetailed:   map[string]bool{},
-		savedQueryGraphQL:      map[string]string{},
 		detailKinds:            map[string]bool{},
 		tablesDetailed:         map[string]bool{},
 		tablesValidated:        map[string]bool{},
@@ -427,7 +419,6 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 	}
 	if len(detailIDs) != 0 && r.state.emptyDetailStreak > 0 && !r.state.hasKnownCatalogID(detailIDs) {
 		r.state.emptyDetailStreak++
-		r.state.recordMissingCatalogDetails(detailIDs)
 		message := firstExecutionErrorMessage(r.state.emptyDetailExhaustedResult(detailIDs), "repeated lookups of unknown catalog ids are rejected; use ids this run has actually seen")
 		message += fmt.Sprintf(" (missed: %s)", strings.Join(detailIDs, ", "))
 		if known := r.state.knownCatalogIDs(emptySearchKnownIDLimit); len(known) != 0 {
@@ -518,7 +509,6 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 					}
 				}
 				r.state.emptyDetailStreak = 1
-				r.state.recordMissingCatalogDetails(detailIDs)
 				out = attachEmptyDetailRecovery(out, detailIDs, r.state.emptyDetailNext(
 					"The requested catalog id was not returned. Inspect a known id or enumerate tables by kind before trying another detail lookup.",
 				), catalogIDSuggestions(detailIDs, known))
@@ -825,93 +815,6 @@ func (r *protocolRuntime) ValidateWhereClause(ctx context.Context, args map[stri
 	r.state.finishAction(action, "validate_where_clause", args, out, err)
 	if err == nil {
 		r.state.recordValidation(args, out)
-	}
-	return out, err
-}
-
-func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string]any) (any, error) {
-	r.addNamespace(args)
-	name := stringArg(args, "name")
-	if name == "" {
-		return nil, fmt.Errorf("query name is required")
-	}
-	if !r.state.savedQueryDetailed(name) {
-		// Demanding the detail lookup only makes sense while the lookup could
-		// still succeed. When the run already has evidence the card does not
-		// exist, the demand is unsatisfiable and the guard becomes a trap: the
-		// only discharge is a successful execution of the very query that does
-		// not exist. Episode ah1-001 answered its question correctly, looked the
-		// card up, got nothing, and finalized blocked on the demand to look it
-		// up. Name the real saved queries instead, with no violation recorded —
-		// nothing was violated.
-		if r.state.savedQueryKnownAbsent(name) {
-			known := sortedBoolKeys(r.state.savedQueriesDiscovered)
-			thrown := fmt.Sprintf("this call did NOT execute: saved query %q is not in this run's catalog. Author the query directly with execute_graphql from catalog detail", name)
-			if len(known) != 0 {
-				thrown += fmt.Sprintf(", or run one of the approved saved queries: %s", strings.Join(known, ", "))
-			}
-			err := fmt.Errorf("%s", thrown)
-			action := r.state.startAction("model", "execute_saved_query", args)
-			r.state.finishAction(action, "execute_saved_query", args, nil, err)
-			return nil, err
-		}
-		err := fmt.Errorf("protocol violation: inspect query_catalog(id: %q) before execute_saved_query", "saved_query:"+name)
-		r.state.addViolation("saved_query_detail_required", err.Error(), "execute_saved_query", true, map[string]any{"name": name})
-		action := r.state.startAction("model", "execute_saved_query", args)
-		r.state.finishAction(action, "execute_saved_query", args, nil, err)
-		return nil, err
-	}
-	executionKey := savedQueryExecutionKey(args)
-	if cached, ok := r.state.cachedExecution(executionKey); ok {
-		if _, rejected := pendingCachedExecutionRejection(r.state, "", true); rejected {
-			requirement := strings.TrimSpace(r.state.pendingRequiredFinalization())
-			err := fmt.Errorf("this call did NOT execute: this saved query already ran and its rows cannot satisfy the outstanding requirement; a saved query is fixed, so re-running it will keep failing. Author the required query with execute_graphql instead. %s", requirement)
-			action := r.state.startAction("model", "execute_saved_query", args)
-			r.state.finishAction(action, "execute_saved_query", args, nil, err)
-			return nil, err
-		}
-		out := cachedExecutionResult(r.state, cached)
-		r.state.selectCachedExecution("execute_saved_query", args, out)
-		r.state.recordRepeatedCall(executionKey)
-		action := r.state.startAction("model", "execute_saved_query", args)
-		r.state.finishAction(action, "execute_saved_query", args, out, nil)
-		return out, nil
-	}
-	r.state.clearCompletionLatch()
-	action := r.state.startAction("model", "execute_saved_query", args)
-	out, err := r.base.ExecuteSavedQuery(ctx, args)
-	// Attach before recording, as the execute_graphql notices do: a notice that
-	// rides the return value but not the action trail reaches the model and
-	// leaves no evidence it ever fired, which cost a whole benchmark run to
-	// discover.
-	r.state.finishAction(action, "execute_saved_query", args, out, err)
-	if err == nil {
-		r.state.recordExecution("execute_saved_query", args, out)
-		r.state.cacheSuccessfulExecution(executionKey, out)
-		if !executionFailed(out) {
-			// An approved saved mutation is a write like any other, so its
-			// success settles the write-accounting the finalize gate reads.
-			if ContainsMutationOperation(r.state.savedQueryGraphQLFor(name)) {
-				r.state.mutationAttempted = true
-				r.state.mutationSucceeded = true
-				r.state.lastMutationFailure = ""
-				r.state.lastMutationRepairedQuery = ""
-			}
-			r.state.emptySearchStreak = 0
-			r.state.emptyDetailStreak = 0
-		}
-		// A rejected out-of-order attempt is recoverable inside the same actor
-		// run. Once the model has inspected the exact detail and the governed
-		// execution succeeds, retain the attempt in the action/evidence trail but
-		// do not let its now-satisfied protocol violation poison the final answer.
-		r.state.resolveSavedQueryDetailViolation(name)
-	}
-	// The sweep found this path attached NOTHING to an engine failure: raw
-	// errors[] rode back as a value and straight-line code read the missing
-	// data as an empty answer. Dataless failures throw like everywhere else.
-	if err == nil && executionFailed(out) && !executionPolicyFinal(out) && !executionHasUsableData(out) {
-		thrown := engineFailureError(out, "", true)
-		return nil, fmt.Errorf("%s — the saved query's text is fixed; if it cannot serve this request, author the query directly with execute_graphql", thrown.Error())
 	}
 	return out, err
 }
@@ -1302,8 +1205,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		return nil, err
 	}
 	if cached, ok := r.state.cachedExecution(queryKey); ok {
-		if _, rejected := pendingCachedExecutionRejection(r.state, query, false); rejected {
-			requirement := strings.TrimSpace(r.state.pendingRequiredFinalization())
+		if requirement := strings.TrimSpace(r.state.pendingRequiredFinalization()); requirement != "" {
 			err := fmt.Errorf("this call did NOT execute: the identical successful query already ran and its rows cannot satisfy the outstanding requirement. %s", requirement)
 			action := r.state.startAction("model", "execute_graphql", args)
 			r.state.finishAction(action, "execute_graphql", args, nil, err)
@@ -1696,23 +1598,9 @@ func (s *discoveryState) recordCatalogWithRoutes(args map[string]any, out any, s
 			s.securityRuntimeEvidence = true
 		}
 	}
-	// Seed search is deliberately broad. Its result set can contain one
-	// unrelated saved query among many table, column, help, and workflow cards;
-	// that is context, not an unambiguous governed route selected by the model.
-	// Only model-driven discovery may arm implicit saved-query execution.
 	s.recordCatalogRows(out, selectRoutes)
 	if len(ids) != 0 {
 		s.recordDetailEvidence(ids, out)
-		if s.catalogKindSeen("saved_query") {
-			for _, name := range savedQueryNamesFromResult(out) {
-				s.markSavedQueryDetailed(name)
-			}
-			for _, id := range ids {
-				if name := savedQueryNameFromID(id); name != "" {
-					s.markSavedQueryDetailed(name)
-				}
-			}
-		}
 	}
 	s.recordNext(out)
 }
@@ -1796,16 +1684,6 @@ func (s *discoveryState) recordDetailEvidence(ids []string, out any) {
 			}
 			if name = strings.ToLower(strings.TrimSpace(name)); name != "" {
 				s.workflowsDetailed[name] = true
-			}
-		case "saved_query":
-			name := savedQueryNameFromID(stringFromMap(card, "id"))
-			if name == "" {
-				name = stringFromMap(card, "name")
-			}
-			if query := strings.TrimSpace(stringFromMap(card, "graphql_query")); name != "" && query != "" {
-				for _, candidate := range savedQueryNameCandidates(name) {
-					s.savedQueryGraphQL[candidate] = query
-				}
 			}
 		}
 	}
@@ -1953,9 +1831,6 @@ func (s *discoveryState) recordValidation(args map[string]any, out any) {
 func (s *discoveryState) recordExecution(tool string, args map[string]any, out any) {
 	item := resultSummary(tool, args, out)
 	item["tool"] = tool
-	if tool == "execute_saved_query" {
-		item["name"] = stringArg(args, "name")
-	}
 	if tool == "execute_graphql" {
 		item["query"] = stringArg(args, "query")
 	}
@@ -1972,14 +1847,6 @@ func (s *discoveryState) recordExecution(tool string, args map[string]any, out a
 func executionQueryKey(args map[string]any) string {
 	return "execute_graphql:" + stringify(normalizeValue(map[string]any{
 		"query":     normalizeGraphQLIdentity(stringArg(args, "query")),
-		"variables": args["variables"],
-		"namespace": strings.TrimSpace(stringArg(args, "namespace")),
-	}))
-}
-
-func savedQueryExecutionKey(args map[string]any) string {
-	return "execute_saved_query:" + stringify(normalizeValue(map[string]any{
-		"name":      strings.ToLower(strings.TrimSpace(stringArg(args, "name"))),
 		"variables": args["variables"],
 		"namespace": strings.TrimSpace(stringArg(args, "namespace")),
 	}))
@@ -2068,45 +1935,6 @@ func (s *discoveryState) cacheSuccessfulExecution(key string, out any) {
 		return
 	}
 	s.successfulExecutions[key] = normalizeValue(out)
-}
-
-// pendingCachedExecutionRejection withholds cached rows that cannot answer the
-// outstanding requirement. savedQuery marks the caller: a saved query's text is
-// fixed, so "repeat this differently" is unachievable through it, and generation
-// 2028.1 recorded exactly that loop — the same saved query re-run ten times, each
-// rejection sending the model to a catalog search that returned nothing.
-func pendingCachedExecutionRejection(state *discoveryState, query string, savedQuery bool) (any, bool) {
-	if state == nil {
-		return nil, false
-	}
-	requirement := strings.TrimSpace(state.pendingRequiredFinalization())
-	if requirement == "" {
-		return nil, false
-	}
-	code, message := pendingFinalProtocol(requirement)
-	repair := map[string]any{
-		"kind": "distinct_aggregate_required",
-		"next": message,
-	}
-	failure := "identical execution repeated while " + code + " is unmet; cached rows withheld because they cannot answer this request"
-	if savedQuery {
-		failure = "this saved query was already executed and its rows cannot satisfy " + code +
-			"; a saved query is fixed, so re-running it will keep failing. Author the required query with execute_graphql instead"
-		// next stays the guidance text every caller already reads; the tool is named
-		// beside it so the model stops re-entering the saved query it cannot change.
-		repair["kind"] = "saved_query_cannot_satisfy_requirement"
-		repair["recommended_tool"] = "execute_graphql"
-	}
-	out := attachExecutionRecovery(executeResult{Errors: []ErrorInfo{{
-		Message: failure,
-		Extensions: map[string]any{
-			"code":      code,
-			"retryable": true,
-
-			"graphjin_repair": repair,
-		},
-	}}}, state, query)
-	return out, true
 }
 
 // selectCachedExecution makes the governed evidence selected by the current
@@ -2279,9 +2107,6 @@ func (s *discoveryState) pendingRequiredFinalization() string {
 	if message := s.pendingRecoverableExecution(); message != "" {
 		return message
 	}
-	if message := s.pendingRequiredSavedQueryExecution(); message != "" {
-		return message
-	}
 	return s.pendingDatabaseComputation()
 }
 
@@ -2327,10 +2152,7 @@ func (s *discoveryState) pendingRequiredFinalizationContinuation() string {
 	if s.pendingDatabaseComputation() != "" {
 		return ""
 	}
-	if continuation := s.pendingRecoverableExecutionContinuation(); continuation != "" {
-		return continuation
-	}
-	return s.pendingRequiredSavedQueryContinuation()
+	return s.pendingRecoverableExecutionContinuation()
 }
 
 func (s *discoveryState) pendingRecoverableExecution() string {
@@ -2443,165 +2265,6 @@ func (s *discoveryState) recoverableExecutionEvidenceMissing(violation protocolV
 	default:
 		return false
 	}
-}
-
-// pendingRequiredSavedQueryExecution guards explicit, ordered user requests
-// such as "then execute_saved_query({name:...})" from a premature executor
-// final. It also covers natural live-data requests when discovery produced one
-// unambiguous saved-query route. Explanatory/catalog-only requests and
-// multi-candidate routes never turn into an implicit execution.
-func (s *discoveryState) pendingRequiredSavedQueryExecution() string {
-	name, explicit := s.requiredSavedQueryExecution()
-	if name == "" || s.hasSuccessfulSavedQueryExecution(name) {
-		return ""
-	}
-	requirement := "the live-data request has one unambiguous discovered saved-query route"
-	if explicit {
-		requirement = "the user explicitly required this saved-query execution"
-	}
-	if !s.savedQueryDetailed(name) {
-		return fmt.Sprintf("%s. Continue by running this exact JavaScript now: const detail = await query_catalog({id:%q}); const execution = await execute_saved_query({name:%q}); await final({status:\"answered\", answer:\"Answer the user's request only from execution.data.\", data:execution.data, evidence:{saved_query_detail:detail.cards}});", requirement, "saved_query:"+name, name)
-	}
-	return fmt.Sprintf("%s. The detail is already present; continue by running this exact JavaScript now: const execution = await execute_saved_query({name:%q}); await final({status:\"answered\", answer:\"Answer the user's request only from execution.data.\", data:execution.data});", requirement, name)
-}
-
-func (s *discoveryState) pendingRequiredSavedQueryContinuation() string {
-	name, _ := s.requiredSavedQueryExecution()
-	if name == "" || s.hasSuccessfulSavedQueryExecution(name) {
-		return ""
-	}
-	result := `await final("GraphJin saved-query continuation completed.", {detail, execution});`
-	if !s.savedQueryDetailed(name) {
-		return fmt.Sprintf(`const detail = await query_catalog({id:%q}); const execution = await execute_saved_query({name:%q}); %s`, "saved_query:"+name, name, result)
-	}
-	return fmt.Sprintf(`const detail = {cards:[]}; const execution = await execute_saved_query({name:%q}); %s`, name, result)
-}
-
-func (s *discoveryState) requiredSavedQueryExecution() (name string, explicit bool) {
-	if s == nil {
-		return "", false
-	}
-	name = explicitlyRequiredSavedQueryName(s.instruction)
-	explicit = name != ""
-	if name == "" {
-		name = s.unambiguousSavedQueryForLiveData()
-	}
-	return name, explicit
-}
-
-func (s *discoveryState) unambiguousSavedQueryForLiveData() string {
-	if !liveDataIntent(s.instruction) || len(s.savedQueriesDiscovered) != 1 {
-		return ""
-	}
-	for name := range s.savedQueriesDiscovered {
-		return name
-	}
-	return ""
-}
-
-func liveDataIntent(instruction string) bool {
-	lower := strings.ToLower(strings.TrimSpace(instruction))
-	if lower == "" {
-		return false
-	}
-	for _, phrase := range []string{
-		"discovery only", "do not execute", "don't execute", "without executing",
-		"inventory the approved saved queries", "inventory approved saved queries",
-		"saved queries and workflows", "list saved queries", "list the saved queries",
-		"explain the saved query", "explain saved queries",
-	} {
-		if strings.Contains(lower, phrase) {
-			return false
-		}
-	}
-	for _, verb := range []string{
-		"analyze", "check", "compare", "decide", "determine", "find", "identify",
-		"prioritize", "review", "run", "show", "summarize", "triage", "what",
-	} {
-		if containsWord(lower, verb) {
-			return true
-		}
-	}
-	return false
-}
-
-func containsWord(value, word string) bool {
-	for _, token := range strings.FieldsFunc(value, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	}) {
-		if token == word {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *discoveryState) hasSuccessfulSavedQueryExecution(name string) bool {
-	for _, execution := range s.executions {
-		if strings.EqualFold(stringFromMap(execution, "name"), strings.TrimSpace(name)) && execution["has_data"] == true {
-			return true
-		}
-	}
-	return false
-}
-
-func explicitlyRequiredSavedQueryName(instruction string) string {
-	lower := strings.ToLower(instruction)
-	for _, phrase := range []string{"do not execute", "don't execute", "without executing", "discovery only"} {
-		if strings.Contains(lower, phrase) {
-			return ""
-		}
-	}
-	const marker = "execute_saved_query"
-	for searchFrom := 0; searchFrom < len(lower); {
-		relative := strings.Index(lower[searchFrom:], marker)
-		if relative < 0 {
-			return ""
-		}
-		start := searchFrom + relative
-		windowStart := start - 96
-		if windowStart < 0 {
-			windowStart = 0
-		}
-		lead := lower[windowStart:start]
-		required := strings.Contains(lead, "only after") || strings.Contains(lead, "then") || strings.Contains(lead, "await") || strings.Contains(lead, "must")
-		open := start + len(marker)
-		for open < len(instruction) && unicode.IsSpace(rune(instruction[open])) {
-			open++
-		}
-		if required && open < len(instruction) && instruction[open] == '(' {
-			close := strings.IndexByte(instruction[open+1:], ')')
-			if close >= 0 {
-				if name := savedQueryNameArgument(instruction[open+1 : open+1+close]); name != "" {
-					return name
-				}
-			}
-		}
-		searchFrom = start + len(marker)
-	}
-	return ""
-}
-
-func savedQueryNameArgument(arguments string) string {
-	lower := strings.ToLower(arguments)
-	nameAt := strings.Index(lower, "name")
-	if nameAt < 0 {
-		return ""
-	}
-	colon := strings.IndexByte(arguments[nameAt+len("name"):], ':')
-	if colon < 0 {
-		return ""
-	}
-	value := strings.TrimSpace(arguments[nameAt+len("name")+colon+1:])
-	if len(value) < 2 || (value[0] != '\'' && value[0] != '"') {
-		return ""
-	}
-	quote := value[0]
-	end := strings.IndexByte(value[1:], quote)
-	if end < 0 {
-		return ""
-	}
-	return strings.TrimSpace(value[1 : end+1])
 }
 
 func (s *discoveryState) hasCatalogEvidence() bool {
@@ -2790,7 +2453,7 @@ func requiresWorkflowDetail(roots []string) bool {
 }
 
 func (s *discoveryState) hasWorkflowDetailEvidence() bool {
-	return s != nil && (len(s.workflowsDetailed) != 0 || len(s.savedQueriesDetailed) != 0)
+	return s != nil && len(s.workflowsDetailed) != 0
 }
 
 func (s *discoveryState) mutationEvidenceNext(tables []string) map[string]any {
@@ -2868,10 +2531,6 @@ func (s *discoveryState) workflowEvidenceNext() map[string]any {
 		map[string]any{"kind": "workflow", "limit": 20},
 		"Enumerate visible workflows, choose the exact workflow, and inspect its detail row before retrying execution.",
 	)
-}
-
-func (s *discoveryState) catalogKindSeen(kind string) bool {
-	return s.catalogKinds[kind]
 }
 
 // previouslyRefusedMutationEvidence reports whether every table in missing was
@@ -2970,22 +2629,6 @@ func (s *discoveryState) onlyBlockingViolationIs(code string) bool {
 	return found
 }
 
-func (s *discoveryState) resolveSavedQueryDetailViolation(name string) {
-	name = strings.TrimSpace(name)
-	for i := range s.violations {
-		violation := &s.violations[i]
-		if violation.Code != "saved_query_detail_required" ||
-			!strings.EqualFold(strings.TrimSpace(stringFromMap(violation.Details, "name")), name) {
-			continue
-		}
-		violation.Blocking = false
-		if violation.Details == nil {
-			violation.Details = map[string]any{}
-		}
-		violation.Details["resolved"] = true
-	}
-}
-
 func (s *discoveryState) resolveSuccessfulExecutionViolations() {
 	for i := range s.violations {
 		violation := &s.violations[i]
@@ -3061,11 +2704,6 @@ func (s *discoveryState) finalize(resp Response) Response {
 					fmt.Sprintf("answer cites field-like identifiers absent from this run's tool evidence: %s; answer only from fields observed in execution results and state derived values in plain language", strings.Join(tokens, ", ")),
 					"", true, map[string]any{"tokens": tokens})
 			}
-			if executed, requested := s.mismatchedSavedMetric(); executed != "" {
-				s.addViolation("saved_metric_identity_mismatch",
-					fmt.Sprintf("answer reports the result of saved query %q, but the request names %q; execute %q and answer from its result", executed, requested, requested),
-					"", true, map[string]any{"executed": executed, "requested": requested})
-			}
 			if s.hasBlockingViolation() {
 				resp = blockResponse(resp)
 			}
@@ -3121,7 +2759,7 @@ func (s *discoveryState) terminalExecutionSucceeded() bool {
 	}
 	action := s.actions[len(s.actions)-1]
 	return action.Status == "ok" &&
-		(action.Tool == toolExecuteGraphQL || action.Tool == toolExecuteSavedQuery) &&
+		action.Tool == toolExecuteGraphQL &&
 		action.Summary["has_data"] == true && executionErrorCount(action.Summary["error_count"]) == 0
 }
 
@@ -3450,7 +3088,6 @@ func (s *discoveryState) mergeEvidence(model any) any {
 		"catalog_ids":              sortedBoolKeys(s.catalogIDs),
 		"catalog_kinds":            sortedBoolKeys(s.catalogKinds),
 		"saved_queries_discovered": sortedBoolKeys(s.savedQueriesDiscovered),
-		"saved_queries_detailed":   sortedBoolKeys(s.savedQueriesDetailed),
 		"tables_detailed":          sortedBoolKeys(s.tablesDetailed),
 		"tables_validated":         sortedBoolKeys(s.tablesValidated),
 		"workflows_detailed":       sortedBoolKeys(s.workflowsDetailed),
@@ -3569,7 +3206,7 @@ func resultSummary(tool string, args map[string]any, out any) map[string]any {
 		}
 		return summary
 	}
-	if tool == "execute_saved_query" || tool == "execute_graphql" {
+	if tool == "execute_graphql" {
 		m := mapValue(out)
 		if m != nil {
 			if m["cached"] == true {
@@ -3677,23 +3314,6 @@ func catalogCards(out any) []map[string]any {
 	return cards
 }
 
-func savedQueryNamesFromResult(out any) []string {
-	var names []string
-	for _, card := range catalogCards(out) {
-		if stringFromMap(card, "kind") != "saved_query" {
-			continue
-		}
-		name := stringFromMap(card, "name")
-		if name == "" {
-			name = savedQueryNameFromID(stringFromMap(card, "id"))
-		}
-		if name != "" {
-			names = appendUniqueString(names, name)
-		}
-	}
-	return names
-}
-
 func mapValue(value any) map[string]any {
 	if value == nil {
 		return nil
@@ -3766,50 +3386,6 @@ func (s *discoveryState) markSavedQueryDiscovered(name string) {
 	}
 }
 
-func (s *discoveryState) markSavedQueryDetailed(name string) {
-	for _, candidate := range savedQueryNameCandidates(name) {
-		s.savedQueriesDetailed[candidate] = true
-	}
-}
-
-func (s *discoveryState) savedQueryDetailed(name string) bool {
-	for _, candidate := range savedQueryNameCandidates(name) {
-		if s.savedQueriesDetailed[candidate] {
-			return true
-		}
-	}
-	return false
-}
-
-// recordMissingCatalogDetails notes the saved queries a detail lookup asked for
-// and the catalog did not return, and discharges any standing demand to inspect
-// them. The demand was to look the card up before executing; the lookup
-// happened, and the catalog's answer was that there is no such card. Leaving the
-// violation blocking made it unsatisfiable — episode ah1-001 produced the right
-// answer, ran a detail lookup that returned zero cards, and was still forced to
-// blocked by a guard asking for the lookup it had just performed.
-func (s *discoveryState) recordMissingCatalogDetails(ids []string) {
-	for _, id := range ids {
-		name := savedQueryNameFromID(strings.TrimSpace(id))
-		if name == "" {
-			continue
-		}
-		if s.savedQueryDetailMissed == nil {
-			s.savedQueryDetailMissed = map[string]bool{}
-		}
-		for _, candidate := range savedQueryNameCandidates(name) {
-			s.savedQueryDetailMissed[candidate] = true
-		}
-		s.resolveSavedQueryDetailViolation(name)
-	}
-}
-
-// savedQueryKnownAbsent reports whether this run has positive evidence that the
-// named saved query does not exist — either a detail lookup that came back
-// empty, or a catalog that returned saved queries and not this one. A run that
-// has seen no saved queries at all knows nothing, and keeps the blocking demand:
-// that is the case where the lookup is genuinely the next thing to do.
-
 // noteInterceptedWrite records that a mutation was stopped before execution.
 // Run ab4-trt measured the hole this closes: 26 action episodes made exactly
 // one write call, had it consumed by an evidence supply or a guard refusal,
@@ -3830,36 +3406,6 @@ func (s *discoveryState) noteInterceptedWrite(query, reason string) {
 		// rejects that repeat without ever mentioning the write still waiting.
 		s.interceptedWriteQuery = strings.TrimSpace(query)
 	}
-}
-
-func (s *discoveryState) savedQueryKnownAbsent(name string) bool {
-	candidates := savedQueryNameCandidates(name)
-	if len(candidates) == 0 {
-		return false
-	}
-	for _, candidate := range candidates {
-		if s.savedQueryDetailMissed[candidate] {
-			return true
-		}
-	}
-	if len(s.savedQueriesDiscovered) == 0 {
-		return false
-	}
-	for _, candidate := range candidates {
-		if s.savedQueriesDiscovered[candidate] {
-			return false
-		}
-	}
-	return true
-}
-
-func (s *discoveryState) savedQueryGraphQLFor(name string) string {
-	for _, candidate := range savedQueryNameCandidates(name) {
-		if query := strings.TrimSpace(s.savedQueryGraphQL[candidate]); query != "" {
-			return query
-		}
-	}
-	return ""
 }
 
 func savedQueryNameCandidates(name string) []string {

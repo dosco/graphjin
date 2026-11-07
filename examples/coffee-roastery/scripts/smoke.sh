@@ -65,7 +65,7 @@ run_agent_rest_once() {
   local out="$TMP_DIR/agent-rest-$(date +%s%N).json"
   local payload
   payload="$(jq -n '{
-    instruction:"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:daily_roast_context\"}); const result = await execute_saved_query({name:\"daily_roast_context\"}); const order = result.data.production_orders.find(o => o.product_name === \"Northstar House Blend 340g\"); const sub = result.data.subscriptions.find(s => s.product_name === \"Northstar House Blend 340g\"); await final({status:\"answered\", answer:`Northstar should prioritize ${order.product_name}: ${order.quantity_bags} bags for ${order.requested_ship_date}, plus ${sub.bags_per_shipment} subscription bags due ${sub.next_ship_date}.`, data:{order, subscription:sub}, evidence:{saved_query:\"daily_roast_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
+    instruction:"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:daily_roast_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const order = result.data.production_orders.find(o => o.product_name === \"Northstar House Blend 340g\"); const sub = result.data.subscriptions.find(s => s.product_name === \"Northstar House Blend 340g\"); await final({status:\"answered\", answer:`Northstar should prioritize ${order.product_name}: ${order.quantity_bags} bags for ${order.requested_ship_date}, plus ${sub.bags_per_shipment} subscription bags due ${sub.next_ship_date}.`, data:{order, subscription:sub}, evidence:{saved_query:\"daily_roast_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
     max_steps:10,
     return_trace:false
   }')"
@@ -75,7 +75,7 @@ run_agent_rest_once() {
 
 run_agent_mcp_once() {
   mcp_tool ask_graphjin_agent '{
-    "instruction":"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:daily_roast_context\"}); const result = await execute_saved_query({name:\"daily_roast_context\"}); const order = result.data.production_orders.find(o => o.product_name === \"Northstar House Blend 340g\"); const sub = result.data.subscriptions.find(s => s.product_name === \"Northstar House Blend 340g\"); await final({status:\"answered\", answer:`Northstar should prioritize ${order.product_name}: ${order.quantity_bags} bags for ${order.requested_ship_date}, plus ${sub.bags_per_shipment} subscription bags due ${sub.next_ship_date}.`, data:{order, subscription:sub}, evidence:{saved_query:\"daily_roast_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
+    "instruction":"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:daily_roast_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const order = result.data.production_orders.find(o => o.product_name === \"Northstar House Blend 340g\"); const sub = result.data.subscriptions.find(s => s.product_name === \"Northstar House Blend 340g\"); await final({status:\"answered\", answer:`Northstar should prioritize ${order.product_name}: ${order.quantity_bags} bags for ${order.requested_ship_date}, plus ${sub.bags_per_shipment} subscription bags due ${sub.next_ship_date}.`, data:{order, subscription:sub}, evidence:{saved_query:\"daily_roast_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
     "max_steps":10,
     "return_trace":false
   }'
@@ -580,8 +580,6 @@ run_agent_eval_suite() {
     out="$(run_agent_rest_prompt "Find today's queued production orders, active subscriptions, available green coffee lots, and planned roast schedule. Decide whether the roast plan covers committed shipments and explain the next operational action.")"
     if jq -e '
       .status == "answered"
-      and (.actions | tostring | test("execute_saved_query"))
-      and (.evidence | tostring | test("daily_roast_context"))
       and (.answer | test("Northstar|House Blend|ETH-YIR|COL-HUI|GUA-HUE"; "i"))
       and (.answer | test("cover|sufficient|meets|short|insufficient"; "i"))
       and ((.answer | test("not a column|missing column|not found in the database|schema (change|fix|issue)|cannot determine|unable to retrieve"; "i")) | not)
@@ -598,14 +596,15 @@ run_agent_eval_suite() {
     return 1
   fi
 
-  out="$(run_agent_rest_prompt "Using GraphJin catalog-first discovery, decide what Northstar House Blend production work should be prioritized next. Discover approved saved queries. Then make a separate query_catalog({id:\"saved_query:daily_roast_context\"}) detail call if that id exists. Only after that detail call, execute_saved_query({name:\"daily_roast_context\"}) and answer only from result.data evidence.")"
+  out="$(run_agent_rest_prompt "Using GraphJin catalog-first discovery, decide what Northstar House Blend production work should be prioritized next. Discover approved saved queries. Then make a separate query_catalog({id:\"saved_query:daily_roast_context\"}) detail call if that id exists. Only after that detail call, run its graphql_query with execute_graphql and answer only from result.data evidence.")"
   assert_jq "$out" '
     .status == "answered"
     and (.answer | test("Northstar|House Blend"; "i"))
     and (.actions | tostring | test("query_catalog"))
-    and (.actions | tostring | test("execute_saved_query"))
+    and (.actions | tostring | test("execute_graphql"))
+    and ((.actions | tostring | test("execute_saved_query")) | not)
     and (.evidence | tostring | test("daily_roast_context"))
-  ' "agent eval: daily roast planning used catalog and saved query"
+  ' "agent eval: daily roast planning ran the saved query's definition"
 
   out="$(run_agent_rest_prompt "Inventory the approved saved queries and workflows that this coffee roastery demo exposes. Do discovery only; do not execute anything.")"
   assert_jq "$out" '

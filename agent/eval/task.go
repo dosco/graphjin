@@ -54,7 +54,11 @@ const (
 	// is untouched, so content IDs are unchanged; what changes is that a freshly
 	// generated suite draws from a wider candidate pool.
 	// v17 updates method-rule dialect support to parser-backed aggregate checks.
-	GeneratorVersion = "graphjin.eval.generator/v17"
+	// v18: the data agent no longer executes saved queries; it reads them as
+	// approved definitions and authors its own query. Saved-metric tasks now
+	// require execute_graphql with the saved query's aggregate as the method
+	// rule, the form annotation-sourced metrics already used.
+	GeneratorVersion = "graphjin.eval.generator/v18"
 	// RewardVersion v6: a dimension that starts with a number is no longer
 	// satisfied by a larger number ending in the same digits. "24 hours"
 	// contains "4 hours", so an answer stating the wrong service level scored as
@@ -90,6 +94,7 @@ var SupportedGeneratorVersions = []string{
 	"graphjin.eval.generator/v14",
 	"graphjin.eval.generator/v15",
 	"graphjin.eval.generator/v16",
+	"graphjin.eval.generator/v17",
 	GeneratorVersion,
 }
 

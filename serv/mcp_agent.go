@@ -22,7 +22,7 @@ func (ms *mcpServer) registerAgentTools() {
 	// With the lead on, this tool is the lead: it plans, delegates questions to
 	// data workers, and keeps conversations, memories and the caller's skills.
 	// With it off, the data worker answers one self-contained question.
-	about := "Ask GraphJin's server-side Ax agent to do catalog-first discovery, safe saved-query execution, and return a typed answer/result. Use this when the caller wants GraphJin to orchestrate discovery instead of manually chaining MCP tools. Send a _meta.progressToken to receive notifications/progress events per agent action. Each call answers one self-contained question; conversations need agent.lead.enabled."
+	about := "Ask GraphJin's server-side Ax agent to do catalog-first discovery, author and run governed GraphQL, and return a typed answer/result. Use this when the caller wants GraphJin to orchestrate discovery instead of manually chaining MCP tools. Send a _meta.progressToken to receive notifications/progress events per agent action. Each call answers one self-contained question; conversations need agent.lead.enabled."
 	historyAbout := "Not supported: conversations need agent.lead.enabled."
 	if ms.service.conf.Agent.Lead.Enabled {
 		about = "Ask GraphJin's lead agent. It plans the request, sends self-contained questions to data agents that discover, query and change data through the governed graph, applies the caller's saved memories and skills, and returns a typed answer/result. Send a _meta.progressToken to receive notifications/progress events per agent action; pass thread_id or prior turns in history to continue a conversation."

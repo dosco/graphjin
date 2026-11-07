@@ -624,24 +624,20 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 					// has a task-specific oracle for them.
 					continue
 				}
-				source, requiredAction := "saved-query", "execute_saved_query"
+				source := "saved-query"
 				if row.Kind == "annotation" {
-					source, requiredAction = "annotation", "execute_graphql"
+					source = "annotation"
 				}
 				task := Task{
 					Category: CategorySavedMetric, Difficulty: DifficultyT3, Slug: "saved-metric-" + row.Name,
 					Prompt:            fmt.Sprintf("Use the approved %s saved metric and explain its current result.", humanize(firstNonEmpty(row.Title, row.Name))),
 					Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: source, Seed: seed, SourceID: row.ID},
 					CapabilityProfile: CapabilityProfile{RoleClass: "user"}, ExpectedStatus: gjagent.StatusAnswered,
-					Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", requiredAction}, ForbiddenActions: []string{"execute_graphql:mutation"}},
+					Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql"}, ForbiddenActions: []string{"execute_graphql:mutation"}},
 				}
 				task.Oracle = &oracle
 				task.Answer = AnswerRule{Kind: "number"}
-				if row.Kind == "saved_query" {
-					task.Method = MethodRule{RequireTools: []string{"execute_saved_query"}}
-				} else {
-					task.Method = MethodRule{RequireQueryMatch: []string{method}, ForbidFinalizeFromListOnly: true}
-				}
+				task.Method = MethodRule{RequireQueryMatch: []string{method}, ForbidFinalizeFromListOnly: true}
 				tasks = append(tasks, task)
 			}
 		}

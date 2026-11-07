@@ -145,8 +145,8 @@ curl -sS localhost:8080/api/v1/agent \
 {
   "status": "blocked",
   "refusal": {
-    "code": "saved_query_detail_required",
-    "blocked_action": "execute_saved_query",
+    "code": "ungrounded_answer_fields",
+    "blocked_action": "answer",
     "unblock": [
       {
         "tool": "query_catalog"

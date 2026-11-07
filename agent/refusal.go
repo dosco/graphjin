@@ -83,8 +83,6 @@ func refusalPriority(code string) int {
 		return 75
 	case "workflow_detail_required", "mutation_evidence_required":
 		return 70
-	case "saved_query_detail_required":
-		return 60
 	case "raw_graphql_discovery_required":
 		// A concrete rejected execute_graphql call is more actionable than the
 		// generic finalize-time observation that model discovery was absent.
@@ -127,18 +125,6 @@ func policyFinalViolation(code string) bool {
 
 func unblockStepsForViolation(s *discoveryState, v protocolViolation) []unblockStepSpec {
 	switch v.Code {
-	case "saved_query_detail_required":
-		name := stringFromDetails(v.Details, "name")
-		if name == "" {
-			return catalogDiscoverySteps(s)
-		}
-		return []unblockStepSpec{{
-			step: UnblockStep{
-				Tool:   toolQueryCatalog,
-				Args:   map[string]any{"id": "saved_query:" + name},
-				Reason: "Inspect the saved query detail before executing it.",
-			},
-		}}
 	case "mutation_execution_failed":
 		if repaired := stringFromDetails(v.Details, "repaired_query"); repaired != "" {
 			return []unblockStepSpec{{
@@ -314,10 +300,8 @@ func lawfulAlternativeForViolation(v protocolViolation) string {
 		return "Authenticate with the required verified identity, or ask an authorized operator to run the action; catalog discovery will not satisfy this policy."
 	case "access_unauthorized", "access_blocked", "capability_disabled", "capability-disabled":
 		return "Choose an allowed GraphJin action or ask an administrator to change the policy; retrying the same blocked action will not succeed."
-	case "saved_query_detail_required":
-		return "Inspect the saved query detail first, then execute the approved saved query."
 	case "mutation_evidence_required":
-		return "Use catalog detail and validation evidence, or an approved saved mutation, before executing the write."
+		return "Use catalog detail and validation evidence before executing the write."
 	case "cross_source_detail_required":
 		return "Inspect every source selected by the distiller, then re-author the operation using only those exact source details."
 	case "security_runtime_discovery_required":

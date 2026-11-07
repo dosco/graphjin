@@ -46,7 +46,7 @@ var databaseLimitPattern = regexp.MustCompile(`(?i)\blimit\s*:\s*(?:[1-9][0-9]*|
 // system-root terms an answer may always use without data evidence. Domain
 // field names never belong here — they must come from run evidence.
 var groundingVocabulary = strings.ToLower(strings.Join([]string{
-	toolGraphQLHelp, toolQueryCatalog, toolValidateWhere, toolExecuteSavedQuery, toolExecuteGraphQL,
+	toolGraphQLHelp, toolQueryCatalog, toolValidateWhere, toolExecuteGraphQL,
 	systemRootCatalog, systemRootSecurity, systemRootRuntime, systemRootConfig,
 	systemRootWorkflow, systemRootWorkflowExec, systemRootArtifacts,
 	systemRootWatch, systemRootWatchEvent, systemRootTask, systemRootTaskEntry,
@@ -490,9 +490,9 @@ func recommendedSavedQueryNames(s *discoveryState) []string {
 	return sortedBoolKeys(s.savedQueriesDiscovered)
 }
 
-// approvedSavedQuerySuffix names the governed shortcuts discovered for this
-// run, for appending to a protocol rejection message. Dynamic authoring stays
-// the primary path; the names are an option, not a required route.
+// approvedSavedQuerySuffix names the approved saved-query definitions discovered
+// for this run, for appending to a protocol rejection message: a working form
+// to read and adapt, never a call.
 func approvedSavedQuerySuffix(s *discoveryState) string {
 	names := recommendedSavedQueryNames(s)
 	if len(names) > maxRecoverySavedQueries {
@@ -501,8 +501,8 @@ func approvedSavedQuerySuffix(s *discoveryState) string {
 	if len(names) == 0 {
 		return ""
 	}
-	return " Author the query from the returned column names, or use an approved saved query as a governed shortcut when one matches (" +
-		strings.Join(names, ", ") + "): query_catalog({id:\"saved_query:<name>\"}) then execute_saved_query({name:\"<name>\"})."
+	return " Author the query from the returned column names; an approved saved query that matches (" +
+		strings.Join(names, ", ") + ") shows a working form: read query_catalog({id:\"saved_query:<name>\"}) and adapt its graphql_query with execute_graphql."
 }
 
 // recoveryDirective is the single sentence appended to execution errors; the
@@ -577,20 +577,6 @@ func (s *discoveryState) pendingDatabaseComputation() string {
 	allowsRankedRows := databaseOrderedRowIntent(s.instruction)
 	for _, execution := range s.executions {
 		if execution["has_data"] != true || executionErrorCount(execution["error_count"]) != 0 {
-			continue
-		}
-		if strings.EqualFold(stringFromMap(execution, "tool"), toolExecuteSavedQuery) {
-			query := s.savedQueryGraphQLFor(stringFromMap(execution, "name"))
-			hasAggregate := databaseAggregateFieldPattern.MatchString(query) || execution["database_aggregate"] == true
-			if hasAggregate && (!needsAggregateOrder || strings.Contains(strings.ToLower(query), "order_by")) {
-				return ""
-			}
-			if allowsRankedRows && queryUsesDatabaseRanking(query, s.instruction) {
-				return ""
-			}
-			if !needsAggregateOrder && queryReadsAnsweringStoredCount(query, s.instruction) {
-				return ""
-			}
 			continue
 		}
 		query := stringFromMap(execution, "query")

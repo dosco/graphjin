@@ -31,7 +31,7 @@ run_agent_rest_once() {
   local out="$TMP_DIR/agent-rest-$(date +%s%N).json"
   local payload
   payload="$(jq -n '{
-    instruction:"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:plant_schedule_context\"}); const result = await execute_saved_query({name:\"plant_schedule_context\"}); const order = result.data.work_orders.find(o => o.priority === 1); await final({status:\"answered\", answer:`${order.order_code} for Cedar Bend Produce is the top corrugator priority.`, data:{order}, evidence:{saved_query:\"plant_schedule_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
+    instruction:"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:plant_schedule_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const order = result.data.work_orders.find(o => o.priority === 1); await final({status:\"answered\", answer:`${order.order_code} for Cedar Bend Produce is the top corrugator priority.`, data:{order}, evidence:{saved_query:\"plant_schedule_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
     max_steps:10,
     return_trace:false
   }')"
@@ -41,7 +41,7 @@ run_agent_rest_once() {
 
 run_agent_mcp_once() {
   mcp_tool ask_graphjin_agent '{
-    "instruction":"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:plant_schedule_context\"}); const result = await execute_saved_query({name:\"plant_schedule_context\"}); const order = result.data.work_orders.find(o => o.priority === 1); await final({status:\"answered\", answer:`${order.order_code} for Cedar Bend Produce is the top corrugator priority.`, data:{order}, evidence:{saved_query:\"plant_schedule_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
+    "instruction":"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:plant_schedule_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const order = result.data.work_orders.find(o => o.priority === 1); await final({status:\"answered\", answer:`${order.order_code} for Cedar Bend Produce is the top corrugator priority.`, data:{order}, evidence:{saved_query:\"plant_schedule_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
     "max_steps":10,
     "return_trace":false
   }'
@@ -61,14 +61,15 @@ run_agent_eval_suite() {
 
   log "checking open-ended agent discovery protocol evals"
 
-  out="$(run_agent_rest_prompt "Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:plant_schedule_context\"}); const result = await execute_saved_query({name:\"plant_schedule_context\"}); const order = result.data.work_orders.find(o => o.priority === 1); await final({status:\"answered\", answer:order.order_code + \" for Cedar Bend Produce is the top corrugator priority.\", data:{order}, evidence:{saved_query:\"plant_schedule_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});")"
+  out="$(run_agent_rest_prompt "Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:plant_schedule_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const order = result.data.work_orders.find(o => o.priority === 1); await final({status:\"answered\", answer:order.order_code + \" for Cedar Bend Produce is the top corrugator priority.\", data:{order}, evidence:{saved_query:\"plant_schedule_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});")"
   assert_jq "$out" '
     .status == "answered"
     and (.answer | test("Cedar Bend|WO-260701"; "i"))
     and (.actions | tostring | test("query_catalog"))
-    and (.actions | tostring | test("execute_saved_query"))
+    and (.actions | tostring | test("execute_graphql"))
+    and ((.actions | tostring | test("execute_saved_query")) | not)
     and (.evidence | tostring | test("plant_schedule_context"))
-  ' "agent eval: schedule priority answered from saved-query evidence"
+  ' "agent eval: schedule priority answered by running the saved query's definition"
 
   out="$(run_agent_rest_prompt "Use the JavaScript runtime globals to run this exact discovery-only flow: const saved = await query_catalog({kind:\"saved_query\", limit:10}); const workflows = await query_catalog({kind:\"workflow\", limit:10}); const code = await query_catalog({id:\"source:plant_code\"}); await final({status:\"answered\", answer:\"catalog inventory complete: saved queries, workflows, and plant_code source discovered without execution.\", evidence:{saved_query_cards:saved.cards, workflow_cards:workflows.cards, code_source_cards:code.cards}});")"
   assert_jq "$out" '

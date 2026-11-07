@@ -27,11 +27,10 @@ const (
 
 // Agent tool names (the small, fixed tool surface).
 const (
-	toolGraphQLHelp       = "graphql_help"
-	toolQueryCatalog      = "query_catalog"
-	toolValidateWhere     = "validate_where_clause"
-	toolExecuteSavedQuery = "execute_saved_query"
-	toolExecuteGraphQL    = "execute_graphql"
+	toolGraphQLHelp    = "graphql_help"
+	toolQueryCatalog   = "query_catalog"
+	toolValidateWhere  = "validate_where_clause"
+	toolExecuteGraphQL = "execute_graphql"
 )
 
 // Fixed gj_* system roots. Application/database roots are never named here; see
@@ -367,7 +366,7 @@ func profileHasAllSystemRoots(profile *CapabilityProfile, roots []string) bool {
 }
 
 const dataDiscoveryInstruction = `Skill: data_discovery. Before querying, inspect relevant GraphJin source:<name>, table, column, relationship, or saved-query details by reusing exact catalog IDs; never shorten or invent them. For cross-source work, inspect the named source and application relationship, then query the joined field instead of a same-named local table. ` +
-	`Prefer dynamic authoring: validate the shape, then execute_graphql; an approved saved query is a governed shortcut. Answer only from observed results and fields, stating derived numbers plainly. An id names nothing to the user: select a row's name column too, through its relationship for a foreign key ({ products { price categories { name } } }). ` +
+	`Prefer dynamic authoring: validate the shape, then execute_graphql; an approved saved query is a definition to read and adapt, never a call. Answer only from observed results and fields, stating derived numbers plainly. An id names nothing to the user: select a row's name column too, through its relationship for a foreign key ({ products { price categories { name } } }). ` +
 	`On graphjin_repair, treat the failure as a query-authoring error: re-discover real fields, re-author, and retry in the same run; never advise schema or data changes.`
 
 const dataAggregationInstruction = `Skill: data_aggregation. The model plans, the database computes. Limited lists are pages; never compute totals, counts, averages, extremes, or rankings from rows. ` +
@@ -378,7 +377,7 @@ const dataAggregationInstruction = `Skill: data_aggregation. The model plans, th
 const dataWriteInstruction = `Skill: data_write. ` +
 	`Inspect exact catalog IDs for help:security, help:runtime, mutation_pattern, and target table details; validate, then use execute_graphql. ` +
 	`Use GraphJin table-root mutation syntax: mutation { support_tickets(where:{id:{eq:2}},update:{status:"resolved"}){id status} }; never invent Hasura update_<table>_by_pk, pk_columns, or _set. ` +
-	`Prefer approved saved mutations. Core enforces role/RLS. Preview/validate first, verify after; if unavailable, return blocked with catalog evidence and missing capability.`
+	`Core enforces role/RLS. Preview/validate first, verify after; if unavailable, return blocked with catalog evidence and missing capability.`
 
 const codeReadInstruction = `Skill: code_read (gj_code / CodeSQL source). ` +
 	`Discover gj_code symbols, references, db_references, and docs through help:code and code system-capability rows; trace symbol-to-reference-to-schema provenance and answer from that evidence.`

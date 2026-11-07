@@ -96,22 +96,21 @@ func TestSemanticCatalogGuidanceAndToolSchemaAreConditional(t *testing.T) {
 func TestRuntimeSeedUsageInstructionsNameExactCodePathsAndShapes(t *testing.T) {
 	for _, phrase := range []string{
 		"inputs.context._graphjin_discovery",
-		"do not require one saved query per requested entity",
-		"const card = saved[0]",
+		"Saved-query cards are approved definitions, never callables",
+		"take its graphql_query as the approved form",
 		"never put them in Promise.then callbacks",
 		"inputs.distilledContext does not exist",
 		"result.cards[0]",
-		"execute_saved_query({name: card.title})",
-		"execution.data",
+		"its rows are in result.data",
 		"never make another catalog call",
 		"identical repeated query_catalog request is rejected before execution",
 		"returns recovery.execution instead",
 		"globalThis.graphjinLastExecution",
 		"graphjinLastExecution.result.data",
 		"Never infer that business data is absent from catalog-card prose",
-		// Dynamic-first identity: authoring is the primary path, saved
-		// queries a governed shortcut, and aggregate questions re-author
-		// past row-page saved results.
+		// Dynamic-first identity: authoring is the only path, saved queries
+		// are definitions to read, and aggregate questions re-author past
+		// row-page saved results.
 		"primary path is dynamic authoring",
 		"re-author with aggregate fields",
 		"current_date",
@@ -122,6 +121,13 @@ func TestRuntimeSeedUsageInstructionsNameExactCodePathsAndShapes(t *testing.T) {
 	}
 	if strings.Contains(runtimeSeedUsageInstructions, "The normal governed path is") {
 		t.Fatal("runtime seed guidance regressed to saved-query-first choreography")
+	}
+	// The data agent has no saved-query callable; naming one sends it to a
+	// ReferenceError.
+	for _, text := range []string{runtimeSeedUsageInstructions, runtimeUsageInstructions, dataDiscoveryInstruction, dataWriteInstruction, preparedDiscoveryInstructions} {
+		if strings.Contains(text, "execute_saved_query") {
+			t.Fatalf("instructions still name execute_saved_query: %q", text)
+		}
 	}
 }
 
@@ -321,7 +327,7 @@ func TestProtocolRejectsIdenticalCatalogRequestLoopsAndReplaysExecution(t *testi
 	}
 
 	execution := map[string]any{"data": map[string]any{"production_orders": []any{map[string]any{"product_name": "Northstar"}}}}
-	runtime.state.recordExecution("execute_saved_query", map[string]any{"name": "daily_roast_context"}, execution)
+	runtime.state.recordExecution("execute_graphql", map[string]any{"query": "query { production_orders { product_name } }"}, execution)
 	// The post-execution duplicate throws: the needed rows already live in the
 	// run's execution state (bound into the runtime session), and the
 	// exception directs the model to finalize from them.
@@ -1020,16 +1026,6 @@ func TestProtocolUnreturnedCatalogDetailIDsDoNotAuthorizeGuards(t *testing.T) {
 		assert func(*testing.T, *discoveryState)
 	}{
 		{
-			name: "saved query",
-			id:   "saved_query:usage_events_total",
-			seed: func(state *discoveryState) { state.catalogKinds["saved_query"] = true },
-			assert: func(t *testing.T, state *discoveryState) {
-				if state.savedQueryDetailed("usage_events_total") {
-					t.Fatal("unreturned saved-query id authorized execution")
-				}
-			},
-		},
-		{
 			name: "table mutation shape",
 			id:   "table:app:main.usage_events",
 			assert: func(t *testing.T, state *discoveryState) {
@@ -1075,113 +1071,6 @@ func TestProtocolUnreturnedCatalogDetailIDsDoNotAuthorizeGuards(t *testing.T) {
 			}
 			tt.assert(t, runtime.state)
 		})
-	}
-}
-
-func TestProtocolEmptySavedQueryDetailDoesNotAuthorizeExecution(t *testing.T) {
-	base := &fakeRuntime{catalogOverride: func(map[string]any) any {
-		return map[string]any{"count": 0, "cards": []any{}}
-	}}
-	runtime := newProtocolRuntime(base, "total usage", "", 40, nil, nil, CatalogSearchFeatures{})
-	// Reproduce a broad seed that contained some unrelated saved query. That
-	// must not make a guessed, empty detail id authoritative.
-	runtime.state.catalogKinds["saved_query"] = true
-
-	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "saved_query:usage_events_total"}); err != nil {
-		t.Fatal(err)
-	}
-	if runtime.state.savedQueryDetailed("usage_events_total") {
-		t.Fatal("empty saved-query detail lookup authorized the guessed name")
-	}
-	before := len(base.calls)
-	_, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "usage_events_total"})
-	if err == nil {
-		t.Fatal("a name the catalog denies must throw its dead end")
-	}
-	if got := len(base.calls); got != before {
-		t.Fatalf("guessed saved query reached base runtime: calls=%d want=%d", got, before)
-	}
-	// The refusal stands; what changed is what it asks for. Demanding
-	// query_catalog here was unsatisfiable — the lookup had just been performed
-	// and returned nothing — and the only discharge for the violation it
-	// recorded was a successful execution of the query that does not exist.
-	// Episode ah1-001 answered its question correctly and finalized blocked on
-	// exactly that loop.
-	for _, want := range []string{"did NOT execute", `saved query "usage_events_total" is not in this run's catalog`, "Author the query directly with execute_graphql"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("the exception must carry %q: %v", want, err)
-		}
-	}
-	if strings.Contains(err.Error(), "query_catalog") {
-		t.Fatalf("the exception must not re-demand the lookup that just came back empty: %v", err)
-	}
-	if runtime.state.hasBlockingViolation() {
-		t.Fatal("executing a saved query the catalog denies must not block the run")
-	}
-	for _, violation := range runtime.state.violations {
-		if violation.Code == "saved_query_detail_required" {
-			t.Fatalf("no detail requirement can be outstanding once the catalog answered: %+v", violation)
-		}
-	}
-}
-
-// TestProtocolSavedQueryDetailDemandSurvivesWithoutEvidence is the other half:
-// a run that has looked nothing up knows nothing, and the demand to inspect the
-// card before executing is exactly right. Only positive evidence of absence
-// converts it.
-func TestProtocolSavedQueryDetailDemandSurvivesWithoutEvidence(t *testing.T) {
-	base := &fakeRuntime{}
-	runtime := newProtocolRuntime(base, "total usage", "", 40, nil, nil, CatalogSearchFeatures{})
-
-	before := len(base.calls)
-	if _, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "usage_events_total"}); err == nil ||
-		!strings.Contains(err.Error(), "inspect query_catalog") {
-		t.Fatalf("an un-inspected saved query must still be refused: %v", err)
-	}
-	if got := len(base.calls); got != before {
-		t.Fatalf("the refused query reached the base runtime: calls=%d want=%d", got, before)
-	}
-	if !runtime.state.hasBlockingViolation() {
-		t.Fatal("the detail requirement should still block until it is answered")
-	}
-}
-
-// TestProtocolSavedQueryAbsentFromDiscoveredSetIsRecoverable covers the second
-// arm: the catalog returned saved queries and this name was not among them, so
-// the run has seen what exists and the request is a wrong guess. Naming the real
-// ones is more use than demanding a lookup that will come back empty.
-func TestProtocolSavedQueryAbsentFromDiscoveredSetIsRecoverable(t *testing.T) {
-	base := &fakeRuntime{}
-	runtime := newProtocolRuntime(base, "total usage", "", 40, nil, nil, CatalogSearchFeatures{})
-	runtime.state.markSavedQueryDiscovered("daily_roast_context")
-
-	_, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "usage_events_total"})
-	if err == nil {
-		t.Fatal("a name absent from a known set must throw its dead end")
-	}
-	for _, want := range []string{"is not in this run's catalog", "approved saved queries", "daily_roast_context"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("the exception must name the saved queries that do exist, missing %q: %v", want, err)
-		}
-	}
-	if runtime.state.hasBlockingViolation() {
-		t.Fatal("a wrong saved-query name must not block the run")
-	}
-}
-
-// A name the run has seen but not yet inspected is the case the original guard
-// was built for, and it is unchanged.
-func TestProtocolDiscoveredButUninspectedSavedQueryStillBlocks(t *testing.T) {
-	base := &fakeRuntime{}
-	runtime := newProtocolRuntime(base, "total usage", "", 40, nil, nil, CatalogSearchFeatures{})
-	runtime.state.markSavedQueryDiscovered("usage_events_total")
-
-	if _, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "usage_events_total"}); err == nil ||
-		!strings.Contains(err.Error(), "inspect query_catalog") {
-		t.Fatalf("a real but un-inspected saved query must still be refused: %v", err)
-	}
-	if !runtime.state.hasBlockingViolation() {
-		t.Fatal("the detail requirement should block a query that does exist")
 	}
 }
 
@@ -1508,10 +1397,6 @@ func (r *recordingRuntime) ValidateWhereClause(context.Context, map[string]any) 
 	return map[string]any{}, nil
 }
 
-func (r *recordingRuntime) ExecuteSavedQuery(context.Context, map[string]any) (any, error) {
-	return map[string]any{}, nil
-}
-
 func (r *recordingRuntime) ExecuteGraphQL(context.Context, map[string]any) (any, error) {
 	return map[string]any{}, nil
 }
@@ -1722,9 +1607,6 @@ func (r *echoingCatalogRuntime) GraphQLHelp(context.Context, map[string]any) (an
 	return map[string]any{"cards": []any{}}, nil
 }
 func (r *echoingCatalogRuntime) ValidateWhereClause(context.Context, map[string]any) (any, error) {
-	return map[string]any{}, nil
-}
-func (r *echoingCatalogRuntime) ExecuteSavedQuery(context.Context, map[string]any) (any, error) {
 	return map[string]any{}, nil
 }
 func (r *echoingCatalogRuntime) ExecuteGraphQL(context.Context, map[string]any) (any, error) {

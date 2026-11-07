@@ -309,43 +309,6 @@ func TestGraphJinRuntimeUsesGovernedDistillerDetailFallback(t *testing.T) {
 	}
 }
 
-func TestGraphJinRuntimeRejectsPrematureExecutorFinalForRequiredSavedQuery(t *testing.T) {
-	pending := `const detail = await query_catalog({id:"saved_query:daily_roast_context"}); const execution = await execute_saved_query({name:"daily_roast_context"});`
-	runtime := newGraphJinCodeRuntime(nil, nil, func() string { return pending }, nil)
-	session, err := runtime.CreateSession(map[string]ax.Value{
-		"inputs": map[string]any{"instruction": "Then execute_saved_query({name:\"daily_roast_context\"})."},
-	}, map[string]ax.Value{
-		"reservedNames": []any{"inputs", "executorRequest", "distilledContext"},
-	})
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	defer session.Close()
-
-	distiller := mapValue(session.Execute(`await final("execute daily_roast_context", {});`, nil))
-	if runtimeCompletionType(distiller) != "final" {
-		t.Fatalf("distiller final was incorrectly guarded: %+v", distiller)
-	}
-	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
-
-	rejected := mapValue(session.Execute(`await final("answer from detail only", {});`, nil))
-	if stringFromMap(rejected, "kind") != "result" || stringFromMap(mapValue(rejected["result"]), "graphjin_protocol") != "saved_query_execution_required" {
-		t.Fatalf("executor final = %+v, want continuation result", rejected)
-	}
-	if got := stringFromMap(mapValue(rejected["result"]), "next"); got != pending {
-		t.Fatalf("executor continuation = %q, want exact executable guidance", got)
-	}
-	clarification := mapValue(session.Execute(`await askClarification("Which saved query should I use?");`, nil))
-	if stringFromMap(clarification, "kind") != "result" || stringFromMap(mapValue(clarification["result"]), "graphjin_protocol") != "saved_query_execution_required" {
-		t.Fatalf("executor clarification = %+v, want continuation result", clarification)
-	}
-	pending = ""
-	accepted := mapValue(session.Execute(`await final("answer from execution", {ok:true});`, nil))
-	if runtimeCompletionType(accepted) != "final" {
-		t.Fatalf("completed executor final = %+v, want final", accepted)
-	}
-}
-
 func TestGraphJinRuntimeRejectsFinalUntilExecutionRepair(t *testing.T) {
 	pending := "execution_repair_required: retry with a distinct repaired query"
 	runtime := newGraphJinCodeRuntime(nil, nil, func() string { return pending }, nil)
@@ -374,39 +337,6 @@ func TestGraphJinRuntimeRejectsFinalUntilExecutionRepair(t *testing.T) {
 	accepted := session.Execute(`await final("answered", {count: 4});`, nil)
 	if runtimeCompletionType(accepted) != "final" {
 		t.Fatalf("final after repair = %+v", accepted)
-	}
-}
-
-func TestGraphJinRuntimeRunsNarrowSavedQueryContinuationBeforeFinal(t *testing.T) {
-	pending := "the discovered saved query must execute before final"
-	continuation := `const detail = await query_catalog({id:"saved_query:daily_roast_context"}); const execution = await execute_saved_query({name:"daily_roast_context"}); await final("GraphJin continuation completed.", {detail, execution});`
-	runtime := newGraphJinCodeRuntime(nil, nil, func() string { return pending }, func() string { return continuation })
-	detailCalls := 0
-	executionCalls := 0
-	runtime.RegisterCallable("query_catalog", func(params ax.Value) (ax.Value, error) {
-		detailCalls++
-		return map[string]any{"cards": []any{map[string]any{"id": "saved_query:daily_roast_context"}}}, nil
-	})
-	runtime.RegisterCallable("execute_saved_query", func(params ax.Value) (ax.Value, error) {
-		executionCalls++
-		return map[string]any{"data": map[string]any{"production_orders": []any{map[string]any{"product_name": "Northstar"}}}}, nil
-	})
-	session, err := runtime.CreateSession(map[string]ax.Value{
-		"inputs": map[string]any{"instruction": "Find live production work."},
-	}, nil)
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	defer session.Close()
-
-	session.Execute(`await final("find the saved query", {});`, nil)
-	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
-	resumed := session.Execute(`await final("no live result", {});`, nil)
-	if detailCalls != 1 || executionCalls != 1 {
-		t.Fatalf("continuation calls = detail:%d execution:%d, want one each; result=%+v", detailCalls, executionCalls, resumed)
-	}
-	if runtimeCompletionType(resumed) == "final" || !strings.Contains(fmt.Sprint(normalizeValue(resumed)), "Northstar") {
-		t.Fatalf("continuation result = %+v, want live execution evidence returned to the next actor step", resumed)
 	}
 }
 

@@ -30,7 +30,7 @@ run_agent_rest_once() {
   local out="$TMP_DIR/agent-rest-$(date +%s%N).json"
   local payload
   payload="$(jq -n '{
-    instruction:"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:churn_risk_context\"}); const result = await execute_saved_query({name:\"churn_risk_context\"}); const account = result.data.accounts.find(a => a.status === \"churn_risk\"); await final({status:\"answered\", answer:`${account.name} is the top churn risk, renewing on ${account.renewal_date}.`, data:{account}, evidence:{saved_query:\"churn_risk_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
+    instruction:"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:churn_risk_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const account = result.data.accounts.find(a => a.status === \"churn_risk\"); await final({status:\"answered\", answer:`${account.name} is the top churn risk, renewing on ${account.renewal_date}.`, data:{account}, evidence:{saved_query:\"churn_risk_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
     max_steps:10,
     return_trace:false
   }')"
@@ -40,7 +40,7 @@ run_agent_rest_once() {
 
 run_agent_mcp_once() {
   mcp_tool ask_graphjin_agent '{
-    "instruction":"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:churn_risk_context\"}); const result = await execute_saved_query({name:\"churn_risk_context\"}); const account = result.data.accounts.find(a => a.status === \"churn_risk\"); await final({status:\"answered\", answer:`${account.name} is the top churn risk, renewing on ${account.renewal_date}.`, data:{account}, evidence:{saved_query:\"churn_risk_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
+    "instruction":"Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:churn_risk_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const account = result.data.accounts.find(a => a.status === \"churn_risk\"); await final({status:\"answered\", answer:`${account.name} is the top churn risk, renewing on ${account.renewal_date}.`, data:{account}, evidence:{saved_query:\"churn_risk_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});",
     "max_steps":10,
     "return_trace":false
   }'
@@ -60,14 +60,15 @@ run_agent_eval_suite() {
 
   log "checking open-ended agent discovery protocol evals"
 
-  out="$(run_agent_rest_prompt "Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:churn_risk_context\"}); const result = await execute_saved_query({name:\"churn_risk_context\"}); const account = result.data.accounts.find(a => a.status === \"churn_risk\"); await final({status:\"answered\", answer:account.name + \" is the top churn risk, renewing on \" + account.renewal_date + \".\", data:{account}, evidence:{saved_query:\"churn_risk_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});")"
+  out="$(run_agent_rest_prompt "Use the JavaScript runtime globals to run this exact discovery flow: const catalog = await query_catalog({kind:\"saved_query\"}); const detail = await query_catalog({id:\"saved_query:churn_risk_context\"}); const result = await execute_graphql({query: detail.cards[0].graphql_query}); const account = result.data.accounts.find(a => a.status === \"churn_risk\"); await final({status:\"answered\", answer:account.name + \" is the top churn risk, renewing on \" + account.renewal_date + \".\", data:{account}, evidence:{saved_query:\"churn_risk_context\", catalog_cards:catalog.cards, saved_query_detail:detail.cards}});")"
   assert_jq "$out" '
     .status == "answered"
     and (.answer | test("Meridian|churn"; "i"))
     and (.actions | tostring | test("query_catalog"))
-    and (.actions | tostring | test("execute_saved_query"))
+    and (.actions | tostring | test("execute_graphql"))
+    and ((.actions | tostring | test("execute_saved_query")) | not)
     and (.evidence | tostring | test("churn_risk_context"))
-  ' "agent eval: churn risk answered from saved-query evidence"
+  ' "agent eval: churn risk answered by running the saved query's definition"
 
   out="$(run_agent_rest_prompt "Inventory the approved saved queries and workflows this SaaS ops demo exposes. Do discovery only; do not execute anything.")"
   assert_jq "$out" '
