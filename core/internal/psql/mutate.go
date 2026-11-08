@@ -571,6 +571,9 @@ func (c *compilerContext) renderInsertUpdateValues(m qcode.Mutate) int {
 func (c *compilerContext) renderColumnValue(m qcode.Mutate, col qcode.MColumn) {
 	var vk, v string
 	isVar := false
+	// A GraphQL null literal parses as the label null. Quoting its text
+	// stored the string 'null' in place of SQL NULL.
+	isNull := false
 	var listItems []string
 
 	isEmptyList := false
@@ -588,12 +591,15 @@ func (c *compilerContext) renderColumnValue(m qcode.Mutate, col qcode.MColumn) {
 		if field.Type == graph.NodeVar {
 			isVar = true
 		}
+		isNull = isNullLiteral(field)
 
 		if field.Type == graph.NodeList {
 			listItems = make([]string, 0, len(field.Children))
 			for _, c := range field.Children {
 				if c.Type == graph.NodeNum {
 					listItems = append(listItems, c.Val)
+				} else if isNullLiteral(c) {
+					listItems = append(listItems, "NULL")
 				} else {
 					listItems = append(listItems, (`'` + c.Val + `'`))
 				}
@@ -614,6 +620,9 @@ func (c *compilerContext) renderColumnValue(m qcode.Mutate, col qcode.MColumn) {
 
 	valFunc := func() {
 		switch {
+		case isNull:
+			c.w.WriteString(`NULL`)
+
 		case isVar:
 			c.renderParam(Param{Name: vk, Type: col.Col.Type, IsArray: col.Col.Array, IsNotNull: col.Col.NotNull})
 
@@ -648,6 +657,12 @@ func (c *compilerContext) renderColumnValue(m qcode.Mutate, col qcode.MColumn) {
 		}
 	}
 	c.dialect.RenderCast(c, valFunc, col.Col.Type)
+}
+
+// isNullLiteral reports a GraphQL null literal, which the parser keeps as the
+// label null rather than a string.
+func isNullLiteral(n *graph.Node) bool {
+	return n != nil && n.Type == graph.NodeLabel && strings.EqualFold(n.Val, "null")
 }
 
 func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate) int {
