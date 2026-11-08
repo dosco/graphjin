@@ -147,6 +147,11 @@ type Request struct {
 	// Observer receives one ActionEvent per executed tool action (progress
 	// streaming). Server-populated only; never part of the wire request.
 	Observer func(ActionEvent) `json:"-"`
+	// OnAnswer receives the reply text as the lead writes it. reset is true
+	// when the model restarts its reply and earlier text should be dropped.
+	// The streamed text is provisional: the response's answer is final, and
+	// guards may change it.
+	OnAnswer func(text string, reset bool) `json:"-"`
 
 	// Memories are the caller's saved preferences and facts that the service
 	// recalled for this request. Server-populated only, like Capabilities;

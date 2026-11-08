@@ -228,7 +228,10 @@ into self-contained questions for this agent; with it off, a request that
 carries a conversation is refused. Progress is observable
 per action: MCP callers that send a `_meta.progressToken` receive
 `notifications/progress` events, and the REST endpoint streams `action`/
-`result` SSE frames when called with `Accept: text/event-stream`. Seed and
+`result` SSE frames when called with `Accept: text/event-stream`. A thread
+turn also streams the lead's reply as `delta` frames (`{text, reset}`) while it
+is written; they are provisional and not stored, and the `result` frame's
+answer is final. Seed and
 default catalog page sizes are tunable via `agent.seed_limit` (default 40) and
 `agent.catalog_default_limit` (default 20).
 

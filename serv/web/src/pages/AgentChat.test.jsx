@@ -239,3 +239,11 @@ describe("answer feedback", () => {
     expect(screen.getByText("Marked wrong.")).toBeInTheDocument();
   });
 });
+
+describe("streaming reply", () => {
+  it("shows the reply as it is written", () => {
+    render(<ThinkingMessage actions={[]} text="There are 2 open" />);
+    expect(screen.getByLabelText("Reply so far")).toHaveTextContent("There are 2 open");
+    expect(screen.getByText("writing")).toBeInTheDocument();
+  });
+});

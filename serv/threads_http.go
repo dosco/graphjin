@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
@@ -198,7 +199,12 @@ func (s *graphjinService) agentThreadTurn(ctx context.Context, w http.ResponseWr
 		startSSE(w)
 		writeSSE(w, flusher, 0, "run", map[string]any{"thread_id": threadID, "run_id": run.runID})
 		// Writes stop once the client goes away; the run itself carries on.
+		// Parallel delegations and the streamed reply write from different
+		// goroutines, so writes are serialized.
+		var writeMu sync.Mutex
 		emit = func(seq int64, kind string, payload any) {
+			writeMu.Lock()
+			defer writeMu.Unlock()
 			if r.Context().Err() == nil {
 				writeSSE(w, flusher, seq, kind, payload)
 			}

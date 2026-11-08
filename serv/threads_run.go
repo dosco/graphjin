@@ -152,6 +152,15 @@ func (r *threadRun) execute(ctx context.Context, runner graphjinAgentRunner, req
 			callerObserver(event)
 		}
 	}
+	if emit != nil {
+		// The reply text streams live as "delta" events. They are not stored
+		// and carry no id: a client that reconnects gets the stored actions
+		// and the final result, which is the authoritative answer.
+		secret := configuredAgentSecret(agentConfigFromService(s.conf))
+		req.OnAnswer = func(text string, reset bool) {
+			emit(0, "delta", map[string]any{"text": gjagent.SanitizeText(text, secret), "reset": reset})
+		}
+	}
 	resp, err := runner.Run(runCtx, req)
 	close(stopMonitor)
 	<-monitorDone

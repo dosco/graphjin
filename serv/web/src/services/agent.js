@@ -25,7 +25,7 @@ export function askAgent({ instruction, max_steps, return_trace, history, task_i
 // parses the SSE frames the agent endpoint emits: one `action` event per
 // executed tool call, then a final `result` event with the agent response.
 // Falls back to the blocking JSON contract when the server answers with JSON.
-export async function askAgentStream({ instruction, max_steps, return_trace, history, task_id, thread_id }, { onAction, onRun } = {}) {
+export async function askAgentStream({ instruction, max_steps, return_trace, history, task_id, thread_id }, { onAction, onRun, onDelta } = {}) {
   let response;
   try {
     response = await fetch("/api/v1/agent", {
@@ -65,14 +65,16 @@ export async function askAgentStream({ instruction, max_steps, return_trace, his
     }
     return payload;
   }
-  return readAgentEvents(response, { onAction, onRun });
+  return readAgentEvents(response, { onAction, onRun, onDelta });
 }
 
 // readAgentEvents consumes an agent SSE stream: `run` names a threaded run,
-// `action` reports each tool call, `result` carries the final response.
+// `action` reports each tool call, `delta` streams the reply text as it is
+// written (provisional; `reset` drops what came before), and `result` carries
+// the final response.
 // Action payloads pass through whole: a lead run's actions carry `delegate`
 // (the 1-based delegated question) and `question`, which the trail groups on.
-async function readAgentEvents(response, { onAction, onRun } = {}) {
+async function readAgentEvents(response, { onAction, onRun, onDelta } = {}) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -94,6 +96,8 @@ async function readAgentEvents(response, { onAction, onRun } = {}) {
         onRun(frame.data);
       } else if (frame.event === "action" && typeof onAction === "function") {
         onAction(frame.data);
+      } else if (frame.event === "delta" && typeof onDelta === "function") {
+        onDelta(frame.data);
       } else if (frame.event === "result") {
         result = frame.data;
       }

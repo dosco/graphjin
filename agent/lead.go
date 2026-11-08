@@ -325,7 +325,13 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 		input["profile"] = strings.TrimSpace(req.Profile.Name + ": " + req.Profile.Instructions)
 	}
 
-	out, ferr := program.Forward(ctx, client, input, forwardOptions)
+	var out ax.Value
+	var ferr error
+	if req.OnAnswer != nil {
+		out, ferr = forwardStreamingAnswer(ctx, program, client, input, forwardOptions, req.OnAnswer)
+	} else {
+		out, ferr = program.Forward(ctx, client, input, forwardOptions)
+	}
 	usage := usageSummary(program)
 	resp := Response{Status: StatusAnswered}
 	if ferr != nil {

@@ -87,3 +87,30 @@ describe("graph-backed agent services", () => {
     expect(calls.some((call) => call.url.includes("/api/v1/agent/threads"))).toBe(false);
   });
 });
+
+describe("streamed reply text", () => {
+  it("hands each delta to onDelta and still returns the final result", async () => {
+    const frames = [
+      'event: run\ndata: {"run_id":"run_1"}\n\n',
+      'id: 1\nevent: action\ndata: {"tool":"ask_graphjin"}\n\n',
+      'event: delta\ndata: {"text":"There are","reset":false}\n\n',
+      'event: delta\ndata: {"text":"","reset":true}\n\n',
+      'event: delta\ndata: {"text":"There are 2 open","reset":false}\n\n',
+      'event: delta\ndata: {"text":" tickets.","reset":false}\n\n',
+      'id: 2\nevent: result\ndata: {"status":"answered","answer":"There are 2 open tickets."}\n\n',
+    ];
+    global.fetch = vi.fn(async () => new Response(new ReadableStream({
+      start(controller) {
+        for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame));
+        controller.close();
+      },
+    }), { status: 200, headers: { "Content-Type": "text/event-stream" } }));
+    const { askAgentStream } = await import("./agent");
+    let text = "";
+    const result = await askAgentStream({ instruction: "open tickets?", thread_id: "th_1" }, {
+      onDelta: (delta) => { text = (delta.reset ? "" : text) + delta.text; },
+    });
+    expect(text).toBe("There are 2 open tickets.");
+    expect(result.answer).toBe("There are 2 open tickets.");
+  });
+});

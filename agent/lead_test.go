@@ -610,3 +610,40 @@ func TestLeadPermissionsFollowTheCallersAccess(t *testing.T) {
 		t.Fatalf("resp = %+v, want a blocked reply with a refusal", resp)
 	}
 }
+
+// With OnAnswer set the lead streams its reply stage; the streamed text adds
+// up to the reply and the response is the same as without streaming.
+func TestLeadStreamsItsAnswer(t *testing.T) {
+	run := func(stream bool) (Response, string) {
+		client := &scriptedLeadClient{responses: []ax.Value{
+			leadToolCall("c1", "How many open tickets are there?"),
+			leadReply(StatusAnswered, "There are 2 open tickets."),
+		}}
+		lead := newTestLead(t, Config{}, client, func(_ context.Context, req DelegateRequest) (Response, error) {
+			return leadTestAnswers[req.Question], nil
+		})
+		var streamed strings.Builder
+		req := Request{Instruction: "open tickets?"}
+		if stream {
+			req.OnAnswer = func(text string, reset bool) {
+				if reset {
+					streamed.Reset()
+				}
+				streamed.WriteString(text)
+			}
+		}
+		resp, err := lead.Run(context.Background(), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp, streamed.String()
+	}
+	plain, _ := run(false)
+	streamedResp, streamed := run(true)
+	if streamed != "There are 2 open tickets." {
+		t.Fatalf("streamed %q", streamed)
+	}
+	if streamedResp.Status != plain.Status || streamedResp.Answer != plain.Answer {
+		t.Fatalf("streamed response %+v differs from plain %+v", streamedResp, plain)
+	}
+}

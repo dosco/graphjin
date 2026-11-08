@@ -129,6 +129,8 @@ const AgentChat = () => {
   const [maxSteps, setMaxSteps] = React.useState(8);
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [pendingActions, setPendingActions] = React.useState([]);
+  // The reply as it streams in; replaced by the final answer when it lands.
+  const [streamingText, setStreamingText] = React.useState("");
   const [inspection, setInspection] = React.useState(null);
   const [pinnedTaskID, setPinnedTaskID] = React.useState(linkedTaskID);
   const statusDefaultsApplied = React.useRef(false);
@@ -222,6 +224,7 @@ const AgentChat = () => {
       askAgentStream(vars, {
         onAction: (action) => setPendingActions((current) => [...current, action]),
         onRun: (run) => setActiveRunID(run?.run_id || ""),
+        onDelta: (delta) => setStreamingText((current) => (delta?.reset ? "" : current) + (delta?.text || "")),
       }),
   });
 
@@ -308,6 +311,7 @@ const AgentChat = () => {
     };
     setMessages((current) => [...current, userMessage]);
     setPendingActions([]);
+    setStreamingText("");
 
     try {
       const response = await mutation.mutateAsync({
@@ -344,6 +348,7 @@ const AgentChat = () => {
       ]);
     } finally {
       setPendingActions([]);
+      setStreamingText("");
       setActiveRunID("");
       if (threadsEnabled && currentThreadID) {
         // Reload the stored messages so the answer carries its server id,
@@ -412,7 +417,7 @@ const AgentChat = () => {
               )}
               {pending && (
                 <MessageScrollerItem scrollAnchor>
-                  <ThinkingMessage actions={pendingActions} />
+                  <ThinkingMessage actions={pendingActions} text={streamingText} />
                 </MessageScrollerItem>
               )}
             </MessageScrollerContent>
@@ -816,12 +821,12 @@ function EmptyAgentState({ ready, onSelectPrompt }) {
   );
 }
 
-export function ThinkingMessage({ actions = [] }) {
+export function ThinkingMessage({ actions = [], text = "" }) {
   const entries = groupActionsByDelegate(actions);
   return (
     <Message role="assistant">
       <MessageContent>
-        <Marker status="loading" label="working" />
+        <Marker status="loading" label={text ? "writing" : "working"} />
         {entries.length > 0 && (
         <Bubble variant="muted" className="w-fit max-w-full">
           <BubbleContent>
@@ -845,6 +850,13 @@ export function ThinkingMessage({ actions = [] }) {
             </ol>
           </BubbleContent>
         </Bubble>
+        )}
+        {text && (
+          <Bubble variant="ghost" align="start" className="max-w-full overflow-hidden" aria-label="Reply so far">
+            <BubbleContent>
+              <MarkdownContent value={text} />
+            </BubbleContent>
+          </Bubble>
         )}
       </MessageContent>
     </Message>

@@ -147,7 +147,7 @@ curl -sS http://localhost:8080/api/v1/agent \
 
 ### Streaming and status
 
-The REST endpoint streams progress when called with `Accept: text/event-stream`: `action` frames as the agent works, `result` frames as evidence lands, then a final `complete` frame carrying the full response. MCP callers that pass `_meta.progressToken` receive `notifications/progress` events per action. `GET /api/v1/agent/status` reports server-model readiness; the built-in web console uses that result to decide whether to offer the chat page.
+The REST endpoint streams progress when called with `Accept: text/event-stream`: `action` frames as the agent works, then a `result` frame with the full response and a `complete` frame. A thread turn also streams the lead's reply as it is written, in `delta` frames carrying `{text, reset}`; they are provisional and not stored, so a reconnecting client gets the actions and the result, and the result's answer is final. MCP callers that pass `_meta.progressToken` receive `notifications/progress` events per action. `GET /api/v1/agent/status` reports server-model readiness; the built-in web console uses that result to decide whether to offer the chat page.
 
 ## Structured refusals
 
