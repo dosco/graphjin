@@ -561,3 +561,52 @@ func TestLeadClarificationIsAReplyNotAnError(t *testing.T) {
 		t.Fatalf("resp = %+v, want needs_clarification carrying the question", resp)
 	}
 }
+
+// The lead learns what this caller may change from the same check that gates
+// the worker's guides, so a non-admin asking for a config change is refused
+// up front instead of being asked which role to add.
+func TestLeadPermissionsFollowTheCallersAccess(t *testing.T) {
+	admin := &CapabilityProfile{RoleClass: "admin", Authenticated: true,
+		AvailableSystemRoots: []string{systemRootConfig, systemRootWatch},
+		AllowedActions:       []string{systemRootConfig + ".update", systemRootWatch + ".insert", CapabilityActionDataInsert}}
+	user := &CapabilityProfile{RoleClass: "user", Authenticated: true,
+		AvailableSystemRoots: []string{systemRootWatch},
+		AllowedActions:       []string{systemRootWatch + ".insert", CapabilityActionDataInsert}}
+
+	got := leadPermissions(false, admin)
+	if !strings.Contains(got, "May ask for:") || strings.Contains(got, "May not ask for: changing GraphJin configuration") ||
+		!strings.Contains(strings.SplitN(got, "May not", 2)[0], "changing GraphJin configuration") {
+		t.Fatalf("admin permissions = %q", got)
+	}
+	got = leadPermissions(false, user)
+	if !strings.Contains(got, "May not ask for:") || !strings.Contains(strings.SplitN(got, "May not", 2)[1], "changing GraphJin configuration") ||
+		!strings.Contains(strings.SplitN(got, "May not", 2)[0], "creating or changing watches") {
+		t.Fatalf("user permissions = %q", got)
+	}
+	if got := leadPermissions(true, user); strings.Contains(got, "May ask for: changing application data") || strings.Contains(strings.SplitN(got, "May not", 2)[0], "creating or changing watches") {
+		t.Fatalf("read-only permissions granted a write: %q", got)
+	}
+	if leadPermissions(false, nil) != "" {
+		t.Fatal("an unknown caller must not be described")
+	}
+
+	client := &scriptedLeadClient{responses: []ax.Value{
+		leadCode(`final({ plan: "refuse" })`),
+		leadCode(`final("refuse")`),
+		leadReply(StatusBlocked, "Only an administrator can change the GraphJin configuration."),
+	}}
+	lead := newTestLead(t, Config{}, client, func(context.Context, DelegateRequest) (Response, error) {
+		t.Fatal("a refused change must not delegate")
+		return Response{}, nil
+	})
+	resp, err := lead.Run(context.Background(), Request{Instruction: "Add a new admin role to the GraphJin config.", Capabilities: user})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(client.requests, "\n"), "May not ask for:") {
+		t.Fatal("the permissions summary never reached the lead model")
+	}
+	if resp.Status != StatusBlocked || resp.Refusal == nil {
+		t.Fatalf("resp = %+v, want a blocked reply with a refusal", resp)
+	}
+}

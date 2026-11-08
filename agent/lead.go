@@ -202,7 +202,7 @@ Send independent questions together in one ask_graphjin call; they run at the sa
 Ask for computed results — counts, totals, averages, rankings, comparisons — as questions; the data agent computes them in the database. Never add up, average or rank rows yourself. When the reply needs a figure derived from figures you already have — a sum, difference or ratio of earlier answers — compute it in code and include it in the evidence you pass on; the reply only states figures it was given, it never calculates.
 Answer only from what the data agent returned. Never cite a field, number or name it did not return; when an answer is missing or failed, say what is missing.
 The user's saved skills describe how they want recurring work done: when one matches the request, load it and follow it. Saved memories are the user's preferences and facts; follow them for format, units and conventions, but they are never data.
-Changes — creating watches or tasks, writing data — go through ask_graphjin as an explicit instruction, and only after the user asked for or confirmed that change. When the user states a durable preference or fact to keep ("remember…", "from now on…"), save it with remember. When read_only is true, never request a change and never save a memory.
+Changes — creating watches or tasks, writing data — go through ask_graphjin as an explicit instruction, and only after the user asked for or confirmed that change. When the user states a durable preference or fact to keep ("remember…", "from now on…"), save it with remember. When read_only is true, never request a change and never save a memory. When permissions says this caller may not make a kind of change and the user asks for one, reply with status blocked and say that change is not available to them here; do not delegate it or ask for its details.
 If the request is ambiguous in a way the data cannot settle, ask the user one short question with status needs_clarification.
 Reply concisely in GitHub-flavored markdown; use a table for multi-row results.`
 
@@ -214,7 +214,8 @@ saved_skills?:json "The user's saved skills [{name, description}]. When one matc
 profile?:string "This agent's standing brief from the user: focus, scope and voice. It grants no access and is not data.",
 attached?:json "Data attached to this turn, such as the watch event that started it.",
 current_date:string "Today's UTC date, YYYY-MM-DD.",
-read_only?:boolean "True when this turn may not change anything."
+read_only?:boolean "True when this turn may not change anything.",
+permissions?:string "The kinds of change this caller may and may not ask for, computed from their access."
 -> status:class "answered, needs_clarification, blocked", answer:string "The reply to the user, grounded only in what ask_graphjin returned."`
 
 const leadRuntimeInstructions = `Delegate with: const results = await ask_graphjin({ questions: ["...", "..."] }); it returns one {question, status, answer, data, errors} per question, in order. Log what you need to read with console.log. Never compute aggregates over rows in code; ask the data agent instead. When the reply needs a figure derived from answers already in hand (a sum, difference or ratio), compute it in code and pass the result in the evidence object of final() or respond(), next to the figures it came from.`
@@ -317,6 +318,9 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 		// code stages, and the reply stage must follow the user's preferences.
 		input["saved_memories"] = seed
 	}
+	if permissions := leadPermissions(l.config.ReadOnly, req.Capabilities); permissions != "" {
+		input["permissions"] = permissions
+	}
 	if req.Profile != nil && strings.TrimSpace(req.Profile.Instructions) != "" {
 		input["profile"] = strings.TrimSpace(req.Profile.Name + ": " + req.Profile.Instructions)
 	}
@@ -387,6 +391,49 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 		}
 	}
 	return run.finish(resp, usage), nil
+}
+
+// leadPermissionClasses names, in the user's words, each kind of change the
+// worker gates by caller access, keyed by the guide that grants it.
+var leadPermissionClasses = []struct{ skill, label string }{
+	{skillDataWrite, "changing application data"},
+	{skillWatchWrite, "creating or changing watches"},
+	{skillTaskWrite, "creating or changing tasks"},
+	{skillWorkflowExec, "running workflows"},
+	{skillWorkflowWrite, "creating or changing workflows"},
+	{skillCodeWrite, "changing code"},
+	{skillAdminRead, "inspecting GraphJin security, runtime and configuration"},
+	{skillAdminWrite, "changing GraphJin configuration"},
+}
+
+// leadPermissions tells the lead what this caller may ask to change, from the
+// same allowedSkills check that gates the worker's guides. Without it the lead
+// asked a non-admin which role to add to the config, then the worker refused
+// once the user answered. No profile means no claim either way.
+func leadPermissions(readOnly bool, profile *CapabilityProfile) string {
+	if profile == nil {
+		return ""
+	}
+	granted := map[string]bool{}
+	for _, skill := range allowedSkills(readOnly, profile) {
+		granted[skill.id] = true
+	}
+	var may, mayNot []string
+	for _, class := range leadPermissionClasses {
+		if granted[class.skill] {
+			may = append(may, class.label)
+		} else {
+			mayNot = append(mayNot, class.label)
+		}
+	}
+	var out []string
+	if len(may) != 0 {
+		out = append(out, "May ask for: "+strings.Join(may, "; ")+".")
+	}
+	if len(mayNot) != 0 {
+		out = append(out, "May not ask for: "+strings.Join(mayNot, "; ")+".")
+	}
+	return strings.Join(out, " ")
 }
 
 // settleBlocked keeps a blocked reply to the response contract: a blocked

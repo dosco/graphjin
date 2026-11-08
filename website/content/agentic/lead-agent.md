@@ -333,5 +333,15 @@ as explicit instructions, and only after the user asked for or confirmed the
 change. The worker's guards, roles, and row-level security still decide whether
 the change runs. A routine's lead and workers are read-only.
 
+The lead is told which kinds of change the caller may ask for (application
+data, watches, tasks, workflows, code, and GraphJin configuration), computed
+from the same access check that gates the worker. It refuses a change the
+caller may not make without asking for its details. A blocked reply always
+carries a refusal: a delegated question's own refusal when one was refused,
+or `agent_blocked` otherwise. A delegated question that failed instead makes
+the reply an error.
+
 {{< verified by="TestLeadGroundsItsAnswerInWorkerResults" file="agent/lead_test.go" >}}
 {{< verified by="TestLeadAnswersARepeatedQuestionOnce" file="agent/lead_test.go" >}}
+{{< verified by="TestLeadPermissionsFollowTheCallersAccess" file="agent/lead_test.go" >}}
+{{< verified by="TestLeadBlockedReplyCarriesARefusal" file="agent/lead_test.go" >}}
