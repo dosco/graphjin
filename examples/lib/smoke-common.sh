@@ -1248,10 +1248,14 @@ run_role_skill_suite() {
 
   log "checking role-aware agent control-plane behavior: normal user vs admin"
 
+  # The ask names no role, so the lead may ask which one before any tool runs:
+  # a clarification with no actions is a correct reply. Any turn that acts must
+  # still discover the catalog first.
   out="$(run_agent_rest_prompt_as_role "admin" "$admin_write_ask")"
   assert_jq "$out" '
-    (.status == "answered" or .status == "blocked" or .status == "needs_clarification")
-    and ([.actions[]? | select(.tool == "query_catalog")] | length) > 0
+    (.status == "needs_clarification" and ([.actions[]?] | length) == 0 and ((.answer // "") | length) > 0)
+    or ((.status == "answered" or .status == "blocked" or .status == "needs_clarification")
+      and ([.actions[]? | select(.tool == "query_catalog")] | length) > 0)
   ' "role eval: admin request follows catalog-first control-plane handling"
 
   out="$(run_agent_rest_prompt_as_role "$USER_ROLE" "$admin_write_ask")"

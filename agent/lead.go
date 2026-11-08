@@ -324,7 +324,12 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 	out, ferr := program.Forward(ctx, client, input, forwardOptions)
 	usage := usageSummary(program)
 	resp := Response{Status: StatusAnswered}
-	if ferr != nil {
+	var axErr ax.AxError
+	if ferr != nil && errors.As(ferr, &axErr) && axErr.Category == "clarification" {
+		// The actor asked the user a question: that is a reply, not a failure.
+		// The worker maps it the same way.
+		resp = Response{Status: StatusNeedsClarification, Answer: clarificationAnswer(axErr.Payload)}
+	} else if ferr != nil {
 		if len(run.results()) == 0 {
 			resp = Response{Status: StatusError, Errors: []ErrorInfo{{Message: ferr.Error()}}}
 		} else {

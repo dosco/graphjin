@@ -539,3 +539,25 @@ func TestLeadBlockedReplyCarriesARefusal(t *testing.T) {
 		}
 	})
 }
+
+// A lead actor that asks the user a question ends its run with Ax's
+// clarification error. That is a needs_clarification reply carrying the
+// question; the lead used to report it as status error with the question as
+// the error message.
+func TestLeadClarificationIsAReplyNotAnError(t *testing.T) {
+	client := &scriptedLeadClient{responses: []ax.Value{
+		leadCode(`final({ plan: "clarify" })`),
+		leadCode(`askClarification("Which name should the new admin role have?")`),
+	}}
+	lead := newTestLead(t, Config{}, client, func(context.Context, DelegateRequest) (Response, error) {
+		t.Fatal("a clarification must not delegate")
+		return Response{}, nil
+	})
+	resp, err := lead.Run(context.Background(), Request{Instruction: "Add a new admin role to the GraphJin config."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Status != StatusNeedsClarification || len(resp.Errors) != 0 || !strings.Contains(resp.Answer, "Which name should the new admin role have?") {
+		t.Fatalf("resp = %+v, want needs_clarification carrying the question", resp)
+	}
+}
