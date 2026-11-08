@@ -78,6 +78,12 @@ func systemRootActionEnabled(conf *Config, root, action string) bool {
 	case threadMessagesRootTable, threadRunsRootTable:
 		// Written only by agent turns.
 		return action == systemActionRead && configThreadsEnabled(conf)
+	case approvalsRootTable:
+		// Created only by the agent; a person reads and decides them.
+		if !configApprovalsEnabled(conf) {
+			return false
+		}
+		return action == systemActionRead || (action == systemActionUpdate && !conf.artifactSourceReadOnly())
 	default:
 		return false
 	}

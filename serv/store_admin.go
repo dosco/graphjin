@@ -102,15 +102,32 @@ func (s *graphjinService) closeStoreAdmin() {
 // storeTableNames lists the unqualified control-plane tables the current
 // config expects.
 func (s *graphjinService) storeTableNames() []string {
+	if s == nil {
+		return nil
+	}
+	return configStoreTableNames(s.conf)
+}
+
+// configStoreTableNames lists the store tables a config creates. Schema
+// discovery depends on it, so it is part of the discovery fingerprint: a
+// table switched on by agent config (approvals) must not reuse a generation
+// discovered before the table existed.
+func configStoreTableNames(conf *Config) []string {
+	if conf == nil || !conf.Core.Artifacts.Enabled {
+		return nil
+	}
 	names := []string{"artifacts", "revisions"}
-	if s.watchesEnabled() {
+	if configWatchesEnabled(conf) {
 		names = append(names, "watches", "watch_events")
 	}
-	if s.tasksEnabled() {
+	if configTasksEnabled(conf) {
 		names = append(names, "tasks", "task_entries")
 	}
-	if s.threadsEnabled() {
+	if configThreadsEnabled(conf) {
 		names = append(names, "threads", "messages", "runs", "run_events")
+	}
+	if configApprovalsEnabled(conf) {
+		names = append(names, "approvals")
 	}
 	return names
 }

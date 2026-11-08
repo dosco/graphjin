@@ -1162,6 +1162,8 @@ they inherit that deployment's capabilities rather than OpenAI's.
 | `agent.rate_limit.requests_per_minute` | integer | `0` | Process-local rolling-minute ceiling for outbound model requests; zero disables request limiting |
 | `agent.rate_limit.tokens_per_minute` | integer | `0` | Process-local rolling-minute ceiling charged from provider-reported token usage; zero disables token limiting |
 | `agent.read_only` | boolean | `false` | Force the server-side agent to reject mutations before execution |
+| `agent.write_approval` | string | agentic: `required` (with the artifact store); otherwise `off` | `required` holds every agent application-data and API write for the user's approval: the reply is `needs_approval` with a dry-run preview, and only `gj_approval` / `POST /api/v1/agent/approvals/{id}` runs it. `off` runs agent writes directly. `required` needs `artifacts.enabled`. Env `GJ_AGENT_WRITE_APPROVAL` |
+| `agent.write_approval_ttl` | duration | `24h` | How long a held write stays approvable. Env `GJ_AGENT_WRITE_APPROVAL_TTL` |
 | `agent.return_trace` | boolean | `false` | Include agent action/trace data in responses |
 | `agent.seed_limit` | integer | `40` | Initial `query_catalog(search: instruction)` seed row cap |
 | `agent.catalog_default_limit` | integer | `20` | Default row limit for model-issued catalog queries |

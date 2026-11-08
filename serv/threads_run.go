@@ -126,6 +126,7 @@ func (r *threadRun) execute(ctx context.Context, runner graphjinAgentRunner, req
 ) (gjagent.Response, error) {
 	s := r.s
 	base := withRunThreadProfile(context.WithoutCancel(ctx), stringMapValue(r.thread, "profile"))
+	base = withRunThread(base, r.threadID, r.runID)
 	runCtx, cancel := context.WithCancel(base)
 	defer cancel()
 	localRuns.Store(r.runID, cancel)

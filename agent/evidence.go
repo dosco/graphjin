@@ -14,6 +14,7 @@ var blockingGuardViolationCodes = map[string]struct{}{
 	"access_blocked":                        {},
 	"access_unauthorized":                   {},
 	"annotation_tier_confirmation_required": {},
+	"approval_decision_reserved":            {},
 	"artifact_kind_locked":                  {},
 	"authenticated_required":                {},
 	"capability-disabled":                   {},
@@ -55,6 +56,7 @@ var blockingGuardViolationCodes = map[string]struct{}{
 	"watch_query_invalid":                {},
 	"watch_action_confirmation_required": {},
 	"workflow_detail_required":           {},
+	"write_approval_unavailable":         {},
 }
 
 // BlockingGuardViolationCodes returns the stable, sorted set of agent guard

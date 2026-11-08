@@ -351,6 +351,46 @@ A calling agent should treat this as protocol, not prose: execute the
 `policy_final`. The contract is discoverable at runtime with
 `query_catalog(id: "help:refusals")`.
 
+### Write Approvals
+
+With `agent.write_approval: required` (the default in agentic mode), the agent
+never changes application data or calls a write API itself. At the point a
+write would run, GraphJin dry-runs it inside a transaction it rolls back, stores
+it as a pending approval, and the reply comes back `status: "needs_approval"`:
+
+| Field | Meaning |
+| :--- | :--- |
+| `approval.id` | The proposal to decide. |
+| `approval.hash` | Pins the exact query, variables, namespace and the person who asked. A decision must send it back. |
+| `approval.summary` | One line to read before deciding, such as `update 3 rows in support_tickets`. |
+| `approval.query`, `approval.variables` | Exactly what runs once approved. |
+| `approval.preview` | What the dry run would change: `rows` and a `sample`. `available: false` with a `reason` for sources a dry run would really affect (APIs, NanoDB, warehouses, managed databases). |
+| `approval.expires_at` | After this the proposal can no longer run (`agent.write_approval_ttl`, default 24h). |
+
+The answer is GraphJin's own sentence, "This change needs your approval before
+it runs: …", so a model can never report a held write as done. The user decides
+outside any agent run:
+
+```graphql
+mutation {
+  gj_approval(where: { id: { eq: "apr_..." } },
+              update: { decision: "approve", expected_hash: "..." }) {
+    id status result error
+  }
+}
+```
+
+or `POST /api/v1/agent/approvals/{id}` with `{"decision": "approve", "hash": "..."}`
+(`GET /api/v1/agent/approvals` lists the caller's own). A decision runs the stored
+query once, as the person who asked, after re-checking that the proposal is still
+pending and unexpired, that the hash matches, and that writes and the caller's
+write capability are still in place. When the write came from a thread, the
+outcome is posted there without a model call. Approvals are personal: no other
+user, not even an admin, can read or decide them, and the agent can never write
+`gj_approval`. Watches, tasks and configuration keep their own review flows and
+are not held. The dry run is a real transaction: sequences advance and triggers
+fire before the rollback.
+
 ### Server-Owned Model Resolution
 
 The built-in agent always uses the provider, model, and credential source

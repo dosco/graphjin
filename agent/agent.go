@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -103,7 +104,14 @@ type Config struct {
 	MaxSteps       int             `mapstructure:"max_steps" jsonschema:"title=Agent Max Steps,default=8"`
 	TimeoutSeconds int             `mapstructure:"timeout_seconds" jsonschema:"title=Agent Timeout Seconds,default=50"`
 	ReadOnly       bool            `mapstructure:"read_only" jsonschema:"title=Force Agent Read-Only,default=false"`
-	ReturnTrace    bool            `mapstructure:"return_trace" jsonschema:"title=Return Agent Trace,default=false"`
+	// WriteApproval is "required" to hold every agent data write for the
+	// user's approval, or "off" to run writes directly. Empty lets the
+	// service decide: required in agentic mode.
+	WriteApproval string `mapstructure:"write_approval" json:"write_approval,omitempty" jsonschema:"title=Agent Write Approval,enum=,enum=required,enum=off"`
+	// WriteApprovalTTL is how long a held write stays approvable, as a Go
+	// duration such as "24h". Empty means 24h.
+	WriteApprovalTTL string `mapstructure:"write_approval_ttl" json:"write_approval_ttl,omitempty" jsonschema:"title=Agent Write Approval TTL,default=24h"`
+	ReturnTrace      bool   `mapstructure:"return_trace" jsonschema:"title=Return Agent Trace,default=false"`
 	// SeedLimit caps the initial query_catalog(search: instruction) seed rows.
 	SeedLimit int `mapstructure:"seed_limit" jsonschema:"title=Agent Seed Catalog Limit,default=40"`
 	// CatalogDefaultLimit is the default row limit for model-issued catalog queries.
@@ -225,13 +233,16 @@ type Response struct {
 	Memories []MemoryUsage `json:"memories,omitempty"`
 	// Figures names where each figure in a lead's answer came from; a figure
 	// with no source is listed in an unverified_figures notice.
-	Figures     []Figure          `json:"figures,omitempty"`
-	Skill       string            `json:"skill,omitempty"` // Deprecated through v3.
-	Data        any               `json:"data,omitempty"`
-	Evidence    any               `json:"evidence,omitempty"`
-	Actions     any               `json:"actions,omitempty"`
-	Next        any               `json:"next,omitempty"`
-	Refusal     *Refusal          `json:"refusal,omitempty"`
+	Figures  []Figure `json:"figures,omitempty"`
+	Skill    string   `json:"skill,omitempty"` // Deprecated through v3.
+	Data     any      `json:"data,omitempty"`
+	Evidence any      `json:"evidence,omitempty"`
+	Actions  any      `json:"actions,omitempty"`
+	Next     any      `json:"next,omitempty"`
+	Refusal  *Refusal `json:"refusal,omitempty"`
+	// Approval is the held write a needs_approval reply asks the user to
+	// approve or reject.
+	Approval    *Approval         `json:"approval,omitempty"`
 	Notices     []ResponseNotice  `json:"notices,omitempty"`
 	Errors      []ErrorInfo       `json:"errors,omitempty"`
 	Usage       any               `json:"usage,omitempty"`
@@ -508,6 +519,9 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	if err := cfg.Selection.Validate(); err != nil {
 		return Response{}, err
 	}
+	if err := ValidateWriteApproval(cfg.WriteApproval); err != nil {
+		return Response{}, err
+	}
 	// read_only is the single operator kill-switch (D3) that forces the agent to
 	// read/discovery-only regardless of the caller's role. It replaces the removed
 	// per-request safe/discovery_only/raw_allowed modes.
@@ -591,6 +605,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	}()
 
 	protocol = newProtocolRuntime(a.runtime, strings.TrimSpace(req.Instruction), req.Namespace, cfg.SeedLimit, req.Capabilities, req.Observer, a.catalogSearch)
+	protocol.writeApproval = strings.TrimSpace(cfg.WriteApproval) == WriteApprovalRequired
 	permittedSkills := allowedSkills(readOnly, req.Capabilities)
 	prep := a.startPreparation(ctx, req, permittedSkills)
 	seed, err := protocol.Seed(ctx)
@@ -2273,8 +2288,19 @@ func (r *coreRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (
 	if namespace := stringArg(args, "namespace"); namespace != "" {
 		rc.SetNamespace(namespace)
 	}
+	if tx, ok := ctx.Value(transactionKey{}).(*sql.Tx); ok && tx != nil {
+		rc.Tx = tx
+	}
 	res, err := r.gj.GraphQL(ctx, query, varsJSON, &rc)
 	return executeResultFromCore(res, err), nil
+}
+
+type transactionKey struct{}
+
+// WithTransaction makes the core runtime run its GraphQL calls inside tx. A
+// write approval dry-runs the held write this way and rolls tx back.
+func WithTransaction(ctx context.Context, tx *sql.Tx) context.Context {
+	return context.WithValue(ctx, transactionKey{}, tx)
 }
 
 func executeResultFromCore(res *core.Result, err error) executeResult {

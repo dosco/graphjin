@@ -977,8 +977,9 @@ func discoveryConfigFingerprint(conf *Config) (string, error) {
 		return "", errors.New("nil discovery configuration")
 	}
 	raw, err := json.Marshal(map[string]any{
-		"core":     conf.Core,
-		"database": conf.DB,
+		"core":         conf.Core,
+		"database":     conf.DB,
+		"store_tables": configStoreTableNames(conf),
 	})
 	if err != nil {
 		return "", err

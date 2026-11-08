@@ -81,6 +81,7 @@ run_agent_eval_suite() {
 
   # Generic capability suites (shared lib).
   run_refusal_suite support_tickets
+  run_write_approval_suite support_tickets subject table:app:main.support_tickets
   run_watch_agent_suite \
     "Use the JavaScript runtime globals to run this exact watch creation flow: await query_catalog({id:\"help:security\"}); await query_catalog({id:\"help:runtime\"}); await query_catalog({id:\"help:watches\"}); const created = await execute_graphql({query:\"mutation { gj_watch(insert: { name: \\\"smoke_agent_watch\\\", query: \\\"subscription smoke_watch { support_tickets(first: 25, after: \\\$cursor) { id status } support_tickets_cursor }\\\" }) { id name status enabled } }\"}); await final({status:\"answered\", answer:\"created smoke_agent_watch\", data:created, evidence:{catalog_ids:[\"help:security\",\"help:runtime\",\"help:watches\"]}});" \
     smoke_agent_watch \

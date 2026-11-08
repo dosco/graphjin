@@ -103,6 +103,20 @@
 					"title": "Force Agent Read-Only",
 					"default": false
 				},
+				"write_approval": {
+					"type": "string",
+					"enum": [
+						"",
+						"required",
+						"off"
+					],
+					"title": "Agent Write Approval"
+				},
+				"write_approval_ttl": {
+					"type": "string",
+					"title": "Agent Write Approval TTL",
+					"default": "24h"
+				},
 				"return_trace": {
 					"type": "boolean",
 					"title": "Return Agent Trace",

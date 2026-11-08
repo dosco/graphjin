@@ -116,7 +116,8 @@ func refusalBecause(v protocolViolation) []string {
 
 func policyFinalViolation(code string) bool {
 	switch code {
-	case "artifact_kind_locked", "access_unauthorized", "access_blocked", "authenticated_required", "identity_variable_missing", "capability_disabled", "capability-disabled":
+	case "artifact_kind_locked", "access_unauthorized", "access_blocked", "authenticated_required", "identity_variable_missing", "capability_disabled", "capability-disabled",
+		"approval_decision_reserved", "write_approval_unavailable":
 		return true
 	default:
 		return false

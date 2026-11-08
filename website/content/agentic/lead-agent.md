@@ -339,7 +339,9 @@ from the same access check that gates the worker. It refuses a change the
 caller may not make without asking for its details. A blocked reply always
 carries a refusal: a delegated question's own refusal when one was refused,
 or `agent_blocked` otherwise. A delegated question that failed instead makes
-the reply an error.
+the reply an error. When a delegated write is held for approval, the lead's
+reply is `needs_approval` and carries that approval, with GraphJin's own
+sentence that nothing has changed yet.
 
 {{< verified by="TestLeadGroundsItsAnswerInWorkerResults" file="agent/lead_test.go" >}}
 {{< verified by="TestLeadAnswersARepeatedQuestionOnce" file="agent/lead_test.go" >}}

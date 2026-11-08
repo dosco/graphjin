@@ -36,6 +36,8 @@ type protocolRuntime struct {
 	catalogSearch  CatalogSearchFeatures
 	enrichCatalog  func(context.Context, map[string]any, any) any
 	preparedDetail func(context.Context, map[string]any) (any, bool)
+	// writeApproval holds data writes for the user's approval.
+	writeApproval bool
 }
 
 type discoveryState struct {
@@ -51,8 +53,10 @@ type discoveryState struct {
 	// fifteen action tasks in one benchmark run were lost to exactly that —
 	// one rejected mutation, then "Successfully recorded..." shipped as the
 	// answer through the exhausted-loop rescue.
-	mutationAttempted         bool
-	mutationSucceeded         bool
+	mutationAttempted bool
+	mutationSucceeded bool
+	// pendingApproval is the write this run held for the user's approval.
+	pendingApproval           *Approval
 	lastMutationFailure       string
 	lastMutationRepairedQuery string
 	watchDefinitionMutated    bool
@@ -834,6 +838,15 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		r.state.finishAction(action, "execute_graphql", args, out, nil)
 		return out, nil
 	}
+	if writesApprovalRoot(query) {
+		// Approvals are decided by the user, outside any agent run.
+		message := "approvals are decided by the user, never by the agent: gj_approval is not writable from an agent run"
+		r.state.addViolation("approval_decision_reserved", message, "execute_graphql", true, nil)
+		out := policyFinalFailure("approval_decision_reserved", message, nil)
+		action := r.state.startAction("model", "execute_graphql", args)
+		r.state.finishAction(action, "execute_graphql", args, out, nil)
+		return out, nil
+	}
 	if missing := r.state.missingCapabilityActions(query); len(missing) != 0 {
 		message := "caller capability profile does not grant the requested GraphQL action: " + strings.Join(missing, ", ")
 		var allowed []string
@@ -1228,8 +1241,44 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	}
 	r.state.clearCompletionLatch()
 	wasRepairPending := r.state.pendingFailedQueryKey != ""
+	held := r.writeApproval && heldWrite(query)
+	if held && r.state.pendingApproval != nil {
+		err := fmt.Errorf("this write did NOT execute: %s is already awaiting the user's approval in this run, and a reply carries one change; finish now and let the user decide", r.state.pendingApproval.ID)
+		action := r.state.startAction("model", "execute_graphql", args)
+		r.state.finishAction(action, "execute_graphql", args, nil, err)
+		return nil, err
+	}
+	proposer, canHold := r.base.(WriteProposer)
+	if held && !canHold {
+		// With approvals required, running the write would skip the user.
+		message := "this write did NOT execute: it needs the user's approval and this runtime cannot hold writes for approval"
+		r.state.addViolation("write_approval_unavailable", message, "execute_graphql", true, nil)
+		out := policyFinalFailure("write_approval_unavailable", message, nil)
+		action := r.state.startAction("model", "execute_graphql", args)
+		r.state.finishAction(action, "execute_graphql", args, out, nil)
+		return out, nil
+	}
 	action := r.state.startAction("model", "execute_graphql", args)
-	out, err := r.base.ExecuteGraphQL(ctx, args)
+	var out any
+	var err error
+	var approval *Approval
+	if held {
+		// The dry run is rolled back; a write that would fail fails here exactly
+		// as it would have, so every recovery below still applies.
+		out, approval, err = proposer.ProposeWrite(ctx, args)
+	} else {
+		out, err = r.base.ExecuteGraphQL(ctx, args)
+	}
+	if approval != nil && err == nil && !executionFailed(out) {
+		// The dry run succeeded and was rolled back: nothing changed, and
+		// nothing is cached or recorded as done.
+		r.state.pendingApproval = approval
+		r.state.pendingFailedQueryKey = ""
+		r.state.resolveSuccessfulExecutionViolations()
+		heldOut := heldWriteResult(approval)
+		r.state.finishAction(action, "execute_graphql", args, heldOut, nil)
+		return heldOut, nil
+	}
 	if err == nil && executionFailed(out) {
 		if denied, ok := policyFinalExecutionError(out); ok {
 			code := stringFromMap(denied.Extensions, "code")
@@ -2657,6 +2706,13 @@ func (s *discoveryState) finalize(resp Response) Response {
 		case !s.modelDiscoveryAction:
 			s.addViolation("model_discovery_required", "agent answered without a model-driven catalog/help/detail discovery action", "", true, nil)
 			resp = blockResponse(resp)
+		case s.pendingApproval != nil:
+			// The write is held, not failed, and the engine writes this reply's
+			// answer, so neither the failed-write gate nor answer grounding
+			// applies. A recorded blocking violation still wins.
+			if s.hasBlockingViolation() {
+				resp = blockResponse(resp)
+			}
 		case s.mutationAttempted && !s.mutationSucceeded:
 			// The database was never changed, so an answered final would report
 			// work that did not happen — the recorded episodes say "Successfully
@@ -2700,7 +2756,7 @@ func (s *discoveryState) finalize(resp Response) Response {
 			}
 		}
 	}
-	return settleReply(resp, replyFacts{refusal: s.buildRefusal})
+	return settleReply(resp, replyFacts{refusal: s.buildRefusal, approval: s.pendingApproval})
 }
 
 // recoverResolvedTerminalRefusalResponse removes a stale model refusal only

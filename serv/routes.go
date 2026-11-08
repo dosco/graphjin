@@ -12,6 +12,7 @@ const (
 	routeAgentStatus       = "/api/v1/agent/status"
 	routeAgentRuns         = "/api/v1/agent/runs/"
 	routeAgentProfiles     = "/api/v1/agent/profiles"
+	routeAgentApprovals    = "/api/v1/agent/approvals"
 	routeConsoleBootstrap  = "/api/v1/console/bootstrap"
 	routeEvalReports       = "/api/v1/eval/reports"
 	routeEvalScore         = "/api/v1/eval/score"
@@ -87,6 +88,10 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 					mux.Handle(routeAgentRuns, s1.AgentRuns(ah))
 					mux.Handle(routeAgentProfiles+"/", s1.AgentProfiles(ah))
 				}
+				if s.approvalsEnabled() {
+					mux.Handle(routeAgentApprovals, s1.AgentApprovals(ah, nil))
+					mux.Handle(routeAgentApprovals+"/", s1.AgentApprovals(ah, nil))
+				}
 			}
 			if s.watchesEnabled() {
 				mux.Handle(routeWatches, s1.Watches(ah))
@@ -113,6 +118,10 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 				if s.threadsEnabled() {
 					mux.Handle(routeAgentRuns, s1.AgentRunsWithNS(ah, *ns))
 					mux.Handle(routeAgentProfiles+"/", s1.AgentProfilesWithNS(ah, *ns))
+				}
+				if s.approvalsEnabled() {
+					mux.Handle(routeAgentApprovals, s1.AgentApprovals(ah, ns))
+					mux.Handle(routeAgentApprovals+"/", s1.AgentApprovals(ah, ns))
 				}
 			}
 			if s.watchesEnabled() {

@@ -116,6 +116,11 @@ smoke_parse_args() {
 
 # Watches created by shared suites, deleted on exit under the same identity.
 SMOKE_METRIC_WATCH_IDS=()
+# Agent responses that held a write, rejected on exit so a stopped run leaves
+# no pending approval, and the mutation that restores the row the write
+# approval suite changes.
+SMOKE_HELD_RESPONSES=()
+SMOKE_APPROVAL_RESTORE=""
 
 # Demos can append cleanup commands (e.g. kill background mock servers) by
 # defining smoke_extra_cleanup before sourcing or after.
@@ -125,6 +130,13 @@ smoke_cleanup() {
     [ -n "$metric_watch_id" ] || continue
     graphql metric-watch-trap-cleanup "mutation { gj_watch(delete: true, where: { id: { eq: \"${metric_watch_id}\" } }) { id } }" >/dev/null 2>&1 || true
   done
+  local held
+  for held in "${SMOKE_HELD_RESPONSES[@]-}"; do
+    [ -n "$held" ] && [ -f "$held" ] && reject_held_write "$held"
+  done
+  if [ -n "$SMOKE_APPROVAL_RESTORE" ]; then
+    graphql approval-trap-restore "$SMOKE_APPROVAL_RESTORE" >/dev/null 2>&1 || true
+  fi
   if declare -F lead_cleanup >/dev/null; then
     lead_cleanup || true
   fi
@@ -824,6 +836,85 @@ run_artifact_suite() {
   graphql artifact-cleanup-2 "mutation { gj_artifacts(delete: true, where: { id: { eq: \"${big_id}\" } }) { id } }" >/dev/null 2>&1 || true
 }
 
+# approval_decide <id> <decision> <hash> <out> posts a decision on a held
+# write and prints the HTTP status; it never fails the run itself.
+approval_decide() {
+  curl -sS --max-time "$TIMEOUT" -o "$4" -w '%{http_code}' \
+    -X POST "${BASE_URL%/}/api/v1/agent/approvals/$1" "${AUTH_HEADERS[@]}" \
+    --data "$(jq -nc --arg d "$2" --arg h "$3" '{decision:$d, hash:$h}')" || true
+}
+
+# reject_held_write <agent-response-file> rejects the approval a response
+# carries, so a run that held a write leaves nothing pending behind.
+reject_held_write() {
+  local id hash
+  id="$(jq -r '.approval.id // empty' "$1")"
+  hash="$(jq -r '.approval.hash // empty' "$1")"
+  [ -n "$id" ] && approval_decide "$id" reject "$hash" "$TMP_DIR/approval-reject-$id.json" >/dev/null
+  return 0
+}
+
+# Capability: WRITE-APPROVAL
+# Contract: With agent.write_approval required (the agentic default), an agent
+# data write comes back needs_approval with a dry-run preview and changes
+# nothing. A wrong hash is refused with 409; approving with the real hash runs
+# the exact write once, and approving again is refused.
+# Deeper coverage: TestDecideApprovalRunsTheExactWriteOnce,
+# TestApprovalHoldsTheWriteAndTheEngineWritesTheAnswer, TestLeadCarriesADelegatedApproval.
+run_write_approval_suite() {
+  local table="$1" column="$2" catalog_id="$3"
+  log "checking write approvals on agent data writes"
+  local row_out row_id original token out="" attempt=1
+  # A row whose value is set, so the restore below writes a string back: a
+  # GraphQL null in a SQLite update is stored as the text "null" today.
+  row_out="$(graphql approval-row "query { ${table}(where: { ${column}: { is_null: false } }, limit: 1, order_by: { id: asc }) { id ${column} } }")"
+  row_id="$(jq -r --arg t "$table" '.data[$t][0].id' "$row_out")"
+  original="$(jq -c --arg t "$table" --arg c "$column" '.data[$t][0][$c]' "$row_out")"
+  if [ -z "$row_id" ] || [ "$row_id" = "null" ]; then
+    fail "[WRITE-APPROVAL] ${table} has no row with ${column} set to change"
+  fi
+  token="smoke_approval_$(date +%s)_$$"
+  while [ "$attempt" -le 2 ]; do
+    # The exact flow keeps this a wiring check of the hold, not of whether a
+    # small model reaches the write point on its own.
+    out="$(run_agent_rest_prompt "Use the JavaScript runtime globals to run exactly this flow: await query_catalog({id:\"${catalog_id}\"}); await query_catalog({id:\"help:security\"}); await query_catalog({id:\"help:runtime\"}); const r = await execute_graphql({query:\"mutation { ${table}(where: { id: { eq: ${row_id} } }, update: { ${column}: \\\"${token}\\\" }) { id ${column} } }\"}); await final({status:\"answered\", answer:\"set the ${column}\", data:r});")"
+    if jq -e '.status == "needs_approval"' "$out" >/dev/null; then
+      break
+    fi
+    attempt=$((attempt + 1))
+  done
+  SMOKE_HELD_RESPONSES+=("$out")
+  SMOKE_APPROVAL_RESTORE="mutation { ${table}(where: { id: { eq: ${row_id} } }, update: { ${column}: ${original} }) { id } }"
+  if ! jq -e '.status == "needs_approval"' "$out" >/dev/null; then
+    echo "write approval suite: the agent never held the write; last:" >&2
+    jq . "$out" >&2 || cat "$out" >&2
+    return 1
+  fi
+  local id hash code check
+  id="$(jq -r '.approval.id' "$out")"
+  hash="$(jq -r '.approval.hash' "$out")"
+  assert_jq "$out" '
+    (.approval.id | startswith("apr_")) and (.approval.hash | length) == 64
+    and (.approval.query | test("mutation"))
+    and (.answer | test("Nothing has been changed yet"))
+    and ((.approval.preview.available == false) or (.approval.preview.rows >= 1))
+  ' "[WRITE-APPROVAL] agent write comes back needs_approval with the exact query and a preview"
+  check="$(graphql approval-unchanged "query { ${table}(where: { id: { eq: ${row_id} } }) { ${column} } }")"
+  assert_jq_args "$check" "[WRITE-APPROVAL] a held write changes nothing" --arg t "$table" --arg c "$column" --arg token "$token" '.data[$t][0][$c] != $token'
+  code="$(approval_decide "$id" approve "wrong" "$TMP_DIR/approval-wrong.json")"
+  [ "$code" = "409" ] || { reject_held_write "$out"; fail "[WRITE-APPROVAL] a wrong hash returned HTTP $code, want 409"; }
+  pass "[WRITE-APPROVAL] a wrong hash is refused"
+  code="$(approval_decide "$id" approve "$hash" "$TMP_DIR/approval-approve.json")"
+  assert_jq "$TMP_DIR/approval-approve.json" '.status == "executed"' "[WRITE-APPROVAL] approving runs the write (HTTP $code)"
+  check="$(graphql approval-applied "query { ${table}(where: { id: { eq: ${row_id} } }) { ${column} } }")"
+  assert_jq_args "$check" "[WRITE-APPROVAL] the approved write changed the row" --arg t "$table" --arg c "$column" --arg token "$token" '.data[$t][0][$c] == $token'
+  code="$(approval_decide "$id" approve "$hash" "$TMP_DIR/approval-again.json")"
+  assert_jq "$TMP_DIR/approval-again.json" '(.error // "") | test("not pending")' "[WRITE-APPROVAL] a second approval is refused (HTTP $code)"
+  # Restore the row the suite changed.
+  graphql approval-restore "$SMOKE_APPROVAL_RESTORE" >/dev/null 2>&1 || true
+  SMOKE_APPROVAL_RESTORE=""
+}
+
 # Structured refusal e2e: ask for an evidence-less raw mutation; a protocol
 # guard blocks it and the response must carry the machine-actionable refusal
 # object. Model-dependent in whether the model attempts the mutation and which
@@ -839,6 +930,9 @@ run_refusal_suite() {
       result=0
       break
     fi
+    # A model that gathered evidence anyway may get the write held for
+    # approval instead of blocked: nothing ran, and its approval is rejected.
+    reject_held_write "$out"
     attempt=$((attempt + 1))
   done
   graphql refusal-cleanup "mutation { ${table}(delete: true, where: { id: { eq: 999999 } }) { id } }" >/dev/null 2>&1 || true

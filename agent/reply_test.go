@@ -13,7 +13,7 @@ import (
 func assertReplyContract(t *testing.T, label string, resp Response) {
 	t.Helper()
 	switch resp.Status {
-	case StatusAnswered, StatusNeedsClarification, StatusBlocked, StatusError:
+	case StatusAnswered, StatusNeedsClarification, StatusNeedsApproval, StatusBlocked, StatusError:
 	default:
 		t.Fatalf("%s: status %q is outside the contract", label, resp.Status)
 	}
@@ -25,6 +25,9 @@ func assertReplyContract(t *testing.T, label string, resp Response) {
 	}
 	if resp.Status == StatusError && len(resp.Errors) == 0 {
 		t.Fatalf("%s: error reply without errors", label)
+	}
+	if (resp.Status == StatusNeedsApproval) != (resp.Approval != nil) {
+		t.Fatalf("%s: status %s with approval %+v; only a needs_approval reply carries one, and it always does", label, resp.Status, resp.Approval)
 	}
 	if resp.Status == StatusNeedsClarification && len(resp.Errors) != 0 {
 		t.Fatalf("%s: clarification carrying errors: %+v", label, resp.Errors)

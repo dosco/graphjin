@@ -202,7 +202,7 @@ Send independent questions together in one ask_graphjin call; they run at the sa
 Ask for computed results — counts, totals, averages, rankings, comparisons — as questions; the data agent computes them in the database. Never add up, average or rank rows yourself. When the reply needs a figure derived from figures you already have — a sum, difference or ratio of earlier answers — compute it in code and include it in the evidence you pass on; the reply only states figures it was given, it never calculates.
 Answer only from what the data agent returned. Never cite a field, number or name it did not return; when an answer is missing or failed, say what is missing.
 The user's saved skills describe how they want recurring work done: when one matches the request, load it and follow it. Saved memories are the user's preferences and facts; follow them for format, units and conventions, but they are never data.
-Changes — creating watches or tasks, writing data — go through ask_graphjin as an explicit instruction, and only after the user asked for or confirmed that change. When the user states a durable preference or fact to keep ("remember…", "from now on…"), save it with remember. When read_only is true, never request a change and never save a memory. When permissions says this caller may not make a kind of change and the user asks for one, reply with status blocked and say that change is not available to them here; do not delegate it or ask for its details.
+Changes — creating watches or tasks, writing data — go through ask_graphjin as an explicit instruction, and only after the user asked for or confirmed that change. When the user states a durable preference or fact to keep ("remember…", "from now on…"), save it with remember. When read_only is true, never request a change and never save a memory. When ask_graphjin returns status needs_approval, the change has not happened: it waits for the user to approve it, so say so and never report it as done. When permissions says this caller may not make a kind of change and the user asks for one, reply with status blocked and say that change is not available to them here; do not delegate it or ask for its details.
 If the request is ambiguous in a way the data cannot settle, ask the user one short question with status needs_clarification.
 Reply concisely in GitHub-flavored markdown; use a table for multi-row results.`
 
@@ -370,7 +370,15 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 			}
 		}
 	}
-	resp = settleReply(resp, replyFacts{refusal: run.delegatedRefusal, failures: run.failures()})
+	approval := run.delegatedApproval()
+	if approval != nil && resp.Status != StatusBlocked {
+		// The lead's words give the context; the engine's sentence states that
+		// nothing has changed yet, so it is always part of the reply.
+		if sentence := approvalAnswer(approval); !strings.Contains(resp.Answer, sentence) {
+			resp.Answer = strings.TrimSpace(resp.Answer + "\n\n" + sentence)
+		}
+	}
+	resp = settleReply(resp, replyFacts{refusal: run.delegatedRefusal, failures: run.failures(), approval: approval})
 	resp.Skills, resp.Memories = run.shapedBy(usedSkills.snapshot(), usedMemories.snapshot())
 	if resp.Status == StatusAnswered && resp.Answer != "" {
 		resp.Figures = run.figures.attribute(resp.Answer)
@@ -442,6 +450,19 @@ func (r *leadRun) delegatedRefusal(resp Response) *Refusal {
 		if d.err == nil && d.resp.Status == StatusBlocked && d.resp.Refusal != nil {
 			refusal := *d.resp.Refusal
 			return &refusal
+		}
+	}
+	return nil
+}
+
+// delegatedApproval is the latest write a delegated question held for the
+// user's approval. A reply carries one; any other held write stays pending in
+// the approvals list.
+func (r *leadRun) delegatedApproval() *Approval {
+	delegations := r.results()
+	for i := len(delegations) - 1; i >= 0; i-- {
+		if d := delegations[i]; d.err == nil && d.resp.Approval != nil {
+			return d.resp.Approval
 		}
 	}
 	return nil

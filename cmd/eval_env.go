@@ -367,6 +367,9 @@ func configureEvalInstance(config *serv.Config, spec gjeval.EnvSpec) {
 	// The lead is scored separately (scripts/agent-data-eval.sh --corpus lead).
 	config.Agent.Lead.Enabled = false
 	config.Agent.ReadOnly = !spec.Writable
+	// Episodes grade the agent's writes as it makes them; nobody is there to
+	// approve them.
+	config.Agent.WriteApproval = "off"
 	config.Agent.ReturnTrace = true
 	// A sampling run pins how the model draws; a benchmark leaves it alone.
 	if spec.Temperature != nil {

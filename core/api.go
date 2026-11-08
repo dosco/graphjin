@@ -2407,6 +2407,18 @@ type RoleAudit struct {
 	FixGuide string             `json:"fix_guide"`
 }
 
+// RequestRole is the role a request with this context runs as, resolved the
+// way a GraphQL call resolves it before any roles query: identity roles, the
+// user role, then user or anon.
+func (g *GraphJin) RequestRole(ctx context.Context) string {
+	gj, err := g.getEngine()
+	if err != nil {
+		return "anon"
+	}
+	role, _ := gj.initialRequestRole(ctx)
+	return role
+}
+
 // ExplainQuery compiles a GraphQL query without executing it.
 // Returns the compiled query, parameters, tables touched, join depth, and cache info.
 func (g *GraphJin) ExplainQuery(query string, vars json.RawMessage, role string) (*QueryExplanation, error) {

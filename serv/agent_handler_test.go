@@ -271,7 +271,15 @@ func TestAgentConfigBridgeCarriesEveryField(t *testing.T) {
 	var want gjagent.Config
 	(&configFieldFiller{}).fill(t, reflect.ValueOf(&want).Elem(), "agent.Config")
 
-	if got := agentConfigFromService(&Config{Serv: Serv{Agent: want}}); !reflect.DeepEqual(got, want) {
+	got := agentConfigFromService(&Config{Serv: Serv{Agent: want}})
+	// write_approval is resolved by the service, not copied: the agent holds
+	// writes only when this service can store the proposals, which this bare
+	// config (no artifact store) cannot.
+	if got.WriteApproval != gjagent.WriteApprovalOff {
+		t.Fatalf("write_approval = %q without an artifact store, want off", got.WriteApproval)
+	}
+	got.WriteApproval = want.WriteApproval
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("bridge dropped or altered a field:\n got  %+v\n want %+v", got, want)
 	}
 

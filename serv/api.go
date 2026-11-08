@@ -191,6 +191,7 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 	watches := newWatchControlPlane(live)
 	tasks := newTaskControlPlane(live)
 	threads := newThreadControlPlane(live)
+	approvals := approvalControlPlane{service: live}
 	revisions := revisionSignalHandler{service: live}
 	opts := []core.Option{
 		core.OptionSetFS(s.fs),
@@ -266,6 +267,17 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 		for _, dbName := range s.managedSystemRootDatabases(targetDB) {
 			opts = append(opts, core.OptionSetManagedQueryHandler(dbName, threads))
 			opts = append(opts, core.OptionSetManagedMutationHandler(dbName, threads))
+		}
+	}
+	if s.conf != nil && s.approvalsEnabled() {
+		targetDB := s.metadataDB
+		if targetDB == "" {
+			targetDB = core.DefaultDBName
+		}
+		// Approvals are served live: a decision must see the current row.
+		for _, dbName := range s.managedSystemRootDatabases(targetDB) {
+			opts = append(opts, core.OptionSetManagedQueryHandler(dbName, approvals))
+			opts = append(opts, core.OptionSetManagedMutationHandler(dbName, approvals))
 		}
 	}
 	if s.namespace != nil {

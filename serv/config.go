@@ -1146,6 +1146,17 @@ func normalizeAgentConfig(c *Config) error {
 	if err := c.Agent.ValidateLead(); err != nil {
 		return err
 	}
+	if err := gjagent.ValidateWriteApproval(c.Agent.WriteApproval); err != nil {
+		return err
+	}
+	if ttl := strings.TrimSpace(c.Agent.WriteApprovalTTL); ttl != "" {
+		if d, err := time.ParseDuration(ttl); err != nil || d <= 0 {
+			return fmt.Errorf("agent.write_approval_ttl must be a positive duration such as 24h, got %q", ttl)
+		}
+	}
+	if strings.TrimSpace(c.Agent.WriteApproval) == gjagent.WriteApprovalRequired && c.Agent.Enabled && !c.Core.Artifacts.Enabled {
+		return fmt.Errorf("agent.write_approval: required needs the artifact store (artifacts.enabled) to hold proposals")
+	}
 	if err := normalizeAgentKeySource(c); err != nil {
 		return err
 	}
@@ -1355,6 +1366,8 @@ func newViperWithDefaults() *viper.Viper {
 	vi.BindEnv("agent.rate_limit.requests_per_minute", "GJ_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE", "SG_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE", "SJ_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE") //nolint:errcheck
 	vi.BindEnv("agent.rate_limit.tokens_per_minute", "GJ_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE", "SG_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE", "SJ_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE")         //nolint:errcheck
 	vi.BindEnv("agent.lead.enabled", "GJ_AGENT_LEAD_ENABLED", "SG_AGENT_LEAD_ENABLED", "SJ_AGENT_LEAD_ENABLED")                                                                         //nolint:errcheck
+	vi.BindEnv("agent.write_approval", "GJ_AGENT_WRITE_APPROVAL", "SG_AGENT_WRITE_APPROVAL", "SJ_AGENT_WRITE_APPROVAL")                                                                 //nolint:errcheck
+	vi.BindEnv("agent.write_approval_ttl", "GJ_AGENT_WRITE_APPROVAL_TTL", "SG_AGENT_WRITE_APPROVAL_TTL", "SJ_AGENT_WRITE_APPROVAL_TTL")                                                 //nolint:errcheck
 	vi.BindEnv("agent.lead.provider", "GJ_AGENT_LEAD_PROVIDER", "SG_AGENT_LEAD_PROVIDER", "SJ_AGENT_LEAD_PROVIDER")                                                                     //nolint:errcheck
 	vi.BindEnv("agent.lead.model", "GJ_AGENT_LEAD_MODEL", "SG_AGENT_LEAD_MODEL", "SJ_AGENT_LEAD_MODEL")                                                                                 //nolint:errcheck
 	vi.BindEnv("agent.lead.api_key_env", "GJ_AGENT_LEAD_API_KEY_ENV", "SG_AGENT_LEAD_API_KEY_ENV", "SJ_AGENT_LEAD_API_KEY_ENV")                                                         //nolint:errcheck

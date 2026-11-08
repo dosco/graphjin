@@ -11,12 +11,15 @@ import (
 // The reply contract: what every Response from Agent.Run or Lead.Run promises
 // its caller, whichever agent produced it and however the run ended.
 //
-//   - Status is answered, needs_clarification, blocked or error. A status a
-//     model invented outside that set is an error, never an answer.
+//   - Status is answered, needs_clarification, needs_approval, blocked or
+//     error. A status a model invented outside that set is an error, never an
+//     answer.
 //   - A blocked reply carries a Refusal with a code, and only a blocked reply
 //     carries one.
 //   - An error reply carries at least one ErrorInfo.
 //   - A needs_clarification reply carries its question as Answer and no errors.
+//   - A needs_approval reply carries the held write as Approval, and only it
+//     does; its answer states, in the engine's words, that nothing changed yet.
 //
 // The agents know different things about why a run was blocked: the worker
 // knows its guard violations, the lead knows the refusals and failures of the
@@ -32,11 +35,25 @@ type replyFacts struct {
 	// no refusal but with failures is reported as the error it was, so a
 	// caller never retries a "refusal" that was really a timeout.
 	failures []ErrorInfo
+	// approval is a write the run held for the user's approval. Unless the
+	// run was blocked, the reply is needs_approval carrying it.
+	approval *Approval
 }
 
 // settleReply makes resp satisfy the reply contract.
 func settleReply(resp Response, facts replyFacts) Response {
 	resp = normalizeReplyStatus(resp)
+	if facts.approval != nil && resp.Status != StatusBlocked {
+		resp.Status = StatusNeedsApproval
+		resp.Approval = facts.approval
+	}
+	if resp.Status == StatusNeedsApproval && resp.Approval == nil {
+		resp.Status = StatusError
+		resp.Errors = append(resp.Errors, ErrorInfo{
+			Message:    "the reply says a change awaits approval but carries no proposal",
+			Extensions: map[string]any{"code": "agent_approval_missing"},
+		})
+	}
 	if resp.Status == StatusBlocked && resp.Refusal == nil && facts.refusal != nil {
 		resp.Refusal = facts.refusal(resp)
 	}
@@ -61,8 +78,20 @@ func settleReply(resp Response, facts replyFacts) Response {
 	case StatusNeedsClarification:
 		resp.Refusal = nil
 		resp.Errors = nil
+	case StatusNeedsApproval:
+		// The engine states what is pending: a model's wording could say the
+		// change was made. An answer that already carries the engine's sentence
+		// (the lead adds its own context around it) is kept.
+		resp.Refusal = nil
+		resp.Errors = nil
+		if sentence := approvalAnswer(resp.Approval); !strings.Contains(resp.Answer, sentence) {
+			resp.Answer = sentence
+		}
 	default:
 		resp.Refusal = nil
+	}
+	if resp.Status != StatusNeedsApproval {
+		resp.Approval = nil
 	}
 	return resp
 }
@@ -72,12 +101,12 @@ func settleReply(resp Response, facts replyFacts) Response {
 // model cannot slip an answer past them under an unknown status.
 func normalizeReplyStatus(resp Response) Response {
 	switch resp.Status {
-	case StatusAnswered, StatusNeedsClarification, StatusBlocked, StatusError:
+	case StatusAnswered, StatusNeedsClarification, StatusBlocked, StatusError, StatusNeedsApproval:
 	case "":
 		resp.Status = StatusAnswered
 	default:
 		resp.Errors = append(resp.Errors, ErrorInfo{
-			Message:    fmt.Sprintf("the agent replied with status %q, which is not answered, needs_clarification, blocked or error", resp.Status),
+			Message:    fmt.Sprintf("the agent replied with status %q, which is not answered, needs_clarification, needs_approval, blocked or error", resp.Status),
 			Extensions: map[string]any{"code": "agent_status_invalid"},
 		})
 		resp.Status = StatusError

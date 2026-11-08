@@ -44,6 +44,11 @@ func agentConfigFromService(conf *Config) gjagent.Config {
 	}
 	cfg := conf.Agent
 	cfg.TimeoutSeconds = gjagent.EffectiveTimeoutSeconds(cfg.TimeoutSeconds)
+	// The agent holds writes only when this service can store them.
+	cfg.WriteApproval = gjagent.WriteApprovalOff
+	if configApprovalsEnabled(conf) {
+		cfg.WriteApproval = gjagent.WriteApprovalRequired
+	}
 	return cfg
 }
 
