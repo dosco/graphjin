@@ -235,7 +235,7 @@ default catalog page sizes are tunable via `agent.seed_limit` (default 40) and
 Outbound model traffic can be bounded with
 `agent.rate_limit.requests_per_minute` and
 `agent.rate_limit.tokens_per_minute`. These process-local rolling-minute limits
-cover the REST and MCP agent, watch enrichment, and watch flows that use the
+cover the REST and MCP agent and the watch flows that use the
 server-owned `agent` provider credentials. They are distinct from the top-level
 inbound HTTP `rate_limiter`; multi-replica deployments divide the provider
 allowance across replicas. Waiting uses the existing agent context and deadline.
@@ -356,9 +356,9 @@ A calling agent should treat this as protocol, not prose: execute the
 The built-in agent always uses the provider, model, and credential source
 configured under `agent`: an environment variable (`agent.api_key_env`) or a
 key file (`agent.api_key_file`), never both. MCP clients do not supply a model.
-If the key is missing, `ask_graphjin_agent` and watch enrichment fail closed
-with `model_credentials_required`, and REST reports the same
-missing-credentials state.
+If the key is missing, `ask_graphjin_agent` fails closed with
+`model_credentials_required`, REST reports the same missing-credentials state,
+and a watch flow delivers its raw event with that code in `enrichment_json`.
 
 The client is built on every request, so the model source is hot. Rewrite
 the key file to rotate the key. Patch `provider`, `base_url`,
@@ -1382,8 +1382,8 @@ Durability semantics:
 - **Retention is enforced**: events are kept `event_retention_hours` (default
   168), at most `max_events_per_watch` (default 500) per watch, event
   snapshots and user-supplied definition JSON are capped at
-  `snapshot_max_bytes` (default 32KB), and read-only agent enrichment is
-  capped at `enrichment_daily_cap` per watch per day (default 10).
+  `snapshot_max_bytes` (default 32KB), and flow triage is capped at
+  `enrichment_daily_cap` runs per watch per day (default 10).
 - **Transient failures retry**: the runner keeps the watch active, records
   `evidence_json.retry`, and exponentially backs off to five minutes. After
   `watches.retry_max_failures` consecutive failures (default 5), it flips to

@@ -510,7 +510,7 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 			schedule.Cron != stringMapValue(existing, "schedule_cron") ||
 			schedule.Timezone != stringMapValue(existing, "schedule_tz") ||
 			watchMetricJSONText(metric, metered) != jsonMapString(existing, "metric_json")
-		_, existingEnrichCfg, existingEnrichEnabled, existingEnrichErr := normalizeWatchEnrichmentJSON(jsonMapString(existing, "enrich_json"))
+		existingEnrichCfg, existingEnrichEnabled, existingEnrichErr := storedWatchEnrichment(jsonMapString(existing, "enrich_json"))
 		existingFlowRequired := existingEnrichErr == nil && existingEnrichEnabled && existingEnrichCfg.Kind == "flow"
 		flowChanged = flowRequired != existingFlowRequired ||
 			(flowRequired && (existingEnrichErr != nil || enrichCfg.FlowHash != existingEnrichCfg.FlowHash))
@@ -1782,7 +1782,7 @@ func watchStoreRow(row map[string]any, rawIDs bool) map[string]any {
 	if evidence == nil {
 		evidence = map[string]any{}
 	}
-	_, enrichCfg, enrichEnabled, _ := normalizeWatchEnrichmentJSON(jsonMapString(row, "enrich_json"))
+	enrichCfg, enrichEnabled, _ := storedWatchEnrichment(jsonMapString(row, "enrich_json"))
 	flowRequired := enrichEnabled && enrichCfg.Kind == "flow"
 	flowReview := mapFromAny(evidence[watchFlowReviewKey])
 	actionReview := mapFromAny(evidence[watchActionReviewKey])

@@ -2496,7 +2496,7 @@
 				"enrichment_daily_cap": {
 					"type": "integer",
 					"title": "Watch Enrichment Daily Cap",
-					"description": "Maximum read-only agent enrichments per watch per day",
+					"description": "Maximum flow triage runs per watch per day",
 					"default": 10
 				},
 				"enrichment_workers": {

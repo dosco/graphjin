@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	ax "github.com/ax-llm/ax/packages/go"
 	gjagent "github.com/dosco/graphjin/agent/v3"
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/spf13/afero"
@@ -1485,61 +1486,107 @@ func TestWatchDeliveryWorkflowRunsUnderOwnerContext(t *testing.T) {
 	}
 }
 
-func TestWatchEnrichmentUsesReadOnlyOwnerEnvelope(t *testing.T) {
+// Agent enrichment woke the data agent directly with an interpretive brief it
+// is not built for. It is refused on write and points at the two supported
+// paths; a disabled block of it is dropped.
+func TestWatchAgentEnrichmentIsRefused(t *testing.T) {
 	db, svc := newSQLiteWatchService(t, 20)
 	if err := svc.initArtifactsBeforeCore(); err != nil {
 		t.Fatalf("initArtifactsBeforeCore: %v", err)
 	}
 	startSQLiteWatchCore(t, svc, db)
-	runner := &scriptedAgentRunner{resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "summary"}}
+	cp := newWatchControlPlane(svc)
+	ctx := contextWithUserRole(artifactUserCtx("user_1"), "analyst")
+	insert := func(name string, enrich map[string]any) (map[string]any, error) {
+		return cp.mutateRow(ctx, core.ManagedMutationRoot{
+			Table: watchesRootTable, Operation: "insert",
+			Input: map[string]interface{}{"name": name, "query": cursorOrdersWatchQuery(name), "enrich_json": enrich},
+		})
+	}
+	for _, enrich := range []map[string]any{
+		{"enabled": true, "instruction": "summarize"},
+		{"enabled": true, "kind": "agent", "instruction": "summarize", "max_steps": 2},
+	} {
+		_, err := insert("agent_enriched", enrich)
+		if err == nil || !strings.Contains(err.Error(), `delivery_json: { kind: "agent"`) || !strings.Contains(err.Error(), `kind "flow"`) {
+			t.Fatalf("enrich_json %v: err = %v, want a pointer to flow triage and agent delivery", enrich, err)
+		}
+	}
+	row, err := insert("agent_enrichment_off", map[string]any{"enabled": false, "instruction": "summarize"})
+	if err != nil {
+		t.Fatalf("a disabled agent enrichment block must be accepted: %v", err)
+	}
+	if enrich := stringFromAny(row["enrich_json"]); enrich != "" && enrich != "null" {
+		t.Fatalf("disabled agent enrichment stored as %q, want none", enrich)
+	}
+}
+
+// A watch stored before agent enrichment was removed keeps firing: its event
+// is delivered raw, no agent runs, and the watch is not paused.
+func TestStoredAgentEnrichmentDeliversTheRawEvent(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 20)
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+	runner := &scriptedAgentRunner{resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "should not run"}}
 	withScriptedAgentRunner(t, runner)
 
 	ctx := contextWithUserRole(artifactUserCtx("user_1"), "analyst")
-	cp := newWatchControlPlane(svc)
-	row, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
-		Table:     watchesRootTable,
-		Operation: "insert",
-		Input: map[string]interface{}{
-			"name":        "enriched_orders",
-			"query":       cursorOrdersWatchQuery("enriched_orders"),
-			"enrich_json": map[string]any{"enabled": true, "instruction": "summarize", "max_steps": 99},
-		},
+	row, err := newWatchControlPlane(svc).mutateRow(ctx, core.ManagedMutationRoot{
+		Table: watchesRootTable, Operation: "insert",
+		Input: map[string]interface{}{"name": "legacy_enriched", "query": cursorOrdersWatchQuery("legacy_enriched")},
 	})
 	if err != nil {
 		t.Fatalf("insert watch: %v", err)
 	}
+	legacy := `{"enabled":true,"instruction":"summarize","max_steps":4}`
+	if cfg, enabled, err := storedWatchEnrichment(legacy); err != nil || enabled || cfg.Kind != "" {
+		t.Fatalf("stored legacy enrichment = %+v enabled=%v err=%v, want none", cfg, enabled, err)
+	}
 	def := watchRuntimeDefinition{
-		ID:         row["id"].(string),
-		Name:       "enriched_orders",
-		Query:      cursorOrdersWatchQuery("enriched_orders"),
-		EnrichJSON: `{"enabled":true,"instruction":"summarize","max_steps":99}`,
-		AccountID:  "acct_1",
-		OwnerID:    "user_1",
-		OwnerRole:  "analyst",
+		ID: row["id"].(string), Name: "legacy_enriched", Query: cursorOrdersWatchQuery("legacy_enriched"),
+		EnrichJSON: legacy, AccountID: "acct_1", OwnerID: "user_1", OwnerRole: "analyst",
 	}
-	if _, _, err := svc.persistWatchResult(ctx, &def, &core.Result{Data: json.RawMessage(`{"data":{"orders":[{"id":3}]}}`)}); err != nil {
-		t.Fatalf("persist watch result: %v", err)
+	if _, inserted, err := svc.persistWatchResult(ctx, &def, &core.Result{Data: json.RawMessage(`{"data":{"orders":[{"id":3}]}}`)}); err != nil || !inserted {
+		t.Fatalf("persist watch result: inserted=%v err=%v", inserted, err)
 	}
-	if !runner.conf.ReadOnly || runner.conf.MaxSteps != 4 {
-		t.Fatalf("enrichment config = %+v, want read-only max_steps=4", runner.conf)
+	if runner.ctx != nil {
+		t.Fatalf("a stored agent enrichment must not run an agent, got %+v", runner.req)
 	}
-	if got, _ := runner.ctx.Value(core.UserRoleKey).(string); got != "analyst" {
-		t.Fatalf("runner role = %q, want analyst", got)
-	}
-	events, ok := runner.req.Context["_watch_events"].([]any)
-	if !ok || len(events) != 1 {
-		t.Fatalf("missing _watch_events context: %+v", runner.req.Context)
-	}
-	var status, enrichment string
+	var status string
+	var enrichment sql.NullString
 	if err := db.QueryRow(`SELECT delivery_status, enrichment_json FROM "_graphjin_watch_events"`).Scan(&status, &enrichment); err != nil {
-		t.Fatalf("query enrichment: %v", err)
+		t.Fatalf("query event: %v", err)
 	}
-	if status != "pending" || !strings.Contains(enrichment, `"status":"ok"`) || !strings.Contains(enrichment, "summary") {
-		t.Fatalf("status=%q enrichment=%s", status, enrichment)
+	if status != "pending" || (enrichment.Valid && enrichment.String != "" && enrichment.String != "null") {
+		t.Fatalf("status=%q enrichment=%v, want a raw pending event", status, enrichment)
 	}
 }
 
-func TestWatchEnrichmentRequiresServerModelCredentials(t *testing.T) {
+// insertFlowWatch stores a flow-triaged watch and returns it with its
+// normalized enrich_json, the form the runner reads.
+func insertFlowWatch(t *testing.T, svc *graphjinService, ctx context.Context, name string, extra map[string]interface{}) (string, string) {
+	t.Helper()
+	input := map[string]interface{}{
+		"name": name, "query": cursorOrdersWatchQuery(name),
+		"enrich_json": map[string]any{"enabled": true, "kind": "flow", "flow": "default_watch_triage"},
+	}
+	for k, v := range extra {
+		input[k] = v
+	}
+	row, err := newWatchControlPlane(svc).mutateRow(ctx, core.ManagedMutationRoot{Table: watchesRootTable, Operation: "insert", Input: input})
+	if err != nil {
+		t.Fatalf("insert flow watch: %v", err)
+	}
+	stored, err := svc.internalWatchStoreRow(ctx, stringFromAny(row["id"]))
+	if err != nil {
+		t.Fatalf("load watch: %v", err)
+	}
+	return stringFromAny(row["id"]), jsonMapString(stored, "enrich_json")
+}
+
+func TestWatchFlowRequiresServerModelCredentials(t *testing.T) {
 	const keyEnv = "GRAPHJIN_TEST_WATCH_MISSING_KEY"
 	t.Setenv(keyEnv, "")
 	db, svc := newSQLiteWatchService(t, 20)
@@ -1550,62 +1597,37 @@ func TestWatchEnrichmentRequiresServerModelCredentials(t *testing.T) {
 	startSQLiteWatchCore(t, svc, db)
 
 	ctx := contextWithUserRole(artifactUserCtx("user_1"), "analyst")
-	row, err := newWatchControlPlane(svc).mutateRow(ctx, core.ManagedMutationRoot{
-		Table:     watchesRootTable,
-		Operation: "insert",
-		Input: map[string]interface{}{
-			"name":        "missing_model_credentials",
-			"query":       cursorOrdersWatchQuery("missing_model_credentials"),
-			"enrich_json": map[string]any{"enabled": true, "instruction": "summarize"},
-		},
-	})
-	if err != nil {
-		t.Fatalf("insert watch: %v", err)
-	}
+	watchID, enrichJSON := insertFlowWatch(t, svc, ctx, "missing_model_credentials", nil)
 	def := watchRuntimeDefinition{
-		ID: row["id"].(string), Name: "missing_model_credentials",
+		ID: watchID, Name: "missing_model_credentials",
 		Query:      cursorOrdersWatchQuery("missing_model_credentials"),
-		EnrichJSON: `{"enabled":true,"instruction":"summarize"}`,
+		EnrichJSON: enrichJSON,
 		AccountID:  "acct_1", OwnerID: "user_1", OwnerRole: "analyst",
 	}
 	if _, _, err := svc.persistWatchResult(ctx, &def, &core.Result{Data: json.RawMessage(`{"data":{"orders":[{"id":9}]}}`)}); err != nil {
 		t.Fatalf("persist watch result: %v", err)
 	}
-	var enrichment string
-	if err := db.QueryRow(`SELECT enrichment_json FROM "_graphjin_watch_events"`).Scan(&enrichment); err != nil {
+	var status, enrichment string
+	if err := db.QueryRow(`SELECT delivery_status, enrichment_json FROM "_graphjin_watch_events"`).Scan(&status, &enrichment); err != nil {
 		t.Fatalf("query enrichment: %v", err)
 	}
-	if !strings.Contains(enrichment, `"code":"`+modelCredentialsRequiredCode+`"`) {
-		t.Fatalf("watch enrichment missing credential code: %s", enrichment)
+	if status != "pending" || !strings.Contains(enrichment, `"code":"`+modelCredentialsRequiredCode+`"`) {
+		t.Fatalf("status=%q enrichment=%s, want a fail-open event with the credential code", status, enrichment)
 	}
 }
 
-func TestWatchEnrichmentDailyCapSkipStillDelivers(t *testing.T) {
+func TestWatchFlowDailyCapSkipStillDelivers(t *testing.T) {
 	db, svc := newSQLiteWatchService(t, 20)
 	svc.conf.Core.Watches.EnrichmentDailyCap = 1
 	if err := svc.initArtifactsBeforeCore(); err != nil {
 		t.Fatalf("initArtifactsBeforeCore: %v", err)
 	}
 	startSQLiteWatchCore(t, svc, db)
-	runner := &scriptedAgentRunner{resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "should not run"}}
-	withScriptedAgentRunner(t, runner)
+	client := &watchFlowTestClient{content: `{"verdict":"discard","severity":"info","summary":"should not run"}`}
+	svc.agentClientFactory = func(gjagent.Config) (ax.AIClient, error) { return client, nil }
 
 	ctx := contextWithUserRole(artifactUserCtx("user_1"), "analyst")
-	cp := newWatchControlPlane(svc)
-	row, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
-		Table:     watchesRootTable,
-		Operation: "insert",
-		Input: map[string]interface{}{
-			"name":          "cap_orders",
-			"query":         cursorOrdersWatchQuery("cap_orders"),
-			"delivery_json": map[string]any{"kind": "inbox"},
-			"enrich_json":   map[string]any{"enabled": true, "instruction": "summarize"},
-		},
-	})
-	if err != nil {
-		t.Fatalf("insert watch: %v", err)
-	}
-	watchID := row["id"].(string)
+	watchID, enrichJSON := insertFlowWatch(t, svc, ctx, "cap_orders", map[string]interface{}{"delivery_json": map[string]any{"kind": "inbox"}})
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := svc.internalStoreMutationRows(ctx, "watch_events", `insert: $input`, watchEventStoreFields, map[string]any{"input": map[string]any{
 		"id":                "seed_enriched_event",
@@ -1633,7 +1655,7 @@ func TestWatchEnrichmentDailyCapSkipStillDelivers(t *testing.T) {
 		Name:         "cap_orders",
 		Query:        cursorOrdersWatchQuery("cap_orders"),
 		DeliveryJSON: `{"kind":"inbox"}`,
-		EnrichJSON:   `{"enabled":true,"instruction":"summarize"}`,
+		EnrichJSON:   enrichJSON,
 		AccountID:    "acct_1",
 		OwnerID:      "user_1",
 		OwnerRole:    "analyst",
@@ -1645,15 +1667,17 @@ func TestWatchEnrichmentDailyCapSkipStillDelivers(t *testing.T) {
 	if !inserted {
 		t.Fatal("expected capped event insert")
 	}
-	if runner.ctx != nil {
-		t.Fatalf("daily cap should skip agent runner, got request %+v", runner.req)
-	}
-	eventID := watchEventID(watchID, dataHash)
+	// A flow-triaged event is keyed by its data and the flow that judged it.
+	flowCfg, _, _ := storedWatchEnrichment(enrichJSON)
+	eventID := watchEventID(watchID, hashString(dataHash+":"+flowCfg.FlowHash))
 	var status, enrichment string
 	if err := db.QueryRow(`SELECT delivery_status, enrichment_json FROM "_graphjin_watch_events" WHERE id = ?`, eventID).Scan(&status, &enrichment); err != nil {
 		t.Fatalf("query capped enrichment: %v", err)
 	}
-	if status != "pending" || !strings.Contains(enrichment, `"reason":"daily_cap"`) {
+	if client.calls != 0 {
+		t.Fatalf("daily cap should skip the flow model, got %d calls", client.calls)
+	}
+	if status != "pending" || !strings.Contains(enrichment, `"error":"daily_cap"`) {
 		t.Fatalf("daily-cap event status=%q enrichment=%s", status, enrichment)
 	}
 	if err := svc.processPendingWatchDeliveries(context.Background()); err != nil {
@@ -1662,7 +1686,7 @@ func TestWatchEnrichmentDailyCapSkipStillDelivers(t *testing.T) {
 	if err := db.QueryRow(`SELECT delivery_status, enrichment_json FROM "_graphjin_watch_events" WHERE id = ?`, eventID).Scan(&status, &enrichment); err != nil {
 		t.Fatalf("query capped delivery: %v", err)
 	}
-	if status != "delivered" || !strings.Contains(enrichment, `"reason":"daily_cap"`) {
+	if status != "delivered" || !strings.Contains(enrichment, `"error":"daily_cap"`) {
 		t.Fatalf("daily-cap delivery status=%q enrichment=%s", status, enrichment)
 	}
 }

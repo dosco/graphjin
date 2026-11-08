@@ -44,7 +44,7 @@ mutation {
 }
 ```
 
-Pause and resume via `status` / `enabled` updates; remove with `gj_watch(delete)`. Optional fields: `variables_json`, `delivery_json` (inbox digest, webhook, or workflow targets), `enrich_json` (inline AxFlow triage or legacy read-only agent enrichment), and `absence_json` (source-silence detection). `condition_js` remains stored for compatibility but is not executed by the current watch runner. User-supplied JSON fields are size-capped at `snapshot_max_bytes`.
+Pause and resume via `status` / `enabled` updates; remove with `gj_watch(delete)`. Optional fields: `variables_json`, `delivery_json` (inbox digest, webhook, workflow, or agent targets), `enrich_json` (inline AxFlow triage), and `absence_json` (source-silence detection). `condition_js` remains stored for compatibility but is not executed by the current watch runner. User-supplied JSON fields are size-capped at `snapshot_max_bytes`.
 
 ## Absence watches
 
@@ -215,7 +215,7 @@ The filter must be conjunctive and non-self with `watch_id` `eq` or `in`. `or` a
 
 - **Restart-safe**: definitions, events, and subscription cursor checkpoints (`last_cursor_json`) are store rows; on boot the runner reloads every `enabled + active + approved` watch and resumes evaluation from the persisted cursor.
 - **Downtime**: durable watches require cursor-capable subscriptions. The subscription cursor defines what is new after restart; `last_data_hash` remains only as a defensive idempotency guard so repeated payloads do not create duplicate inbox events.
-- **Retention**: events are kept `event_retention_hours` (default 168) and capped at `max_events_per_watch` (default 500); event snapshots are capped at `snapshot_max_bytes` (default 32KB); flow and legacy agent enrichment share `enrichment_daily_cap` per watch per day (default 10).
+- **Retention**: events are kept `event_retention_hours` (default 168) and capped at `max_events_per_watch` (default 500); event snapshots are capped at `snapshot_max_bytes` (default 32KB); flow triage is capped at `enrichment_daily_cap` runs per watch per day (default 10).
 - **Failure**: transient subscription or processing errors keep the watch active, increment `failure_count`, record `evidence_json.retry`, and exponentially back off up to five minutes. At `retry_max_failures` (default 5) the watch moves to terminal `status: "error"`; it is never auto-deleted. Deterministic definition errors are terminal immediately, while safety drift pauses for review.
 
 {{< verified by="TestWatchRunnerPersistsEventsIdempotentlyAndNotices" file="serv/watches_test.go" line="251" >}}

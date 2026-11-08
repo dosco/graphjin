@@ -75,9 +75,15 @@ func watchFlowHasTriageContract(canonical string) bool {
 		strings.Contains(compact, `summary:string(max 280)`)
 }
 
+// errWatchAgentEnrichmentRemoved rejects the removed agent enrichment. It woke
+// the data agent directly with an interpretive brief it is not built for; a
+// routine (delivery_json kind "agent") runs the same prompt on the lead, in a
+// thread.
+var errWatchAgentEnrichmentRemoved = errors.New(`enrich_json agent enrichment was removed: use enrich_json kind "flow" for triage, or delivery_json: { kind: "agent", prompt: "..." } to run an agent turn when the watch fires`)
+
 // normalizeWatchEnrichmentJSON validates flow-backed enrichment and stores the
-// canonical Mermaid inline with the watch. Legacy agent enrichment is retained
-// unchanged apart from stable JSON encoding.
+// canonical Mermaid inline with the watch. A disabled block of the removed
+// agent kind normalizes to no enrichment; an enabled one is refused.
 func normalizeWatchEnrichmentJSON(raw string) (string, watchEnrichmentConfig, bool, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || raw == "null" || raw == "{}" {
@@ -91,42 +97,45 @@ func normalizeWatchEnrichmentJSON(raw string) (string, watchEnrichmentConfig, bo
 	kind := strings.ToLower(strings.TrimSpace(stringFromAny(value["kind"])))
 	switch kind {
 	case "flow":
-		flowRef := strings.TrimSpace(stringFromAny(value["flow"]))
-		canonical, flowHash, err := canonicalWatchFlow(flowRef)
-		if err != nil {
-			return "", watchEnrichmentConfig{}, false, err
-		}
-		storedFlow := canonical
-		if flowRef == "default_watch_triage" {
-			storedFlow = flowRef
-		}
-		value = map[string]any{
-			"enabled":   enabled,
-			"kind":      "flow",
-			"flow":      storedFlow,
-			"flow_hash": flowHash,
-		}
-		out, _ := json.Marshal(value)
-		return string(out), watchEnrichmentConfig{
-			Enabled: enabled, Kind: "flow", Flow: storedFlow,
-			CanonicalFlow: canonical, FlowHash: flowHash,
-		}, enabled, nil
 	case "", "agent":
-		// Blank is the legacy agent-enrichment spelling.
+		// Blank was the agent-enrichment spelling.
+		if !enabled {
+			return "", watchEnrichmentConfig{}, false, nil
+		}
+		return "", watchEnrichmentConfig{}, false, errWatchAgentEnrichmentRemoved
 	default:
 		return "", watchEnrichmentConfig{}, false, fmt.Errorf("unsupported enrich_json kind %q", kind)
 	}
-	out, err := json.Marshal(value)
+	flowRef := strings.TrimSpace(stringFromAny(value["flow"]))
+	canonical, flowHash, err := canonicalWatchFlow(flowRef)
 	if err != nil {
 		return "", watchEnrichmentConfig{}, false, err
 	}
-	cfg := watchEnrichmentConfig{
-		Enabled:     enabled,
-		Kind:        "agent",
-		Instruction: stringFromAny(value["instruction"]),
-		MaxSteps:    intFromAny(value["max_steps"]),
+	storedFlow := canonical
+	if flowRef == "default_watch_triage" {
+		storedFlow = flowRef
 	}
-	return string(out), cfg, enabled, nil
+	out, _ := json.Marshal(map[string]any{
+		"enabled":   enabled,
+		"kind":      "flow",
+		"flow":      storedFlow,
+		"flow_hash": flowHash,
+	})
+	return string(out), watchEnrichmentConfig{
+		Enabled: enabled, Kind: "flow", Flow: storedFlow,
+		CanonicalFlow: canonical, FlowHash: flowHash,
+	}, enabled, nil
+}
+
+// storedWatchEnrichment reads a stored watch's enrichment. A watch written
+// before agent enrichment was removed keeps running and delivers its raw
+// event, the same as a watch with no enrichment, instead of being paused.
+func storedWatchEnrichment(raw string) (watchEnrichmentConfig, bool, error) {
+	_, cfg, enabled, err := normalizeWatchEnrichmentJSON(raw)
+	if errors.Is(err, errWatchAgentEnrichmentRemoved) {
+		return watchEnrichmentConfig{}, false, nil
+	}
+	return cfg, enabled, err
 }
 
 func (s *graphjinService) runWatchFlow(ctx context.Context, cfg watchEnrichmentConfig, inputs map[string]ax.Value) (watchFlowRun, error) {

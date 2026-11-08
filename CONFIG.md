@@ -1206,7 +1206,7 @@ stateless and legacy stateful MCP routing is automatic.
 
 `agent.rate_limit` governs outbound model traffic and is separate from the
 top-level `rate_limiter`, which protects inbound GraphJin HTTP requests. Limits
-are shared by REST, MCP, watch enrichment, watch flows, and other Ax calls that
+are shared by REST, MCP, watch flows, and other Ax calls that
 use the configured `agent` provider inside one GraphJin process. In a
 multi-replica deployment, divide the provider allowance across replicas.
 The matching environment overrides are

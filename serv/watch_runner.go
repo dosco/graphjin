@@ -298,7 +298,7 @@ func (s *graphjinService) loadRunnableWatches(ctx context.Context) ([]watchRunti
 		if evidence == nil {
 			evidence = map[string]any{}
 		}
-		_, enrichCfg, enrichEnabled, enrichErr := normalizeWatchEnrichmentJSON(def.EnrichJSON)
+		enrichCfg, enrichEnabled, enrichErr := storedWatchEnrichment(def.EnrichJSON)
 		if enrichErr != nil {
 			if err := s.pauseWatchForReview(ctx, row, watchReviewPending); err != nil {
 				s.recordWatchRunnerError("pause invalid watch enrichment", err, map[string]any{"watch_id": def.ID})

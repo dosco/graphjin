@@ -67,8 +67,6 @@ type watchEnrichmentConfig struct {
 	Flow          string
 	CanonicalFlow string
 	FlowHash      string
-	Instruction   string
-	MaxSteps      int
 }
 
 type watchDeliveryEvent struct {
@@ -829,75 +827,13 @@ func (s *graphjinService) deliverWatchWorkflow(ctx context.Context, def watchRun
 	return receipt, nil
 }
 
+// enrichWatchEvent runs a watch's flow triage, the only enrichment, and
+// reports whether the event should still notify.
 func (s *graphjinService) enrichWatchEvent(ctx context.Context, def *watchRuntimeDefinition, eventID, dataJSON, evidenceJSON string, cfg watchEnrichmentConfig) (bool, error) {
-	if def == nil {
+	if def == nil || cfg.Kind != "flow" {
 		return true, nil
 	}
-	started := time.Now()
-	if cfg.Kind == "flow" {
-		return s.triageWatchEvent(ctx, def, eventID, dataJSON, evidenceJSON, cfg)
-	}
-	status := "pending"
-	enrichment := map[string]any{}
-	if cfg.MaxSteps <= 0 || cfg.MaxSteps > 4 {
-		cfg.MaxSteps = 4
-	}
-	if strings.TrimSpace(cfg.Instruction) == "" {
-		cfg.Instruction = "Summarize this watch event, explain why it matters, and suggest the next safe action."
-	}
-	if s.watchEnrichmentDailyCapReached(ctx, def.ID) {
-		enrichment = map[string]any{"status": "skipped", "reason": "daily_cap"}
-		return true, s.storeWatchEnrichment(ctx, eventID, status, false, enrichment)
-	}
-	ownerCtx := s.watchOwnerContext(ctx, *def)
-	agentConf := agentConfigFromService(s.conf)
-	agentConf.ReadOnly = true
-	agentConf.MaxSteps = cfg.MaxSteps
-	runner, err := newGraphJinAgentRunner(s, agentConf)
-	if err != nil {
-		enrichment = map[string]any{"status": "error", "error": err.Error()}
-		if errors.Is(err, gjagent.ErrMissingAPIKey) {
-			enrichment["code"] = modelCredentialsRequiredCode
-			err = fmt.Errorf("%s: GraphJin-owned model credentials are required: %w", modelCredentialsRequiredCode, err)
-		}
-		if storeErr := s.storeWatchEnrichment(ctx, eventID, status, false, enrichment); storeErr != nil {
-			return true, storeErr
-		}
-		return true, err
-	}
-	req := gjagent.Request{
-		Instruction: cfg.Instruction,
-		Context: map[string]any{
-			"_watch_events": []any{map[string]any{
-				"id":            eventID,
-				"watch_id":      def.ID,
-				"data_json":     parseJSONValue(dataJSON),
-				"evidence_json": parseJSONValue(evidenceJSON),
-			}},
-			"watch": map[string]any{"id": def.ID, "name": def.Name},
-		},
-		MaxSteps:     cfg.MaxSteps,
-		Capabilities: s.agentCapabilityProfile(ownerCtx),
-	}
-	resp, err := runner.Run(ownerCtx, req)
-	recordAgentUsageObservability(s, nil, "watch_enrichment", agentConf, resp, time.Since(started))
-	if err != nil {
-		enrichment = map[string]any{"status": "error", "error": err.Error()}
-		if errors.Is(err, gjagent.ErrMissingAPIKey) {
-			enrichment["code"] = modelCredentialsRequiredCode
-			err = fmt.Errorf("%s: GraphJin-owned model credentials are required: %w", modelCredentialsRequiredCode, err)
-		}
-		if storeErr := s.storeWatchEnrichment(ctx, eventID, status, false, enrichment); storeErr != nil {
-			return true, storeErr
-		}
-		return true, err
-	}
-	enrichment = map[string]any{
-		"status":       "ok",
-		"generated_at": time.Now().UTC().Format(time.RFC3339),
-		"response":     resp,
-	}
-	return true, s.storeWatchEnrichment(ctx, eventID, status, false, enrichment)
+	return s.triageWatchEvent(ctx, def, eventID, dataJSON, evidenceJSON, cfg)
 }
 
 func (s *graphjinService) triageWatchEvent(ctx context.Context, def *watchRuntimeDefinition, eventID, dataJSON, evidenceJSON string, cfg watchEnrichmentConfig) (bool, error) {
@@ -1094,7 +1030,7 @@ func parseWatchWorkflowConfig(raw any) watchWorkflowConfig {
 }
 
 func parseWatchEnrichmentConfig(raw string) (watchEnrichmentConfig, bool) {
-	_, cfg, enabled, err := normalizeWatchEnrichmentJSON(raw)
+	cfg, enabled, err := storedWatchEnrichment(raw)
 	if err != nil {
 		return watchEnrichmentConfig{}, false
 	}

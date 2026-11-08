@@ -305,7 +305,7 @@ Ax provider clients default to temperature zero. Candidate hard gates cover
 behavioral recall, used-skill recall/precision, safety, prompt-token growth,
 actor turns, and absence of skill discovery; latency regressions are warnings.
 
-The agent and watch enrichment always use the demo's configured server model.
+The agent and watch flows always use the demo's configured server model.
 When its credential environment variable is empty, they return
 `model_credentials_required` instead of borrowing a client model.
 

@@ -121,7 +121,7 @@ func (s *graphjinService) watchActionProposal(
 			return watchActionProposal{}, fmt.Errorf("variables_json is invalid: %w", err)
 		}
 	}
-	_, enrichCfg, enrichEnabled, err := normalizeWatchEnrichmentJSON(enrichJSON)
+	enrichCfg, enrichEnabled, err := storedWatchEnrichment(enrichJSON)
 	if err != nil {
 		return watchActionProposal{}, err
 	}
@@ -364,7 +364,7 @@ func (h watchControlPlane) reviewWatch(ctx context.Context, root core.ManagedMut
 		}
 	}
 
-	_, enrichCfg, enrichEnabled, err := normalizeWatchEnrichmentJSON(jsonMapString(watchRow, "enrich_json"))
+	enrichCfg, enrichEnabled, err := storedWatchEnrichment(jsonMapString(watchRow, "enrich_json"))
 	if err != nil {
 		return nil, err
 	}
@@ -493,7 +493,7 @@ func (h watchControlPlane) applyWatchFlowReview(
 	default:
 		return fmt.Errorf("gj_watch flow review decision must be preview, approve, or reject")
 	}
-	_, cfg, enabled, err := normalizeWatchEnrichmentJSON(jsonMapString(watchRow, "enrich_json"))
+	cfg, enabled, err := storedWatchEnrichment(jsonMapString(watchRow, "enrich_json"))
 	if err != nil {
 		return err
 	}

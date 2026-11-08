@@ -173,8 +173,9 @@ When the caller has unreviewed [watch events](/agentic/watches/), agent response
 
 GraphJin always uses the provider, model, and credential environment variable
 configured under `agent`. If the configured credential is missing,
-`ask_graphjin_agent` and watch enrichment fail closed with
-`model_credentials_required`; REST reports the same missing-credentials state.
+`ask_graphjin_agent` fails closed with `model_credentials_required`; REST
+reports the same missing-credentials state, and a watch flow delivers its raw
+event with that code.
 The removed `agent.sampling` setting is rejected with migration guidance.
 
 ## OpenAI-compatible endpoints
@@ -324,7 +325,7 @@ the provider's advertised latency alone.
 `standard`, `flex`, or `priority`. Ax maps an explicit tier to the selected
 deployment's wire format and rejects it before transport when the profile/model
 pairing does not advertise support. The setting applies to the REST and MCP
-agent, recovery finalizers, watch enrichment, and watch flows; the separately
+agent, recovery finalizers, and watch flows; the separately
 configured semantic-search embedding client is unchanged.
 
 Use `GJ_AGENT_SERVICE_TIER` for environment-only deployments. `SG_` and `SJ_`
@@ -340,7 +341,7 @@ provider.
 top-level `rate_limiter` that protects inbound GraphJin HTTP traffic. Both
 `requests_per_minute` and `tokens_per_minute` are optional; zero or omission
 disables that dimension. The rolling-minute allowance is shared by the REST and
-MCP agent, watch enrichment, and watch flows inside one GraphJin process.
+MCP agent and watch flows inside one GraphJin process.
 Use `GJ_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE` and
 `GJ_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE` for environment-only deployments (`SG_`
 and `SJ_` remain compatibility aliases).
