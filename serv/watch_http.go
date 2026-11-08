@@ -184,7 +184,7 @@ func mergeWatchRESTInput(ctx context.Context, s *graphjinService, id string, inp
 		"variables_json":   jsonMapString(existing, "variables_json"),
 		"condition_js":     stringMapValue(existing, "condition_js"),
 		"delivery_json":    jsonMapString(existing, "delivery_json"),
-		"enrich_json":      jsonMapString(existing, "enrich_json"),
+		"enrich_json":      carriedWatchEnrichJSON(jsonMapString(existing, "enrich_json")),
 		"schedule":         watchScheduleProjection(existing),
 		"lifecycle":        watchLifecycle(stringMapValue(existing, "lifecycle")),
 		"lease_expires_at": stringMapValue(existing, "lease_expires_at"),

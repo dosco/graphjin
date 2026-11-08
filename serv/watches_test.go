@@ -1562,6 +1562,36 @@ func TestStoredAgentEnrichmentDeliversTheRawEvent(t *testing.T) {
 	if status != "pending" || (enrichment.Valid && enrichment.String != "" && enrichment.String != "null") {
 		t.Fatalf("status=%q enrichment=%v, want a raw pending event", status, enrichment)
 	}
+
+	// Updates carry the stored definition forward. The removed block must not
+	// make pausing the watch fail, over GraphQL or REST.
+	watchID := row["id"].(string)
+	if _, err := svc.internalStoreMutationRows(ctx, "watches", `where: { id: { eq: $id } }, update: $input`, watchStoreFields,
+		map[string]any{"id": watchID, "input": map[string]any{"enrich_json": nullableJSONString(legacy)}}); err != nil {
+		t.Fatalf("store legacy enrich_json: %v", err)
+	}
+	merged, err := mergeWatchRESTInput(ctx, svc, watchID, map[string]interface{}{"enabled": false})
+	if err != nil || stringFromAny(merged["enrich_json"]) != "" {
+		t.Fatalf("REST merge = %v err=%v, want the removed block dropped", merged["enrich_json"], err)
+	}
+	paused, err := newWatchControlPlane(svc).mutateRow(ctx, core.ManagedMutationRoot{
+		Table: watchesRootTable, Operation: "update",
+		Where: map[string]interface{}{"id": map[string]interface{}{"eq": watchID}},
+		Input: map[string]interface{}{"enabled": false},
+	})
+	if err != nil {
+		t.Fatalf("pausing a watch stored with agent enrichment: %v", err)
+	}
+	if paused["enabled"] != false {
+		t.Fatalf("paused watch = %+v", paused)
+	}
+	stored, err := svc.internalWatchStoreRow(ctx, watchID)
+	if err != nil {
+		t.Fatalf("load watch: %v", err)
+	}
+	if text := jsonMapString(stored, "enrich_json"); text != "" && text != "null" {
+		t.Fatalf("enrich_json after update = %q, want the removed block gone", text)
+	}
 }
 
 // insertFlowWatch stores a flow-triaged watch and returns it with its

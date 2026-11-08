@@ -665,7 +665,11 @@ func (h watchControlPlane) completeWatchUpdateInput(ctx context.Context, root co
 		input["lease_expires_at"] = leaseExpiresAt
 	}
 	for _, field := range []string{"variables_json", "delivery_json", "enrich_json", "absence_json"} {
-		if text := jsonMapString(existing, field); text != "" {
+		text := jsonMapString(existing, field)
+		if field == "enrich_json" {
+			text = carriedWatchEnrichJSON(text)
+		}
+		if text != "" {
 			input[field] = text
 		}
 	}

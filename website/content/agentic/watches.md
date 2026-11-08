@@ -44,7 +44,7 @@ mutation {
 }
 ```
 
-Pause and resume via `status` / `enabled` updates; remove with `gj_watch(delete)`. Optional fields: `variables_json`, `delivery_json` (inbox digest, webhook, workflow, or agent targets), `enrich_json` (inline AxFlow triage), and `absence_json` (source-silence detection). `condition_js` remains stored for compatibility but is not executed by the current watch runner. User-supplied JSON fields are size-capped at `snapshot_max_bytes`.
+Pause and resume via `status` / `enabled` updates; remove with `gj_watch(delete)`. Optional fields: `variables_json`, `delivery_json` (inbox digest, webhook, workflow, or `kind: "agent"`, which runs `prompt` as a read-only [lead](/agentic/lead-agent/) turn in a thread when the watch fires), `enrich_json` (inline AxFlow triage), and `absence_json` (source-silence detection). `condition_js` remains stored for compatibility but is not executed by the current watch runner. User-supplied JSON fields are size-capped at `snapshot_max_bytes`.
 
 ## Absence watches
 

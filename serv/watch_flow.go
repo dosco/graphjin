@@ -138,6 +138,17 @@ func storedWatchEnrichment(raw string) (watchEnrichmentConfig, bool, error) {
 	return cfg, enabled, err
 }
 
+// carriedWatchEnrichJSON is the stored enrich_json an update keeps when the
+// caller did not send one. The removed agent kind is dropped rather than
+// re-validated, so pausing or editing an old watch is not refused for a
+// setting the runner already ignores.
+func carriedWatchEnrichJSON(stored string) string {
+	if _, _, _, err := normalizeWatchEnrichmentJSON(stored); errors.Is(err, errWatchAgentEnrichmentRemoved) {
+		return ""
+	}
+	return stored
+}
+
 func (s *graphjinService) runWatchFlow(ctx context.Context, cfg watchEnrichmentConfig, inputs map[string]ax.Value) (watchFlowRun, error) {
 	started := time.Now()
 	if cfg.Kind != "flow" || !cfg.Enabled {
