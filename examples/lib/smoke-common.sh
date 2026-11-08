@@ -824,10 +824,10 @@ run_artifact_suite() {
   graphql artifact-cleanup-2 "mutation { gj_artifacts(delete: true, where: { id: { eq: \"${big_id}\" } }) { id } }" >/dev/null 2>&1 || true
 }
 
-# Structured refusal e2e: force an evidence-less raw mutation attempt; the Go
-# protocol guard blocks it and the response must carry the machine-actionable
-# refusal object. Model-dependent only in whether the model ATTEMPTS the
-# mutation, so retry up to 3 times for a blocked outcome. A model that gathers
+# Structured refusal e2e: ask for an evidence-less raw mutation; a protocol
+# guard blocks it and the response must carry the machine-actionable refusal
+# object. Model-dependent in whether the model attempts the mutation and which
+# guard stops it, so retry up to 3 times for a blocked outcome. A model that gathers
 # evidence anyway can land the insert, so every exit deletes row 999999.
 run_refusal_suite() {
   local table="$1"
@@ -847,10 +847,16 @@ run_refusal_suite() {
     jq . "$out" >&2 || cat "$out" >&2
     return 1
   fi
+  # Through the lead, the worker receives the mutation without the "skip
+  # discovery" framing and may gather evidence first, so which guard blocks
+  # (an evidence requirement, a value check) is the model's path. The contract
+  # is that a guard's block arrives as a retryable refusal with unblock steps;
+  # the generic agent_blocked code means no guard stood behind the block.
   assert_jq "$out" '
     .refusal != null
     and (.refusal.code | type) == "string"
-    and (.refusal.code | test("raw_graphql_catalog_required|raw_graphql_discovery_required|mutation_evidence_required|security_runtime_discovery_required|workflow_detail_required"))
+    and (.refusal.code | length) > 0
+    and .refusal.code != "agent_blocked"
     and (.refusal.retryable == true)
     and ((.refusal.unblock | length) > 0)
   ' "blocked response carries structured refusal with unblock steps"
