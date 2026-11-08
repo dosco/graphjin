@@ -209,6 +209,22 @@ export async function runsForThread(threadID) {
   return data.gj_thread_run || [];
 }
 
+// fetchApproval reads one held write, so a reloaded thread shows whether it
+// was already decided.
+export function fetchApproval(id) {
+  return fetchJSON(`/api/v1/agent/approvals/${encodeURIComponent(id)}`);
+}
+
+// decideApproval approves or rejects a held write. The hash pins the exact
+// query the user saw; a stale or wrong hash is refused.
+export function decideApproval(id, decision, hash) {
+  return fetchJSON(`/api/v1/agent/approvals/${encodeURIComponent(id)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision, hash }),
+  });
+}
+
 export function cancelRun(runID) {
   return fetchJSON(`/api/v1/agent/runs/${encodeURIComponent(runID)}/cancel`, { method: "POST" }).then((payload) => payload?.data);
 }

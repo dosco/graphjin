@@ -11,6 +11,8 @@ import {
   createProfile,
   createThread,
   fetchThread,
+  fetchApproval,
+  decideApproval,
   followRun,
   listProfiles,
   listThreads,
@@ -54,8 +56,8 @@ const promptStarters = [
     text: "Any security issues?",
   },
   {
-    label: "Saved queries",
-    text: "What saved queries are there?",
+    label: "Data",
+    text: "What data can I ask about?",
   },
 ];
 
@@ -88,6 +90,17 @@ const AgentChat = () => {
   const activeProfile = profileForThread(threads.find((thread) => thread.id === threadID), profiles);
   const [newAgentOpen, setNewAgentOpen] = React.useState(false);
   const [messages, setMessages] = React.useState(initialMessages);
+  // After an approval decision the server posts its outcome into the thread;
+  // reload so it shows below the card.
+  const reloadThread = React.useCallback(async () => {
+    if (!threadID) {
+      return;
+    }
+    const thread = await fetchThread(threadID);
+    if (thread) {
+      setMessages(messagesFromThread(thread));
+    }
+  }, [threadID]);
   const [activeRunID, setActiveRunID] = React.useState("");
   const [resuming, setResuming] = React.useState(false);
   const [instruction, setInstruction] = React.useState("");
@@ -363,7 +376,7 @@ const AgentChat = () => {
               ) : (
                 messages.map((message, index) => (
                   <MessageScrollerItem key={message.id} scrollAnchor={index === messages.length - 1 && !pending}>
-                    <ChatMessage message={message} onPinTask={pinTask} onInspect={setInspection} />
+                    <ChatMessage message={message} onPinTask={pinTask} onInspect={setInspection} onApprovalDecided={reloadThread} />
                   </MessageScrollerItem>
                 ))
               )}
@@ -973,7 +986,7 @@ function AgentDisabledAlert({ status }) {
   );
 }
 
-function ChatMessage({ message, onPinTask, onInspect }) {
+function ChatMessage({ message, onPinTask, onInspect, onApprovalDecided }) {
   const isUser = message.role === "user";
   const response = message.response;
   return (
@@ -993,6 +1006,9 @@ function ChatMessage({ message, onPinTask, onInspect }) {
             {isUser ? <div className="whitespace-pre-wrap break-words">{message.content}</div> : <MarkdownContent value={message.content} />}
           </BubbleContent>
         </Bubble>
+        {response?.status === "needs_approval" && response.approval && (
+          <ApprovalCard approval={response.approval} onDecided={onApprovalDecided} />
+        )}
         {response && <NoticeList notices={response.notices} onPinTask={onPinTask} />}
         {response?.errors?.length > 0 && <NoticeFrame title="Agent errors" message={response.errors.map((error) => error.message).filter(Boolean).join(" · ")} variant="destructive" />}
       </MessageContent>
@@ -1137,6 +1153,106 @@ function AgentNotice({ notice, onPinTask }) {
     );
   }
   return <NoticeFrame title={kind.replaceAll("_", " ")} message={notice.message} />;
+}
+
+// ApprovalCard is a write the agent held for the user. The exact query runs
+// only on Approve, once; the card reads the approval's current state, so a
+// reloaded thread never offers a decision that was already made.
+export function ApprovalCard({ approval, onDecided }) {
+  const [state, setState] = React.useState({ status: "pending", error: "", result: null });
+  const [deciding, setDeciding] = React.useState("");
+
+  React.useEffect(() => {
+    let cancelled = false;
+    fetchApproval(approval.id)
+      .then((row) => {
+        if (!cancelled && row?.status) {
+          setState({ status: row.status, error: row.error || "", result: row.result || null });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [approval.id]);
+
+  async function decide(decision) {
+    setDeciding(decision);
+    try {
+      const row = await decideApproval(approval.id, decision, approval.hash);
+      setState({ status: row?.status || decision, error: row?.error || "", result: row?.result || null });
+      await onDecided?.();
+    } catch (error) {
+      setState((current) => ({ ...current, error: error.message || "The decision failed." }));
+    } finally {
+      setDeciding("");
+    }
+  }
+
+  const pending = state.status === "pending";
+  const preview = approval.preview || {};
+  const sample = Array.isArray(preview.sample) ? preview.sample.slice(0, 3) : [];
+  return (
+    <section aria-label="Change awaiting approval" className="grid w-full gap-3 rounded-lg bg-card p-3 text-sm">
+      <div className="min-w-0">
+        <p className="font-semibold first-letter:uppercase">{approval.summary || "Change awaiting approval"}</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          {preview.available
+            ? `A trial run found ${preview.rows ?? 0} ${preview.rows === 1 ? "row" : "rows"} this would change.`
+            : `Not previewed: ${preview.reason || "this source cannot be tried safely"}.`}
+        </p>
+      </div>
+      {sample.length > 0 && (
+        <div className="grid gap-1 font-mono text-[0.6875rem] text-muted-foreground">
+          {sample.map((row, index) => (
+            <p key={index} className="truncate" title={JSON.stringify(row)}>{JSON.stringify(row)}</p>
+          ))}
+        </div>
+      )}
+      <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-5 text-muted-foreground">{approval.query}</pre>
+      {pending ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" size="sm" disabled={Boolean(deciding)} onClick={() => decide("approve")}>
+            {deciding === "approve" ? "Applying…" : "Approve"}
+          </Button>
+          <Button type="button" size="sm" variant="ghost" disabled={Boolean(deciding)} onClick={() => decide("reject")}>
+            Reject
+          </Button>
+          {approval.expires_at && <span className="text-xs text-muted-foreground">Expires {formatApprovalTime(approval.expires_at)}</span>}
+        </div>
+      ) : (
+        <p className={cn("text-xs", state.status === "executed" ? "text-success" : state.status === "failed" ? "text-destructive" : "text-muted-foreground")}>
+          {approvalOutcome(state)}
+        </p>
+      )}
+      {pending && state.error && <p className="text-xs text-destructive">{state.error}</p>}
+    </section>
+  );
+}
+
+function approvalOutcome({ status, error }) {
+  switch (status) {
+    case "executed":
+      return "Approved and applied.";
+    case "failed":
+      return `Approved, but the change failed and nothing was applied${error ? `: ${error}` : "."}`;
+    case "rejected":
+      return "Rejected. Nothing was changed.";
+    case "expired":
+      return "Expired. Nothing was changed.";
+    case "approved":
+      return "Approved. Applying…";
+    default:
+      return status;
+  }
+}
+
+function formatApprovalTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function NoticeFrame({ title, message, children, variant = "default" }) {

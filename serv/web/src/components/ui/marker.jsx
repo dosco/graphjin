@@ -18,7 +18,7 @@ function Marker({ className, variant = "default", status, label, children, ...pr
         status && "w-fit font-mono text-[0.6875rem]",
         (normalized === "ready" || normalized === "answered") && "text-success",
         (normalized === "error" || normalized === "blocked") && "text-destructive",
-        normalized === "needs_clarification" && "text-warning",
+        (normalized === "needs_clarification" || normalized === "needs_approval") && "text-warning",
         className
       )}
       {...props}

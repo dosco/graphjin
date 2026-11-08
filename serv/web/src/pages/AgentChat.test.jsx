@@ -3,9 +3,12 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AgentInspector, groupActionsByDelegate, groupThreadsByAgent, ResponseSummaryBadges, ThinkingMessage, ThreadList } from "./AgentChat";
+import { AgentInspector, ApprovalCard, groupActionsByDelegate, groupThreadsByAgent, ResponseSummaryBadges, ThinkingMessage, ThreadList } from "./AgentChat";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  delete global.fetch;
+});
 
 const profiles = [
   { id: "agent_profile:fin", name: "Finance", mine: true },
@@ -160,5 +163,53 @@ describe("delegated questions", () => {
     render(<AgentInspector inspection={{ response, tab: "actions" }} onClose={vi.fn()} />);
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Data1 key", "Actions2 items"]);
     expect(screen.getAllByRole("listitem").map((item) => item.querySelector(".font-mono")?.textContent)).toEqual(["query_catalog", "execute_graphql"]);
+  });
+});
+
+const heldWrite = {
+  id: "apr_1",
+  hash: "h1",
+  summary: "update 1 row in support_tickets",
+  query: 'mutation { support_tickets(where: { id: { eq: 1 } }, update: { status: "closed" }) { id } }',
+  preview: { available: true, rows: 1, sample: [{ id: 1, status: "closed" }] },
+  expires_at: "2026-11-10T12:00:00Z",
+};
+
+function approvalFetch(statusOnLoad, statusAfter) {
+  const calls = [];
+  global.fetch = vi.fn(async (url, options = {}) => {
+    calls.push({ url, method: options.method || "GET", body: options.body ? JSON.parse(options.body) : null });
+    const status = options.method === "POST" ? statusAfter : statusOnLoad;
+    return new Response(JSON.stringify({ id: "apr_1", status }), { status: 200, headers: { "Content-Type": "application/json" } });
+  });
+  return calls;
+}
+
+describe("approval card", () => {
+  it("shows the held write and approves exactly that proposal", async () => {
+    const user = userEvent.setup();
+    const calls = approvalFetch("pending", "executed");
+    const onDecided = vi.fn();
+    render(<ApprovalCard approval={heldWrite} onDecided={onDecided} />);
+    const card = screen.getByRole("region", { name: "Change awaiting approval" });
+    expect(within(card).getByText("update 1 row in support_tickets")).toBeInTheDocument();
+    expect(within(card).getByText("A trial run found 1 row this would change.")).toBeInTheDocument();
+    expect(within(card).getByText(heldWrite.query)).toBeInTheDocument();
+
+    await user.click(within(card).getByRole("button", { name: "Approve" }));
+    const decision = calls.find((call) => call.method === "POST");
+    expect(decision.url).toBe("/api/v1/agent/approvals/apr_1");
+    expect(decision.body).toEqual({ decision: "approve", hash: "h1" });
+    expect(await within(card).findByText("Approved and applied.")).toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(onDecided).toHaveBeenCalled();
+  });
+
+  it("offers no decision for an approval that was already decided", async () => {
+    approvalFetch("rejected", "rejected");
+    render(<ApprovalCard approval={heldWrite} />);
+    const card = screen.getByRole("region", { name: "Change awaiting approval" });
+    expect(await within(card).findByText("Rejected. Nothing was changed.")).toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Approve" })).toBeNull();
   });
 });
