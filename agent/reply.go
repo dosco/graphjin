@@ -86,7 +86,9 @@ func normalizeReplyStatus(resp Response) Response {
 }
 
 // unexplainedRefusal is the refusal for a block that no guard or delegated
-// question explains, such as a model that declined on its own.
+// question explains: it keeps the code of the reply's own error when it has
+// one (a model that emitted no runnable code), and is agent_blocked for a
+// model that declined on its own.
 func unexplainedRefusal(resp Response) *Refusal {
 	because := strings.TrimSpace(resp.Answer)
 	if because == "" && len(resp.Errors) != 0 {
@@ -95,12 +97,26 @@ func unexplainedRefusal(resp Response) *Refusal {
 	if because == "" {
 		because = "the agent declined the request"
 	}
+	code := firstErrorCode(resp.Errors)
+	if code == "" {
+		code = "agent_blocked"
+	}
 	return &Refusal{
-		Code:              "agent_blocked",
+		Code:              code,
 		Because:           []string{because},
 		LawfulAlternative: "Rephrase the request with the missing details, or ask an operator.",
 		Retryable:         true,
 	}
+}
+
+// firstErrorCode is the code of the first error that carries one.
+func firstErrorCode(errors []ErrorInfo) string {
+	for _, err := range errors {
+		if code := strings.TrimSpace(stringFromMap(err.Extensions, "code")); code != "" {
+			return code
+		}
+	}
+	return ""
 }
 
 // forwardErrorReply is the reply for an Ax run that ended in an error instead

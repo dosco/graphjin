@@ -134,3 +134,19 @@ func TestLeadRepliesKeepTheContract(t *testing.T) {
 		})
 	}
 }
+
+// A lead block its own run explains keeps its own code; it does not borrow an
+// earlier delegated question's refusal.
+func TestLeadOwnBlockKeepsItsCode(t *testing.T) {
+	run := &leadRun{delegations: []leadDelegation{{question: "q", resp: Response{Status: StatusBlocked, Refusal: &Refusal{Code: "access_blocked"}}}}}
+	facts := replyFacts{refusal: run.delegatedRefusal, failures: run.failures()}
+	coded := settleReply(Response{Status: StatusBlocked, Errors: []ErrorInfo{{Message: "no runnable action", Extensions: map[string]any{"code": "agent_no_runtime_code"}}}}, facts)
+	assertReplyContract(t, "own block", coded)
+	if coded.Refusal.Code != "agent_no_runtime_code" {
+		t.Fatalf("own coded block borrowed %q", coded.Refusal.Code)
+	}
+	borrowed := settleReply(Response{Status: StatusBlocked, Answer: "That was refused."}, facts)
+	if borrowed.Refusal.Code != "access_blocked" {
+		t.Fatalf("an unexplained lead block must inherit the delegated refusal, got %q", borrowed.Refusal.Code)
+	}
+}

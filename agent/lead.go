@@ -430,8 +430,12 @@ func leadPermissions(readOnly bool, profile *CapabilityProfile) string {
 
 // delegatedRefusal is the refusal behind a lead's block: the latest delegated
 // question a guard refused, with its unblock steps. The lead holds no guards
-// of its own.
-func (r *leadRun) delegatedRefusal(Response) *Refusal {
+// of its own. A block the lead's run explains itself, such as a model that
+// emitted no runnable code, keeps its own code instead of borrowing one.
+func (r *leadRun) delegatedRefusal(resp Response) *Refusal {
+	if firstErrorCode(resp.Errors) != "" {
+		return nil
+	}
 	delegations := r.results()
 	for i := len(delegations) - 1; i >= 0; i-- {
 		d := delegations[i]
