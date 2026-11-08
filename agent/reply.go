@@ -1,0 +1,132 @@
+package agent
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+
+	ax "github.com/ax-llm/ax/packages/go"
+)
+
+// The reply contract: what every Response from Agent.Run or Lead.Run promises
+// its caller, whichever agent produced it and however the run ended.
+//
+//   - Status is answered, needs_clarification, blocked or error. A status a
+//     model invented outside that set is an error, never an answer.
+//   - A blocked reply carries a Refusal with a code, and only a blocked reply
+//     carries one.
+//   - An error reply carries at least one ErrorInfo.
+//   - A needs_clarification reply carries its question as Answer and no errors.
+//
+// The agents know different things about why a run was blocked: the worker
+// knows its guard violations, the lead knows the refusals and failures of the
+// questions it delegated. Each passes what it knows as replyFacts, and the
+// rules above are applied here, once, for both. Before this file the lead
+// re-implemented them one at a time, and each gap surfaced as a separate bug:
+// a dropped refusal, a clarification reported as an error, a failure reported
+// as a refusal.
+type replyFacts struct {
+	// refusal returns the refusal that stands behind a block, or nil.
+	refusal func(Response) *Refusal
+	// failures are errors from work that failed during the run. A block with
+	// no refusal but with failures is reported as the error it was, so a
+	// caller never retries a "refusal" that was really a timeout.
+	failures []ErrorInfo
+}
+
+// settleReply makes resp satisfy the reply contract.
+func settleReply(resp Response, facts replyFacts) Response {
+	resp = normalizeReplyStatus(resp)
+	if resp.Status == StatusBlocked && resp.Refusal == nil && facts.refusal != nil {
+		resp.Refusal = facts.refusal(resp)
+	}
+	if resp.Status == StatusBlocked && resp.Refusal == nil && len(facts.failures) != 0 {
+		resp.Status = StatusError
+		resp.Errors = append(resp.Errors, facts.failures...)
+	}
+	switch resp.Status {
+	case StatusBlocked:
+		if resp.Refusal == nil {
+			resp.Refusal = unexplainedRefusal(resp)
+		}
+	case StatusError:
+		resp.Refusal = nil
+		if len(resp.Errors) == 0 {
+			message := strings.TrimSpace(resp.Answer)
+			if message == "" {
+				message = "the agent run failed without reporting why"
+			}
+			resp.Errors = []ErrorInfo{{Message: message}}
+		}
+	case StatusNeedsClarification:
+		resp.Refusal = nil
+		resp.Errors = nil
+	default:
+		resp.Refusal = nil
+	}
+	return resp
+}
+
+// normalizeReplyStatus maps an empty status to answered and any status
+// outside the contract to an error. It runs before the guards as well, so a
+// model cannot slip an answer past them under an unknown status.
+func normalizeReplyStatus(resp Response) Response {
+	switch resp.Status {
+	case StatusAnswered, StatusNeedsClarification, StatusBlocked, StatusError:
+	case "":
+		resp.Status = StatusAnswered
+	default:
+		resp.Errors = append(resp.Errors, ErrorInfo{
+			Message:    fmt.Sprintf("the agent replied with status %q, which is not answered, needs_clarification, blocked or error", resp.Status),
+			Extensions: map[string]any{"code": "agent_status_invalid"},
+		})
+		resp.Status = StatusError
+	}
+	return resp
+}
+
+// unexplainedRefusal is the refusal for a block that no guard or delegated
+// question explains, such as a model that declined on its own.
+func unexplainedRefusal(resp Response) *Refusal {
+	because := strings.TrimSpace(resp.Answer)
+	if because == "" && len(resp.Errors) != 0 {
+		because = strings.TrimSpace(resp.Errors[0].Message)
+	}
+	if because == "" {
+		because = "the agent declined the request"
+	}
+	return &Refusal{
+		Code:              "agent_blocked",
+		Because:           []string{because},
+		LawfulAlternative: "Rephrase the request with the missing details, or ask an operator.",
+		Retryable:         true,
+	}
+}
+
+// forwardErrorReply is the reply for an Ax run that ended in an error instead
+// of an output. A clarification the model asked for is a reply, not a
+// failure; an exhausted step budget and a model that never emitted runnable
+// code carry their own codes.
+func forwardErrorReply(err error) Response {
+	var axErr ax.AxError
+	if errors.As(err, &axErr) && axErr.Category == "clarification" {
+		return Response{Status: StatusNeedsClarification, Answer: clarificationAnswer(axErr.Payload)}
+	}
+	if isNoRuntimeCodeError(err) {
+		return Response{
+			Status: StatusBlocked,
+			Answer: "I could not complete the GraphJin agent loop because the model did not emit a runnable action. No unsafe GraphJin execution was performed.",
+			Errors: []ErrorInfo{{
+				Message:    err.Error(),
+				Extensions: map[string]any{"code": "agent_no_runtime_code", "protocol": "graphjin_discovery"},
+			}},
+		}
+	}
+	if isActorStepsExhaustedError(err) {
+		return Response{Status: StatusError, Errors: []ErrorInfo{{
+			Message:    "agent actor loop exceeded max steps",
+			Extensions: map[string]any{"code": "agent_actor_steps_exhausted", "retryable": false},
+		}}}
+	}
+	return Response{Status: StatusError, Errors: []ErrorInfo{PublicErrorInfo(err, "", "")}}
+}

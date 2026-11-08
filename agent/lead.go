@@ -328,15 +328,9 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 	out, ferr := program.Forward(ctx, client, input, forwardOptions)
 	usage := usageSummary(program)
 	resp := Response{Status: StatusAnswered}
-	var axErr ax.AxError
-	if ferr != nil && errors.As(ferr, &axErr) && axErr.Category == "clarification" {
-		// The actor asked the user a question: that is a reply, not a failure.
-		// The worker maps it the same way.
-		resp = Response{Status: StatusNeedsClarification, Answer: clarificationAnswer(axErr.Payload)}
-	} else if ferr != nil {
-		if len(run.results()) == 0 {
-			resp = Response{Status: StatusError, Errors: []ErrorInfo{{Message: ferr.Error()}}}
-		} else {
+	if ferr != nil {
+		resp = forwardErrorReply(ferr)
+		if resp.Status != StatusNeedsClarification && len(run.results()) != 0 {
 			// Out of steps with answers in hand is a finalization failure, not
 			// a knowledge one: spend one tool-less call replying from them.
 			answer, extra, err := l.finalizeFrom(ctx, client, modelCfg, rateLimiter, leadFinalizeSignature, map[string]ax.Value{
@@ -344,10 +338,8 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 				"evidence":    run.evidenceText(),
 			})
 			usage = mergedUsage(usage, extra)
-			if err != nil {
-				resp = Response{Status: StatusError, Errors: []ErrorInfo{{Message: ferr.Error()}}}
-			} else {
-				resp.Answer = answer
+			if err == nil {
+				resp = Response{Status: StatusAnswered, Answer: answer}
 			}
 		}
 	} else {
@@ -378,7 +370,7 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 			}
 		}
 	}
-	resp = run.settleBlocked(resp)
+	resp = settleReply(resp, replyFacts{refusal: run.delegatedRefusal, failures: run.failures()})
 	resp.Skills, resp.Memories = run.shapedBy(usedSkills.snapshot(), usedMemories.snapshot())
 	if resp.Status == StatusAnswered && resp.Answer != "" {
 		resp.Figures = run.figures.attribute(resp.Answer)
@@ -436,52 +428,38 @@ func leadPermissions(readOnly bool, profile *CapabilityProfile) string {
 	return strings.Join(out, " ")
 }
 
-// settleBlocked keeps a blocked reply to the response contract: a blocked
-// status always carries a structured refusal. The lead holds no guards of its
-// own, so it says "blocked" after a delegated question was refused, or after
-// one failed (its status vocabulary has no error class). A guard's refusal
-// travels up with its unblock steps; a failure is reported as the error it
-// was, so a caller never retries a refusal that was really a timeout or an
-// exhausted step budget; and a block neither explains still names itself.
-func (r *leadRun) settleBlocked(resp Response) Response {
-	if resp.Status != StatusBlocked || resp.Refusal != nil {
-		return resp
-	}
-	var failures []ErrorInfo
+// delegatedRefusal is the refusal behind a lead's block: the latest delegated
+// question a guard refused, with its unblock steps. The lead holds no guards
+// of its own.
+func (r *leadRun) delegatedRefusal(Response) *Refusal {
 	delegations := r.results()
 	for i := len(delegations) - 1; i >= 0; i-- {
 		d := delegations[i]
 		if d.err == nil && d.resp.Status == StatusBlocked && d.resp.Refusal != nil {
 			refusal := *d.resp.Refusal
-			resp.Refusal = &refusal
-			return resp
+			return &refusal
 		}
+	}
+	return nil
+}
+
+// failures are the delegated questions that failed. The lead's status classes
+// have no error, so it says "blocked" after one; the reply contract reports
+// that as the error it was.
+func (r *leadRun) failures() []ErrorInfo {
+	var out []ErrorInfo
+	for _, d := range r.results() {
 		switch {
 		case d.err != nil:
-			failures = append(failures, ErrorInfo{Message: d.err.Error()})
+			out = append(out, ErrorInfo{Message: d.err.Error()})
 		case d.resp.Status == StatusError:
-			failures = append(failures, d.resp.Errors...)
+			out = append(out, d.resp.Errors...)
 			if len(d.resp.Errors) == 0 {
-				failures = append(failures, ErrorInfo{Message: "the data agent failed on: " + d.question})
+				out = append(out, ErrorInfo{Message: "the data agent failed on: " + d.question})
 			}
 		}
 	}
-	if len(failures) != 0 {
-		resp.Status = StatusError
-		resp.Errors = append(resp.Errors, failures...)
-		return resp
-	}
-	because := strings.TrimSpace(resp.Answer)
-	if because == "" {
-		because = "the lead declined the request"
-	}
-	resp.Refusal = &Refusal{
-		Code:              "agent_blocked",
-		Because:           []string{because},
-		LawfulAlternative: "Rephrase the request with the missing details, or ask an operator.",
-		Retryable:         true,
-	}
-	return resp
+	return out
 }
 
 // finalizeFrom makes one tool-less call and returns its answer field.

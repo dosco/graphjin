@@ -2639,9 +2639,7 @@ func (s *discoveryState) resolveSuccessfulExecutionViolations() {
 }
 
 func (s *discoveryState) finalize(resp Response) Response {
-	if resp.Status == "" {
-		resp.Status = StatusAnswered
-	}
+	resp = normalizeReplyStatus(resp)
 	if s.hasPolicyFinalBlockingViolation() {
 		resp = blockResponse(resp)
 	}
@@ -2701,13 +2699,8 @@ func (s *discoveryState) finalize(resp Response) Response {
 				resp.Errors = appendProtocolError(resp.Errors, violation)
 			}
 		}
-		if resp.Refusal == nil {
-			resp.Refusal = s.buildRefusal(resp)
-		}
-	} else {
-		resp.Refusal = nil
 	}
-	return resp
+	return settleReply(resp, replyFacts{refusal: s.buildRefusal})
 }
 
 // recoverResolvedTerminalRefusalResponse removes a stale model refusal only

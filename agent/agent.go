@@ -567,6 +567,11 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 			}
 			err = nil
 		}
+		if err == nil {
+			// Every return path, early exits and a recovered panic included,
+			// leaves under the reply contract.
+			resp = settleReply(resp, replyFacts{})
+		}
 		resp = attachSkillUsage(resp, usedSkills.snapshot())
 		if prepared != nil {
 			if protocol != nil {
@@ -1412,37 +1417,8 @@ func responseFromValue(value ax.Value, traceID string) Response {
 }
 
 func responseFromError(err error, traceID string, program Program, returnTrace bool) Response {
-	resp := Response{
-		Status:  StatusError,
-		TraceID: traceID,
-		Errors:  []ErrorInfo{PublicErrorInfo(err, "", "")},
-	}
-	if isActorStepsExhaustedError(err) {
-		resp.Errors = []ErrorInfo{{
-			Message: "agent actor loop exceeded max steps",
-			Extensions: map[string]any{
-				"code":      "agent_actor_steps_exhausted",
-				"retryable": false,
-			},
-		}}
-	}
-	if isNoRuntimeCodeError(err) {
-		resp.Status = StatusBlocked
-		resp.Answer = "I could not complete the GraphJin agent loop because the model did not emit a runnable action. No unsafe GraphJin execution was performed."
-		resp.Errors = []ErrorInfo{{
-			Message: err.Error(),
-			Extensions: map[string]any{
-				"code":     "agent_no_runtime_code",
-				"protocol": "graphjin_discovery",
-			},
-		}}
-	}
-	var axErr ax.AxError
-	if errors.As(err, &axErr) && axErr.Category == "clarification" {
-		resp.Status = StatusNeedsClarification
-		resp.Answer = clarificationAnswer(axErr.Payload)
-		resp.Errors = nil
-	}
+	resp := forwardErrorReply(err)
+	resp.TraceID = traceID
 	if program != nil {
 		resp = attachProgramMetadata(resp, program, returnTrace)
 	}
