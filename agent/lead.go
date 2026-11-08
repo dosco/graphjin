@@ -369,6 +369,7 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 			}
 		}
 	}
+	resp = run.settleBlocked(resp)
 	resp.Skills, resp.Memories = run.shapedBy(usedSkills.snapshot(), usedMemories.snapshot())
 	if resp.Status == StatusAnswered && resp.Answer != "" {
 		resp.Figures = run.figures.attribute(resp.Answer)
@@ -381,6 +382,54 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 		}
 	}
 	return run.finish(resp, usage), nil
+}
+
+// settleBlocked keeps a blocked reply to the response contract: a blocked
+// status always carries a structured refusal. The lead holds no guards of its
+// own, so it says "blocked" after a delegated question was refused, or after
+// one failed (its status vocabulary has no error class). A guard's refusal
+// travels up with its unblock steps; a failure is reported as the error it
+// was, so a caller never retries a refusal that was really a timeout or an
+// exhausted step budget; and a block neither explains still names itself.
+func (r *leadRun) settleBlocked(resp Response) Response {
+	if resp.Status != StatusBlocked || resp.Refusal != nil {
+		return resp
+	}
+	var failures []ErrorInfo
+	delegations := r.results()
+	for i := len(delegations) - 1; i >= 0; i-- {
+		d := delegations[i]
+		if d.err == nil && d.resp.Status == StatusBlocked && d.resp.Refusal != nil {
+			refusal := *d.resp.Refusal
+			resp.Refusal = &refusal
+			return resp
+		}
+		switch {
+		case d.err != nil:
+			failures = append(failures, ErrorInfo{Message: d.err.Error()})
+		case d.resp.Status == StatusError:
+			failures = append(failures, d.resp.Errors...)
+			if len(d.resp.Errors) == 0 {
+				failures = append(failures, ErrorInfo{Message: "the data agent failed on: " + d.question})
+			}
+		}
+	}
+	if len(failures) != 0 {
+		resp.Status = StatusError
+		resp.Errors = append(resp.Errors, failures...)
+		return resp
+	}
+	because := strings.TrimSpace(resp.Answer)
+	if because == "" {
+		because = "the lead declined the request"
+	}
+	resp.Refusal = &Refusal{
+		Code:              "agent_blocked",
+		Because:           []string{because},
+		LawfulAlternative: "Rephrase the request with the missing details, or ask an operator.",
+		Retryable:         true,
+	}
+	return resp
 }
 
 // finalizeFrom makes one tool-less call and returns its answer field.

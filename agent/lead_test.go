@@ -491,3 +491,51 @@ func TestLeadReplyStageSeesSavedMemories(t *testing.T) {
 		t.Fatal("the reply stage never saw the saved memories")
 	}
 }
+
+// A blocked reply always carries a structured refusal. The lead holds no
+// guards, so it reports "blocked" after a delegated question was refused or
+// failed; the REST smoke saw status blocked with refusal null either way.
+func TestLeadBlockedReplyCarriesARefusal(t *testing.T) {
+	question := "Insert support ticket 999999."
+	run := func(t *testing.T, worker Response, workerErr error) Response {
+		t.Helper()
+		client := &scriptedLeadClient{responses: []ax.Value{
+			leadToolCall("c1", question),
+			leadReply(StatusBlocked, "The insert could not be done."),
+		}}
+		lead := newTestLead(t, Config{}, client, func(context.Context, DelegateRequest) (Response, error) {
+			return worker, workerErr
+		})
+		resp, err := lead.Run(context.Background(), Request{Instruction: "insert ticket 999999"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	t.Run("a guard's refusal travels up", func(t *testing.T) {
+		guard := &Refusal{Code: "mutation_evidence_required", Retryable: true,
+			Unblock: []UnblockStep{{Tool: toolQueryCatalog, Args: map[string]any{"id": "table:app:main.support_tickets"}}}}
+		resp := run(t, Response{Status: StatusBlocked, Answer: "blocked", Refusal: guard}, nil)
+		if resp.Status != StatusBlocked || resp.Refusal == nil || resp.Refusal.Code != "mutation_evidence_required" || len(resp.Refusal.Unblock) != 1 {
+			t.Fatalf("resp = %+v, want the worker's refusal", resp)
+		}
+	})
+	t.Run("a failure is an error, not a refusal", func(t *testing.T) {
+		resp := run(t, Response{Status: StatusError, Errors: []ErrorInfo{{Message: "agent actor loop exceeded max steps"}}}, nil)
+		if resp.Status != StatusError || resp.Refusal != nil || len(resp.Errors) != 1 || !strings.Contains(resp.Errors[0].Message, "max steps") {
+			t.Fatalf("resp = %+v, want the worker's error", resp)
+		}
+		resp = run(t, Response{}, errors.New("worker timed out"))
+		if resp.Status != StatusError || len(resp.Errors) != 1 || resp.Errors[0].Message != "worker timed out" {
+			t.Fatalf("resp = %+v, want the delegate error", resp)
+		}
+	})
+	t.Run("an unexplained block still names itself", func(t *testing.T) {
+		resp := run(t, Response{Status: StatusAnswered, Answer: "done"}, nil)
+		if resp.Status != StatusBlocked || resp.Refusal == nil || resp.Refusal.Code != "agent_blocked" || !resp.Refusal.Retryable ||
+			len(resp.Refusal.Because) != 1 || resp.Refusal.Because[0] != "The insert could not be done." {
+			t.Fatalf("resp = %+v, want an agent_blocked refusal", resp)
+		}
+	})
+}
