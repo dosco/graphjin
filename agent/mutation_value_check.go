@@ -578,13 +578,29 @@ func (r *protocolRuntime) suggestedWrittenValues(ctx context.Context, mismatches
 // retried the identical wrong column until the duplicate guard locked it out.
 // The catalog knows the columns; put them in the recovery.
 
-var unknownColumnErrorPatterns = []*regexp.Regexp{
+// columnErrorPattern pairs an engine error shape with what it says about the
+// column. An unknown column is absent from the table; a missing value names a
+// real, required column the write left empty. A misspelled key that the write
+// silently dropped surfaces as the latter, so both shapes get the table's
+// columns and the key repair, but only the first may be called nonexistent.
+type columnErrorPattern struct {
+	re      *regexp.Regexp
+	missing bool // NOT NULL: the column exists and needs a value
+	tableAt int  // submatch index of the table, 0 when the error names none
+	colAt   int  // submatch index of the column
+}
+
+var unknownColumnErrorPatterns = []columnErrorPattern{
 	// column: 'payments.created_at' not found  (optionally schema-qualified)
-	regexp.MustCompile(`column: '(?:[A-Za-z0-9_]+\.)?([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)' not found`),
-	// NOT NULL constraint failed: payments.recorded_at
-	regexp.MustCompile(`NOT NULL constraint failed: ([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)`),
+	{re: regexp.MustCompile(`column: '(?:[A-Za-z0-9_]+\.)?([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)' not found`), tableAt: 1, colAt: 2},
 	// field 'created_at' is not a column or a function  (selection-set form; no table)
-	regexp.MustCompile(`field '([A-Za-z0-9_]+)' is not a column or a function`),
+	{re: regexp.MustCompile(`field '([A-Za-z0-9_]+)' is not a column or a function`), colAt: 1},
+	// SQLite: NOT NULL constraint failed: payments.recorded_at
+	{re: regexp.MustCompile(`NOT NULL constraint failed: ([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)`), missing: true, tableAt: 1, colAt: 2},
+	// Postgres: null value in column "recorded_at" of relation "payments" violates not-null constraint
+	{re: regexp.MustCompile(`null value in column "([A-Za-z0-9_]+)" of relation "([A-Za-z0-9_]+)" violates not-null constraint`), missing: true, tableAt: 2, colAt: 1},
+	// MySQL: Column 'recorded_at' cannot be null
+	{re: regexp.MustCompile(`Column '([A-Za-z0-9_]+)' cannot be null`), missing: true, colAt: 1},
 }
 
 // attachUnknownColumnRecovery extends an attached execution recovery with the
@@ -602,17 +618,16 @@ func (r *protocolRuntime) attachUnknownColumnRecovery(ctx context.Context, out a
 	if r == nil || !executionFailed(out) {
 		return out, ""
 	}
-	table, column := "", ""
+	table, column, missing := "", "", false
 	for _, message := range executionErrorMessages(out) {
 		for _, pattern := range unknownColumnErrorPatterns {
-			match := pattern.FindStringSubmatch(message)
+			match := pattern.re.FindStringSubmatch(message)
 			if match == nil {
 				continue
 			}
-			if len(match) == 3 {
-				table, column = match[1], match[2]
-			} else {
-				column = match[1]
+			column, missing = match[pattern.colAt], pattern.missing
+			if pattern.tableAt > 0 {
+				table = match[pattern.tableAt]
 			}
 			break
 		}
@@ -638,7 +653,7 @@ func (r *protocolRuntime) attachUnknownColumnRecovery(ctx context.Context, out a
 		return out, ""
 	}
 	columns := r.observedColumnNames(ctx, table)
-	if len(columns) == 0 && isWatchDefinitionMutation(query) {
+	if len(columns) == 0 && !missing && isWatchDefinitionMutation(query) {
 		// A watch mutation's unknown column lives in its embedded subscription,
 		// so the table that owns it is the subscription's root, not gj_watch.
 		for _, root := range watchSubscriptionRoots(query, nil) {
@@ -653,6 +668,10 @@ func (r *protocolRuntime) attachUnknownColumnRecovery(ctx context.Context, out a
 	}
 	note := fmt.Sprintf(" The column %q does not exist on %s; its columns are: %s.", column, table, strings.Join(columns, ", "))
 	details := map[string]any{"unknown_column": column, "table_columns": map[string]any{table: columns}}
+	if missing {
+		note = fmt.Sprintf(" The write gave %s.%s no value, and that column requires one; supply it, or check for a misspelled key the write dropped. Its columns are: %s.", table, column, strings.Join(columns, ", "))
+		details = map[string]any{"missing_required_column": column, "table_columns": map[string]any{table: columns}}
+	}
 	repaired := ""
 	var next map[string]any
 	if !ContainsMutationOperation(query) {
@@ -676,7 +695,8 @@ func (r *protocolRuntime) attachUnknownColumnRecovery(ctx context.Context, out a
 		}
 	}
 	if isWatchDefinitionMutation(query) {
-		if candidate, ok := nearestColumn(column, columns, map[string]bool{}); ok {
+		// A missing value names a real column; renaming it would be wrong.
+		if candidate, ok := nearestColumn(column, columns, map[string]bool{}); ok && !missing {
 			if fixed, spliced := repairWatchSubscriptionColumn(query, column, candidate); spliced {
 				repaired = fixed
 				note = fmt.Sprintf(" The subscription's %s table spells that field %s. The corrected mutation is in details.repaired_query — execute it exactly as given.", table, candidate)

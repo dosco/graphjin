@@ -115,3 +115,45 @@ func TestExecuteResultFromCorePrefersStructuredErrors(t *testing.T) {
 		t.Fatalf("nil result must fall back to the plain message: %+v", fallback.Errors)
 	}
 }
+
+// A NOT NULL failure on a write whose keys are all real columns names a
+// column that exists and was left empty. The recovery used to call it
+// nonexistent while listing it among the table's columns
+// ("account_id does not exist on support_tickets; its columns are:
+// account_id, ..."), which sent the model looking for a column it already had.
+func TestExecutionRecoveryNamesMissingRequiredValue(t *testing.T) {
+	for _, errorMessage := range []string{
+		`NOT NULL constraint failed: payments.recorded_at`,
+		`ERROR: null value in column "recorded_at" of relation "payments" violates not-null constraint (SQLSTATE 23502)`,
+		`Error 1048 (23000): Column 'recorded_at' cannot be null`,
+	} {
+		base := &paymentsColumnRuntime{errorMessage: errorMessage}
+		profile := &CapabilityProfile{RoleClass: "user", AllowedActions: []string{CapabilityActionDataInsert}}
+		runtime := newProtocolRuntime(base, "Record payment DEEPORG-PAY-002.", "", 8, profile, nil, CatalogSearchFeatures{})
+		runtime.state.seedOK = true
+		runtime.state.modelDiscoveryAction = true
+		runtime.state.securityRuntimeEvidence = true
+		runtime.state.mutationEvidenceSupplied = true
+		runtime.state.tablesDetailed["payments"] = true
+		runtime.state.catalogDetails = []string{"table:app:main.payments"}
+
+		_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+			"query": `mutation { payments(insert: { id: 900002, invoice_id: 2, amount_cents: 500 }) { id } }`,
+		})
+		if err == nil {
+			t.Fatalf("%q: a dataless engine failure must throw", errorMessage)
+		}
+		text := err.Error()
+		if strings.Contains(text, "does not exist") {
+			t.Fatalf("%q: a required column was called nonexistent: %v", errorMessage, text)
+		}
+		for _, want := range []string{"payments.recorded_at no value", "amount_cents, reference, recorded_at"} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("%q: missing %q: %v", errorMessage, want, text)
+			}
+		}
+		if strings.Contains(text, "repaired_query") {
+			t.Fatalf("%q: a write with only real keys has nothing to rename: %v", errorMessage, text)
+		}
+	}
+}

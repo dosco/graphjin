@@ -39,12 +39,12 @@ type protocolRuntime struct {
 }
 
 type discoveryState struct {
-	instruction          string
-	seedOK               bool
-	seedResult           any
-	modelDiscoveryAction bool
-	catalogIDs           map[string]bool
-	catalogKinds         map[string]bool
+	instruction             string
+	seedOK                  bool
+	seedResult              any
+	modelDiscoveryAction    bool
+	catalogIDs              map[string]bool
+	catalogKinds            map[string]bool
 	securityRuntimeEvidence bool
 	// A run's writes are accounted for at finalization: an "answered" final
 	// after nothing but failed writes reports work that never happened. Ten of
@@ -307,16 +307,16 @@ func configWriteIntent(instruction string) bool {
 
 func newDiscoveryState(instruction string) *discoveryState {
 	state := &discoveryState{
-		instruction:            strings.TrimSpace(instruction),
-		catalogIDs:             map[string]bool{},
-		catalogKinds:           map[string]bool{},
-		detailKinds:            map[string]bool{},
-		tablesDetailed:         map[string]bool{},
-		tablesValidated:        map[string]bool{},
-		workflowsDetailed:      map[string]bool{},
-		catalogRequestKeys:     map[string]bool{},
-		failedQueryKeys:        map[string]bool{},
-		successfulExecutions:   map[string]any{},
+		instruction:          strings.TrimSpace(instruction),
+		catalogIDs:           map[string]bool{},
+		catalogKinds:         map[string]bool{},
+		detailKinds:          map[string]bool{},
+		tablesDetailed:       map[string]bool{},
+		tablesValidated:      map[string]bool{},
+		workflowsDetailed:    map[string]bool{},
+		catalogRequestKeys:   map[string]bool{},
+		failedQueryKeys:      map[string]bool{},
+		successfulExecutions: map[string]any{},
 	}
 	state.addGrounding(state.instruction)
 	return state
@@ -3063,19 +3063,19 @@ func (s *discoveryState) mergeEvidence(model any) any {
 			"instruction": s.instruction,
 			"result":      s.seedResult,
 		},
-		"help_topics":              s.helpTopics,
-		"catalog_searches":         s.catalogSearches,
-		"catalog_detail_ids":       s.catalogDetails,
-		"catalog_ids":              sortedBoolKeys(s.catalogIDs),
-		"catalog_kinds":            sortedBoolKeys(s.catalogKinds),
-		"tables_detailed":          sortedBoolKeys(s.tablesDetailed),
-		"tables_validated":         sortedBoolKeys(s.tablesValidated),
-		"workflows_detailed":       sortedBoolKeys(s.workflowsDetailed),
-		"validations":              s.validations,
-		"executions":               s.executions,
-		"raw_graphql":              s.rawGraphQL,
-		"suggested_next":           s.suggestedNext,
-		"violations":               s.violations,
+		"help_topics":        s.helpTopics,
+		"catalog_searches":   s.catalogSearches,
+		"catalog_detail_ids": s.catalogDetails,
+		"catalog_ids":        sortedBoolKeys(s.catalogIDs),
+		"catalog_kinds":      sortedBoolKeys(s.catalogKinds),
+		"tables_detailed":    sortedBoolKeys(s.tablesDetailed),
+		"tables_validated":   sortedBoolKeys(s.tablesValidated),
+		"workflows_detailed": sortedBoolKeys(s.workflowsDetailed),
+		"validations":        s.validations,
+		"executions":         s.executions,
+		"raw_graphql":        s.rawGraphQL,
+		"suggested_next":     s.suggestedNext,
+		"violations":         s.violations,
 	}
 	if len(s.observedValueLookups) != 0 {
 		protocol["observed_value_lookups"] = s.observedValueLookups

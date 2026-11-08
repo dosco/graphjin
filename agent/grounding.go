@@ -481,7 +481,6 @@ func joinRecoveryMessage(message, directive string) string {
 
 const recoveryDirectivePrefix = "GraphJin recovery:"
 
-
 // recoveryDirective is the single sentence appended to execution errors; the
 // structured recovery.next field carries the actionable tool pointer.
 func recoveryDirective(map[string]any) string {
