@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AgentInspector, ApprovalCard, groupActionsByDelegate, groupThreadsByAgent, ResponseSummaryBadges, ThinkingMessage, ThreadList } from "./AgentChat";
+import { AgentInspector, AnswerFeedback, ApprovalCard, groupActionsByDelegate, groupThreadsByAgent, ResponseSummaryBadges, ThinkingMessage, ThreadList } from "./AgentChat";
 
 afterEach(() => {
   cleanup();
@@ -211,5 +211,31 @@ describe("approval card", () => {
     const card = screen.getByRole("region", { name: "Change awaiting approval" });
     expect(await within(card).findByText("Rejected. Nothing was changed.")).toBeInTheDocument();
     expect(within(card).queryByRole("button", { name: "Approve" })).toBeNull();
+  });
+});
+
+describe("answer feedback", () => {
+  it("marks an answer helpful in one click", async () => {
+    const user = userEvent.setup();
+    const onRate = vi.fn(async () => {});
+    render(<AnswerFeedback messageID="th_1-00000002" onRate={onRate} />);
+    await user.click(screen.getByRole("button", { name: "Helpful" }));
+    expect(onRate).toHaveBeenCalledWith("th_1-00000002", "up", "");
+  });
+
+  it("asks what the right answer is before marking one wrong", async () => {
+    const user = userEvent.setup();
+    const onRate = vi.fn(async () => {});
+    render(<AnswerFeedback messageID="th_1-00000002" onRate={onRate} />);
+    await user.click(screen.getByRole("button", { name: "Wrong" }));
+    expect(onRate).not.toHaveBeenCalled();
+    await user.type(screen.getByRole("textbox", { name: "What should it have said?" }), "It is $1,850.");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(onRate).toHaveBeenCalledWith("th_1-00000002", "down", "It is $1,850.");
+  });
+
+  it("shows the rating already given", () => {
+    render(<AnswerFeedback messageID="th_1-00000002" rating="down" onRate={vi.fn()} />);
+    expect(screen.getByText("Marked wrong.")).toBeInTheDocument();
   });
 });

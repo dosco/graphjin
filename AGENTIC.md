@@ -351,6 +351,25 @@ A calling agent should treat this as protocol, not prose: execute the
 `policy_final`. The contract is discoverable at runtime with
 `query_catalog(id: "help:refusals")`.
 
+### Answer Feedback
+
+In a thread, a person can mark an agent answer **Helpful** or **Wrong** and say
+what the right answer is. Each rating is a `feedback` artifact, one per person
+per answer, written through `gj_artifacts`:
+
+```graphql
+mutation {
+  gj_artifacts(insert: { kind: "feedback", target_ref: "<message id>",
+                         content: "It is $1,850.", content_json: { rating: "down" } }) { id }
+}
+```
+
+The server fills in the question, the answer, its trace id and the turns before
+it from the thread, so a report carries the real conversation. Only your own
+agent answers can be rated. `GET /api/v1/agent/feedback` lists your reports (an
+admin's lists everyone's); `?format=corpus` returns the wrong-answer reports as
+draft lead-corpus cases, ready for an oracle.
+
 ### Write Approvals
 
 With `agent.write_approval: required` (the default in agentic mode), the agent

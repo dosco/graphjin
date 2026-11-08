@@ -13,6 +13,8 @@ import {
   fetchThread,
   fetchApproval,
   decideApproval,
+  listFeedback,
+  sendFeedback,
   followRun,
   listProfiles,
   listThreads,
@@ -75,6 +77,25 @@ const AgentChat = () => {
   });
   const status = statusQuery.data;
   const threadsEnabled = status?.threads_enabled === true;
+  const feedbackQuery = useQuery({
+    queryKey: ["agent-feedback", identityKey],
+    queryFn: listFeedback,
+    enabled: threadsEnabled,
+    retry: false,
+  });
+  const ratings = React.useMemo(() => {
+    const byMessage = {};
+    for (const report of feedbackQuery.data || []) {
+      if (report?.message_id && !(report.message_id in byMessage)) {
+        byMessage[report.message_id] = report.rating;
+      }
+    }
+    return byMessage;
+  }, [feedbackQuery.data]);
+  const rateAnswer = React.useCallback(async (messageID, rating, correction) => {
+    await sendFeedback(messageID, rating, correction);
+    await queryClient.invalidateQueries({ queryKey: ["agent-feedback"] });
+  }, [queryClient]);
   const threadsQuery = useQuery({
     queryKey: ["agent-threads", identityKey],
     queryFn: listThreads,
@@ -324,6 +345,14 @@ const AgentChat = () => {
     } finally {
       setPendingActions([]);
       setActiveRunID("");
+      if (threadsEnabled && currentThreadID) {
+        // Reload the stored messages so the answer carries its server id,
+        // which rating it needs.
+        const stored = await fetchThread(currentThreadID).catch(() => null);
+        if (stored?.messages?.length) {
+          setMessages(messagesFromThread(stored));
+        }
+      }
       if (threadsEnabled) {
         // The answer arrived on screen, so the thread is already read.
         await markSeen(currentThreadID);
@@ -376,7 +405,8 @@ const AgentChat = () => {
               ) : (
                 messages.map((message, index) => (
                   <MessageScrollerItem key={message.id} scrollAnchor={index === messages.length - 1 && !pending}>
-                    <ChatMessage message={message} onPinTask={pinTask} onInspect={setInspection} onApprovalDecided={reloadThread} />
+                    <ChatMessage message={message} onPinTask={pinTask} onInspect={setInspection} onApprovalDecided={reloadThread}
+                      rating={message.serverID ? ratings[message.serverID] : undefined} onRate={threadsEnabled ? rateAnswer : undefined} />
                   </MessageScrollerItem>
                 ))
               )}
@@ -656,6 +686,8 @@ function NewAgentDialog({ open, onOpenChange, onCreate }) {
 function messagesFromThread(thread) {
   return (thread?.messages || []).map((message) => ({
     id: message.id,
+    // Only stored messages can be rated: feedback names the server's id.
+    serverID: message.id,
     role: message.role,
     content: message.role === "assistant" && message.response ? displayAnswer(message.response) || message.content : message.content,
     status: message.status || undefined,
@@ -986,7 +1018,7 @@ function AgentDisabledAlert({ status }) {
   );
 }
 
-function ChatMessage({ message, onPinTask, onInspect, onApprovalDecided }) {
+function ChatMessage({ message, onPinTask, onInspect, onApprovalDecided, rating, onRate }) {
   const isUser = message.role === "user";
   const response = message.response;
   return (
@@ -1011,6 +1043,7 @@ function ChatMessage({ message, onPinTask, onInspect, onApprovalDecided }) {
         )}
         {response && <NoticeList notices={response.notices} onPinTask={onPinTask} />}
         {response?.errors?.length > 0 && <NoticeFrame title="Agent errors" message={response.errors.map((error) => error.message).filter(Boolean).join(" · ")} variant="destructive" />}
+        {!isUser && message.serverID && onRate && <AnswerFeedback messageID={message.serverID} rating={rating} onRate={onRate} />}
       </MessageContent>
     </Message>
   );
@@ -1153,6 +1186,67 @@ function AgentNotice({ notice, onPinTask }) {
     );
   }
   return <NoticeFrame title={kind.replaceAll("_", " ")} message={notice.message} />;
+}
+
+// AnswerFeedback rates an answer. "Wrong" asks what the right answer is; the
+// server keeps it with the real conversation so it can become an eval case.
+export function AnswerFeedback({ messageID, rating, onRate }) {
+  const [correcting, setCorrecting] = React.useState(false);
+  const [correction, setCorrection] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState("");
+
+  async function rate(value, text = "") {
+    setSaving(true);
+    setError("");
+    try {
+      await onRate(messageID, value, text);
+      setCorrecting(false);
+    } catch (failure) {
+      setError(failure.message || "Feedback was not saved.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (correcting) {
+    return (
+      <form
+        aria-label="Correct this answer"
+        className="grid w-full gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void rate("down", correction.trim());
+        }}
+      >
+        <Textarea
+          aria-label="What should it have said?"
+          placeholder="What should it have said?"
+          value={correction}
+          onChange={(event) => setCorrection(event.target.value)}
+          className="min-h-16 text-sm"
+        />
+        <div className="flex items-center gap-2">
+          <Button type="submit" size="sm" disabled={saving}>Send</Button>
+          <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => setCorrecting(false)}>Cancel</Button>
+          {error && <span className="text-xs text-destructive">{error}</span>}
+        </div>
+      </form>
+    );
+  }
+  return (
+    <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-label="Rate this answer">
+      {rating === "up" && <span>Marked helpful.</span>}
+      {rating === "down" && <span>Marked wrong.</span>}
+      <button type="button" disabled={saving} className={cn("hover:text-foreground", rating === "up" && "text-foreground")} onClick={() => void rate("up")}>
+        Helpful
+      </button>
+      <button type="button" disabled={saving} className={cn("hover:text-foreground", rating === "down" && "text-foreground")} onClick={() => setCorrecting(true)}>
+        Wrong
+      </button>
+      {error && <span className="text-destructive">{error}</span>}
+    </div>
+  );
 }
 
 // ApprovalCard is a write the agent held for the user. The exact query runs

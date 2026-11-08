@@ -411,6 +411,9 @@ func (h artifactControlPlane) upsertArtifact(ctx context.Context, root core.Mana
 	if requestedKind == artifactKindSkill || normalizeArtifactKind(stringMapValue(requestedExisting, "kind")) == artifactKindSkill {
 		return h.upsertSkill(ctx, root, requestedExisting)
 	}
+	if requestedKind == artifactKindFeedback || normalizeArtifactKind(stringMapValue(requestedExisting, "kind")) == artifactKindFeedback {
+		return h.upsertFeedback(ctx, root)
+	}
 	visibility := stringInput(root.Input, "visibility", "user")
 	if visibility == "global" {
 		s.recordRuntimeEvent(ctx, runtimeEvent{

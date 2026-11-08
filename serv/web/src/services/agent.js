@@ -209,6 +209,22 @@ export async function runsForThread(threadID) {
   return data.gj_thread_run || [];
 }
 
+// listFeedback reads the caller's answer ratings, newest first.
+export async function listFeedback() {
+  const payload = await fetchJSON("/api/v1/agent/feedback");
+  return payload?.feedback || [];
+}
+
+// sendFeedback rates an agent answer. The server records the question, the
+// answer and the turns before it from the thread itself.
+export async function sendFeedback(messageID, rating, correction = "") {
+  const data = await gql(
+    `mutation ($m: String!, $c: String, $j: JSON) { gj_artifacts(insert: { kind: "feedback", target_ref: $m, content: $c, content_json: $j }) { id } }`,
+    { m: messageID, c: correction, j: { rating } },
+  );
+  return data?.gj_artifacts;
+}
+
 // fetchApproval reads one held write, so a reloaded thread shows whether it
 // was already decided.
 export function fetchApproval(id) {
