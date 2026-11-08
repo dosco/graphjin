@@ -247,7 +247,10 @@ type Response struct {
 	Refusal  *Refusal `json:"refusal,omitempty"`
 	// Approval is the held write a needs_approval reply asks the user to
 	// approve or reject.
-	Approval    *Approval         `json:"approval,omitempty"`
+	Approval *Approval `json:"approval,omitempty"`
+	// Display describes the data behind an answer so a GUI can lay it out
+	// without guessing: typed columns, the rows, and a suggested form.
+	Display     []DisplayHint     `json:"display,omitempty"`
 	Notices     []ResponseNotice  `json:"notices,omitempty"`
 	Errors      []ErrorInfo       `json:"errors,omitempty"`
 	Usage       any               `json:"usage,omitempty"`
@@ -1882,6 +1885,9 @@ type executeResult struct {
 	// Naming marks rows the result identifies only by key while the schema
 	// has a column that names them.
 	Naming *NamingInfo `json:"naming,omitempty"`
+	// Columns describes the result's fields for display hints. It never
+	// reaches the model: the field is not serialized.
+	Columns []core.ResultColumn `json:"-"`
 }
 
 // NamingInfo is attached to execution results whose rows carry a key (their
@@ -2341,6 +2347,7 @@ func executeResultFromCore(res *core.Result, err error) executeResult {
 	if len(result.Errors) == 0 {
 		result = attachTruncation(result, res.TruncatedRoots())
 		result = attachNaming(result, res)
+		result.Columns = res.Columns()
 	}
 	return result
 }

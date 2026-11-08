@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dosco/graphjin/core/v3"
 	"regexp"
 	"sort"
 	"strconv"
@@ -56,7 +57,9 @@ type discoveryState struct {
 	mutationAttempted bool
 	mutationSucceeded bool
 	// pendingApproval is the write this run held for the user's approval.
-	pendingApproval           *Approval
+	pendingApproval *Approval
+	// lastColumns describes lastExecution's fields, for display hints.
+	lastColumns               []core.ResultColumn
 	lastMutationFailure       string
 	lastMutationRepairedQuery string
 	watchDefinitionMutated    bool
@@ -1866,6 +1869,7 @@ func (s *discoveryState) recordExecution(tool string, args map[string]any, out a
 	}
 	s.executions = append(s.executions, item)
 	if item["has_data"] == true {
+		s.lastColumns = executionColumns(out)
 		s.lastExecution = map[string]any{
 			"tool":   tool,
 			"args":   redactArgs(args),
@@ -1977,6 +1981,7 @@ func (s *discoveryState) selectCachedExecution(tool string, args map[string]any,
 	}
 	s.emptySearchStreak = 0
 	s.emptyDetailStreak = 0
+	s.lastColumns = executionColumns(out)
 	s.lastExecution = map[string]any{
 		"tool":   tool,
 		"args":   redactArgs(args),
@@ -2755,6 +2760,9 @@ func (s *discoveryState) finalize(resp Response) Response {
 				resp.Errors = appendProtocolError(resp.Errors, violation)
 			}
 		}
+	}
+	if resp.Status == StatusAnswered && resp.Display == nil {
+		resp.Display = s.displayHints()
 	}
 	return settleReply(resp, replyFacts{refusal: s.buildRefusal, approval: s.pendingApproval})
 }

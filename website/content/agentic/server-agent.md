@@ -153,6 +153,12 @@ The REST endpoint streams progress when called with `Accept: text/event-stream`:
 
 A `blocked` response is machine-actionable, not prose. It carries a `refusal` object: a stable `code` (`access_unauthorized`, `capability_disabled`, `mutation_evidence_required`, ...), the `blocked_action`, evidence-backed `because` reasons, ordered `unblock` steps (each names a tool and args, filtered to the caller's visible capabilities so nothing hidden leaks), a `lawful_alternative` for when unblocking is impossible, and the `policy_final` / `retryable` pair. A calling agent should execute the unblock steps and retry only when `retryable` is true; `policy_final` means stop and escalate to an operator. The contract is discoverable at runtime with `query_catalog(id: "help:refusals")`.
 
+## Display hints
+
+An answered reply carries `display`, built from the compiled query and the schema rather than the model's text: for each result root, a suggested `kind` (`value`, `bar`, `line` or `table`), typed `columns` with a `role` (`key`, `reference`, `measure`, `time`, `text`) and any `aggregate`, and the `rows` themselves (at most 50). A GUI can lay out the data behind an answer without guessing which numbers are measures or which column names the rows.
+
+{{< verified by="TestDisplayKindFollowsTheColumnRoles" file="agent/display_test.go" >}}
+
 ## Write approvals
 
 With `agent.write_approval: required`, the default in agentic mode, the agent never changes application data or calls a write API on its own. GraphJin dry-runs the write in a transaction it rolls back, stores it as a pending approval, and replies `status: "needs_approval"` with an `approval` object: `id`, `hash`, a one-line `summary`, the exact `query` and `variables`, a `preview` of the rows it would change, and `expires_at`. The answer is GraphJin's own sentence saying nothing has changed yet. The user then approves or rejects it with `gj_approval(where: { id: { eq: "..." } }, update: { decision: "approve", expected_hash: "..." })` or `POST /api/v1/agent/approvals/{id}`, and only that exact query runs, once, as the person who asked. The agent itself can never write `gj_approval`. Sources a dry run would really affect, such as APIs, NanoDB and warehouses, are held without a preview.

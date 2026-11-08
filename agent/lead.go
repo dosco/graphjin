@@ -385,6 +385,9 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 		}
 	}
 	resp = settleReply(resp, replyFacts{refusal: run.delegatedRefusal, failures: run.failures(), approval: approval})
+	if resp.Status == StatusAnswered {
+		resp.Display = run.displayHints()
+	}
 	resp.Skills, resp.Memories = run.shapedBy(usedSkills.snapshot(), usedMemories.snapshot())
 	if resp.Status == StatusAnswered && resp.Answer != "" {
 		resp.Figures = run.figures.attribute(resp.Answer)
@@ -472,6 +475,22 @@ func (r *leadRun) delegatedApproval() *Approval {
 		}
 	}
 	return nil
+}
+
+// displayHints carries the data agent's layout of each answered question, in
+// the order asked, labeled with the question.
+func (r *leadRun) displayHints() []DisplayHint {
+	var out []DisplayHint
+	for _, d := range r.results() {
+		if d.err != nil || d.resp.Status != StatusAnswered {
+			continue
+		}
+		for _, hint := range d.resp.Display {
+			hint.Question = d.question
+			out = append(out, hint)
+		}
+	}
+	return out
 }
 
 // failures are the delegated questions that failed. The lead's status classes

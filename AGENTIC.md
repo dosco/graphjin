@@ -354,6 +354,22 @@ A calling agent should treat this as protocol, not prose: execute the
 `policy_final`. The contract is discoverable at runtime with
 `query_catalog(id: "help:refusals")`.
 
+### Display Hints
+
+An answered reply carries `display`: one hint per result root of the query the
+answer rests on (on a lead reply, per delegated question, labeled with it).
+GraphJin builds it from the compiled query and the schema, never from the
+model's text, and the model never sees it:
+
+| Field | Meaning |
+| :--- | :--- |
+| `kind` | A suggested form: `value` (one row of measures), `bar` (one label against one measure, 2–30 rows), `line` (measures over one time column), or `table`. |
+| `columns` | Each field inside a row (`plan.name` for nested ones) with its database `type`, its `role` (`key`, `reference`, `measure`, `time`, `text`) and its `aggregate` (`count`, `sum`, …). |
+| `rows`, `row_count`, `truncated` | The rows themselves, at most 50, and how many the query returned. |
+
+`core.Result.Columns()` exposes the same column facts to library callers; it is
+computed on request, so queries that never ask pay nothing.
+
 ### Answer Feedback
 
 In a thread, a person can mark an agent answer **Helpful** or **Wrong** and say

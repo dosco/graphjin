@@ -749,6 +749,9 @@ type Result struct {
 	subCursors   map[string]string
 	rootLimits   []RootLimitInfo
 	namingGaps   []namingGapCandidate
+	// qc is the compiled query, kept so Columns can describe the result on
+	// request instead of on every query.
+	qc *qcode.QCode
 	Vars         json.RawMessage   `json:"-"`
 	Data         json.RawMessage   `json:"data,omitempty"`
 	Hash         [sha256.Size]byte `json:"-"`
@@ -1083,6 +1086,7 @@ func (gj *graphjinEngine) query(c context.Context, r GraphqlReq) (
 	resp.qc = s.qcode()
 	resp.res.rootLimits = rootLimitInfoFromQCode(resp.qc)
 	resp.res.namingGaps = namingGapsFromQCode(resp.qc, gj.namingLookup)
+	resp.res.qc = resp.qc
 	resp.res.sql = s.sql()
 	resp.res.cacheControl = s.cacheHeader()
 	resp.res.Vars = r.vars
