@@ -1083,10 +1083,12 @@ routine_cleanup() {
     [ -n "$id" ] && [ "${ROUTINE_KEEP_THREADS:-}" != "1" ] || continue
     graphql_vars routine-cleanup-thread "mutation { gj_thread(delete: true, where: { id: { eq: \"${id}\" } }) { id } }" '{}' >/dev/null
   done
-  local restore
-  for restore in "${SMOKE_ROUTINE_RESTORES[@]-}"; do
-    [ -n "$restore" ] || continue
-    graphql_vars routine-cleanup-restore "$restore" '{}' >/dev/null
+  # Newest first: a retried case borrows the ticket it already changed, so
+  # only the oldest restore holds the original values and must land last.
+  local i
+  for ((i = ${#SMOKE_ROUTINE_RESTORES[@]} - 1; i >= 0; i--)); do
+    [ -n "${SMOKE_ROUTINE_RESTORES[$i]}" ] || continue
+    graphql_vars routine-cleanup-restore "${SMOKE_ROUTINE_RESTORES[$i]}" '{}' >/dev/null
   done
   SMOKE_ROUTINE_WATCHES=(); SMOKE_ROUTINE_ARTIFACTS=(); SMOKE_ROUTINE_THREADS=(); SMOKE_ROUTINE_RESTORES=()
 }
