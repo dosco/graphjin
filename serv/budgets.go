@@ -19,8 +19,8 @@ import (
 // budget_exceeded refusal, and its owner gets a notification once a day.
 
 const (
-	defaultUserDailyTokens    = 2_000_000
-	defaultRoutineDailyTokens = 200_000
+	defaultUserDailyTokens    = 20_000_000
+	defaultRoutineDailyTokens = 2_000_000
 	budgetWindow              = 24 * time.Hour
 	usageRetention            = 48 * time.Hour
 	usageStoreFields          = `id owner_id account_id delegated_by run_as_id kind ref tokens_in tokens_out llm_calls created_at`

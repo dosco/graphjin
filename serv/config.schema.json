@@ -486,13 +486,13 @@
 				},
 				"user_daily_tokens": {
 					"type": "integer",
-					"description": "UserDailyTokens caps one person's agent runs, including runs made on\ntheir behalf. Zero means the default (2,000,000).",
-					"default": 2000000
+					"description": "UserDailyTokens caps one person's agent runs, including runs made on\ntheir behalf. Zero means the default (20,000,000, about 280 lead turns).",
+					"default": 20000000
 				},
 				"routine_daily_tokens": {
 					"type": "integer",
-					"description": "RoutineDailyTokens caps one watch routine, its continuations included.\nZero means the default (200,000).",
-					"default": 200000
+					"description": "RoutineDailyTokens caps one watch routine, its continuations included.\nZero means the default (2,000,000).",
+					"default": 2000000
 				}
 			},
 			"additionalProperties": false,

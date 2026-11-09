@@ -120,11 +120,11 @@ type BudgetConfig struct {
 	// Enabled turns budgets on or off; unset follows the mode.
 	Enabled *bool `mapstructure:"enabled" json:"enabled,omitempty"`
 	// UserDailyTokens caps one person's agent runs, including runs made on
-	// their behalf. Zero means the default (2,000,000).
-	UserDailyTokens int64 `mapstructure:"user_daily_tokens" json:"user_daily_tokens,omitempty" jsonschema:"default=2000000"`
+	// their behalf. Zero means the default (20,000,000, about 280 lead turns).
+	UserDailyTokens int64 `mapstructure:"user_daily_tokens" json:"user_daily_tokens,omitempty" jsonschema:"default=20000000"`
 	// RoutineDailyTokens caps one watch routine, its continuations included.
-	// Zero means the default (200,000).
-	RoutineDailyTokens int64 `mapstructure:"routine_daily_tokens" json:"routine_daily_tokens,omitempty" jsonschema:"default=200000"`
+	// Zero means the default (2,000,000).
+	RoutineDailyTokens int64 `mapstructure:"routine_daily_tokens" json:"routine_daily_tokens,omitempty" jsonschema:"default=2000000"`
 }
 
 // Validate checks agent.budgets.

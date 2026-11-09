@@ -1166,8 +1166,8 @@ they inherit that deployment's capabilities rather than OpenAI's.
 | `agent.write_approval_ttl` | duration | `24h` | How long a held write stays approvable. Env `GJ_AGENT_WRITE_APPROVAL_TTL` |
 | `agent.autonomy` | list | empty (everything asks) | Rules `{action, table, level, max_rows}` that let a dry-run write run at once: `level` is `ask`, `notify` (run, then tell the owner) or `auto` (run and record); `action` is `data.insert`, `data.update` or `data.delete` (API calls always ask); `table` may be `*`; `max_rows` caps the rows the dry run changed. |
 | `agent.budgets.enabled` | bool | agentic: on; otherwise off | Caps model tokens over a rolling 24 hours. A run over a cap is refused as `blocked` with `budget_exceeded`. |
-| `agent.budgets.user_daily_tokens` | int | `2000000` | Per person, including runs made on their behalf. |
-| `agent.budgets.routine_daily_tokens` | int | `200000` | Per watch routine, including the continuations of its writes. |
+| `agent.budgets.user_daily_tokens` | int | `20000000` | Per person, including runs made on their behalf. |
+| `agent.budgets.routine_daily_tokens` | int | `2000000` | Per watch routine, including the continuations of its writes. |
 | `agent.service_identity.user_id`, `.role` | string | unset | The identity routines on a `runs_as: service` saved agent run as, when an admin owns the watch. The role must be configured. |
 | `agent.return_trace` | boolean | `false` | Include agent action/trace data in responses |
 | `agent.seed_limit` | integer | `40` | Initial `query_catalog(search: instruction)` seed row cap |

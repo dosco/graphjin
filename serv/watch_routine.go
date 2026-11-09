@@ -83,7 +83,7 @@ func (s *graphjinService) routineServiceIdentity(ownerCtx context.Context, def w
 // watchRoutineProposeNote tells a routine it may act through approvals. The
 // watch's owner set the routine up, so proposing a change is doing what they
 // asked; it still runs only once they approve it.
-const watchRoutineProposeNote = "If what you find calls for a change to the data, propose it: GraphJin holds it for the watch owner's approval and nothing changes until they approve. Say what you proposed and why. If nothing needs changing, say so."
+const watchRoutineProposeNote = "If what you find calls for a change to the data, ask the data agent to make it, in plain words, with ask_graphjin: GraphJin holds the change for the watch owner's approval and nothing changes until they approve. That request is how a change is proposed; describing a change in your reply proposes nothing. Then say what you proposed and why. If nothing needs changing, say so."
 
 // watchRoutineAgentConfig is the agent config a routine runs with. Nobody is
 // watching a routine, so with write approvals on it may propose data and API
@@ -230,14 +230,21 @@ func (s *graphjinService) notifyRoutineAnswer(ctx context.Context, def watchRunt
 	if name == "" {
 		name = "A watch"
 	}
+	// The title says what happened to the data, from the engine's facts.
 	severity := notificationSeverityInfo
-	if resp.Status == gjagent.StatusError || resp.Status == gjagent.StatusBlocked {
-		severity = notificationSeverityWarning
+	title := name + " fired: no change proposed"
+	switch {
+	case resp.Status == gjagent.StatusNeedsApproval:
+		title = name + " fired: a change waits for your approval"
+	case resp.Status == gjagent.StatusError || resp.Status == gjagent.StatusBlocked:
+		severity, title = notificationSeverityWarning, name+" fired: the agent could not finish"
+	case strings.HasPrefix(resp.Answer, "Made "):
+		title = name + " fired: the agent made a change on its own"
 	}
 	s.notify(ctx, notification{
 		OwnerID: def.OwnerID, AccountID: def.AccountID,
 		Kind: notificationRoutineAnswer, Severity: severity,
-		Title: name + " fired: the agent looked into it", Body: truncateUTF8(strings.TrimSpace(resp.Answer), 600),
+		Title: title, Body: truncateUTF8(strings.TrimSpace(resp.Answer), 600),
 		RefKind: "thread", RefID: threadID, Link: "/user/agent?thread=" + threadID,
 		DedupeKey: "routine:" + event.ID,
 	})
@@ -273,8 +280,65 @@ func (s *graphjinService) prepareWatchRoutineRun(ctx context.Context, threadID s
 
 func (s *graphjinService) watchRoutineSettle(req gjagent.Request) func(context.Context, gjagent.Response, error) (gjagent.Response, error) {
 	return func(ctx context.Context, resp gjagent.Response, err error) (gjagent.Response, error) {
-		return s.settleAgentResponse(ctx, req, taskWarmStart{}, resp, err)
+		resp, err = s.settleAgentResponse(ctx, req, taskWarmStart{}, resp, err)
+		return s.stateUnattendedOutcome(ctx, resp), err
 	}
+}
+
+// stateUnattendedOutcome makes GraphJin, not the model, say what a run nobody
+// watched did to the data. A model can write "I proposed the change" without
+// asking for it; the engine knows whether a write was held, ran under an
+// autonomy rule, or did not happen, and leads the answer with that.
+//
+// A held write already carries the engine's own sentence (approvalAnswer).
+func (s *graphjinService) stateUnattendedOutcome(ctx context.Context, resp gjagent.Response) gjagent.Response {
+	if resp.Status == gjagent.StatusNeedsApproval {
+		return resp
+	}
+	outcome := unattendedNoChange(runOriginFrom(ctx))
+	if changes := s.autonomousChangesInRun(ctx, runThreadFrom(ctx).runID); len(changes) != 0 {
+		outcome = "Made " + strings.Join(changes, "; ") + " on its own, as configured."
+	}
+	switch {
+	case strings.TrimSpace(resp.Answer) == "":
+		if len(resp.Errors) == 0 {
+			resp.Answer = outcome
+		}
+	case runOriginFrom(ctx).Origin == approvalOriginContinuation:
+		// A follow-up leads with the decision's result; the engine's line
+		// closes it.
+		resp.Answer = resp.Answer + "\n\n" + outcome
+	default:
+		resp.Answer = outcome + "\n\n" + resp.Answer
+	}
+	return resp
+}
+
+func unattendedNoChange(origin runOrigin) string {
+	if origin.Origin == approvalOriginContinuation {
+		return "No further change was proposed."
+	}
+	return "No change was proposed."
+}
+
+// autonomousChangesInRun lists the writes an autonomy rule ran in this run.
+func (s *graphjinService) autonomousChangesInRun(ctx context.Context, runID string) []string {
+	if runID == "" || !s.approvalsEnabled() {
+		return nil
+	}
+	rows, err := s.internalStoreRows(context.WithoutCancel(ctx), "approvals",
+		`where: { run_id: { eq: $run_id }, status: { eq: "executed" }, decided_by: { like: "autonomy:%" } }, limit: 20`,
+		"summary_json", map[string]any{"run_id": runID})
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, row := range rows {
+		if summary := approvalSummaryText(row); summary != "" {
+			out = append(out, "a change ("+summary+")")
+		}
+	}
+	return out
 }
 
 type failingAgentRunner struct{ err error }

@@ -410,7 +410,7 @@ func TestApprovedRoutineWriteContinuesWithTheModel(t *testing.T) {
 		t.Fatal("a routine's continuation must be as unattended as the routine")
 	}
 	messages, _ := svc.threadMessages(ctx, threadID)
-	if len(messages) != 2 || messages[1]["content"] != "Order 1 is closed now." {
+	if len(messages) != 2 || messages[1]["content"] != "Order 1 is closed now.\n\nNo further change was proposed." {
 		t.Fatalf("thread messages = %v", messages)
 	}
 	notes, _ := svc.listNotifications(ctx, true, 0, "")
@@ -510,5 +510,24 @@ func TestLeadReadOnlyQuestionsRunOnAReadOnlyWorker(t *testing.T) {
 	}
 	if _, err := lr.workerFor(gjagent.DelegateRequest{ReadOnly: true}); err != nil || !runner.conf.ReadOnly {
 		t.Fatalf("a read-only question built conf %+v, err %v", runner.conf.ReadOnly, err)
+	}
+}
+
+// When an autonomy rule ran a write during an unattended run, GraphJin says
+// so itself rather than leaving it to the model's wording.
+func TestUnattendedOutcomeNamesAutonomousChanges(t *testing.T) {
+	_, svc, _ := newApprovalService(t)
+	svc.conf.Agent.Autonomy = []gjagent.AutonomyRule{{Action: "data.update", Table: "orders", Level: gjagent.AutonomyAuto}}
+	rt, err := newServiceAgentRuntime(svc, agentConfigFromService(svc.conf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := withRunOrigin(withRunThread(approvalUserCtx("user_1"), "th_1", "run_7"), runOrigin{Origin: approvalOriginRoutine, WatchID: "w_1"})
+	if _, approval, err := rt.(*serviceAgentRuntime).ProposeWrite(ctx, map[string]any{"query": approvalTestWrite}); err != nil || !approval.Decided() {
+		t.Fatalf("autonomous write = %+v err %v", approval, err)
+	}
+	got := svc.stateUnattendedOutcome(ctx, gjagent.Response{Status: gjagent.StatusAnswered, Answer: "Closed it."})
+	if got.Answer != "Made a change (update 1 row in orders) on its own, as configured.\n\nClosed it." {
+		t.Fatalf("answer = %q", got.Answer)
 	}
 }

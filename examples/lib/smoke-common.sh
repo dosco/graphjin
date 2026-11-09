@@ -1079,7 +1079,8 @@ routine_cleanup() {
     graphql_vars routine-cleanup-artifact "mutation { gj_artifacts(delete: true, where: { name: { eq: \"${id}\" }, kind: { eq: \"saved_query\" } }) { id } }" '{}' >/dev/null
   done
   for id in "${SMOKE_ROUTINE_THREADS[@]-}"; do
-    [ -n "$id" ] || continue
+    # ROUTINE_KEEP_THREADS=1 keeps the routines' threads for diagnosis.
+    [ -n "$id" ] && [ "${ROUTINE_KEEP_THREADS:-}" != "1" ] || continue
     graphql_vars routine-cleanup-thread "mutation { gj_thread(delete: true, where: { id: { eq: \"${id}\" } }) { id } }" '{}' >/dev/null
   done
   local restore

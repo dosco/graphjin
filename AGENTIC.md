@@ -482,6 +482,10 @@ writes only: it can propose a data or API change, which is held for the watch
 owner exactly like a chat write, and it can never write GraphJin's own roots
 (watches, tasks, memories, config). Its answer becomes a notification and its
 watch event leaves the watch inbox. Without approvals a routine is read-only.
+GraphJin, not the model, states what an unattended run did to the data: its
+answer leads with "No change was proposed." (or names the writes an autonomy
+rule ran), and a held write carries GraphJin's own sentence, so a model's
+"I proposed the change" never stands alone.
 Approvals record what proposed them: `origin` (`chat`, `routine`,
 `continuation`), `watch_id`, `event_id` and `profile`.
 
@@ -507,8 +511,8 @@ Inbox shows them live and lets a person decide a held change in place.
 
 `agent.budgets` caps model tokens over a rolling 24 hours, per person (their
 runs and runs made on their behalf) and per routine (its runs and the
-continuations of its writes): `user_daily_tokens` (default 2,000,000) and
-`routine_daily_tokens` (default 200,000). Budgets are on in agentic mode and off
+continuations of its writes): `user_daily_tokens` (default 20,000,000, roughly 280 lead turns) and
+`routine_daily_tokens` (default 2,000,000). Budgets are on in agentic mode and off
 elsewhere unless `enabled` says otherwise; the eval environment turns them off.
 A run over a cap does not start: the reply is `blocked` with the
 `budget_exceeded` refusal, and the owner gets one notification a day. Usage is

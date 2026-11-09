@@ -329,7 +329,7 @@ The lead's `follow_up` tool (`in_hours`, `note`) schedules a one-time turn in th
 
 ## Grounding and changes
 
-The lead's reply is grounded the same way a worker's is. An identifier that no
+The lead asks for a change in plain words ("Set support ticket 1's status to resolved"); it never writes GraphQL or SQL for the data agent, which writes the query from the schema the lead never sees. The lead's reply is grounded the same way a worker's is. An identifier that no
 delegated question returned triggers one restatement, then an
 `ungrounded_answer_fields` refusal. A question or memory repeated within one
 turn is answered from the first result.

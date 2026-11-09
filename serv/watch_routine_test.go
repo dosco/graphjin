@@ -67,7 +67,8 @@ func TestWatchRoutineAnswersInTheWatchThreadOnce(t *testing.T) {
 	if shown := stringFromAny(messages[0]["content"]); !strings.Contains(shown, "orders.0.count_id is 3 (was 1), gt 1") {
 		t.Fatalf("routine event line = %q", shown)
 	}
-	if messages[1]["content"] != runner.resp.Answer {
+	// GraphJin, not the model, leads with what happened to the data.
+	if messages[1]["content"] != "No change was proposed.\n\n"+runner.resp.Answer {
 		t.Fatalf("routine answer = %+v", messages[1])
 	}
 	events, err := newWatchControlPlane(svc).watchEventRows(ctx)
@@ -181,7 +182,7 @@ func TestWatchRoutineAnswersInItsAgentsHomeThread(t *testing.T) {
 		t.Fatalf("run context profile = %q, want %s", got, ops)
 	}
 	messages, err := svc.threadMessages(alice, home)
-	if err != nil || len(messages) != 2 || messages[1]["content"] != runner.resp.Answer {
+	if err != nil || len(messages) != 2 || messages[1]["content"] != "No change was proposed.\n\n"+runner.resp.Answer {
 		t.Fatalf("home thread messages = %+v err %v", messages, err)
 	}
 	if thread, _ := svc.threadForCaller(alice, home); thread["unread"] != true {
@@ -306,5 +307,25 @@ func TestWatchRoutineConfigFollowsApprovals(t *testing.T) {
 	conf.Agent.Enabled = true
 	if c := watchRoutineAgentConfig(conf); !c.ReadOnly || c.HeldWritesOnly {
 		t.Fatalf("without approvals a routine is read-only: %+v", c)
+	}
+}
+
+// A routine's answer cannot claim a change it did not make: GraphJin states
+// the outcome from its own facts, and the notification's title follows them.
+func TestUnattendedRunsStateTheirOwnOutcome(t *testing.T) {
+	svc := newSQLiteThreadService(t)
+	claim := gjagent.Response{Status: gjagent.StatusAnswered, Answer: "I have proposed resolving the ticket."}
+	ctx := withRunOrigin(threadUserCtx("user_1"), runOrigin{Origin: approvalOriginRoutine, WatchID: "w_1"})
+	got := svc.stateUnattendedOutcome(ctx, claim)
+	if got.Answer != "No change was proposed.\n\nI have proposed resolving the ticket." {
+		t.Fatalf("answer = %q", got.Answer)
+	}
+	held := gjagent.Response{Status: gjagent.StatusNeedsApproval, Answer: "This change needs your approval before it runs: x. Nothing has been changed yet.", Approval: &gjagent.Approval{ID: "apr_1"}}
+	if got := svc.stateUnattendedOutcome(ctx, held); got.Answer != held.Answer {
+		t.Fatalf("a held write keeps the engine's own sentence: %q", got.Answer)
+	}
+	failed := gjagent.Response{Status: gjagent.StatusError, Errors: []gjagent.ErrorInfo{{Message: "agent distiller loop exceeded max steps"}}}
+	if got := svc.stateUnattendedOutcome(ctx, failed); got.Answer != "" {
+		t.Fatalf("a failed run's error stays the message: %q", got.Answer)
 	}
 }

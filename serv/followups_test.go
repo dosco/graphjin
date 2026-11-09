@@ -57,7 +57,7 @@ func TestFollowUpRunsOnceInItsThread(t *testing.T) {
 		t.Fatalf("follow-up instruction = %q", runner.req.Instruction)
 	}
 	messages, _ := svc.threadMessages(ctx, threadID)
-	if len(messages) != 2 || messages[0]["content"] != "Follow-up: Check whether invoice 42 was paid." || messages[1]["content"] != "Invoice 42 has been paid." {
+	if len(messages) != 2 || messages[0]["content"] != "Follow-up: Check whether invoice 42 was paid." || messages[1]["content"] != "No change was proposed.\n\nInvoice 42 has been paid." {
 		t.Fatalf("thread = %v", messages)
 	}
 	if row, _ := svc.internalWatchStoreRow(ctx, followUp.ID); row != nil {
