@@ -39,6 +39,8 @@ type protocolRuntime struct {
 	preparedDetail func(context.Context, map[string]any) (any, bool)
 	// writeApproval holds data writes for the user's approval.
 	writeApproval bool
+	// heldWritesOnly refuses any write that is not held for approval.
+	heldWritesOnly bool
 }
 
 type discoveryState struct {
@@ -846,6 +848,17 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		message := "approvals are decided by the user, never by the agent: gj_approval is not writable from an agent run"
 		r.state.addViolation("approval_decision_reserved", message, "execute_graphql", true, nil)
 		out := policyFinalFailure("approval_decision_reserved", message, nil)
+		action := r.state.startAction("model", "execute_graphql", args)
+		r.state.finishAction(action, "execute_graphql", args, out, nil)
+		return out, nil
+	}
+	if r.heldWritesOnly && !(r.writeApproval && heldWrite(query)) && ContainsMutationOperation(query) {
+		// Nobody is watching this run: it may propose a data change for its
+		// owner to approve, never change GraphJin's own roots itself.
+		message := "this run can only propose data changes for the owner's approval; writes to GraphJin's own roots (watches, tasks, memories, config) are not available here"
+		details := map[string]any{"roots": MutationRootFields(query)}
+		r.state.addViolation("capability_disabled", message, "execute_graphql", true, details)
+		out := policyFinalFailure("capability_disabled", message, details)
 		action := r.state.startAction("model", "execute_graphql", args)
 		r.state.finishAction(action, "execute_graphql", args, out, nil)
 		return out, nil

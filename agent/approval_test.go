@@ -184,3 +184,47 @@ func TestSettleReplyApprovalRules(t *testing.T) {
 		t.Fatal("an unknown write_approval value must be rejected")
 	}
 }
+
+// A run nobody is watching (a routine) proposes data writes and runs no
+// write itself: GraphJin's own roots are refused, not held.
+func TestHeldWritesOnlyProposesDataWritesAndRefusesTheRest(t *testing.T) {
+	base := &proposingRuntime{}
+	rt := writeReadyRuntime(base, true)
+	rt.heldWritesOnly = true
+	rt.state.capabilities.AllowedActions = append(rt.state.capabilities.AllowedActions, "gj_watch.insert")
+	if _, err := rt.ExecuteGraphQL(context.Background(), map[string]any{"query": closeTicket}); err != nil {
+		t.Fatal(err)
+	}
+	if len(base.proposed) != 1 || len(base.executed) != 0 || rt.state.pendingApproval == nil {
+		t.Fatalf("data write: proposed=%v executed=%v pending=%v", base.proposed, base.executed, rt.state.pendingApproval)
+	}
+
+	other := writeReadyRuntime(base, true)
+	other.heldWritesOnly = true
+	other.state.capabilities.AllowedActions = append(other.state.capabilities.AllowedActions, "gj_watch.insert")
+	out, err := other.ExecuteGraphQL(context.Background(), map[string]any{"query": `mutation { gj_watch(insert: { name: "w", query: "subscription { a { id } }" }) { id } }`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !executionFailed(out) || len(base.executed) != 0 || len(base.proposed) != 1 {
+		t.Fatalf("control-plane write: out=%v executed=%v proposed=%v", out, base.executed, base.proposed)
+	}
+	if !other.state.hasPolicyFinalBlockingViolation() {
+		t.Fatal("refusing a control-plane write must be final")
+	}
+}
+
+// The core runtime of a held-writes-only run executes a mutation only as a
+// dry run whose transaction the caller rolls back.
+func TestHeldWritesOnlyCoreRuntimeRunsOnlyDryRuns(t *testing.T) {
+	rt := &coreRuntime{config: Config{HeldWritesOnly: true}}
+	_, err := rt.ExecuteGraphQL(context.Background(), map[string]any{"query": closeTicket})
+	if err == nil || !strings.Contains(err.Error(), "only propose") {
+		t.Fatalf("direct mutation err = %v", err)
+	}
+	// A dry-run marker without a transaction is not a dry run.
+	ctx := context.WithValue(context.Background(), dryRunKey{}, true)
+	if _, err := rt.ExecuteGraphQL(ctx, map[string]any{"query": closeTicket}); err == nil {
+		t.Fatal("a dry-run flag without a transaction must not unlock writes")
+	}
+}

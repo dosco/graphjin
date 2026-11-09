@@ -3,6 +3,7 @@ package serv
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -26,7 +27,7 @@ import (
 
 const (
 	approvalsRootTable  = "gj_approval"
-	approvalStoreFields = `id thread_id run_id query variables_json namespace actions summary_json preview_json hash status result_json error account_id owner_id owner_role created_at expires_at decided_at`
+	approvalStoreFields = `id thread_id run_id query variables_json namespace actions summary_json preview_json hash status result_json error account_id owner_id owner_role created_at expires_at decided_at origin watch_id event_id profile decided_by delegated_by run_as_id run_as_role`
 
 	approvalStatusPending  = "pending"
 	approvalStatusRejected = "rejected"
@@ -101,6 +102,41 @@ func withRunThread(ctx context.Context, threadID, runID string) context.Context 
 func runThreadFrom(ctx context.Context) runThreadRef {
 	ref, _ := ctx.Value(runThreadKey{}).(runThreadRef)
 	return ref
+}
+
+// Approval origins: who started the run that proposed a write.
+const (
+	approvalOriginChat         = "chat"
+	approvalOriginRoutine      = "routine"
+	approvalOriginContinuation = "continuation"
+)
+
+type runOriginKey struct{}
+
+// runOrigin says what started a run, so a write it holds can be traced back
+// to it and, after the decision, continued in its context.
+type runOrigin struct {
+	Origin  string
+	WatchID string
+	EventID string
+	Profile string
+	// DelegatedBy is the person a service-identity run acts for; RunAsID and
+	// RunAsRole are the identity it runs as.
+	DelegatedBy string
+	RunAsID     string
+	RunAsRole   string
+}
+
+func withRunOrigin(ctx context.Context, origin runOrigin) context.Context {
+	return context.WithValue(ctx, runOriginKey{}, origin)
+}
+
+func runOriginFrom(ctx context.Context) runOrigin {
+	origin, _ := ctx.Value(runOriginKey{}).(runOrigin)
+	if origin.Origin == "" {
+		origin.Origin = approvalOriginChat
+	}
+	return origin
 }
 
 // --- proposing ----------------------------------------------------------------
@@ -178,6 +214,13 @@ func (r *serviceAgentRuntime) ProposeWrite(ctx context.Context, args map[string]
 		"status": approvalStatusPending, "result_json": "", "error": "",
 		"account_id": accountID, "owner_id": ownerID, "owner_role": role,
 		"created_at": now.Format(time.RFC3339Nano), "expires_at": expires.Format(time.RFC3339Nano), "decided_at": "",
+	}
+	origin := runOriginFrom(ctx)
+	for k, v := range map[string]string{
+		"origin": origin.Origin, "watch_id": origin.WatchID, "event_id": origin.EventID, "profile": origin.Profile,
+		"decided_by": "", "delegated_by": origin.DelegatedBy, "run_as_id": origin.RunAsID, "run_as_role": origin.RunAsRole,
+	} {
+		input[k] = v
 	}
 	if _, err := s.internalStoreMutationRows(ctx, "approvals", `insert: $input`, approvalStoreFields, map[string]any{"input": input}); err != nil {
 		return nil, nil, fmt.Errorf("this write did NOT execute: storing it for approval failed: %w", err)
@@ -270,7 +313,7 @@ func (r *serviceAgentRuntime) dryRunWrite(ctx context.Context, database string, 
 		return nil, nil, fmt.Errorf("this write did NOT execute: its preview could not start: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck
-	out, err := r.ExecuteGraphQL(gjagent.WithTransaction(ctx, tx), args)
+	out, err := r.ExecuteGraphQL(gjagent.WithDryRun(ctx, tx), args)
 	if err != nil {
 		return out, nil, err
 	}
@@ -540,6 +583,8 @@ func approvalAPIRow(row map[string]any, now time.Time) map[string]any {
 		"result": parseJSONValue(stringMapValue(row, "result_json")), "error": row["error"],
 		"created_at": row["created_at"], "expires_at": row["expires_at"], "decided_at": row["decided_at"],
 		"owner_id": row["owner_id"],
+		"origin": row["origin"], "watch_id": row["watch_id"], "event_id": row["event_id"], "profile": row["profile"],
+		"decided_by": row["decided_by"], "delegated_by": row["delegated_by"],
 	}
 }
 
@@ -775,4 +820,21 @@ decided_at TEXT NOT NULL DEFAULT ''
 			fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON %s (owner_id, status)`, quoteSQLIdent("idx_graphjin_approvals_owner"), table),
 		}
 	}
+}
+
+// migrateApprovalSchema adds the columns that trace a held write to what
+// proposed it (a chat, a routine, a continuation), who decided it, and whom a
+// service-identity run acted for.
+func migrateApprovalSchema(ctx context.Context, db *sql.DB, dbType, schema string) error {
+	table := artifactTableName(dbType, schema, "approvals")
+	definition := "TEXT NOT NULL DEFAULT ''"
+	if dbType == "mysql" || dbType == "mariadb" {
+		definition = "VARCHAR(191) NOT NULL DEFAULT ''"
+	}
+	for _, col := range []string{"origin", "watch_id", "event_id", "profile", "decided_by", "delegated_by", "run_as_id", "run_as_role"} {
+		if err := ensureSQLColumn(ctx, db, dbType, table, col, definition); err != nil {
+			return err
+		}
+	}
+	return nil
 }

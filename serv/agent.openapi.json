@@ -78,8 +78,20 @@
             "description": "RFC 3339.",
             "type": "string"
           },
+          "decided_by": {
+            "description": "Who or what decided it: the owner, or autonomy:\u003crule\u003e when a configured rule let it run.",
+            "type": "string"
+          },
+          "delegated_by": {
+            "description": "Whom a service-identity run acted for.",
+            "type": "string"
+          },
           "error": {
             "description": "Why an approved write failed.",
+            "type": "string"
+          },
+          "event_id": {
+            "description": "The watch event that routine ran for.",
             "type": "string"
           },
           "expires_at": {
@@ -98,12 +110,26 @@
             "description": "The namespace it runs in.",
             "type": "string"
           },
+          "origin": {
+            "description": "What proposed it: a chat turn, a watch routine, or a continuation after an earlier decision.",
+            "enum": [
+              "",
+              "chat",
+              "routine",
+              "continuation"
+            ],
+            "type": "string"
+          },
           "owner_id": {
             "description": "Who asked; only they can decide it.",
             "type": "string"
           },
           "preview": {
             "description": "Rows from a dry run that was rolled back, or {available: false, reason}."
+          },
+          "profile": {
+            "description": "The saved agent the run used, if any.",
+            "type": "string"
           },
           "query": {
             "description": "The exact mutation that runs on approval.",
@@ -135,6 +161,10 @@
           },
           "variables": {
             "description": "Its variables."
+          },
+          "watch_id": {
+            "description": "The watch whose routine proposed it.",
+            "type": "string"
           }
         },
         "required": [

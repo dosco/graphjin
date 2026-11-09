@@ -111,6 +111,11 @@ type Config struct {
 	// WriteApprovalTTL is how long a held write stays approvable, as a Go
 	// duration such as "24h". Empty means 24h.
 	WriteApprovalTTL string `mapstructure:"write_approval_ttl" json:"write_approval_ttl,omitempty" jsonschema:"title=Agent Write Approval TTL,default=24h"`
+	// HeldWritesOnly lets a run propose data and API writes for approval but
+	// run none itself, and refuses writes to GraphJin's own roots. GraphJin
+	// sets it for runs no person is watching, such as watch routines; it is
+	// not configurable. It needs WriteApproval required.
+	HeldWritesOnly bool `mapstructure:"-" json:"-" jsonschema:"-"`
 	ReturnTrace      bool   `mapstructure:"return_trace" jsonschema:"title=Return Agent Trace,default=false"`
 	// SeedLimit caps the initial query_catalog(search: instruction) seed rows.
 	SeedLimit int `mapstructure:"seed_limit" jsonschema:"title=Agent Seed Catalog Limit,default=40"`
@@ -614,6 +619,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 
 	protocol = newProtocolRuntime(a.runtime, strings.TrimSpace(req.Instruction), req.Namespace, cfg.SeedLimit, req.Capabilities, req.Observer, a.catalogSearch)
 	protocol.writeApproval = strings.TrimSpace(cfg.WriteApproval) == WriteApprovalRequired
+	protocol.heldWritesOnly = cfg.HeldWritesOnly
 	permittedSkills := allowedSkills(readOnly, req.Capabilities)
 	prep := a.startPreparation(ctx, req, permittedSkills)
 	seed, err := protocol.Seed(ctx)
@@ -2291,6 +2297,10 @@ func (r *coreRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (
 	if r.config.ReadOnly && ContainsMutationOperation(query) {
 		return nil, fmt.Errorf("agent is in read-only mode: mutations are not allowed")
 	}
+	if r.config.HeldWritesOnly && ContainsMutationOperation(query) && !isDryRun(ctx) {
+		// Only a proposal's rolled-back dry run writes in this run.
+		return nil, fmt.Errorf("this run may only propose changes for approval: mutations do not run directly")
+	}
 	varsJSON, err := variablesJSON(args["variables"])
 	if err != nil {
 		return nil, err
@@ -2312,6 +2322,21 @@ type transactionKey struct{}
 // write approval dry-runs the held write this way and rolls tx back.
 func WithTransaction(ctx context.Context, tx *sql.Tx) context.Context {
 	return context.WithValue(ctx, transactionKey{}, tx)
+}
+
+type dryRunKey struct{}
+
+// WithDryRun runs GraphQL inside tx and marks it a dry run that the caller
+// rolls back. A run limited to held writes may execute a mutation only this
+// way, because nothing it does survives.
+func WithDryRun(ctx context.Context, tx *sql.Tx) context.Context {
+	return context.WithValue(WithTransaction(ctx, tx), dryRunKey{}, true)
+}
+
+func isDryRun(ctx context.Context) bool {
+	dry, _ := ctx.Value(dryRunKey{}).(bool)
+	tx, _ := ctx.Value(transactionKey{}).(*sql.Tx)
+	return dry && tx != nil
 }
 
 func executeResultFromCore(res *core.Result, err error) executeResult {

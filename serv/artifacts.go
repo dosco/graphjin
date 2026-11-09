@@ -644,6 +644,9 @@ func (s *graphjinService) ensureStoreTables() error {
 				return err
 			}
 		}
+		if err := migrateApprovalSchema(context.Background(), db, dbType, s.conf.Core.EffectiveArtifactsConfig().Schema); err != nil {
+			return err
+		}
 	}
 	if s.notificationsEnabled() {
 		for _, stmt := range notificationDDL(dbType, s.conf.Core.EffectiveArtifactsConfig().Schema) {

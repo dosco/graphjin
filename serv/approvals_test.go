@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
 	"github.com/dosco/graphjin/core/v3"
@@ -299,5 +301,41 @@ func TestApprovalDryRunCompilesAsTheCaller(t *testing.T) {
 	}
 	if _, approval, err := rt.ProposeWrite(ctx, map[string]any{"query": approvalTestWrite}); err != nil || approval == nil {
 		t.Fatalf("approval = %+v err = %v", approval, err)
+	}
+}
+
+// A routine's held write is dry-run and stored with its origin, while the
+// same runtime refuses to run a mutation directly.
+func TestRoutineHeldWriteIsFiledUnderItsWatch(t *testing.T) {
+	db, svc, _ := newApprovalService(t)
+	conf := agentConfigFromService(svc.conf)
+	conf.HeldWritesOnly = true
+	base, err := newServiceAgentRuntime(svc, conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := base.(*serviceAgentRuntime)
+	ctx := withRunOrigin(approvalUserCtx("user_1"), runOrigin{Origin: approvalOriginRoutine, WatchID: "w_1", EventID: "e_1"})
+	if out, err := rt.ExecuteGraphQL(ctx, map[string]any{"query": approvalTestWrite}); err == nil && !strings.Contains(fmt.Sprint(out), "only propose") {
+		t.Fatalf("a direct mutation ran: %v", out)
+	}
+	if orderStatus(t, db, 1) != "open" {
+		t.Fatal("a direct mutation changed the database")
+	}
+	_, approval, err := rt.ProposeWrite(ctx, map[string]any{"query": approvalTestWrite})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if orderStatus(t, db, 1) != "open" {
+		t.Fatal("the dry run was not rolled back")
+	}
+	row, err := svc.approvalRow(ctx, approval.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := approvalAPIRow(row, time.Now())
+	if api["origin"] != approvalOriginRoutine || api["watch_id"] != "w_1" || api["event_id"] != "e_1" ||
+		mapFromAny(api["preview"])["available"] != true {
+		t.Fatalf("approval = %v", api)
 	}
 }

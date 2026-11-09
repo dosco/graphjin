@@ -50,6 +50,26 @@ func parseWatchAgentConfig(m map[string]any) (watchAgentConfig, error) {
 	return cfg, nil
 }
 
+// watchRoutineProposeNote tells a routine it may act through approvals. The
+// watch's owner set the routine up, so proposing a change is doing what they
+// asked; it still runs only once they approve it.
+const watchRoutineProposeNote = "If what you find calls for a change to the data, propose it: GraphJin holds it for the watch owner's approval and nothing changes until they approve. Say what you proposed and why. If nothing needs changing, say so."
+
+// watchRoutineAgentConfig is the agent config a routine runs with. Nobody is
+// watching a routine, so with write approvals on it may propose data and API
+// writes and run none itself (HeldWritesOnly); without approvals it is
+// read-only, as every routine used to be.
+func watchRoutineAgentConfig(conf *Config) gjagent.Config {
+	agentConf := agentConfigFromService(conf)
+	if configApprovalsEnabled(conf) {
+		agentConf.HeldWritesOnly = true
+		agentConf.WriteApproval = gjagent.WriteApprovalRequired
+	} else {
+		agentConf.ReadOnly = true
+	}
+	return agentConf
+}
+
 // watchRoutineThreadID is the thread a watch's routine answers in when none is
 // named. It is fixed per owner and watch, so concurrent deliveries share it.
 func watchRoutineThreadID(ownerID, watchID string) string {
@@ -105,7 +125,9 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 	if !s.threadsEnabled() {
 		return receipt, errors.New("agent delivery needs agent threads; enable threads in the agent config")
 	}
-	ownerCtx := s.watchOwnerContext(ctx, def)
+	ownerCtx := withRunOrigin(s.watchOwnerContext(ctx, def), runOrigin{
+		Origin: approvalOriginRoutine, WatchID: def.ID, EventID: event.ID, Profile: cfg.Profile,
+	})
 	threadID, err := s.watchRoutineThread(ownerCtx, def, cfg)
 	if err != nil {
 		return receipt, err
@@ -114,8 +136,12 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 	receipt["thread_id"], receipt["run_id"] = threadID, runID
 
 	data := parseJSONValue(event.DataJSON)
+	instruction := watchRoutineInstruction(def, cfg.Prompt, mapFromAny(data))
+	if s.approvalsEnabled() {
+		instruction += "\n\n" + watchRoutineProposeNote
+	}
 	req := gjagent.Request{
-		Instruction: watchRoutineInstruction(def, cfg.Prompt, mapFromAny(data)),
+		Instruction: instruction,
 		Context: map[string]any{
 			"_watch_events": []any{map[string]any{"id": event.ID, "watch_id": def.ID, "data_json": data}},
 			"watch":         map[string]any{"id": def.ID, "name": def.Name},
@@ -128,9 +154,7 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 		return receipt, err
 	}
 
-	agentConf := agentConfigFromService(s.conf)
-	agentConf.ReadOnly = true
-	runner, err := s.agentEntryRunner(agentConf)
+	runner, err := s.agentEntryRunner(watchRoutineAgentConfig(s.conf))
 	if err != nil {
 		// The run row exists; record the failure in the thread rather than
 		// leaving it for the lease sweep.

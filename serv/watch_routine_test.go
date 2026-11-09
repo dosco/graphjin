@@ -214,3 +214,90 @@ func TestWatchRoutineAnswersInItsAgentsHomeThread(t *testing.T) {
 		t.Fatalf("fallback thread messages = %+v err %v", messages, err)
 	}
 }
+
+// fireOpenOrdersRoutine creates a routine watch on open orders for ctx's user,
+// makes it fire once and delivers it.
+func fireOpenOrdersRoutine(t *testing.T, svc *graphjinService, ctx context.Context) string {
+	t.Helper()
+	db := svc.dbs["app"]
+	setOpenOrders(t, db, 1)
+	row, err := newWatchControlPlane(svc).mutateRow(ctx, core.ManagedMutationRoot{
+		Table: watchesRootTable, Operation: "insert",
+		Input: map[string]any{
+			"name":          "open_orders_routine",
+			"schedule":      map[string]any{"cron": "*/5 * * * *"},
+			"query":         `query { orders(where: { status: { eq: "open" } }) { count_id } }`,
+			"metric":        map[string]any{"path": "orders.0.count_id", "op": "gt", "threshold": 1},
+			"delivery_json": map[string]any{"kind": "agent", "prompt": "Close stale open orders if any."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create routine watch: %v", err)
+	}
+	id := stringFromAny(row["id"])
+	due := time.Now().UTC().Truncate(5 * time.Minute)
+	if _, err := db.Exec(`UPDATE "_graphjin_watches" SET next_fire_at = ? WHERE id = ?`, formatWatchFireTime(due), id); err != nil {
+		t.Fatal(err)
+	}
+	setOpenOrders(t, db, 3)
+	if sweep, err := svc.sweepWatchSchedules(ctx, due.Add(time.Second)); err != nil || sweep.Fired != 1 {
+		t.Fatalf("sweep fired=%d err=%v", sweep.Fired, err)
+	}
+	if err := svc.processPendingWatchDeliveries(ctx); err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+	return id
+}
+
+// With write approvals on, a routine may propose changes: it runs with held
+// writes only, is told it may propose, and its run carries the routine
+// origin a held write is filed under. Its answer becomes a notification and
+// the watch event leaves the watch inbox.
+func TestWatchRoutineMayProposeWritesForApproval(t *testing.T) {
+	_, svc := newSQLiteWatchServiceWithOptions(t, 10, func(conf *Config) {
+		conf.Agent.Enabled = true
+		conf.Agent.Lead.Enabled = true
+		conf.Agent.WriteApproval = gjagent.WriteApprovalRequired
+		conf.Core.Threads = core.ThreadsConfig{Enabled: true, HistoryTurns: 12, RunLeaseSeconds: 3, MaxPerOwner: 3}
+	})
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatal(err)
+	}
+	startSQLiteWatchCore(t, svc, svc.dbs["app"])
+	runner := &scriptedAgentRunner{resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "Two open orders are stale; nothing else needs doing."}}
+	withScriptedAgentRunner(t, runner)
+	ctx := threadUserCtx("user_1")
+	watchID := fireOpenOrdersRoutine(t, svc, ctx)
+
+	if runner.conf.ReadOnly || !runner.conf.HeldWritesOnly || runner.conf.WriteApproval != gjagent.WriteApprovalRequired {
+		t.Fatalf("routine config: read_only=%v held_writes_only=%v write_approval=%q", runner.conf.ReadOnly, runner.conf.HeldWritesOnly, runner.conf.WriteApproval)
+	}
+	if !strings.Contains(runner.req.Instruction, watchRoutineProposeNote) {
+		t.Fatalf("routine instruction = %q", runner.req.Instruction)
+	}
+	origin := runOriginFrom(runner.ctx)
+	events, _ := newWatchControlPlane(svc).watchEventRows(ctx)
+	if len(events) != 1 {
+		t.Fatalf("events = %v", events)
+	}
+	eventID := stringFromAny(events[0]["id"])
+	if origin.Origin != approvalOriginRoutine || origin.WatchID != watchID || origin.EventID != eventID {
+		t.Fatalf("run origin = %+v", origin)
+	}
+	if !boolMapValue(events[0], "seen") {
+		t.Fatal("the routine's watch event should be seen once its answer is a notification")
+	}
+	notes, _ := svc.listNotifications(ctx, true, 0, "")
+	if len(notes) != 1 || notes[0]["kind"] != notificationRoutineAnswer || notes[0]["ref_id"] != watchRoutineThreadID("user_1", watchID) ||
+		!strings.Contains(stringFromAny(notes[0]["body"]), "stale") {
+		t.Fatalf("notifications = %v", notes)
+	}
+}
+
+func TestWatchRoutineConfigFollowsApprovals(t *testing.T) {
+	conf := &Config{}
+	conf.Agent.Enabled = true
+	if c := watchRoutineAgentConfig(conf); !c.ReadOnly || c.HeldWritesOnly {
+		t.Fatalf("without approvals a routine is read-only: %+v", c)
+	}
+}

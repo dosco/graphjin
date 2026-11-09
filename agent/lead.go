@@ -270,7 +270,7 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 	}
 
 	tools := []ax.Tool{run.askTool(ctx)}
-	if l.Store != nil && !l.config.ReadOnly {
+	if l.Store != nil && !l.config.ReadOnly && !l.config.HeldWritesOnly {
 		tools = append(tools, run.rememberTool(ctx))
 	}
 	gojaRuntime := axgoja.NewRuntime(codeBlockPolicy(lc.TimeoutSeconds))
