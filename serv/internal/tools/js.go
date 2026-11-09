@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 
@@ -64,18 +65,45 @@ func main() {
 	// Field descriptions come from Go source comments. The repo is
 	// multi-module, so comments must be registered per module with its real
 	// import path; directories are relative to the serv module root.
+	//
+	// AddGoComments keys each package by path.Join(base, walkedDir), so a
+	// module is walked from its own directory: walking "../core" keyed core's
+	// comments under .../core/core and none of them matched a type.
+	root, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
 	for _, m := range []struct{ pkg, dir string }{
 		{"github.com/dosco/graphjin/core/v3", "../core"},
 		{"github.com/dosco/graphjin/serv/v3", "."},
 		{"github.com/dosco/graphjin/auth/v3", "../auth"},
 		{"github.com/dosco/graphjin/agent/v3", "../agent"},
 	} {
-		if err := r.AddGoComments(m.pkg, m.dir); err != nil {
+		if err := os.Chdir(filepath.Join(root, m.dir)); err != nil {
+			panic(err)
+		}
+		if err := r.AddGoComments(m.pkg, "."); err != nil {
 			panic(fmt.Sprintf("comments %s: %v", m.dir, err))
 		}
 	}
+	if err := os.Chdir(root); err != nil {
+		panic(err)
+	}
 
 	s := r.Reflect(&serv.Config{})
+	// Guard the comment wiring: if core's comments stop matching, Table's
+	// documented fields lose their descriptions silently.
+	if table, ok := s.Definitions["Table"]; ok {
+		described := false
+		for pair := table.Properties.Oldest(); pair != nil; pair = pair.Next() {
+			if pair.Value.Description != "" {
+				described = true
+			}
+		}
+		if !described {
+			panic("core doc comments did not reach the schema: check the AddGoComments paths")
+		}
+	}
 	s.ID = schemaID
 	s.Title = "GraphJin Configuration"
 	s.Description = "Configuration for the GraphJin service and compiler core (dev.yml / prod.yml / agentic.yml)."

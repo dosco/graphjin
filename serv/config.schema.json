@@ -53,6 +53,7 @@
 						"json_object"
 					],
 					"title": "Agent Structured Output Mode",
+					"description": "StructuredOutputMode selects the Ax structured-output mechanism. \"auto\"\nlets the deployment profile and its model rules choose the mechanism Ax\nhas verified for that pairing; the explicit values are an override.",
 					"default": "auto"
 				},
 				"response_format": {
@@ -61,7 +62,8 @@
 						"json_schema",
 						"json_object"
 					],
-					"title": "Agent Response Format (deprecated: use structured_output_mode)"
+					"title": "Agent Response Format (deprecated: use structured_output_mode)",
+					"description": "ResponseFormat is the deprecated predecessor of StructuredOutputMode:\njson_schema maps to native, json_object to json_object. Set only one."
 				},
 				"reasoning": {
 					"type": "string",
@@ -110,11 +112,13 @@
 						"required",
 						"off"
 					],
-					"title": "Agent Write Approval"
+					"title": "Agent Write Approval",
+					"description": "WriteApproval is \"required\" to hold every agent data write for the\nuser's approval, or \"off\" to run writes directly. Empty lets the\nservice decide: required in agentic mode."
 				},
 				"write_approval_ttl": {
 					"type": "string",
 					"title": "Agent Write Approval TTL",
+					"description": "WriteApprovalTTL is how long a held write stays approvable, as a Go\nduration such as \"24h\". Empty means 24h.",
 					"default": "24h"
 				},
 				"return_trace": {
@@ -125,11 +129,13 @@
 				"seed_limit": {
 					"type": "integer",
 					"title": "Agent Seed Catalog Limit",
+					"description": "SeedLimit caps the initial query_catalog(search: instruction) seed rows.",
 					"default": 40
 				},
 				"catalog_default_limit": {
 					"type": "integer",
 					"title": "Agent Catalog Default Limit",
+					"description": "CatalogDefaultLimit is the default row limit for model-issued catalog queries.",
 					"default": 20
 				},
 				"selection": {
@@ -138,7 +144,8 @@
 				},
 				"lead": {
 					"$ref": "#/$defs/LeadConfig",
-					"title": "Lead Agent"
+					"title": "Lead Agent",
+					"description": "Lead is the conversational agent that delegates questions to this one."
 				}
 			},
 			"additionalProperties": false,
@@ -202,17 +209,20 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "ArtifactsConfig declares the GraphJin-managed SQL artifact store."
 		},
 		"Auth": {
 			"properties": {
 				"development": {
 					"type": "boolean",
 					"title": "Development Mode",
+					"description": "Enable development mode used to set credentials in the header and vars for testing",
 					"default": false
 				},
 				"name": {
-					"type": "string"
+					"type": "string",
+					"description": "Name of the HTTP header"
 				},
 				"type": {
 					"type": "string",
@@ -220,14 +230,17 @@
 						"jwt",
 						"header"
 					],
-					"title": "Type"
+					"title": "Type",
+					"description": "Type can be one of jwt or header"
 				},
 				"cookie": {
 					"type": "string",
-					"title": "Cookie Name"
+					"title": "Cookie Name",
+					"description": "The name of the cookie that holds the authentication token"
 				},
 				"jwt": {
-					"$ref": "#/$defs/JWTConfig"
+					"$ref": "#/$defs/JWTConfig",
+					"description": "JWT authentication"
 				},
 				"header": {
 					"properties": {
@@ -242,43 +255,51 @@
 						}
 					},
 					"additionalProperties": false,
-					"type": "object"
+					"type": "object",
+					"description": "Header authentication"
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "Auth struct contains authentication related config values used by the GraphJin service"
 		},
 		"AuthConfig": {
 			"properties": {
 				"scheme": {
-					"type": "string"
+					"type": "string",
+					"description": "Scheme: bearer | basic | api_key | oauth2_client_credentials | token_exchange"
 				},
 				"token": {
 					"type": "string",
+					"description": "Bearer: use either a static/env-supplied token or TokenFromRequest.\nGraphQL and HTTP MCP forward only explicitly configured credential headers.",
 					"x-graphjin-sensitive": "secret"
 				},
 				"token_from_request": {
 					"$ref": "#/$defs/TokenFromRequest"
 				},
 				"username": {
-					"type": "string"
+					"type": "string",
+					"description": "Basic auth."
 				},
 				"password": {
 					"type": "string",
 					"x-graphjin-sensitive": "secret"
 				},
 				"key_name": {
-					"type": "string"
+					"type": "string",
+					"description": "API key (header or query)."
 				},
 				"key_value": {
 					"type": "string",
 					"x-graphjin-sensitive": "secret"
 				},
 				"key_in": {
-					"type": "string"
+					"type": "string",
+					"description": "\"header\" | \"query\""
 				},
 				"token_url": {
-					"type": "string"
+					"type": "string",
+					"description": "OAuth2 client_credentials grant."
 				},
 				"client_id": {
 					"type": "string"
@@ -294,26 +315,32 @@
 					"type": "array"
 				},
 				"request": {
-					"$ref": "#/$defs/TokenExchangeRequest"
+					"$ref": "#/$defs/TokenExchangeRequest",
+					"description": "token_exchange — generic \"POST credentials → JSON with token\" flow.\nCovers Salesforce Marketing Cloud Personalization and similar\nvendor-specific token endpoints that aren't standard OAuth2."
 				},
 				"response": {
 					"$ref": "#/$defs/TokenExchangeResponse"
 				},
 				"attach_as": {
-					"type": "string"
+					"type": "string",
+					"description": "How the resolved token attaches to outgoing operation requests."
 				},
 				"attach_name": {
-					"type": "string"
+					"type": "string",
+					"description": "e.g. \"Authorization\""
 				},
 				"attach_format": {
-					"type": "string"
+					"type": "string",
+					"description": "e.g. \"Bearer {token}\""
 				},
 				"cache_ttl": {
-					"type": "string"
+					"type": "string",
+					"description": "CacheTTL overrides the token cache TTL when the auth response\ndoesn't include an expires_in field. Format: Go duration (\"3500s\")."
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "AuthConfig describes how outgoing requests to the upstream are authenticated."
 		},
 		"AuthLogin": {
 			"properties": {
@@ -437,14 +464,16 @@
 			"properties": {
 				"allow_filtering": {
 					"type": "boolean",
-					"title": "Allow Filtering"
+					"title": "Allow Filtering",
+					"description": "AllowFiltering is the only ALLOW FILTERING escape hatch — enable only for\nknown-small tables. It never relaxes OR/NOT/LIKE/IS NULL rejections."
 				},
 				"partition_keys": {
 					"items": {
 						"type": "string"
 					},
 					"type": "array",
-					"title": "Partition Keys"
+					"title": "Partition Keys",
+					"description": "PartitionKeys / ClusteringKeys optionally override the introspected key roles."
 				},
 				"clustering_keys": {
 					"items": {
@@ -455,16 +484,19 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "CassandraConfig declares per-table Cassandra options."
 		},
 		"CatalogConfig": {
 			"properties": {
 				"enabled": {
-					"title": "Enable Catalog Graph"
+					"title": "Enable Catalog Graph",
+					"description": "Enabled controls whether GraphJin exposes catalog tables.\nWhen omitted, it defaults to enabled in dev and disabled in production."
 				},
 				"database": {
 					"type": "string",
 					"title": "Catalog Database",
+					"description": "Database is the virtual database name. Defaults to \"graphjin\".",
 					"default": "graphjin"
 				},
 				"samples": {
@@ -475,21 +507,25 @@
 						"off"
 					],
 					"title": "Catalog Sample Mode",
+					"description": "Samples controls whether live sample/profile data is inlined or fetched on\ndemand. Default: on_demand.",
 					"default": "on_demand"
 				},
 				"auto_code_relations": {
-					"title": "Auto Code Relations"
+					"title": "Auto Code Relations",
+					"description": "AutoCodeRelations controls automatic relationships from catalog/schema\ntables to CodeSQL's code_db_refs. When omitted, it follows Enabled."
 				},
 				"code_databases": {
 					"items": {
 						"type": "string"
 					},
 					"type": "array",
-					"title": "CodeSQL Databases"
+					"title": "CodeSQL Databases",
+					"description": "CodeDatabases optionally pins which CodeSQL database should be linked.\nEmpty means auto-detect, but only when exactly one CodeSQL DB exists."
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "CatalogConfig controls the managed AI-first catalog graph database."
 		},
 		"CatalogSearchConfig": {
 			"properties": {
@@ -534,11 +570,13 @@
 				},
 				"merge_on_update": {
 					"type": "boolean",
-					"title": "Merge On Update"
+					"title": "Merge On Update",
+					"description": "MergeOnUpdate makes updates to this JSON column merge the new keys into\nthe stored document instead of replacing it. Postgres jsonb only."
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "Configuration for a database table column"
 		},
 		"ConcurrencyConfig": {
 			"properties": {
@@ -550,7 +588,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "ConcurrencyConfig bounds outgoing-request fan-out per spec."
 		},
 		"Database": {
 			"properties": {
@@ -701,53 +740,65 @@
 						"nanodb",
 						"codesql"
 					],
-					"title": "Database Type"
+					"title": "Database Type",
+					"description": "Database type (postgres, mysql, mariadb, sqlite, oracle, mongodb, snowflake, nanodb)"
 				},
 				"connection_string": {
 					"type": "string",
 					"title": "Connection String",
+					"description": "Connection string for the database (alternative to individual params)",
 					"x-graphjin-sensitive": "connection"
 				},
 				"host": {
 					"type": "string",
-					"title": "Host"
+					"title": "Host",
+					"description": "Database host"
 				},
 				"port": {
 					"type": "integer",
-					"title": "Port"
+					"title": "Port",
+					"description": "Database port"
 				},
 				"dbname": {
 					"type": "string",
-					"title": "Database Name"
+					"title": "Database Name",
+					"description": "Database name"
 				},
 				"user": {
 					"type": "string",
-					"title": "User"
+					"title": "User",
+					"description": "Database user"
 				},
 				"password": {
 					"type": "string",
 					"title": "Password",
+					"description": "Database password",
 					"x-graphjin-sensitive": "secret"
 				},
 				"path": {
 					"type": "string",
-					"title": "File Path (SQLite)"
+					"title": "File Path (SQLite)",
+					"description": "File path for SQLite databases"
 				},
 				"max_open_conns": {
 					"type": "integer",
-					"title": "Max Open Connections"
+					"title": "Max Open Connections",
+					"description": "Maximum number of open connections"
 				},
 				"max_idle_conns": {
 					"type": "integer",
-					"title": "Max Idle Connections"
+					"title": "Max Idle Connections",
+					"description": "Maximum number of idle connections"
 				},
 				"schema": {
 					"type": "string",
-					"title": "Schema"
+					"title": "Schema",
+					"description": "Schema name to use (for databases that support schemas)"
 				},
 				"pool_size": {
 					"type": "integer",
-					"title": "Connection Pool Size"
+					"title": "Connection Pool Size",
+					"description": "Connection pool settings"
 				},
 				"max_connections": {
 					"type": "integer",
@@ -763,11 +814,13 @@
 				},
 				"ping_timeout": {
 					"type": "integer",
-					"title": "Healthcheck Ping Timeout"
+					"title": "Healthcheck Ping Timeout",
+					"description": "Health check"
 				},
 				"enable_tls": {
 					"type": "boolean",
-					"title": "Enable TLS"
+					"title": "Enable TLS",
+					"description": "TLS settings"
 				},
 				"server_name": {
 					"type": "string",
@@ -790,15 +843,18 @@
 				},
 				"encrypt": {
 					"type": "boolean",
-					"title": "MSSQL Encrypt"
+					"title": "MSSQL Encrypt",
+					"description": "MSSQL-specific: disable TLS encryption (go-mssqldb defaults to encrypt=true)"
 				},
 				"trust_server_certificate": {
 					"type": "boolean",
-					"title": "MSSQL Trust Server Certificate"
+					"title": "MSSQL Trust Server Certificate",
+					"description": "MSSQL-specific: trust server certificate without validation"
 				},
 				"private_key_path": {
 					"type": "string",
 					"title": "Private Key File Path (Snowflake)",
+					"description": "Snowflake key pair authentication (PKCS#8 PEM format).\nGenerate key: openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8",
 					"x-graphjin-sensitive": "secret_ref"
 				},
 				"private_key_pem": {
@@ -813,7 +869,8 @@
 				},
 				"read_only": {
 					"type": "boolean",
-					"title": "Read Only"
+					"title": "Read Only",
+					"description": "Read-only mode — blocks all mutations and DDL against this database.\nOnce set in config, cannot be changed at runtime via MCP tools."
 				},
 				"analytics_mode": {
 					"type": "boolean",
@@ -821,11 +878,13 @@
 				},
 				"infer_db_refs": {
 					"type": "boolean",
-					"title": "Infer Database References"
+					"title": "Infer Database References",
+					"description": "InferDBRefs controls CodeSQL's best-effort code-to-database reference\ninference. It is only used for databases with type: codesql."
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "DatabaseConfig defines configuration for a single database in multi-database mode"
 		},
 		"Delete": {
 			"properties": {
@@ -846,7 +905,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "Table configuration for deleting from a table with a role"
 		},
 		"DiscoveryCacheConfig": {
 			"properties": {
@@ -893,6 +953,7 @@
 				"version": {
 					"type": "string",
 					"title": "Federation Version",
+					"description": "Version is the Federation spec version surfaced via @link.\nDefaults to \"v2.5\" when empty.",
 					"default": "v2.5"
 				},
 				"keys": {
@@ -903,14 +964,16 @@
 						"type": "array"
 					},
 					"type": "object",
-					"title": "Federation Keys"
+					"title": "Federation Keys",
+					"description": "Keys overrides the auto-derived @key for the named table. Each\nentry is a list of column names that compose the key."
 				},
 				"shareable": {
 					"items": {
 						"type": "string"
 					},
 					"type": "array",
-					"title": "Shareable Fields"
+					"title": "Shareable Fields",
+					"description": "Shareable, Inaccessible and Tags accept \"Type.field\" identifiers."
 				},
 				"inaccessible": {
 					"items": {
@@ -931,13 +994,15 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "FederationConfig configures Apollo Federation v2 subgraph emission."
 		},
 		"FilesystemConfig": {
 			"properties": {
 				"name": {
 					"type": "string",
-					"title": "Table Name"
+					"title": "Table Name",
+					"description": "Name is the table name surfaced in GraphQL (e.g. \"avatars\")."
 				},
 				"backend": {
 					"type": "string",
@@ -946,48 +1011,59 @@
 						"s3",
 						"gcs"
 					],
-					"title": "Backend"
+					"title": "Backend",
+					"description": "Backend selects the implementation: \"local\", \"s3\", or \"gcs\".\nS3 and GCS are gated by build tags; on a slim build, configuring\nthem produces a clear error."
 				},
 				"bucket": {
 					"type": "string",
-					"title": "Bucket"
+					"title": "Bucket",
+					"description": "Bucket is the S3 bucket / GCS bucket name. Ignored for local."
 				},
 				"region": {
 					"type": "string",
-					"title": "Region"
+					"title": "Region",
+					"description": "Region is the S3 region (e.g. \"us-east-1\"). Ignored for local/gcs."
 				},
 				"endpoint": {
 					"type": "string",
-					"title": "Endpoint Override"
+					"title": "Endpoint Override",
+					"description": "Endpoint, when non-empty, overrides the S3 endpoint URL — useful\nfor MinIO, localstack, or non-AWS S3-compatible services."
 				},
 				"prefix": {
 					"type": "string",
-					"title": "Key Prefix"
+					"title": "Key Prefix",
+					"description": "Prefix is prepended to every key. Effective root for the table."
 				},
 				"root": {
 					"type": "string",
-					"title": "Local Root Directory"
+					"title": "Local Root Directory",
+					"description": "Root is the local filesystem root directory. Required for the\nlocal backend; ignored otherwise."
 				},
 				"presign_ttl": {
 					"type": "integer",
-					"title": "Presigned URL TTL"
+					"title": "Presigned URL TTL",
+					"description": "PresignTTL bounds how long generated presigned URLs are valid.\nDefaults to 15 minutes when zero. Local backend ignores this."
 				},
 				"public_base_url": {
 					"type": "string",
-					"title": "Public Base URL"
+					"title": "Public Base URL",
+					"description": "PublicBaseURL, when set, replaces the presigned-URL host. Useful\nwhen objects are fronted by a CDN. The path is appended unchanged."
 				},
 				"read_only": {
 					"type": "boolean",
-					"title": "Read Only"
+					"title": "Read Only",
+					"description": "ReadOnly disables GraphJin-managed writes and local filesystem watch\ninvalidation for this filesystem table."
 				},
 				"max_list_page_size": {
 					"type": "integer",
 					"title": "Max List Page Size",
+					"description": "MaxListPageSize caps the number of entries returned per list call.\nDefaults to 1000 when zero.",
 					"default": 1000
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "FilesystemConfig declares one filesystem-backed virtual table."
 		},
 		"Function": {
 			"properties": {
@@ -1007,7 +1083,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "Configuration for a database function"
 		},
 		"IdentityConfig": {
 			"properties": {
@@ -1044,7 +1121,8 @@
 						"type": "string"
 					},
 					"type": "array",
-					"title": "Group Claims"
+					"title": "Group Claims",
+					"description": "GroupClaims names the token claims that list the caller's groups. The\nvalues are exposed to filters and presets as the trusted $user_groups variable."
 				},
 				"role_mode": {
 					"type": "string",
@@ -1053,11 +1131,13 @@
 						"union"
 					],
 					"title": "Role Mode",
+					"description": "RoleMode selects how GraphJin resolves a caller with several matching\nroles: \"first\" applies the first configured role, \"union\" merges the\ntable rules of every matching role.",
 					"default": "first"
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "IdentityConfig declares how request-wide identity is extracted in source mode."
 		},
 		"Insert": {
 			"properties": {
@@ -1084,7 +1164,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "Table configuration for inserting into a table with a role"
 		},
 		"JWTConfig": {
 			"properties": {
@@ -1096,15 +1177,18 @@
 						"jwks",
 						"other"
 					],
-					"title": "JWT Provider"
+					"title": "JWT Provider",
+					"description": "Provider can be one of auth0, firebase, jwks or other"
 				},
 				"secret": {
 					"type": "string",
-					"title": "JWT Secret Key"
+					"title": "JWT Secret Key",
+					"description": "The secret key used for signing and encrypting the JWT token"
 				},
 				"public_key": {
 					"type": "string",
-					"title": "Public Key"
+					"title": "Public Key",
+					"description": "Public keys can be used instead of using a secret\nPublicKeyFile points to the file containing the public key"
 				},
 				"public_key_type": {
 					"type": "string",
@@ -1112,15 +1196,18 @@
 						"ecdsa",
 						"rsa"
 					],
-					"title": "Public Key File Type"
+					"title": "Public Key File Type",
+					"description": "Public key file type can be one of ecdsa or rsa"
 				},
 				"audience": {
 					"type": "string",
-					"title": "Match Audience Value"
+					"title": "Match Audience Value",
+					"description": "Audience value that the JWT token needs to match"
 				},
 				"issuer": {
 					"type": "string",
 					"title": "Match Issuer Value",
+					"description": "Issuer value that the JWT token needs to match:\nExample: http://my-domain.auth0.com",
 					"examples": [
 						"http://my-domain.auth0.com"
 					]
@@ -1128,21 +1215,25 @@
 				"jwks_url": {
 					"type": "string",
 					"title": "JWKS Endpoint URL",
+					"description": "Sets the url of the JWKS endpoint.\nExample: https://YOUR_DOMAIN/.well-known/jwks.json",
 					"examples": [
 						"https://YOUR_DOMAIN/.well-known/jwks.json"
 					]
 				},
 				"jwks_refresh": {
 					"type": "integer",
-					"title": "JWKS Refresh Timeout (minutes)"
+					"title": "JWKS Refresh Timeout (minutes)",
+					"description": "Sets in minutes interval between refreshes, overriding the adaptive token refreshing"
 				},
 				"jwks_min_refresh": {
 					"type": "integer",
-					"title": "JWKS Minimum Refresh Timeout (minutes)"
+					"title": "JWKS Minimum Refresh Timeout (minutes)",
+					"description": "JWKSMinRefresh sets in minutes fallback value when tokens are refreshed, default\nto 60 minutes"
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "JWTConfig struct contains JWT authentication related config values used by the GraphJin service"
 		},
 		"JoinConfig": {
 			"properties": {
@@ -1153,14 +1244,17 @@
 					"type": "string"
 				},
 				"param": {
-					"type": "string"
+					"type": "string",
+					"description": "OpenAPI param name receiving the column value"
 				},
 				"expose_as": {
-					"type": "string"
+					"type": "string",
+					"description": "GraphQL field name on the parent"
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "JoinConfig wires an operation to a DB table+column."
 		},
 		"KeystoreConfig": {
 			"properties": {
@@ -1212,16 +1306,19 @@
 				"max_steps": {
 					"type": "integer",
 					"title": "Lead Max Steps",
+					"description": "MaxSteps bounds the lead's model calls in one turn.",
 					"default": 6
 				},
 				"max_parallel": {
 					"type": "integer",
 					"title": "Lead Max Parallel Questions",
+					"description": "MaxParallel bounds how many delegated questions run at once.",
 					"default": 4
 				},
 				"max_questions": {
 					"type": "integer",
 					"title": "Lead Max Questions Per Turn",
+					"description": "MaxQuestions bounds delegated questions in one turn.",
 					"default": 8
 				},
 				"timeout_seconds": {
@@ -1231,7 +1328,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "LeadConfig selects the lead's model and bounds its fan-out."
 		},
 		"MCPConfig": {
 			"properties": {
@@ -1452,27 +1550,32 @@
 			"properties": {
 				"enabled": {
 					"type": "boolean",
-					"title": "Enable Metadata Graph"
+					"title": "Enable Metadata Graph",
+					"description": "Enabled controls whether GraphJin exposes discovered metadata tables.\nWhen omitted, it defaults to enabled in dev and disabled in production."
 				},
 				"database": {
 					"type": "string",
 					"title": "Metadata Database",
+					"description": "Database is the virtual database name. Defaults to \"graphjin\".",
 					"default": "graphjin"
 				},
 				"auto_code_relations": {
 					"type": "boolean",
-					"title": "Auto Code Relations"
+					"title": "Auto Code Relations",
+					"description": "AutoCodeRelations controls automatic relationships from catalog items\nto CodeSQL's public gj_code projection. When omitted, it follows Enabled."
 				},
 				"code_databases": {
 					"items": {
 						"type": "string"
 					},
 					"type": "array",
-					"title": "CodeSQL Databases"
+					"title": "CodeSQL Databases",
+					"description": "CodeDatabases optionally pins which CodeSQL database should be linked.\nEmpty means auto-detect, but only when exactly one CodeSQL DB exists."
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "MetadataConfig controls the managed metadata graph database."
 		},
 		"OperationOverride": {
 			"properties": {
@@ -1489,32 +1592,38 @@
 					"type": "boolean"
 				},
 				"expose_mutation": {
-					"type": "boolean"
+					"type": "boolean",
+					"description": "ExposeMutation is the explicit opt-in required for every non-GET\noperation. Merely appearing in an OpenAPI document never exposes a write."
 				},
 				"allowed_roles": {
 					"items": {
 						"type": "string"
 					},
-					"type": "array"
+					"type": "array",
+					"description": "AllowedRoles is an additional runtime allowlist layered on top of source\ncapability and access policy checks."
 				},
 				"retry_on_auth_failure": {
-					"type": "boolean"
+					"type": "boolean",
+					"description": "RetryOnAuthFailure permits one 401 token-refresh retry. It defaults to\nfalse for mutations because blindly replaying a write is unsafe."
 				},
 				"defaults": {
 					"additionalProperties": {
 						"type": "string"
 					},
-					"type": "object"
+					"type": "object",
+					"description": "Defaults supplies fallback values for path/query params; caller args win."
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "OperationOverride applies presentation, classification, and mutation-policy settings to an operation."
 		},
 		"PartitionConfig": {
 			"properties": {
 				"column": {
 					"type": "string",
 					"title": "Partition Column",
+					"description": "Column is the partition key column name (e.g., \"created_at\").",
 					"examples": [
 						"created_at"
 					]
@@ -1522,6 +1631,7 @@
 				"default_range_days": {
 					"type": "integer",
 					"title": "Default Range Days",
+					"description": "DefaultRangeDays is the number of days to auto-filter when no partition filter\nis present in the query. Set to 0 to only warn without injecting a filter.",
 					"examples": [
 						30
 					]
@@ -1532,7 +1642,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "PartitionConfig declares the partition key for a warehouse table."
 		},
 		"Query": {
 			"properties": {
@@ -1543,7 +1654,8 @@
 					"items": {
 						"type": "string"
 					},
-					"type": "array"
+					"type": "array",
+					"description": "Use filters to enforce table wide things like { disabled: false } where you never want disabled users to be shown."
 				},
 				"columns": {
 					"items": {
@@ -1559,7 +1671,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "Table configuration for querying a table with a role"
 		},
 		"RateLimitConfig": {
 			"properties": {
@@ -1579,7 +1692,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "RateLimitConfig sets process-local limits for model calls made with the server-owned agent provider."
 		},
 		"RateLimiter": {
 			"properties": {
@@ -1661,7 +1775,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "Configuration for user role"
 		},
 		"RoleTable": {
 			"properties": {
@@ -1696,7 +1811,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "Table configuration for a specific role (user role)"
 		},
 		"RuntimeEventsConfig": {
 			"properties": {
@@ -1773,7 +1889,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "SelectionConfig configures the independent, tool-less Ax decision stage."
 		},
 		"SemanticCatalogSearchConfig": {
 			"properties": {
@@ -1884,7 +2001,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "SourceAccessConfig declares source-level access defaults plus table/root classifications."
 		},
 		"SourceAccessGrant": {
 			"properties": {
@@ -1901,7 +2019,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "SourceAccessGrant gives one role read access to tables of a database source."
 		},
 		"SourceAccessGrantTable": {
 			"properties": {
@@ -1922,7 +2041,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "SourceAccessGrantTable sets the columns and the row filter of a grant."
 		},
 		"SourceConfig": {
 			"properties": {
@@ -2128,48 +2248,58 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "SourceConfig declares one external provider in sources."
 		},
 		"SpecConfig": {
 			"properties": {
 				"base_url": {
-					"type": "string"
+					"type": "string",
+					"description": "BaseURL overrides the spec's servers[0].url. Useful when the spec\nhard-codes a sandbox/prod URL that doesn't match the deployment, or\nwhen env-var interpolation is needed (e.g. https://${IS_ACCOUNT}...)."
 				},
 				"auth": {
-					"$ref": "#/$defs/AuthConfig"
+					"$ref": "#/$defs/AuthConfig",
+					"description": "Auth carries credentials and the auth flow shape. One AuthConfig per\nspec — we don't currently support per-operation auth."
 				},
 				"joins": {
 					"additionalProperties": {
 						"$ref": "#/$defs/JoinConfig"
 					},
-					"type": "object"
+					"type": "object",
+					"description": "Joins maps an operationId to a DB table/column. Without an entry, an\noperation is still queryable as a top-level field; with an entry, it\nalso becomes a child field on the named DB table."
 				},
 				"operations": {
 					"additionalProperties": {
 						"$ref": "#/$defs/OperationOverride"
 					},
-					"type": "object"
+					"type": "object",
+					"description": "Operations carries per-operation overrides that aren't joins (e.g.\nrenaming the auto-exposed top-level field, overriding result_path).\nOptional; auto-classification provides sensible defaults."
 				},
 				"concurrency": {
-					"$ref": "#/$defs/ConcurrencyConfig"
+					"$ref": "#/$defs/ConcurrencyConfig",
+					"description": "Concurrency bounds the goroutine fan-out and request rate per spec.\nWithout this, a 1000-row parent select would spawn 1000 parallel\nHTTP calls to the upstream — a reliable way to get rate-limited."
 				},
 				"timeout": {
 					"type": "integer",
-					"title": "Upstream Request Timeout"
+					"title": "Upstream Request Timeout",
+					"description": "Timeout bounds each upstream request, including token acquisition. Zero\nselects DefaultTimeout. Keeping the bound per spec lets slower services\nopt into a larger budget when GraphJin is embedded behind a compatible\nouter HTTP deadline."
 				},
 				"max_request_bytes": {
-					"type": "integer"
+					"type": "integer",
+					"description": "MaxRequestBytes and MaxResponseBytes bound encoded request bodies and\nupstream responses. Zero selects conservative package defaults."
 				},
 				"max_response_bytes": {
 					"type": "integer"
 				},
 				"document": {
 					"type": "string",
-					"title": "OpenAPI Document"
+					"title": "OpenAPI Document",
+					"description": "Document holds the OpenAPI document itself, as YAML or JSON. It lets a\nremote client add an API source through gj_config without access to the\nserver's specs directory. It takes precedence over a file with the\nsame key in specs_dir."
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "SpecConfig is the per-spec section a user adds to the GraphJin config (keyed by spec filename without extension)."
 		},
 		"SystemConfig": {
 			"properties": {
@@ -2189,7 +2319,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "SystemConfig controls GraphJin-owned capabilities and caller access to built-in gj_* roots."
 		},
 		"Table": {
 			"properties": {
@@ -2200,18 +2331,21 @@
 					"type": "string"
 				},
 				"table": {
-					"type": "string"
+					"type": "string",
+					"description": "Inherits Table"
 				},
 				"type": {
 					"type": "string"
 				},
 				"source": {
 					"type": "string",
-					"title": "Source"
+					"title": "Source",
+					"description": "Source is required in sources used and points at one sources[].name."
 				},
 				"database": {
 					"type": "string",
-					"title": "Database"
+					"title": "Database",
+					"description": "Database name for multi-database support. References a key in Config.Databases.\nIf empty, uses the default database."
 				},
 				"read_only": {
 					"type": "boolean",
@@ -2237,19 +2371,23 @@
 						"type": "array"
 					},
 					"type": "object",
-					"title": "Order By Options"
+					"title": "Order By Options",
+					"description": "Permitted order by options"
 				},
 				"partition": {
 					"$ref": "#/$defs/PartitionConfig",
-					"title": "Partition Configuration"
+					"title": "Partition Configuration",
+					"description": "Partition configuration for warehouse-optimized queries (Snowflake, BigQuery).\nWhen set, queries without a filter on the partition column will either get a\ndefault time-range filter injected or produce a warning."
 				},
 				"cassandra": {
 					"$ref": "#/$defs/CassandraConfig",
-					"title": "Cassandra Table Configuration"
+					"title": "Cassandra Table Configuration",
+					"description": "Cassandra per-table options (allow_filtering escape hatch + key overrides)."
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "Configuration for a database table"
 		},
 		"TasksConfig": {
 			"properties": {
@@ -2284,7 +2422,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "TasksConfig declares the GraphJin-managed durable declared-intent task store."
 		},
 		"ThreadsConfig": {
 			"properties": {
@@ -2319,15 +2458,18 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "ThreadsConfig declares GraphJin-managed persistent agent threads."
 		},
 		"TokenExchangeRequest": {
 			"properties": {
 				"method": {
-					"type": "string"
+					"type": "string",
+					"description": "default POST"
 				},
 				"body_format": {
-					"type": "string"
+					"type": "string",
+					"description": "\"json\" | \"form\""
 				},
 				"body": {
 					"type": "object",
@@ -2342,7 +2484,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "TokenExchangeRequest describes the POST shape used by token_exchange auth."
 		},
 		"TokenExchangeResponse": {
 			"properties": {
@@ -2350,11 +2493,13 @@
 					"type": "string"
 				},
 				"expires_field": {
-					"type": "string"
+					"type": "string",
+					"description": "seconds"
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "TokenExchangeResponse describes how to extract the token and TTL from the auth endpoint's JSON response."
 		},
 		"TokenFromRequest": {
 			"properties": {
@@ -2366,7 +2511,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "TokenFromRequest selects a required incoming credential header."
 		},
 		"Update": {
 			"properties": {
@@ -2393,7 +2539,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "Table configuration for updating a table with a role"
 		},
 		"UploadsConfig": {
 			"properties": {
@@ -2457,7 +2604,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "Table configuration for creating/updating (upsert) a table with a role"
 		},
 		"WatchesConfig": {
 			"properties": {
@@ -2527,7 +2675,8 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "WatchesConfig declares the GraphJin-managed watch store and runner settings."
 		},
 		"WorkflowsConfig": {
 			"properties": {
@@ -2545,38 +2694,45 @@
 				}
 			},
 			"additionalProperties": false,
-			"type": "object"
+			"type": "object",
+			"description": "WorkflowsConfig controls workflow discovery and permissions."
 		}
 	},
 	"properties": {
 		"secret_key": {
 			"type": "string",
 			"title": "Secret Key",
+			"description": "Is used to encrypt opaque values such as the cursor. Auto-generated when not set",
 			"x-graphjin-sensitive": "secret"
 		},
 		"disable_allow_list": {
 			"type": "boolean",
 			"title": "Disable Allow List",
+			"description": "When set to true it disables the allow list workflow",
 			"default": false
 		},
 		"enable_schema": {
 			"type": "boolean",
 			"title": "Enable Schema",
+			"description": "When set to true a database schema file will be generated in dev mode and\nused in production mode. Auto database discovery will be disabled\nin production mode.",
 			"default": false
 		},
 		"enable_introspection": {
 			"type": "boolean",
 			"title": "Generate introspection JSON",
+			"description": "When set to true an introspection json file will be generated in dev mode.\nThis file can be used with other GraphQL tooling to generate clients, enable\nautocomplete, etc",
 			"default": false
 		},
 		"set_user_id": {
 			"type": "boolean",
 			"title": "Set User ID",
+			"description": "Forces the database session variable 'user.id' to be set to the user id",
 			"default": false
 		},
 		"default_block": {
 			"type": "boolean",
 			"title": "Block tables for anonymous users",
+			"description": "This ensures that for anonymous users (role 'anon') all tables are blocked\nfrom queries and mutations. To open access to tables for anonymous users\nthey have to be added to the 'anon' role config",
 			"default": true
 		},
 		"variables": {
@@ -2584,60 +2740,72 @@
 				"type": "string"
 			},
 			"type": "object",
-			"title": "Variables"
+			"title": "Variables",
+			"description": "This is a list of variables that can be leveraged in your queries.\n(eg. variable admin_id will be $admin_id in the query)"
 		},
 		"header_variables": {
 			"additionalProperties": {
 				"type": "string"
 			},
 			"type": "object",
-			"title": "Header Variables"
+			"title": "Header Variables",
+			"description": "This is a list of variables that map to http header values"
 		},
 		"blocklist": {
 			"items": {
 				"type": "string"
 			},
 			"type": "array",
-			"title": "Block List"
+			"title": "Block List",
+			"description": "A list of tables and columns that should disallowed in any and all queries"
 		},
 		"sources": {
 			"items": {
 				"$ref": "#/$defs/SourceConfig"
 			},
 			"type": "array",
-			"title": "Sources"
+			"title": "Sources",
+			"description": "Sources is the canonical external graph provider config. When present, all\nSQL, CodeSQL, filesystem, and OpenAPI providers must be declared here."
 		},
 		"system": {
 			"$ref": "#/$defs/SystemConfig",
-			"title": "System Features"
+			"title": "System Features",
+			"description": "System configures GraphJin-owned roots. It is separate from Sources because\nbuilt-in functionality is not an external graph provider."
 		},
 		"workflows": {
 			"$ref": "#/$defs/WorkflowsConfig",
-			"title": "Workflows"
+			"title": "Workflows",
+			"description": "Workflows configures the built-in Goja JavaScript workflow feature."
 		},
 		"identity": {
 			"$ref": "#/$defs/IdentityConfig",
-			"title": "Identity"
+			"title": "Identity",
+			"description": "Identity declares the request-wide claims and optional enrichment query\nused by source-mode access generation."
 		},
 		"artifacts": {
 			"$ref": "#/$defs/ArtifactsConfig",
-			"title": "Artifacts"
+			"title": "Artifacts",
+			"description": "Artifacts configures GraphJin-managed mutable agent artifacts exposed as\nthe gj_artifacts system root."
 		},
 		"watches": {
 			"$ref": "#/$defs/WatchesConfig",
-			"title": "Watches"
+			"title": "Watches",
+			"description": "Watches configures GraphJin-managed standing questions and durable inbox\nevents exposed as gj_watch and gj_watch_event system roots."
 		},
 		"tasks": {
 			"$ref": "#/$defs/TasksConfig",
-			"title": "Tasks"
+			"title": "Tasks",
+			"description": "Tasks configures owner-scoped declared goals and their immutable trail."
 		},
 		"threads": {
 			"$ref": "#/$defs/ThreadsConfig",
-			"title": "Threads"
+			"title": "Threads",
+			"description": "Threads configures persistent agent conversations: threads, messages,\nruns and run events kept in the control-plane store."
 		},
 		"openapi_specs_dir": {
 			"type": "string",
 			"title": "OpenAPI Specs Directory",
+			"description": "OpenAPISpecsDir is the directory that GraphJin scans at startup for\nOpenAPI 3 specification files (*.yaml / *.yml). Each spec dropped in\nis parsed, classified, and exposed as remote-joinable fields and/or\ntop-level virtual tables. Defaults to \"./config/specs\" when empty.",
 			"default": "./config/specs"
 		},
 		"openapi": {
@@ -2645,38 +2813,44 @@
 				"$ref": "#/$defs/SpecConfig"
 			},
 			"type": "object",
-			"title": "Legacy OpenAPI Specifications"
+			"title": "Legacy OpenAPI Specifications",
+			"description": "OpenAPI carries per-spec configuration keyed by the spec filename\nwithout extension (e.g. \"interaction_studio\" matches\n\"config/specs/interaction_studio.yaml\"). Operations classifiable from\nthe spec are auto-exposed; entries here add credentials, base URL\noverrides, DB-to-API join wiring, and concurrency caps."
 		},
 		"tables": {
 			"items": {
 				"$ref": "#/$defs/Table"
 			},
 			"type": "array",
-			"title": "Tables"
+			"title": "Tables",
+			"description": "All table specific configuration such as aliased tables and relationships\nbetween tables"
 		},
 		"relationships": {
 			"items": {
 				"$ref": "#/$defs/RelationshipConfig"
 			},
 			"type": "array",
-			"title": "Relationships"
+			"title": "Relationships",
+			"description": "Relationships adds graph edges between typed table columns. Cardinality is\ninferred from existing primary/unique metadata and reverse edges are still\ngenerated by the schema graph."
 		},
 		"functions": {
 			"items": {
 				"$ref": "#/$defs/Function"
 			},
 			"type": "array",
-			"title": "Functions"
+			"title": "Functions",
+			"description": "All function specific configuration such as return types"
 		},
 		"roles_query": {
 			"type": "string",
-			"title": "Roles Query"
+			"title": "Roles Query",
+			"description": "An SQL query if set enables attribute based access control. This query is\nused to fetch the user attribute that then dynamically define the users role"
 		},
 		"roles": {
 			"items": {
 				"$ref": "#/$defs/Role"
 			},
-			"type": "array"
+			"type": "array",
+			"description": "Roles contains the configuration for all the roles you want to support 'user' and\n'anon' are two default roles. The 'user' role is used when a user ID is available\nand 'anon' when it's not. Use the 'Roles Query' config to add more custom roles"
 		},
 		"db_type": {
 			"type": "string",
@@ -2690,30 +2864,36 @@
 				"snowflake",
 				"nanodb"
 			],
-			"title": "Database Type"
+			"title": "Database Type",
+			"description": "Database type name Defaults to 'postgres' (options: postgres, mysql, mariadb, sqlite, oracle, mssql, nanodb)"
 		},
 		"debug": {
 			"type": "boolean",
 			"title": "Debug",
+			"description": "Log warnings and other debug information",
 			"default": false
 		},
 		"log_vars": {
 			"type": "boolean",
 			"title": "Log Variables",
+			"description": "Log SQL Query variable values",
 			"default": false
 		},
 		"subs_poll_duration": {
 			"type": "integer",
-			"title": "Subscription Polling Duration"
+			"title": "Subscription Polling Duration",
+			"description": "Database polling duration (in seconds) used by subscriptions to\nquery for updates."
 		},
 		"subs_max_members_per_worker": {
 			"type": "integer",
 			"title": "Subscription Max Members Per Worker",
+			"description": "Upper bound on how many subscribers a single subscription poll cycle\nwill batch into one database query. The adaptive sizer never grows\npast this value. When zero a sensible default is used.",
 			"default": 5000
 		},
 		"subs_min_members_per_worker": {
 			"type": "integer",
 			"title": "Subscription Min Members Per Worker",
+			"description": "Lower bound on the adaptive subscription chunk size; prevents the\nsizer from shrinking down to per-row queries under sustained load.\nWhen zero a sensible default is used.",
 			"default": 50
 		},
 		"subs_target_query_latency": {
@@ -2724,6 +2904,7 @@
 		"default_limit": {
 			"type": "integer",
 			"title": "Default Row Limit",
+			"description": "The default max limit (number of rows) when a limit is not defined in\nthe query or the table role config.",
 			"default": 20
 		},
 		"analytics_mode": {
@@ -2735,21 +2916,25 @@
 		"disable_agg_functions": {
 			"type": "boolean",
 			"title": "Disable Aggregations",
+			"description": "Disable all aggregation functions like count, sum, etc",
 			"default": false
 		},
 		"disable_functions": {
 			"type": "boolean",
 			"title": "Disable Functions",
+			"description": "Disable all functions like count, length,  etc",
 			"default": false
 		},
 		"mock_db": {
 			"type": "boolean",
 			"title": "Mock DB",
+			"description": "When set to true, GraphJin will not connect to a database and instead\nreturn mock data based on the query structure.",
 			"default": false
 		},
 		"enable_camelcase": {
 			"type": "boolean",
 			"title": "Enable Camel Case",
+			"description": "Enable automatic coversion of camel case in GraphQL to snake case in SQL",
 			"default": false
 		},
 		"production": {
@@ -2765,41 +2950,49 @@
 				"prod",
 				"agentic"
 			],
-			"title": "Mode"
+			"title": "Mode",
+			"description": "Mode selects the deployment-mode defaults. Empty derives from Production."
 		},
 		"db_schema_poll_duration": {
 			"type": "integer",
-			"title": "Schema Change Detection Polling Duration"
+			"title": "Schema Change Detection Polling Duration",
+			"description": "Duration for polling the database to detect schema changes"
 		},
 		"disable_production_security": {
 			"type": "boolean",
-			"title": "Disable Production Security"
+			"title": "Disable Production Security",
+			"description": "When set to true it disables production security features like enforcing the allow list"
 		},
 		"databases": {
 			"additionalProperties": {
 				"$ref": "#/$defs/DatabaseConfig"
 			},
 			"type": "object",
-			"title": "Databases"
+			"title": "Databases",
+			"description": "Multiple database configurations for multi-database support.\nWhen set, allows querying across multiple databases in a single GraphQL request.\nEach database gets its own connection pool, schema, and SQL compiler."
 		},
 		"federation": {
 			"$ref": "#/$defs/FederationConfig",
-			"title": "Apollo Federation v2"
+			"title": "Apollo Federation v2",
+			"description": "Federation opts the engine into Apollo Federation v2 subgraph mode.\nWhen Federation.Enabled is true, `_service { sdl }` returns a\nfederation-flavoured SDL describing the schema's tables. See\nFederationConfig for the full surface."
 		},
 		"filesystems": {
 			"items": {
 				"$ref": "#/$defs/FilesystemConfig"
 			},
 			"type": "array",
-			"title": "Filesystem Tables"
+			"title": "Filesystem Tables",
+			"description": "Filesystems exposes object stores (local directories, S3, GCS) as\nvirtual tables in the GraphQL schema. Each entry materialises one\ntable with a fixed shape — key/size/content_type/etag/modified_at/url/data —\nand routes queries through a pluggable Backend."
 		},
 		"metadata": {
 			"$ref": "#/$defs/MetadataConfig",
-			"title": "Metadata Graph"
+			"title": "Metadata Graph",
+			"description": "Metadata exposes GraphJin-discovered database metadata for legacy\ninternal helpers. Public GraphQL discovery should use gj_catalog\ncatalog items instead of separate table/column roots."
 		},
 		"catalog": {
 			"$ref": "#/$defs/CatalogConfig",
-			"title": "Catalog Graph"
+			"title": "Catalog Graph",
+			"description": "Catalog exposes GraphJin's AI-first self-model as a managed read-only\ndatabase. It supersedes the older metadata-only graph."
 		},
 		"app_name": {
 			"type": "string",
