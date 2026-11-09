@@ -134,6 +134,11 @@ var newGraphJinLeadRunner = func(s *graphjinService, conf gjagent.Config, worker
 		return nil, err
 	}
 	runner := leadRunner{conf: conf, worker: worker, opts: opts, store: s.leadStore()}
+	if !conf.ReadOnly {
+		readOnly := conf
+		readOnly.ReadOnly = true
+		runner.readOnlyWorker = func() (graphjinAgentRunner, error) { return newGraphJinAgentRunner(s, readOnly) }
+	}
 	if s.followUpsEnabled() {
 		runner.followUps = followUpScheduler{service: s}
 	}
@@ -149,13 +154,29 @@ type leadRunner struct {
 	// followUps schedules check-backs in the caller's thread; nil without
 	// threads and watches.
 	followUps gjagent.FollowUpScheduler
+	// readOnlyWorker builds a worker that only reads, for questions the lead
+	// marks read-only (after a question in the turn held a write).
+	readOnlyWorker func() (graphjinAgentRunner, error)
+}
+
+// workerFor is the worker a delegated question runs on: a read-only one when
+// the lead marks the question read-only.
+func (r leadRunner) workerFor(d gjagent.DelegateRequest) (graphjinAgentRunner, error) {
+	if d.ReadOnly && r.readOnlyWorker != nil {
+		return r.readOnlyWorker()
+	}
+	return r.worker, nil
 }
 
 func (r leadRunner) Run(ctx context.Context, req gjagent.Request) (gjagent.Response, error) {
 	// Each question runs as the caller, with the caller's capabilities and
 	// namespace and nothing from the conversation.
 	delegate := func(ctx context.Context, d gjagent.DelegateRequest) (gjagent.Response, error) {
-		return r.worker.Run(ctx, gjagent.Request{
+		worker, err := r.workerFor(d)
+		if err != nil {
+			return gjagent.Response{}, err
+		}
+		return worker.Run(ctx, gjagent.Request{
 			Instruction:  d.Question,
 			Namespace:    req.Namespace,
 			Capabilities: req.Capabilities,

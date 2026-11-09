@@ -491,3 +491,24 @@ func TestServiceRunApprovalBelongsToTheDelegator(t *testing.T) {
 		t.Fatal("the approved write did not run")
 	}
 }
+
+// A question the lead marks read-only runs on a read-only worker.
+func TestLeadReadOnlyQuestionsRunOnAReadOnlyWorker(t *testing.T) {
+	_, svc, _ := newApprovalService(t)
+	conf := agentConfigFromService(svc.conf)
+	conf.Lead.Enabled = true
+	realLead := newGraphJinLeadRunner
+	runner := &scriptedAgentRunner{}
+	withScriptedAgentRunner(t, runner)
+	lead, err := realLead(svc, conf, runner)
+	if err != nil {
+		t.Skipf("lead runner needs model options here: %v", err)
+	}
+	lr := lead.(leadRunner)
+	if worker, err := lr.workerFor(gjagent.DelegateRequest{}); err != nil || worker != graphjinAgentRunner(runner) {
+		t.Fatalf("a normal question = %v, %v", worker, err)
+	}
+	if _, err := lr.workerFor(gjagent.DelegateRequest{ReadOnly: true}); err != nil || !runner.conf.ReadOnly {
+		t.Fatalf("a read-only question built conf %+v, err %v", runner.conf.ReadOnly, err)
+	}
+}

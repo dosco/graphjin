@@ -153,6 +153,20 @@ The REST endpoint streams progress when called with `Accept: text/event-stream`:
 
 A `blocked` response is machine-actionable, not prose. It carries a `refusal` object: a stable `code` (`access_unauthorized`, `capability_disabled`, `mutation_evidence_required`, ...), the `blocked_action`, evidence-backed `because` reasons, ordered `unblock` steps (each names a tool and args, filtered to the caller's visible capabilities so nothing hidden leaks), a `lawful_alternative` for when unblocking is impossible, and the `policy_final` / `retryable` pair. A calling agent should execute the unblock steps and retry only when `retryable` is true; `policy_final` means stop and escalate to an operator. The contract is discoverable at runtime with `query_catalog(id: "help:refusals")`.
 
+## Autonomy, notifications and budgets
+
+`agent.autonomy` lets a held write run at once when a rule covers every action it takes on its table and the dry run changed no more rows than the rule allows: `notify` runs it and tells the owner, `auto` runs it and records it, and anything else still asks. Every such write is recorded as an approval decided by its rule. API calls cannot be tried in a rolled-back transaction, so they always ask.
+
+{{< verified by="TestAutonomyRunsAllowedWritesAndRecordsThem" file="serv/approvals_test.go" >}}
+
+`gj_notification` and `/api/v1/notifications` carry what a person needs to know while away — a change waiting for approval, a routine's answer, a stopped run, a task check — with a live stream at `/api/v1/notifications/stream`. The console's Inbox shows them.
+
+{{< verified by="TestNotificationStreamFollowsNewNotifications" file="serv/notifications_test.go" >}}
+
+`agent.budgets` caps model tokens over a rolling day per person and per routine, on by default in agentic mode. A run over a cap is refused as `blocked` with `budget_exceeded`, and the owner is told.
+
+{{< verified by="TestBudgetRefusesRunsOverTheDailyCap" file="serv/budgets_test.go" >}}
+
 ## OpenAPI description
 
 `GET /api/v1/openapi.json` describes every agent endpoint that is switched on — ask, status, run events and cancel, profile home threads, approvals and feedback — beside the saved-query REST endpoints, as OpenAPI 3.1. The schemas come from the server's own Go types, and a test checks that real responses validate against them, so a client generated from the spec matches what the server sends. The console's API page renders it.

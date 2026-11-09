@@ -942,7 +942,9 @@ func (r *leadRun) runOne(ctx context.Context, index int, question string) leadDe
 	resp, err := r.lead.delegate(ctx, DelegateRequest{
 		Index:    index,
 		Question: question,
-		ReadOnly: r.readOnly,
+		// A reply carries one change: once a question held a write for the
+		// user's approval, the turn's later questions only read.
+		ReadOnly: r.readOnly || r.delegatedApproval() != nil,
 		Observer: func(event ActionEvent) {
 			event.Delegate = index
 			r.forward(event)

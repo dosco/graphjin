@@ -167,7 +167,7 @@ mutation {
 }
 ```
 
-A read-only lead, including every watch routine, has no `remember` tool. The
+A read-only lead has no `remember` tool, and neither does a watch routine, which can at most propose a data change for its owner's approval. The
 memories a turn used are recorded on the run (`gj_thread_run.used_memories`)
 and in the response's `memories` field.
 
@@ -320,6 +320,12 @@ of its workers.
 The removed REST CRUD routes for threads, memories, and profiles (for example
 `GET /api/v1/agent/threads` and `/api/v1/agent/memories`) are now the GraphQL
 roots above.
+
+## Follow-ups
+
+The lead's `follow_up` tool (`in_hours`, `note`) schedules a one-time turn in the current conversation: when the time comes, the note is the instruction and the conversation is the history, so the lead can check whether a change took effect or a deadline passed. A conversation holds at most three pending follow-ups, at most 30 days ahead; each is a schedule watch that deletes itself after it runs. A read-only lead has no `follow_up` tool.
+
+{{< verified by="TestFollowUpRunsOnceInItsThread" file="serv/followups_test.go" >}}
 
 ## Grounding and changes
 

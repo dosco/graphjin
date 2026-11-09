@@ -174,8 +174,13 @@ func TestSettleReplyApprovalRules(t *testing.T) {
 	if got := settleReply(Response{Status: StatusNeedsApproval}, replyFacts{}); got.Status != StatusError {
 		t.Fatalf("needs_approval without a proposal = %+v", got)
 	}
-	if got := settleReply(Response{Status: StatusBlocked, Answer: "no"}, replyFacts{approval: approval}); got.Status != StatusBlocked || got.Approval != nil {
-		t.Fatalf("a block wins over a held write: %+v", got)
+	if got := settleReply(Response{Status: StatusBlocked, Answer: "no"}, replyFacts{approval: approval, guardBlocked: true}); got.Status != StatusBlocked || got.Approval != nil {
+		t.Fatalf("a guard's block wins over a held write: %+v", got)
+	}
+	// Seen live: the model held a write, tried it again, was told it already
+	// waits, and finished "blocked" on its own. The change still waits.
+	if got := settleReply(Response{Status: StatusBlocked, Answer: "it needs approval"}, replyFacts{approval: approval}); got.Status != StatusNeedsApproval || got.Approval != approval {
+		t.Fatalf("a model's own block hid a held write: %+v", got)
 	}
 	if got := settleReply(Response{Status: StatusAnswered, Approval: approval}, replyFacts{}); got.Approval != nil {
 		t.Fatalf("only needs_approval carries an approval: %+v", got)
@@ -226,5 +231,22 @@ func TestHeldWritesOnlyCoreRuntimeRunsOnlyDryRuns(t *testing.T) {
 	ctx := context.WithValue(context.Background(), dryRunKey{}, true)
 	if _, err := rt.ExecuteGraphQL(ctx, map[string]any{"query": closeTicket}); err == nil {
 		t.Fatal("a dry-run flag without a transaction must not unlock writes")
+	}
+}
+
+// A reply carries one change: after a question held a write, the lead's
+// later questions in the turn run read-only.
+func TestLeadQuestionsAfterAHeldWriteOnlyRead(t *testing.T) {
+	var readOnly []bool
+	lead := &Lead{delegate: func(_ context.Context, d DelegateRequest) (Response, error) {
+		readOnly = append(readOnly, d.ReadOnly)
+		return Response{Status: StatusAnswered, Answer: "ok"}, nil
+	}}
+	run := &leadRun{lead: lead, answered: map[string]leadDelegation{}}
+	run.runOne(context.Background(), 1, "How many tickets are open?")
+	run.delegations = append(run.delegations, leadDelegation{question: "Close ticket 7", resp: Response{Status: StatusNeedsApproval, Approval: &Approval{ID: "apr_1"}}})
+	run.runOne(context.Background(), 2, "And close ticket 8 too.")
+	if len(readOnly) != 2 || readOnly[0] || !readOnly[1] {
+		t.Fatalf("read-only flags = %v, want [false true]", readOnly)
 	}
 }

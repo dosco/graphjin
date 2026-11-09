@@ -35,15 +35,19 @@ type replyFacts struct {
 	// no refusal but with failures is reported as the error it was, so a
 	// caller never retries a "refusal" that was really a timeout.
 	failures []ErrorInfo
-	// approval is a write the run held for the user's approval. Unless the
-	// run was blocked, the reply is needs_approval carrying it.
+	// approval is a write the run held for the user's approval. Unless a
+	// guard blocked the run, the reply is needs_approval carrying it.
 	approval *Approval
+	// guardBlocked is a block a recorded guard stands behind. A model that
+	// says "blocked" on its own after holding a write does not hide it: the
+	// change still waits for the user, so the reply must say so.
+	guardBlocked bool
 }
 
 // settleReply makes resp satisfy the reply contract.
 func settleReply(resp Response, facts replyFacts) Response {
 	resp = normalizeReplyStatus(resp)
-	if facts.approval != nil && resp.Status != StatusBlocked {
+	if facts.approval != nil && (resp.Status != StatusBlocked || !facts.guardBlocked) {
 		resp.Status = StatusNeedsApproval
 		resp.Approval = facts.approval
 	}

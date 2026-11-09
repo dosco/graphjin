@@ -2782,7 +2782,7 @@ func (s *discoveryState) finalize(resp Response) Response {
 	if resp.Status == StatusAnswered && resp.Display == nil {
 		resp.Display = s.displayHints()
 	}
-	return settleReply(resp, replyFacts{refusal: s.buildRefusal, approval: s.pendingApproval})
+	return settleReply(resp, replyFacts{refusal: s.buildRefusal, approval: s.pendingApproval, guardBlocked: s.hasBlockingViolation()})
 }
 
 // recoverResolvedTerminalRefusalResponse removes a stale model refusal only

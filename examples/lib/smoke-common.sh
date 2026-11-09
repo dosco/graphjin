@@ -121,6 +121,14 @@ SMOKE_METRIC_WATCH_IDS=()
 # approval suite changes.
 SMOKE_HELD_RESPONSES=()
 SMOKE_APPROVAL_RESTORE=""
+# Routine suites: the tickets they borrowed (restored), watches they created (with the
+# saved-query artifact a watch registers under its operation name), and the
+# routine threads, deleted on exit.
+SMOKE_ROUTINE_RESTORES=()
+ROUTINE_VERDICT="${TMPDIR:-/tmp}/gj-routine-verdict-$$.json"
+SMOKE_ROUTINE_WATCHES=()
+SMOKE_ROUTINE_ARTIFACTS=()
+SMOKE_ROUTINE_THREADS=()
 
 # Demos can append cleanup commands (e.g. kill background mock servers) by
 # defining smoke_extra_cleanup before sourcing or after.
@@ -137,6 +145,7 @@ smoke_cleanup() {
   if [ -n "$SMOKE_APPROVAL_RESTORE" ]; then
     graphql approval-trap-restore "$SMOKE_APPROVAL_RESTORE" >/dev/null 2>&1 || true
   fi
+  routine_cleanup
   if declare -F lead_cleanup >/dev/null; then
     lead_cleanup || true
   fi
@@ -913,6 +922,220 @@ run_write_approval_suite() {
   # Restore the row the suite changed.
   graphql approval-restore "$SMOKE_APPROVAL_RESTORE" >/dev/null 2>&1 || true
   SMOKE_APPROVAL_RESTORE=""
+}
+
+# graphql_vars <name> <query> <variables-json> posts a GraphQL request with
+# variables and prints the response file; it never fails the run itself.
+graphql_vars() {
+  local out="$TMP_DIR/${1}.json"
+  post_json "${BASE_URL%/}/api/v1/graphql" "$(jq -n --arg q "$2" --argjson v "$3" '{query:$q, variables:$v}')" "$out" >/dev/null 2>&1 || true
+  printf '%s\n' "$out"
+}
+
+# hold_smoke_write <table> <column> <catalog-id> <token> asks the agent for an
+# exact data write and prints the response file; with approvals required it
+# comes back needs_approval. Two attempts absorb a small model's variance.
+hold_smoke_write() {
+  local table="$1" column="$2" catalog_id="$3" token="$4" row_id="$5" out="" attempt=1
+  while [ "$attempt" -le 2 ]; do
+    out="$(run_agent_rest_prompt "Use the JavaScript runtime globals to run exactly this flow: await query_catalog({id:\"${catalog_id}\"}); await query_catalog({id:\"help:security\"}); await query_catalog({id:\"help:runtime\"}); const r = await execute_graphql({query:\"mutation { ${table}(where: { id: { eq: ${row_id} } }, update: { ${column}: \\\"${token}\\\" }) { id ${column} } }\"}); await final({status:\"answered\", answer:\"set the ${column}\", data:r});")"
+    jq -e '.status == "needs_approval"' "$out" >/dev/null && break
+    attempt=$((attempt + 1))
+  done
+  printf '%s\n' "$out"
+}
+
+# Capability: NOTIFICATIONS
+# Contract: A held write posts an "action needed" notification to its owner,
+# visible in GET /api/v1/notifications with a store-side unseen count and
+# streamed live on /api/v1/notifications/stream; deciding the write settles
+# it, and POST /api/v1/notifications/seen marks the rest seen.
+# Deeper coverage: TestNotifyIsIdempotentAndOwnerScoped,
+# TestHeldWriteNotifiesAndTheDecisionSettlesIt, TestNotificationStreamFollowsNewNotifications.
+run_notifications_suite() {
+  local table="$1" column="$2" catalog_id="$3"
+  log "checking notifications"
+  local list="$TMP_DIR/notifications.json" stream="$TMP_DIR/notifications-stream.txt" row_out row_id token out id hash stream_pid
+  get_json "${BASE_URL%/}/api/v1/notifications" "$list"
+  assert_jq "$list" '(.notifications | type) == "array" and (.unseen_count | type) == "number"' "[NOTIFICATIONS] the caller's notifications list with an unseen count"
+
+  # Follow the stream while the agent holds a write.
+  curl -sS -N --max-time 240 -H 'Accept: text/event-stream' "${AUTH_HEADERS[@]}" "${BASE_URL%/}/api/v1/notifications/stream" >"$stream" 2>/dev/null &
+  stream_pid=$!
+  row_out="$(graphql notification-row "query { ${table}(where: { ${column}: { is_null: false } }, limit: 1, order_by: { id: asc }) { id ${column} } }")"
+  row_id="$(jq -r --arg t "$table" '.data[$t][0].id' "$row_out")"
+  token="smoke_notify_$(date +%s)_$$"
+  out="$(hold_smoke_write "$table" "$column" "$catalog_id" "$token" "$row_id")"
+  SMOKE_HELD_RESPONSES+=("$out")
+  if ! jq -e '.status == "needs_approval"' "$out" >/dev/null; then
+    kill "$stream_pid" 2>/dev/null || true
+    fail "[NOTIFICATIONS] the agent never held the write that should notify"
+  fi
+  id="$(jq -r '.approval.id' "$out")"
+  hash="$(jq -r '.approval.hash' "$out")"
+  get_json "${BASE_URL%/}/api/v1/notifications?unseen=1" "$list"
+  assert_jq_args "$list" "[NOTIFICATIONS] a held write notifies its owner that action is needed" --arg id "$id" '
+    ([.notifications[] | select(.kind == "approval_pending" and .ref_id == $id and .severity == "action" and .seen == false)] | length) == 1
+    and .unseen_count >= 1
+  '
+  sleep 2
+  kill "$stream_pid" 2>/dev/null || true
+  wait "$stream_pid" 2>/dev/null || true
+  if grep -q '^event: notification' "$stream" && grep -q "$id" "$stream"; then
+    pass "[NOTIFICATIONS] the stream delivered the notification live"
+  else
+    fail "[NOTIFICATIONS] the stream never delivered the notification for $id"
+  fi
+  approval_decide "$id" reject "$hash" "$TMP_DIR/notification-reject.json" >/dev/null
+  get_json "${BASE_URL%/}/api/v1/notifications" "$list"
+  assert_jq_args "$list" "[NOTIFICATIONS] deciding the write settles its notification" --arg id "$id" '
+    ([.notifications[] | select(.ref_id == $id and .kind == "approval_pending" and .seen == true)] | length) == 1
+  '
+  post_json "${BASE_URL%/}/api/v1/notifications/seen" '{}' "$TMP_DIR/notifications-seen.json"
+  get_json "${BASE_URL%/}/api/v1/notifications" "$list"
+  assert_jq "$list" '.unseen_count == 0' "[NOTIFICATIONS] marking all seen leaves none unseen"
+}
+
+# routine_ticket_case <prompt> <subject> <severity> writes a JSON verdict to
+# $ROUTINE_VERDICT for one routine run on the saas-ops demo. Call it directly,
+# never in $(...): it records what it borrows and creates in the cleanup
+# arrays, which a subshell would lose. It borrows an open support ticket
+# (the smoke identity can update tickets but not delete them), gives it the
+# case's subject and severity, makes a watch with agent delivery fire on it,
+# waits for the routine, and reports whether the routine held a write (its
+# approval), what it replied, and its thread. routine_cleanup restores the
+# ticket and removes the watch and thread.
+routine_ticket_case() {
+  local prompt="$1" subject="$2" severity="$3"
+  local row ticket_id watch_name watch_id out approval="" thread="" status="none" waited=0 reply='{}'
+  row="$(graphql routine-borrow 'query { support_tickets(where: { status: { eq: "open" } }, order_by: { id: asc }, limit: 1) { id subject severity status resolution_note } }')"
+  ticket_id="$(jq -r '.data.support_tickets[0].id // empty' "$row")"
+  echo '{}' >"$ROUTINE_VERDICT"
+  [ -n "$ticket_id" ] || { echo "routine case: no open ticket to borrow" >&2; return 1; }
+  SMOKE_ROUTINE_RESTORES+=("$(jq -r '.data.support_tickets[0] | "mutation { support_tickets(where: { id: { eq: \(.id) } }, update: { subject: \(.subject | tojson), severity: \(.severity | tojson), status: \(.status | tojson), resolution_note: \(.resolution_note | tojson) }) { id } }"' "$row")")
+  graphql_vars routine-ticket 'mutation ($id: Int!, $s: String!, $sev: String!) { support_tickets(where: { id: { eq: $id } }, update: { subject: $s, severity: $sev }) { id } }' \
+    "$(jq -nc --argjson id "$ticket_id" --arg s "$subject" --arg sev "$severity" '{id:$id, s:$s, sev:$sev}')" >/dev/null
+  watch_name="smoke_routine_$(date +%s)_$$_${RANDOM}"
+  # The watch selects only what the routine does not change, so resolving
+  # the ticket does not fire it again.
+  out="$(graphql_vars routine-watch 'mutation ($n: String!, $q: String!, $d: JSON) { gj_watch(insert: { name: $n, query: $q, delivery_json: $d }) { id } }' \
+    "$(jq -nc --arg n "$watch_name" --arg q "subscription ${watch_name} { support_tickets(where: { id: { eq: ${ticket_id} } }, first: 5, after: \$cursor) { id subject severity } support_tickets_cursor }" --arg p "$prompt" '{n:$n, q:$q, d:{kind:"agent", prompt:$p}}')")"
+  watch_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id // empty' "$out")"
+  [ -n "$watch_id" ] || { echo "routine case: could not create the watch" >&2; jq . "$out" >&2; return 1; }
+  SMOKE_ROUTINE_WATCHES+=("$watch_id")
+  SMOKE_ROUTINE_ARTIFACTS+=("$watch_name")
+  # The routine has run when its event is delivered.
+  while [ "$waited" -lt "${ROUTINE_WAIT:-240}" ]; do
+    out="$(graphql_vars routine-event 'query ($w: String!) { gj_watch_event(where: { watch_id: { eq: $w } }, limit: 5) { id delivery_status receipt_json } }' "$(jq -nc --arg w "$watch_id" '{w:$w}')")"
+    status="$(jq -r '[.data.gj_watch_event[]? | .delivery_status] | map(select(. == "delivered" or . == "failed")) | .[0] // "none"' "$out")"
+    [ "$status" != "none" ] && break
+    sleep 5
+    waited=$((waited + 5))
+  done
+  thread="$(jq -r '[.data.gj_watch_event[]? | .receipt_json | (if type == "string" then fromjson else . end) | .thread_id // empty] | .[0] // ""' "$out")"
+  if [ -n "$thread" ]; then
+    SMOKE_ROUTINE_THREADS+=("$thread")
+    out="$(graphql_vars routine-reply 'query ($t: String!) { gj_thread_message(where: { thread_id: { eq: $t }, role: { eq: "assistant" } }, order_by: { seq: desc }, limit: 1) { status content } }' "$(jq -nc --arg t "$thread" '{t:$t}')")"
+    reply="$(jq -c '.data.gj_thread_message[0] // {} | {status, answer: ((.content // "") | .[0:300])}' "$out")"
+  fi
+  get_json "${BASE_URL%/}/api/v1/agent/approvals" "$TMP_DIR/routine-approvals.json"
+  approval="$(jq -c --arg w "$watch_id" '([.approvals[] | select(.watch_id == $w and .status == "pending")] | .[0]) // ([.approvals[] | select(.watch_id == $w)] | .[0]) // null' "$TMP_DIR/routine-approvals.json")"
+  jq -nc --arg ticket "$ticket_id" --arg watch "$watch_id" --arg thread "$thread" --arg delivery "$status" --argjson approval "$approval" --argjson reply "$reply" \
+    '{ticket_id:($ticket|tonumber), watch_id:$watch, thread_id:$thread, delivery:$delivery, reply:$reply, approval:$approval}' >"$ROUTINE_VERDICT"
+}
+
+# routine_wait_continuation <thread-id> <approval-id> waits for the turn a
+# decision starts in the routine's thread and prints that thread's messages.
+routine_wait_continuation() {
+  local thread="$1" approval="$2" waited=0 out
+  while [ "$waited" -lt "${ROUTINE_WAIT:-240}" ]; do
+    out="$(graphql_vars routine-thread 'query ($t: String!) { gj_thread_message(where: { thread_id: { eq: $t } }, order_by: { seq: asc }) { seq role content status run_id } }' "$(jq -nc --arg t "$thread" '{t:$t}')")"
+    if jq -e --arg run "run_c_${approval}" '[.data.gj_thread_message[]? | select(.run_id == $run and .role == "assistant")] | length > 0' "$out" >/dev/null; then
+      break
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+  printf '%s\n' "$out"
+}
+
+routine_cleanup() {
+  local id hash pending
+  # Reject anything a routine left waiting, so no approval outlives its run.
+  if [ "${#SMOKE_ROUTINE_WATCHES[@]}" -gt 0 ] && get_json "${BASE_URL%/}/api/v1/agent/approvals" "$TMP_DIR/routine-cleanup-approvals.json" 2>/dev/null; then
+    pending="$(jq -r --argjson w "$(printf '%s\n' "${SMOKE_ROUTINE_WATCHES[@]}" | jq -R . | jq -s .)" '.approvals[] | select(.status == "pending" and (.watch_id as $id | $w | index($id))) | "\(.id) \(.hash)"' "$TMP_DIR/routine-cleanup-approvals.json")"
+    while read -r id hash; do
+      [ -n "$id" ] && approval_decide "$id" reject "$hash" "$TMP_DIR/routine-cleanup-reject.json" >/dev/null
+    done <<<"$pending"
+  fi
+  # Ids are written inline: the watch and thread handlers read a where id
+  # literal, not a variable.
+  for id in "${SMOKE_ROUTINE_WATCHES[@]-}"; do
+    [ -n "$id" ] || continue
+    graphql_vars routine-cleanup-watch "mutation { gj_watch(delete: true, where: { id: { eq: \"${id}\" } }) { id } }" '{}' >/dev/null
+  done
+  for id in "${SMOKE_ROUTINE_ARTIFACTS[@]-}"; do
+    [ -n "$id" ] || continue
+    graphql_vars routine-cleanup-artifact "mutation { gj_artifacts(delete: true, where: { name: { eq: \"${id}\" }, kind: { eq: \"saved_query\" } }) { id } }" '{}' >/dev/null
+  done
+  for id in "${SMOKE_ROUTINE_THREADS[@]-}"; do
+    [ -n "$id" ] || continue
+    graphql_vars routine-cleanup-thread "mutation { gj_thread(delete: true, where: { id: { eq: \"${id}\" } }) { id } }" '{}' >/dev/null
+  done
+  local restore
+  for restore in "${SMOKE_ROUTINE_RESTORES[@]-}"; do
+    [ -n "$restore" ] || continue
+    graphql_vars routine-cleanup-restore "$restore" '{}' >/dev/null
+  done
+  SMOKE_ROUTINE_WATCHES=(); SMOKE_ROUTINE_ARTIFACTS=(); SMOKE_ROUTINE_THREADS=(); SMOKE_ROUTINE_RESTORES=()
+}
+
+# The routine prompt the suites and the routine eval share: a standing rule a
+# person would write, with a clear act / leave-alone split.
+ROUTINE_DUPLICATE_PROMPT='A support ticket this watch follows just changed. If its subject starts with "DUPLICATE:", it repeats an earlier ticket: propose setting its status to "resolved" and its resolution_note to "duplicate". Otherwise change nothing and say that no change is needed.'
+
+# Capability: ROUTINE-PROPOSE, APPROVAL-CONTINUATION
+# Contract: A watch with agent delivery fires on a ticket; its routine, run
+# with nobody watching, proposes the data change its prompt calls for as a
+# held write filed under the watch (origin routine) and changes nothing.
+# Approving it runs the write once and starts a continuation turn in the
+# routine's thread (run run_c_<approval id>) that follows up on the outcome.
+# Deeper coverage: TestWatchRoutineMayProposeWritesForApproval,
+# TestRoutineHeldWriteIsFiledUnderItsWatch, TestApprovedRoutineWriteContinuesWithTheModel.
+run_routine_proposal_suite() {
+  log "checking a routine proposes a write and continues after approval"
+  local verdict="" attempt=1 approval_id hash ticket thread messages check
+  while [ "$attempt" -le 2 ]; do
+    routine_ticket_case "$ROUTINE_DUPLICATE_PROMPT" "DUPLICATE: smoke billing page blank $(date +%s)" "low" || true
+    verdict="$(cat "$ROUTINE_VERDICT")"
+    jq -e '.approval != null' <<<"$verdict" >/dev/null && break
+    attempt=$((attempt + 1))
+  done
+  if ! jq -e '.approval != null' <<<"$verdict" >/dev/null; then
+    echo "routine proposal suite: no held write; last verdict: $verdict" >&2
+    return 1
+  fi
+  printf '%s\n' "$verdict" >"$TMP_DIR/routine-verdict.json"
+  assert_jq "$TMP_DIR/routine-verdict.json" '
+    .delivery == "delivered" and .approval.origin == "routine" and .approval.status == "pending"
+    and (.approval.summary.actions | index("data.update")) != null and .approval.preview.rows == 1
+  ' "[ROUTINE-PROPOSE] the routine held the update its prompt called for, filed under its watch"
+  ticket="$(jq -r '.ticket_id' <<<"$verdict")"
+  check="$(graphql routine-unchanged "query { support_tickets(where: { id: { eq: ${ticket} } }) { status } }")"
+  assert_jq "$check" '.data.support_tickets[0].status == "open"' "[ROUTINE-PROPOSE] nothing changed before approval"
+  approval_id="$(jq -r '.approval.id' <<<"$verdict")"
+  hash="$(jq -r '.approval.hash' <<<"$verdict")"
+  approval_decide "$approval_id" approve "$hash" "$TMP_DIR/routine-approve.json" >/dev/null
+  assert_jq "$TMP_DIR/routine-approve.json" '.status == "executed"' "[APPROVAL-CONTINUATION] approving runs the routine's write"
+  check="$(graphql routine-applied "query { support_tickets(where: { id: { eq: ${ticket} } }) { status resolution_note } }")"
+  assert_jq "$check" '.data.support_tickets[0].status == "resolved"' "[APPROVAL-CONTINUATION] the ticket is resolved"
+  thread="$(jq -r '.thread_id' <<<"$verdict")"
+  messages="$(routine_wait_continuation "$thread" "$approval_id")"
+  assert_jq_args "$messages" "[APPROVAL-CONTINUATION] the decision started a follow-up turn in the routine's thread" --arg run "run_c_${approval_id}" '
+    ([.data.gj_thread_message[] | select(.run_id == $run)] | length) == 2
+    and ([.data.gj_thread_message[] | select(.run_id == $run and .role == "assistant")][0].content | length) > 0
+  '
+  routine_cleanup
 }
 
 # Structured refusal e2e: ask for an evidence-less raw mutation; a protocol

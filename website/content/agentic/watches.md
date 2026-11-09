@@ -273,3 +273,14 @@ mutation {
 An agent must stop for confirmation after proposing the action; it cannot create or change the delivery and approve it in the same run. A relevant definition or workflow-source change invalidates approval and pauses the watch again.
 
 {{< verified by="TestWatchDeliveryWebhookAllowlistSignatureAndStatus" file="serv/watches_test.go" line="396" >}}
+
+## Routines that act
+
+A watch whose delivery is an agent turn (`delivery_json: { kind: "agent", prompt: "..." }`) is a routine: when it fires, the agent investigates the event in a thread nobody is watching. With write approvals on, a routine may propose the data change its prompt calls for. The change is dry-run and held for the watch's owner like any agent write, and the routine itself can never write GraphJin's own roots. The owner sees an "action needed" notification, approves or rejects it, and the decision starts a follow-up turn in the routine's thread that checks the effect. Its answer arrives as a notification, and its watch event leaves the watch inbox.
+
+{{< verified by="TestWatchRoutineMayProposeWritesForApproval" file="serv/watch_routine_test.go" >}}
+{{< verified by="TestApprovedRoutineWriteContinuesWithTheModel" file="serv/approvals_test.go" >}}
+
+A saved agent an admin marks `runs_as: service` runs the routines an admin owns as `agent.service_identity`, recording whom it acted for; anyone else's routine on it runs as themselves.
+
+{{< verified by="TestServiceAgentRoutineRunsAsTheServiceForAnAdmin" file="serv/service_identity_test.go" >}}

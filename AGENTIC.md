@@ -320,8 +320,9 @@ a run, and finding an agent's home thread are REST actions.
 The lead's reply is grounded the same way a worker's is: an identifier no
 delegated question returned triggers one restatement, then a
 `ungrounded_answer_fields` refusal. Changes such as creating a watch are
-delegated as explicit instructions after the user asked or confirmed, and a
-routine's lead and workers are read-only, with no `remember`.
+delegated as explicit instructions after the user asked or confirmed. A
+routine can at most propose a data change for its owner's approval (see
+[Routines That Act](#routines-that-act)) and has no `remember`.
 
 Configure the lead under `agent.lead`; unset, it runs on the worker's model.
 A typical split is a capable lead over a fast worker:
@@ -438,11 +439,92 @@ or `POST /api/v1/agent/approvals/{id}` with `{"decision": "approve", "hash": "..
 query once, as the person who asked, after re-checking that the proposal is still
 pending and unexpired, that the hash matches, and that writes and the caller's
 write capability are still in place. When the write came from a thread, the
-outcome is posted there without a model call. Approvals are personal: no other
+decision starts a continuation turn there (run `run_c_<approval id>`): the agent
+sees the outcome and the original context, confirms the effect, reports it or
+proposes the next step. With no model available the turn records the plain
+outcome. Approvals are personal: no other
 user, not even an admin, can read or decide them, and the agent can never write
 `gj_approval`. Watches, tasks and configuration keep their own review flows and
 are not held. The dry run is a real transaction: sequences advance and triggers
-fire before the rollback.
+fire before the rollback. The preview's `rows` counts the rows an update or
+delete targets with a read of its own `where` clause before it runs: a
+mutation's returned rows can undercount, because an update filtered on a column
+it sets returns only rows that still match afterwards.
+
+### Autonomy
+
+`agent.autonomy` lets some held writes run without waiting. Each rule names an
+action (`data.insert`, `data.update`, `data.delete`), a table (or `*`), a level
+and an optional `max_rows`:
+
+```yaml
+agent:
+  autonomy:
+    - { action: data.update, table: support_tickets, level: notify, max_rows: 5 }
+    - { action: data.insert, table: notes, level: auto }
+```
+
+After the dry run, a write runs at once when every action it takes has a rule
+above `ask` for its table (a named table wins over `*`) and the dry run changed
+no more than each rule's `max_rows`; the least autonomous rule decides. `notify`
+runs it and tells the owner; `auto` runs it and records it. Every such write is
+stored as an approval decided by its rule (`decided_by: autonomy:<action>:<table>:<level>`),
+so nothing the agent did on its own is off the record. Anything without a rule,
+a write whose rows cannot be counted, and every API call (which cannot be tried
+in a rolled-back transaction) still waits for the user. API operations are
+classified `api.write` or `api.delete` by HTTP method.
+
+### Routines That Act
+
+A watch whose delivery is an agent turn (`delivery_json: { kind: "agent",
+prompt }`) is a routine. With write approvals on, a routine runs with held
+writes only: it can propose a data or API change, which is held for the watch
+owner exactly like a chat write, and it can never write GraphJin's own roots
+(watches, tasks, memories, config). Its answer becomes a notification and its
+watch event leaves the watch inbox. Without approvals a routine is read-only.
+Approvals record what proposed them: `origin` (`chat`, `routine`,
+`continuation`), `watch_id`, `event_id` and `profile`.
+
+The lead can also come back later on its own: its `follow_up` tool (`in_hours`,
+`note`) schedules a one-time turn in the current conversation, which runs with
+the note as its instruction and then deletes its schedule. A conversation holds
+at most three pending follow-ups, at most 30 days ahead.
+
+### Notifications
+
+`gj_notification` (owner-scoped) and `/api/v1/notifications` hold what a person
+needs to know while away: a change waiting for approval (`severity: action`;
+deciding it settles the notification), a routine's answer, a write an autonomy
+rule ran with `notify`, a run the server lost, a task check that passed or
+failed, a budget used up. People mark them seen (`update: { seen }`, `POST
+/api/v1/notifications/{id}/seen`, `POST /api/v1/notifications/seen`); only
+GraphJin creates them, and the agent cannot write them. `GET
+/api/v1/notifications/stream` sends `notification` and `count` events, woken by
+the store's revision signal and resumable with `Last-Event-ID`. The console's
+Inbox shows them live and lets a person decide a held change in place.
+
+### Budgets
+
+`agent.budgets` caps model tokens over a rolling 24 hours, per person (their
+runs and runs made on their behalf) and per routine (its runs and the
+continuations of its writes): `user_daily_tokens` (default 2,000,000) and
+`routine_daily_tokens` (default 200,000). Budgets are on in agentic mode and off
+elsewhere unless `enabled` says otherwise; the eval environment turns them off.
+A run over a cap does not start: the reply is `blocked` with the
+`budget_exceeded` refusal, and the owner gets one notification a day. Usage is
+recorded in an internal ledger, kept 48 hours.
+
+### Service Identity
+
+`agent.service_identity: { user_id, role }` is an identity an organization agent
+acts as in the background; the role must be one the config defines. An admin
+marks a saved agent `runs_as: service` (nobody else can, and a non-admin editing
+its instructions turns it off). A routine on that agent runs as the service
+identity only when the watch's owner is an admin; anyone else's runs as
+themselves. Only the model run takes the service identity: the thread and its
+messages stay the owner's, a held write belongs to the person who delegated it
+and runs as the service when they approve it, and runs, approvals, usage and
+runtime events record `delegated_by` and `run_as`.
 
 ### Server-Owned Model Resolution
 
