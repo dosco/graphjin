@@ -749,8 +749,10 @@ func (s *graphjinService) runApprovalContinuation(ctx context.Context, row map[s
 	}
 	conf := agentConfigFromService(s.conf)
 	if origin.WatchID != "" {
-		// A routine's continuation is as unattended as the routine was.
-		conf = watchRoutineAgentConfig(s.conf)
+		// A routine's continuation is as unattended as the routine was, and
+		// runs where it did: on the data agent.
+		conf = watchRoutineAgentConfig(s.conf, false)
+		foldProfileIntoTask(&req)
 	}
 	var runner graphjinAgentRunner = staticAgentRunner{answer: outcome}
 	if built, err := s.agentEntryRunner(conf); err == nil {
@@ -806,14 +808,14 @@ func approvalContinuationInstruction(row map[string]any) string {
 	summary := approvalSummaryText(row)
 	switch stringMapValue(row, "status") {
 	case approvalStatusExecuted:
-		return "The change you proposed earlier in this conversation (" + summary + ") was approved and has been applied. " +
+		return "The change proposed earlier (" + summary + ") was approved and has been applied. " +
 			"Confirm the effect from the data if that is quick, then tell the user in a sentence or two what changed. " +
 			"If the earlier plan had a next step, carry it out or propose it."
 	case approvalStatusFailed:
-		return "The change you proposed earlier in this conversation (" + summary + ") was approved, but it failed and nothing was applied: " +
+		return "The change proposed earlier (" + summary + ") was approved, but it failed and nothing was applied: " +
 			stringMapValue(row, "error") + ". Tell the user briefly what went wrong and what they could do."
 	default:
-		return "The user rejected the change you proposed earlier in this conversation (" + summary + "). Nothing was changed. " +
+		return "The owner rejected the change proposed earlier (" + summary + "). Nothing was changed. " +
 			"Acknowledge it in one sentence. Propose something else only if the situation clearly needs it."
 	}
 }

@@ -175,8 +175,11 @@ func TestWatchRoutineAnswersInItsAgentsHomeThread(t *testing.T) {
 	if err := svc.processPendingWatchDeliveries(alice); err != nil {
 		t.Fatalf("deliver: %v", err)
 	}
-	if runner.req.Profile == nil || runner.req.Profile.Instructions != "Focus on late shipments." {
-		t.Fatalf("routine ran without the agent's instructions: %+v", runner.req.Profile)
+	// The routine runs on the data agent, which takes no profile: the agent's
+	// standing instructions are part of its task instead.
+	if runner.req.Profile != nil || !strings.HasPrefix(runner.req.Instruction, "Standing instructions for ") ||
+		!strings.Contains(runner.req.Instruction, "Focus on late shipments.") {
+		t.Fatalf("routine task = %q profile %+v", runner.req.Instruction, runner.req.Profile)
 	}
 	if got := runThreadProfile(runner.ctx); got != ops {
 		t.Fatalf("run context profile = %q, want %s", got, ops)
@@ -277,6 +280,10 @@ func TestWatchRoutineMayProposeWritesForApproval(t *testing.T) {
 	ctx := threadUserCtx("user_1")
 	watchID := fireOpenOrdersRoutine(t, svc, ctx)
 
+	// A routine runs on the data agent, not the lead.
+	if runner.conf.Lead.Enabled {
+		t.Fatal("a routine must run on the data agent")
+	}
 	if runner.conf.ReadOnly || !runner.conf.HeldWritesOnly || runner.conf.WriteApproval != gjagent.WriteApprovalRequired {
 		t.Fatalf("routine config: read_only=%v held_writes_only=%v write_approval=%q", runner.conf.ReadOnly, runner.conf.HeldWritesOnly, runner.conf.WriteApproval)
 	}
@@ -305,7 +312,7 @@ func TestWatchRoutineMayProposeWritesForApproval(t *testing.T) {
 func TestWatchRoutineConfigFollowsApprovals(t *testing.T) {
 	conf := &Config{}
 	conf.Agent.Enabled = true
-	if c := watchRoutineAgentConfig(conf); !c.ReadOnly || c.HeldWritesOnly {
+	if c := watchRoutineAgentConfig(conf, false); !c.ReadOnly || c.HeldWritesOnly {
 		t.Fatalf("without approvals a routine is read-only: %+v", c)
 	}
 }
@@ -327,5 +334,18 @@ func TestUnattendedRunsStateTheirOwnOutcome(t *testing.T) {
 	failed := gjagent.Response{Status: gjagent.StatusError, Errors: []gjagent.ErrorInfo{{Message: "agent distiller loop exceeded max steps"}}}
 	if got := svc.stateUnattendedOutcome(ctx, failed); got.Answer != "" {
 		t.Fatalf("a failed run's error stays the message: %q", got.Answer)
+	}
+}
+
+// A data event's rows are part of a routine's task: the data agent sees its
+// context only from code.
+func TestRoutineTaskCarriesTheRowsItFiredOn(t *testing.T) {
+	data := map[string]any{"support_tickets": []any{map[string]any{"id": 1, "subject": "DUPLICATE: x"}}, "support_tickets_cursor": "c1"}
+	got := watchRoutineInstruction(watchRuntimeDefinition{}, "Check it.", data)
+	if !strings.Contains(got, `The rows it returned: {"support_tickets":[{"id":1,"subject":"DUPLICATE: x"}]}`) || strings.Contains(got, "cursor") {
+		t.Fatalf("instruction = %q", got)
+	}
+	if rows := watchRoutineEventRows(map[string]any{"kind": "metric", "value": 3}); rows != "" {
+		t.Fatalf("a metric event's brief already says what happened: %q", rows)
 	}
 }

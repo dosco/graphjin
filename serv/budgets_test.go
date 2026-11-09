@@ -62,7 +62,7 @@ func TestBudgetCapsEachRoutine(t *testing.T) {
 	svc := newBudgetService(t)
 	runner := &scriptedAgentRunner{resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "ok", Usage: map[string]any{"prompt_tokens": 320}}}
 	withScriptedAgentRunner(t, runner)
-	entry, err := svc.agentEntryRunner(watchRoutineAgentConfig(svc.conf))
+	entry, err := svc.agentEntryRunner(watchRoutineAgentConfig(svc.conf, false))
 	if err != nil {
 		t.Fatal(err)
 	}

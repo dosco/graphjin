@@ -477,8 +477,10 @@ classified `api.write` or `api.delete` by HTTP method.
 ### Routines That Act
 
 A watch whose delivery is an agent turn (`delivery_json: { kind: "agent",
-prompt }`) is a routine. With write approvals on, a routine runs with held
-writes only: it can propose a data or API change, which is held for the watch
+prompt }`) is a routine. A routine is one task with its event attached, so it
+runs on the data agent itself rather than the lead, whose guards refuse an
+answer no tool call backs; a saved agent's standing instructions become part of
+the task. With write approvals on, a routine runs with held writes only: it can propose a data or API change, which is held for the watch
 owner exactly like a chat write, and it can never write GraphJin's own roots
 (watches, tasks, memories, config). Its answer becomes a notification and its
 watch event leaves the watch inbox. Without approvals a routine is read-only.

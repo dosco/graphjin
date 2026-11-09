@@ -54,6 +54,22 @@ func parseWatchAgentConfig(m map[string]any) (watchAgentConfig, error) {
 	return cfg, nil
 }
 
+// foldProfileIntoTask carries a saved agent's standing instructions into a
+// routine's task. The data agent drops the conversation-level profile, so a
+// routine that runs on it gets the instructions as part of what it is asked
+// to do.
+func foldProfileIntoTask(req *gjagent.Request) {
+	if req.Profile == nil || strings.TrimSpace(req.Profile.Instructions) == "" {
+		return
+	}
+	name := strings.TrimSpace(req.Profile.Name)
+	if name == "" {
+		name = "this agent"
+	}
+	req.Instruction = "Standing instructions for " + name + ": " + strings.TrimSpace(req.Profile.Instructions) + "\n\n" + req.Instruction
+	req.Profile = nil
+}
+
 // routineServiceIdentity returns how to give a routine's agent the service
 // identity, or nil to run as the watch's owner. Both must hold: the routine's
 // saved agent is marked runs_as service, and the watch's owner is an admin.
@@ -82,15 +98,27 @@ func (s *graphjinService) routineServiceIdentity(ownerCtx context.Context, def w
 
 // watchRoutineProposeNote tells a routine it may act through approvals. The
 // watch's owner set the routine up, so proposing a change is doing what they
-// asked; it still runs only once they approve it.
-const watchRoutineProposeNote = "If what you find calls for a change to the data, ask the data agent to make it, in plain words, with ask_graphjin: GraphJin holds the change for the watch owner's approval and nothing changes until they approve. That request is how a change is proposed; describing a change in your reply proposes nothing. Then say what you proposed and why. If nothing needs changing, say so."
+// asked; it still runs only once they approve it. A routine runs on the data
+// agent, which proposes a change by writing it.
+const watchRoutineProposeNote = "If what you find calls for a change to the data, make it with a mutation: GraphJin holds the write for the watch owner's approval and nothing changes until they approve. Writing the mutation is how a change is proposed; describing a change in your answer proposes nothing. Then say what you proposed and why. If nothing needs changing, say so."
 
-// watchRoutineAgentConfig is the agent config a routine runs with. Nobody is
-// watching a routine, so with write approvals on it may propose data and API
+// followUpProposeNote is the same for a follow-up, which runs on the lead.
+const followUpProposeNote = "If what you find calls for a change to the data, ask the data agent to make it, in plain words, with ask_graphjin: GraphJin holds the change for the watch owner's approval and nothing changes until they approve. That request is how a change is proposed; describing a change in your reply proposes nothing. Then say what you proposed and why. If nothing needs changing, say so."
+
+// watchRoutineAgentConfig is the agent config an unattended run uses. Nobody
+// is watching it, so with write approvals on it may propose data and API
 // writes and run none itself (HeldWritesOnly); without approvals it is
 // read-only, as every routine used to be.
-func watchRoutineAgentConfig(conf *Config) gjagent.Config {
+//
+// A routine is one task with its event attached, so it runs on the data agent
+// itself: the worker's guards refuse an answer no tool call backs, where the
+// lead could answer "I proposed the change" without asking for it. A
+// follow-up continues a conversation, so it keeps the lead (lead true).
+func watchRoutineAgentConfig(conf *Config, lead bool) gjagent.Config {
 	agentConf := agentConfigFromService(conf)
+	if !lead {
+		agentConf.Lead.Enabled = false
+	}
 	if configApprovalsEnabled(conf) {
 		agentConf.HeldWritesOnly = true
 		agentConf.WriteApproval = gjagent.WriteApprovalRequired
@@ -191,7 +219,7 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 		// A follow-up the agent scheduled: the note is the whole story.
 		req.Instruction = cfg.Prompt
 		if s.approvalsEnabled() {
-			req.Instruction += "\n\n" + watchRoutineProposeNote
+			req.Instruction += "\n\n" + followUpProposeNote
 		}
 		opts.Display = "Follow-up: " + cfg.Prompt
 	}
@@ -199,8 +227,11 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 	if err != nil {
 		return receipt, err
 	}
+	if !cfg.Once {
+		foldProfileIntoTask(&req)
+	}
 
-	runner, err := s.agentEntryRunner(watchRoutineAgentConfig(s.conf))
+	runner, err := s.agentEntryRunner(watchRoutineAgentConfig(s.conf, cfg.Once))
 	if err != nil {
 		// The run row exists; record the failure in the thread rather than
 		// leaving it for the lease sweep.
@@ -352,8 +383,47 @@ func (r failingAgentRunner) Run(context.Context, gjagent.Request) (gjagent.Respo
 // given, and an answer citing a field the run never observed is rejected, so a
 // brief like "orders.0.count_id is 3" made routines exhaust their steps. The
 // full event rides in the run context (_watch_events).
+//
+// A data event's rows are the routine's subject, so they are part of the task
+// (watchRoutineEventRows): the data agent reads its context only from code,
+// and a routine that cannot see the rows it fired on goes looking for them.
+// Their keys are columns the run context carries, so citing them is grounded.
 func watchRoutineInstruction(def watchRuntimeDefinition, prompt string, data map[string]any) string {
-	return prompt + "\n\n" + watchRoutineBrief(data)
+	out := prompt + "\n\n" + watchRoutineBrief(data)
+	if rows := watchRoutineEventRows(data); rows != "" {
+		out += " The rows it returned: " + rows
+	}
+	return out
+}
+
+const watchRoutineEventRowsMaxBytes = 3000
+
+// watchRoutineEventRows is a data event's rows as compact JSON, without the
+// pagination cursors, capped in size; empty for metric, schedule and absence
+// events, whose brief already says what happened.
+func watchRoutineEventRows(data map[string]any) string {
+	switch stringFromAny(data["kind"]) {
+	case "metric", "schedule", "absence":
+		return ""
+	}
+	rows := map[string]any{}
+	for key, value := range data {
+		if strings.HasSuffix(key, "_cursor") || key == "kind" {
+			continue
+		}
+		rows[key] = value
+	}
+	if len(rows) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(rows)
+	if err != nil {
+		return ""
+	}
+	if len(raw) > watchRoutineEventRowsMaxBytes {
+		return truncateUTF8(string(raw), watchRoutineEventRowsMaxBytes) + " (truncated; the full event is in the run context)"
+	}
+	return string(raw)
 }
 
 var watchRoutineOpWords = map[string]string{
