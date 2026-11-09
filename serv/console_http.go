@@ -206,7 +206,7 @@ func consoleWorkspaceCapabilities(roots, features []string, workspace string) []
 	allowedRoots := map[string]bool{}
 	switch strings.ToLower(workspace) {
 	case "user":
-		for _, root := range []string{"gj_artifacts", "gj_watch", "gj_watch_event", "gj_task", "gj_task_entry"} {
+		for _, root := range []string{"gj_artifacts", "gj_watch", "gj_watch_event", "gj_task", "gj_task_entry", notificationsRootTable} {
 			allowedRoots[root] = true
 		}
 	default:

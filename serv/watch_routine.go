@@ -144,7 +144,42 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 	}
 	receipt["status"] = "delivered"
 	receipt["delivered_at"] = time.Now().UTC().Format(time.RFC3339)
+	s.notifyRoutineAnswer(ownerCtx, def, event, threadID, resp)
 	return receipt, nil
+}
+
+// notifyRoutineAnswer tells the owner a routine answered, and marks the watch
+// event seen: the notification and the thread now carry it, so it no longer
+// waits in the watch inbox. A held write already posted its own notification,
+// so the answer that proposed it only links to it.
+func (s *graphjinService) notifyRoutineAnswer(ctx context.Context, def watchRuntimeDefinition, event watchDeliveryEvent, threadID string, resp gjagent.Response) {
+	if !s.notificationsEnabled() {
+		return
+	}
+	name := strings.TrimSpace(def.Name)
+	if name == "" {
+		name = "A watch"
+	}
+	severity := notificationSeverityInfo
+	if resp.Status == gjagent.StatusError || resp.Status == gjagent.StatusBlocked {
+		severity = notificationSeverityWarning
+	}
+	s.notify(ctx, notification{
+		OwnerID: def.OwnerID, AccountID: def.AccountID,
+		Kind: notificationRoutineAnswer, Severity: severity,
+		Title: name + " fired: the agent looked into it", Body: truncateUTF8(strings.TrimSpace(resp.Answer), 600),
+		RefKind: "thread", RefID: threadID, Link: "/user/agent?thread=" + threadID,
+		DedupeKey: "routine:" + event.ID,
+	})
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := s.internalStoreMutationRows(context.WithoutCancel(ctx), "watch_events", `where: { id: { eq: $id }, seen: { eq: false } }, update: $input`, "id",
+		map[string]any{"id": event.ID, "input": map[string]any{"seen": true, "seen_at": now, "updated_at": now}}); err != nil {
+		if s.log != nil {
+			s.log.Warnf("watch event %s: mark seen after routine: %v", event.ID, err)
+		}
+		return
+	}
+	_ = s.bumpArtifactRevision(context.WithoutCancel(ctx), "watch_events")
 }
 
 // prepareWatchRoutineRun waits for a thread that is busy with another turn,

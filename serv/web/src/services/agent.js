@@ -109,7 +109,7 @@ async function readAgentEvents(response, { onAction, onRun, onDelta } = {}) {
   return result;
 }
 
-function parseSSEFrame(frame) {
+export function parseSSEFrame(frame) {
   let event = "message";
   const dataLines = [];
   for (const line of frame.split("\n")) {

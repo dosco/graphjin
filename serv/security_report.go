@@ -1335,7 +1335,7 @@ func systemRootAccessSafe(root, accessMode string) bool {
 	switch root {
 	case "gj_security", "gj_runtime", "gj_config":
 		return accessMode == core.AccessModeAdmin || accessMode == core.AccessModeBlocked
-	case "gj_artifacts", "gj_watch", "gj_watch_event", "gj_task", "gj_task_entry", "gj_workflow", "gj_workflow_execution":
+	case "gj_artifacts", "gj_watch", "gj_watch_event", "gj_task", "gj_task_entry", "gj_workflow", "gj_workflow_execution", notificationsRootTable:
 		return accessMode == core.AccessModeOwner || accessMode == core.AccessModeAccount || accessMode == core.AccessModeAdmin || accessMode == core.AccessModeBlocked
 	case "gj_catalog":
 		return accessMode == core.AccessModeAuthenticated || accessMode == core.AccessModeAccount || accessMode == core.AccessModeAdmin || accessMode == core.AccessModePublic

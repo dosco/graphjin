@@ -2496,6 +2496,13 @@ func startSQLiteWatchCore(t *testing.T, svc *graphjinService, db *sql.DB) {
 			core.OptionSetManagedMutationHandler("app", approvals),
 		)
 	}
+	if svc.notificationsEnabled() {
+		notifications := notificationControlPlane{service: svc}
+		opts = append(opts,
+			core.OptionSetManagedQueryHandler("app", notifications),
+			core.OptionSetManagedMutationHandler("app", notifications),
+		)
+	}
 	gj, err := core.NewGraphJin(&svc.conf.Core, db, opts...)
 	if err != nil {
 		t.Fatalf("start GraphJin core: %v", err)

@@ -6,6 +6,8 @@ export const workspaceDefinitions = {
     defaultPath: "/user/agent",
     items: [
       { path: "/user/agent", label: "Agent", layout: "canvas" },
+      // Shown only when the server offers notifications to this viewer.
+      { path: "/user/inbox", label: "Inbox", layout: "collection", requiresCapability: "gj_notification", count: "notifications" },
       { path: "/user/tasks", label: "Tasks", layout: "collection" },
       { path: "/user/watches", label: "Watches", layout: "collection" },
       { path: "/user/artifacts", label: "Artifacts", layout: "collection" },
@@ -55,6 +57,14 @@ export function routeDefinition(pathname) {
     }
   }
   return { layout: "collection", workspace: workspaceDefinitions.user };
+}
+
+// visibleItems drops items whose capability the server did not grant this
+// workspace. With no bootstrap yet, gated items stay hidden.
+export function visibleItems(workspace, bootstrap) {
+  const served = (bootstrap?.workspaces || []).find((candidate) => candidate?.id === workspace?.id);
+  const capabilities = new Set(served?.capabilities || []);
+  return (workspace?.items || []).filter((item) => !item.requiresCapability || capabilities.has(item.requiresCapability));
 }
 
 export function availableWorkspaces(bootstrap) {

@@ -57,7 +57,7 @@ threads:
 			t.Fatalf("table %s exists before init", table.Name)
 		}
 	}
-	if got, want := len(before.Tables), 10; got != want {
+	if got, want := len(before.Tables), 11; got != want { // incl. notifications
 		t.Fatalf("expected %d tables, got %d: %+v", want, got, before.Tables)
 	}
 

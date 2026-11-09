@@ -385,6 +385,78 @@
         },
         "type": "object"
       },
+      "AgentNotification": {
+        "properties": {
+          "body": {
+            "description": "Detail, such as the change's summary or the routine's answer.",
+            "type": "string"
+          },
+          "created_at": {
+            "description": "UTC, fixed width: text order is time order.",
+            "type": "string"
+          },
+          "delegated_by": {
+            "description": "Who delegated the work, when an agent acted for them.",
+            "type": "string"
+          },
+          "id": {
+            "description": "Notification id.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "What happened.",
+            "enum": [
+              "approval_pending",
+              "routine_answer",
+              "run_failed",
+              "task_verify_failed",
+              "task_verified"
+            ],
+            "type": "string"
+          },
+          "link": {
+            "description": "A console path that opens it.",
+            "type": "string"
+          },
+          "ref_id": {
+            "description": "Its id.",
+            "type": "string"
+          },
+          "ref_kind": {
+            "description": "What it is about: approval, thread or task.",
+            "type": "string"
+          },
+          "seen": {
+            "description": "Whether the owner has seen it.",
+            "type": "boolean"
+          },
+          "seen_at": {
+            "description": "When it was marked seen.",
+            "type": "string"
+          },
+          "severity": {
+            "description": "action: something waits for you.",
+            "enum": [
+              "info",
+              "action",
+              "warning"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "description": "One line.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "seen",
+          "created_at"
+        ],
+        "type": "object"
+      },
       "AgentPreparationStats": {
         "additionalProperties": false,
         "description": "PreparationStats reports the entire decision stage, including failed calls.",
@@ -1634,6 +1706,239 @@
         ]
       },
       "x-graphjin-feature": "status"
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "description": "Changes waiting for approval, routine answers, stopped runs and task checks. Mark them seen here or through gj_notification(update: { seen }).",
+        "operationId": "listNotifications",
+        "parameters": [
+          {
+            "description": "Only unseen ones.",
+            "in": "query",
+            "name": "unseen",
+            "schema": {
+              "enum": [
+                "1",
+                "true"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "At most this many (default 50, max 200).",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "notifications": {
+                      "items": {
+                        "$ref": "#/components/schemas/AgentNotification"
+                      },
+                      "type": "array"
+                    },
+                    "unseen_count": {
+                      "description": "Unseen notifications in all.",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "notifications",
+                    "unseen_count"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Notifications and the unseen count."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "description": "What went wrong.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Notifications need a signed-in user."
+          }
+        },
+        "summary": "The caller's notifications, newest first",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "x-graphjin-feature": "notifications"
+    },
+    "/api/v1/notifications/seen": {
+      "post": {
+        "operationId": "markAllNotificationsSeen",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "marked": {
+                      "description": "Notifications marked seen.",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "marked"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "How many were marked."
+          }
+        },
+        "summary": "Mark every unseen notification seen",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "x-graphjin-feature": "notifications"
+    },
+    "/api/v1/notifications/stream": {
+      "get": {
+        "description": "Server-sent events: `notification` (AgentNotification) for each one created after the cursor, and `count` ({unseen_count}) whenever the caller's unseen count changes. The event id is the notification's creation time in microseconds; resume with Last-Event-ID or ?after=. Without a cursor the stream starts now; list the backlog with GET /api/v1/notifications.",
+        "operationId": "streamNotifications",
+        "parameters": [
+          {
+            "description": "Resume after this event id.",
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Standard SSE resume; wins over ?after.",
+            "in": "header",
+            "name": "Last-Event-ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Server-sent events."
+          }
+        },
+        "summary": "Follow new notifications live",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "x-graphjin-feature": "notifications"
+    },
+    "/api/v1/notifications/{notification_id}/seen": {
+      "post": {
+        "operationId": "markNotificationSeen",
+        "parameters": [
+          {
+            "description": "The notification id.",
+            "in": "path",
+            "name": "notification_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "seen": {
+                    "description": "Default true; false marks it unseen.",
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "id": {
+                      "description": "The notification.",
+                      "type": "string"
+                    },
+                    "seen": {
+                      "description": "Its state now.",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "seen"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Marked."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "description": "What went wrong.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No such notification for this caller."
+          }
+        },
+        "summary": "Mark one notification seen or unseen",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "x-graphjin-feature": "notifications"
     }
   }
 }

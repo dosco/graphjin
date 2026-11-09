@@ -668,7 +668,27 @@ func (s *graphjinService) completeTaskVerification(ctx context.Context, task map
 		return err
 	}
 	s.markTaskChanged("task verification")
+	s.notifyTaskVerification(ctx, task, result.Passed, attempt)
 	return nil
+}
+
+// notifyTaskVerification tells the owner how a declared task's check came out:
+// it closed, or it stays open because its proof failed.
+func (s *graphjinService) notifyTaskVerification(ctx context.Context, task map[string]any, passed bool, attempt int64) {
+	id := stringMapValue(task, "id")
+	goal := strings.TrimSpace(stringMapValue(task, "goal"))
+	n := notification{
+		OwnerID: stringMapValue(task, "owner_id"), AccountID: stringMapValue(task, "account_id"),
+		RefKind: "task", RefID: id, Link: "/user/tasks",
+		DedupeKey: fmt.Sprintf("task_verify:%s:%d", id, attempt),
+	}
+	if passed {
+		n.Kind, n.Severity, n.Title = "task_verified", notificationSeverityInfo, "A task's check passed and the task closed"
+	} else {
+		n.Kind, n.Severity, n.Title = notificationTaskVerifyFail, notificationSeverityWarning, "A task's check failed; the task stays open"
+	}
+	n.Body = truncateUTF8(goal, 600)
+	s.notify(ctx, n)
 }
 
 func taskVerifySQLPlaceholder(dbType string, position int) string {

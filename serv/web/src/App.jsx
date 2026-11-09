@@ -15,6 +15,7 @@ import ConfigViewer from "./pages/ConfigViewer";
 
 const QueryEditor = lazy(() => import("./pages/QueryEditor"));
 const ApiDocs = lazy(() => import("./pages/ApiDocs"));
+const Inbox = lazy(() => import("./pages/Inbox"));
 const AgentChat = lazy(() => import("./pages/AgentChat"));
 const MissionControl = lazy(() => import("./pages/MissionControl"));
 const Memory = lazy(() => import("./pages/Memory"));
@@ -41,6 +42,7 @@ const App = () => {
                 <Routes>
                   <Route path="/" element={<Navigate to="/user/agent" replace />} />
                   <Route path="/user/agent" element={<AgentChat />} />
+                  <Route path="/user/inbox" element={<Inbox />} />
                   <Route path="/user/tasks" element={<MissionControl section="tasks" />} />
                   <Route path="/user/watches" element={<MissionControl section="watches" />} />
                   <Route path="/user/artifacts" element={<MissionControl section="annotations" />} />

@@ -182,11 +182,34 @@ func (r *serviceAgentRuntime) ProposeWrite(ctx context.Context, args map[string]
 	if _, err := s.internalStoreMutationRows(ctx, "approvals", `insert: $input`, approvalStoreFields, map[string]any{"input": input}); err != nil {
 		return nil, nil, fmt.Errorf("this write did NOT execute: storing it for approval failed: %w", err)
 	}
+	s.notify(ctx, approvalPendingNotification(input, summary))
 	return out, &gjagent.Approval{
 		ID: stringFromAny(input["id"]), Hash: hash, Summary: summary,
 		Query: query, Variables: parseJSONValue(varsJSON), Preview: preview,
 		ExpiresAt: expires.Format(time.RFC3339),
 	}, nil
+}
+
+// approvalPendingNotification asks the owner to decide a held write. Deciding
+// it settles the notification (approvalPendingKey).
+func approvalPendingNotification(row map[string]any, summary string) notification {
+	id := stringFromAny(row["id"])
+	return notification{
+		OwnerID: stringFromAny(row["owner_id"]), AccountID: stringFromAny(row["account_id"]),
+		Kind: notificationApprovalPending, Severity: notificationSeverityAction,
+		Title: "A change is waiting for your approval", Body: summary,
+		RefKind: "approval", RefID: id, Link: approvalLink(stringFromAny(row["thread_id"])),
+		DedupeKey: approvalPendingKey(id),
+	}
+}
+
+func approvalPendingKey(approvalID string) string { return "approval:" + approvalID + ":pending" }
+
+func approvalLink(threadID string) string {
+	if threadID != "" {
+		return "/user/agent?thread=" + threadID
+	}
+	return "/user/inbox"
 }
 
 // approvalDryRunTarget names the database a write would change and its root
@@ -459,6 +482,8 @@ func (s *graphjinService) settleApproval(ctx context.Context, id, status, result
 	if len(rows) == 0 {
 		return nil, errApprovalNotFound
 	}
+	// A decided or expired approval no longer waits for anyone.
+	s.markNotificationSeenByKey(ctx, stringMapValue(rows[0], "owner_id"), approvalPendingKey(id))
 	return approvalAPIRow(rows[0], time.Now().UTC()), nil
 }
 

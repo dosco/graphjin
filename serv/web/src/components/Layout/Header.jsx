@@ -1,9 +1,10 @@
 import React from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Search } from "lucide-react";
 
-import { availableWorkspaces, commandItems, workspaceDefinitions, workspaceIDFromPath } from "@/app/workspaces";
+import { availableWorkspaces, commandItems, visibleItems, workspaceDefinitions, workspaceIDFromPath } from "@/app/workspaces";
+import { listNotifications, notificationCountKey } from "@/services/notifications";
 import { cn } from "@/lib/utils";
 import {
   clearOperatorIdentity,
@@ -57,6 +58,16 @@ const Header = () => {
   const scopeLabel = bootstrap?.scope?.environment || bootstrap?.scope?.source || "local";
   const session = signInState(bootstrap);
   const promptedSignIn = React.useRef(false);
+  const navItems = visibleItems(workspace, bootstrap);
+  const notificationsOn = navItems.some((item) => item.count === "notifications");
+  // The stream (useNotificationStream) keeps this current; the query only
+  // seeds it on first load.
+  const { data: unseenCount = 0 } = useQuery({
+    queryKey: notificationCountKey,
+    queryFn: () => listNotifications({ unseen: true, limit: 1 }).then((payload) => payload?.unseen_count ?? 0),
+    enabled: notificationsOn,
+    staleTime: Infinity,
+  });
 
   React.useEffect(() => {
     if (workspaceDefinitions[workspaceID]) {
@@ -179,7 +190,7 @@ const Header = () => {
         className="scrollbar-none fixed inset-x-0 bottom-0 z-40 flex h-[var(--chrome-bottom)] items-stretch overflow-x-auto bg-background/85 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:static md:mt-6 md:h-auto md:flex-col md:gap-0.5 md:overflow-visible md:bg-transparent md:p-0 md:backdrop-blur-none"
         aria-label={`${workspace?.label || "Console"} workspace`}
       >
-        {workspace?.items.map((item, index) => {
+        {navItems.map((item, index) => {
           const active = location.pathname.startsWith(item.path);
           return (
             <Link
@@ -198,6 +209,9 @@ const Header = () => {
                 {String(index + 1).padStart(2, "0")}
               </span>
               {item.label}
+              {item.count === "notifications" && unseenCount > 0 && (
+                <span className="ml-1.5 font-mono text-[0.6875rem] font-semibold text-foreground" aria-label={`${unseenCount} unseen`}>{unseenCount}</span>
+              )}
             </Link>
           );
         })}

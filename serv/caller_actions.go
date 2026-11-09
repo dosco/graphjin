@@ -113,7 +113,7 @@ func callerActionNeedsIdentity(root, action string) bool {
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(root)) {
-	case "gj_artifacts", "gj_watch", "gj_watch_event", "gj_task", "gj_task_entry":
+	case "gj_artifacts", "gj_watch", "gj_watch_event", "gj_task", "gj_task_entry", notificationsRootTable:
 		return true
 	default:
 		return false

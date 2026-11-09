@@ -292,6 +292,63 @@ func agentOpenAPIPaths() map[string]any {
 				},
 			},
 		},
+		routeNotifications: map[string]any{
+			"x-graphjin-feature": "notifications",
+			"get": map[string]any{
+				"operationId": "listNotifications",
+				"tags":        []string{"notifications"},
+				"summary":     "The caller's notifications, newest first",
+				"description": "Changes waiting for approval, routine answers, stopped runs and task checks. Mark them seen here or through gj_notification(update: { seen }).",
+				"parameters": []any{
+					map[string]any{"name": "unseen", "in": "query", "description": "Only unseen ones.", "schema": map[string]any{"type": "string", "enum": []any{"1", "true"}}},
+					map[string]any{"name": "limit", "in": "query", "description": "At most this many (default 50, max 200).", "schema": map[string]any{"type": "integer"}},
+				},
+				"responses": map[string]any{
+					"200": jsonResponse("Notifications and the unseen count.", objectOf(map[string]any{
+						"notifications": arrayOf(ref("AgentNotification")),
+						"unseen_count":  prop("integer", "Unseen notifications in all."),
+					}, "notifications", "unseen_count")),
+					"401": jsonResponse("Notifications need a signed-in user.", errorBody()),
+				},
+			},
+		},
+		routeNotifications + "/seen": map[string]any{
+			"x-graphjin-feature": "notifications",
+			"post": map[string]any{
+				"operationId": "markAllNotificationsSeen",
+				"tags":        []string{"notifications"},
+				"summary":     "Mark every unseen notification seen",
+				"responses":   map[string]any{"200": jsonResponse("How many were marked.", objectOf(map[string]any{"marked": prop("integer", "Notifications marked seen.")}, "marked"))},
+			},
+		},
+		routeNotifications + "/{notification_id}/seen": map[string]any{
+			"x-graphjin-feature": "notifications",
+			"post": map[string]any{
+				"operationId": "markNotificationSeen",
+				"tags":        []string{"notifications"},
+				"summary":     "Mark one notification seen or unseen",
+				"parameters":  []any{pathParam("notification_id", "The notification id.")},
+				"requestBody": map[string]any{"content": jsonContent(objectOf(map[string]any{"seen": prop("boolean", "Default true; false marks it unseen.")}))},
+				"responses": map[string]any{
+					"200": jsonResponse("Marked.", objectOf(map[string]any{"id": prop("string", "The notification."), "seen": prop("boolean", "Its state now.")}, "id", "seen")),
+					"404": jsonResponse("No such notification for this caller.", errorBody()),
+				},
+			},
+		},
+		routeNotifications + "/stream": map[string]any{
+			"x-graphjin-feature": "notifications",
+			"get": map[string]any{
+				"operationId": "streamNotifications",
+				"tags":        []string{"notifications"},
+				"summary":     "Follow new notifications live",
+				"description": "Server-sent events: `notification` (AgentNotification) for each one created after the cursor, and `count` ({unseen_count}) whenever the caller's unseen count changes. The event id is the notification's creation time in microseconds; resume with Last-Event-ID or ?after=. Without a cursor the stream starts now; list the backlog with GET /api/v1/notifications.",
+				"parameters": []any{
+					map[string]any{"name": "after", "in": "query", "description": "Resume after this event id.", "schema": map[string]any{"type": "integer"}},
+					map[string]any{"name": "Last-Event-ID", "in": "header", "description": "Standard SSE resume; wins over ?after.", "schema": map[string]any{"type": "string"}},
+				},
+				"responses": map[string]any{"200": map[string]any{"description": "Server-sent events.", "content": map[string]any{"text/event-stream": map[string]any{"schema": map[string]any{"type": "string"}}}}},
+			},
+		},
 		routeAgentFeedback: map[string]any{
 			"x-graphjin-feature": "threads",
 			"get": map[string]any{
@@ -319,6 +376,20 @@ func agentOpenAPIPaths() map[string]any {
 func agentOpenAPIRowSchemas() map[string]any {
 	str := func(description string) map[string]any { return prop("string", description) }
 	return map[string]any{
+		"AgentNotification": objectOf(map[string]any{
+			"id":           str("Notification id."),
+			"kind":         map[string]any{"type": "string", "description": "What happened.", "enum": []any{notificationApprovalPending, notificationRoutineAnswer, notificationRunFailed, notificationTaskVerifyFail, "task_verified"}},
+			"severity":     map[string]any{"type": "string", "enum": []any{notificationSeverityInfo, notificationSeverityAction, notificationSeverityWarning}, "description": "action: something waits for you."},
+			"title":        str("One line."),
+			"body":         str("Detail, such as the change's summary or the routine's answer."),
+			"ref_kind":     str("What it is about: approval, thread or task."),
+			"ref_id":       str("Its id."),
+			"link":         str("A console path that opens it."),
+			"delegated_by": str("Who delegated the work, when an agent acted for them."),
+			"seen":         prop("boolean", "Whether the owner has seen it."),
+			"seen_at":      str("When it was marked seen."),
+			"created_at":   str("UTC, fixed width: text order is time order."),
+		}, "id", "kind", "title", "seen", "created_at"),
 		"AgentDeltaEvent": objectOf(map[string]any{
 			"text":  str("The reply text so far."),
 			"reset": prop("boolean", "The text restarted (the model began a new draft); replace what was shown."),
@@ -402,6 +473,7 @@ func TestAgentOpenAPIRowSchemasMatchTheRows(t *testing.T) {
 		"AgentApprovalRecord": approvalAPIRow(map[string]any{}, time.Now()),
 		"AgentThread":         threadAPIRow(map[string]any{}),
 		"AgentRun":            runAPIRow(map[string]any{}),
+		"AgentNotification":   notificationAPIRow(map[string]any{}),
 	} {
 		if got, want := schemaKeys(schemas[name]), mapKeys(row); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s properties = %v, row keys = %v", name, got, want)
@@ -431,7 +503,7 @@ func TestAgentOpenAPICoversEveryAgentRoute(t *testing.T) {
 	if err := json.Unmarshal(agentOpenAPISpec, &doc); err != nil {
 		t.Fatal(err)
 	}
-	for _, route := range []string{routeAgent, routeAgentStatus, routeAgentRuns, routeAgentProfiles, routeAgentApprovals, routeAgentFeedback} {
+	for _, route := range []string{routeAgent, routeAgentStatus, routeAgentRuns, routeAgentProfiles, routeAgentApprovals, routeAgentFeedback, routeNotifications} {
 		found := false
 		for path := range doc.Paths {
 			if path == route || strings.HasPrefix(path, strings.TrimSuffix(route, "/")+"/") {
@@ -461,7 +533,7 @@ func mapKeys(m map[string]any) []string {
 // a field the server sends but the spec does not describe fails here.
 func TestAgentOpenAPISchemasAcceptWhatTheServerSends(t *testing.T) {
 	rest := []byte(`{"openapi":"3.0.0","info":{"title":"GraphJin REST API","version":"1.0.0"},"paths":{"/top_accounts":{"get":{"responses":{"200":{"description":"ok"}}}}},"components":{"schemas":{"accounts":{"type":"object"}}}}`)
-	all := map[string]bool{"status": true, "agent": true, "threads": true, "profiles": true, "approvals": true}
+	all := map[string]bool{"status": true, "agent": true, "threads": true, "profiles": true, "approvals": true, "notifications": true}
 	merged, err := withAgentOpenAPI(rest, all)
 	if err != nil {
 		t.Fatal(err)
@@ -520,6 +592,7 @@ func TestAgentOpenAPISchemasAcceptWhatTheServerSends(t *testing.T) {
 	approvalRow["status"] = approvalStatusPending
 	validate("AgentApprovalRecord", approvalAPIRow(approvalRow, time.Now()))
 	validate("AgentDeltaEvent", map[string]any{"text": "Here", "reset": false})
+	validate("AgentNotification", notificationAPIRow(map[string]any{"id": "ntf_1", "kind": notificationApprovalPending, "severity": notificationSeverityAction, "title": "t", "seen": false, "created_at": notificationTime(time.Now())}))
 
 	// The served document keeps core's REST paths and only the agent paths
 	// whose feature is on.

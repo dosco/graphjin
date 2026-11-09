@@ -7,6 +7,7 @@ import { ConsoleProvider } from "./console-context";
 import { routeDefinition } from "@/app/workspaces";
 import { cn } from "@/lib/utils";
 import { fetchConsoleBootstrap } from "@/services/console";
+import { useNotificationStream } from "@/services/notifications";
 import { adoptSuggestedIdentity, operatorIdentityKey, useOperatorIdentity } from "@/services/identity";
 
 const layoutClasses = {
@@ -30,6 +31,8 @@ const Layout = ({ children }) => {
   React.useEffect(() => {
     adoptSuggestedIdentity(bootstrapQuery.data?.identity?.suggested);
   }, [bootstrapQuery.data]);
+  const notificationsOn = (bootstrapQuery.data?.workspaces || []).some((workspace) => (workspace?.capabilities || []).includes("gj_notification"));
+  useNotificationStream(notificationsOn);
   const route = routeDefinition(location.pathname);
   const consoleValue = React.useMemo(() => ({
     bootstrap: bootstrapQuery.data,

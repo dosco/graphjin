@@ -706,6 +706,13 @@ func (s *graphjinService) sweepExpiredRuns(ctx context.Context, now time.Time) (
 		}); err != nil && s.log != nil {
 			s.log.Warnf("thread %s: record lost run %s: %v", threadID, runID, err)
 		}
+		s.notify(ctx, notification{
+			OwnerID: stringMapValue(row, "owner_id"), AccountID: stringMapValue(row, "account_id"),
+			Kind: notificationRunFailed, Severity: notificationSeverityWarning,
+			Title: "A run stopped before it finished", Body: "The server handling it went away. Open the thread to ask again.",
+			RefKind: "thread", RefID: threadID, Link: "/user/agent?thread=" + threadID,
+			DedupeKey: "run_failed:" + runID,
+		})
 		if err := s.releaseThreadRun(ctx, threadID, runID); err != nil {
 			return failed, err
 		}

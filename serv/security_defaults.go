@@ -57,6 +57,8 @@ func controlPlaneSourceReadOnly(conf *Config, table string) bool {
 		return configThreadsEnabled(conf) && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
 	case approvalsRootTable:
 		return configApprovalsEnabled(conf) && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
+	case notificationsRootTable:
+		return configNotificationsEnabled(conf) && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
 	case "gj_artifacts":
 		return conf.Core.Artifacts.Enabled && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
 	case "gj_catalog", "gj_security", "gj_runtime":
@@ -78,6 +80,8 @@ func defaultControlPlaneTableReadOnly(conf *Config, table string) bool {
 		return true
 	case approvalsRootTable:
 		return !configApprovalsEnabled(conf)
+	case notificationsRootTable:
+		return !configNotificationsEnabled(conf)
 	case "gj_workflow":
 		return !conf.effectiveFeatureCapability(featurecap.KindWorkflows, featurecap.KeyWorkflowWrite)
 	case "gj_workflow_execution":
@@ -535,7 +539,7 @@ func sourceModeSystemRoleNames(conf *Config) []string {
 func ownerScopedSystemRoot(table string) bool {
 	switch strings.ToLower(strings.TrimSpace(table)) {
 	case "gj_artifacts", "gj_watch", "gj_watch_event", "gj_task", "gj_task_entry",
-		threadsRootTable, threadMessagesRootTable, threadRunsRootTable, approvalsRootTable:
+		threadsRootTable, threadMessagesRootTable, threadRunsRootTable, approvalsRootTable, notificationsRootTable:
 		return true
 	default:
 		return false
@@ -583,6 +587,8 @@ func systemReadSourceEnabled(conf *Config, table string) bool {
 		return configThreadsEnabled(conf)
 	case approvalsRootTable:
 		return configApprovalsEnabled(conf)
+	case notificationsRootTable:
+		return configNotificationsEnabled(conf)
 	case "gj_workflow", "gj_workflow_execution":
 		return conf.workflowsEnabled()
 	default:

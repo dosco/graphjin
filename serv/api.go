@@ -192,6 +192,7 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 	tasks := newTaskControlPlane(live)
 	threads := newThreadControlPlane(live)
 	approvals := approvalControlPlane{service: live}
+	notifications := notificationControlPlane{service: live}
 	revisions := revisionSignalHandler{service: live}
 	opts := []core.Option{
 		core.OptionSetFS(s.fs),
@@ -278,6 +279,17 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 		for _, dbName := range s.managedSystemRootDatabases(targetDB) {
 			opts = append(opts, core.OptionSetManagedQueryHandler(dbName, approvals))
 			opts = append(opts, core.OptionSetManagedMutationHandler(dbName, approvals))
+		}
+	}
+	if s.conf != nil && s.notificationsEnabled() {
+		targetDB := s.metadataDB
+		if targetDB == "" {
+			targetDB = core.DefaultDBName
+		}
+		// Notifications are served live, so a badge never reads a stale count.
+		for _, dbName := range s.managedSystemRootDatabases(targetDB) {
+			opts = append(opts, core.OptionSetManagedQueryHandler(dbName, notifications))
+			opts = append(opts, core.OptionSetManagedMutationHandler(dbName, notifications))
 		}
 	}
 	if s.namespace != nil {

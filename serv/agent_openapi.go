@@ -19,11 +19,12 @@ func (s *graphjinService) agentOpenAPIFeatures() map[string]bool {
 	agent := s.conf.agentEnabled()
 	threads := agent && s.threadsEnabled()
 	return map[string]bool{
-		"status":    true,
-		"agent":     agent,
-		"threads":   threads,
-		"profiles":  threads && s.profilesEnabled(),
-		"approvals": agent && s.approvalsEnabled(),
+		"status":        true,
+		"agent":         agent,
+		"threads":       threads,
+		"profiles":      threads && s.profilesEnabled(),
+		"approvals":     agent && s.approvalsEnabled(),
+		"notifications": s.notificationsEnabled(),
 	}
 }
 

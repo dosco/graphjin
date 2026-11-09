@@ -129,6 +129,9 @@ func configStoreTableNames(conf *Config) []string {
 	if configApprovalsEnabled(conf) {
 		names = append(names, "approvals")
 	}
+	if configNotificationsEnabled(conf) {
+		names = append(names, "notifications")
+	}
 	return names
 }
 

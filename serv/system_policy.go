@@ -84,6 +84,12 @@ func systemRootActionEnabled(conf *Config, root, action string) bool {
 			return false
 		}
 		return action == systemActionRead || (action == systemActionUpdate && !conf.artifactSourceReadOnly())
+	case notificationsRootTable:
+		// Posted only by GraphJin; a person reads them and marks them seen.
+		if !configNotificationsEnabled(conf) {
+			return false
+		}
+		return action == systemActionRead || (action == systemActionUpdate && !conf.artifactSourceReadOnly())
 	default:
 		return false
 	}
