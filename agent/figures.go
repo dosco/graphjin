@@ -73,14 +73,43 @@ func (l *figureLedger) add(source string, texts ...string) {
 		l.values = map[string][]float64{}
 	}
 	for _, text := range texts {
+		divisors := statedUnitDivisors(text)
 		for _, n := range scanNumbers(text, false) {
 			l.values[source] = append(l.values[source], n.value)
 			if n.percent {
 				// "12.5%" also vouches for the fraction 0.125 and back.
 				l.values[source] = append(l.values[source], n.value/100)
 			}
+			for _, d := range divisors {
+				l.values[source] = append(l.values[source], n.value/d)
+			}
 		}
 	}
+}
+
+// statedUnits are minor units a source can name for its numbers, with the
+// exact factor to the unit people read. When a source says its numbers are in
+// one ("Amount (Cents) | 30000", "amount_cents: 30000"), they also vouch for
+// the converted value: $300.00 is 30000 cents divided by 100, not a figure
+// the model made up. Nothing is scaled for a source that names no unit, so a
+// cents value quoted as dollars ($30,000) still matches only the raw number.
+var statedUnits = []struct {
+	pattern *regexp.Regexp
+	divisor float64
+}{
+	{regexp.MustCompile(`(?i)(?:\b|_)(?:cents|pence)\b`), 100},
+	// "ms" is case-sensitive so a title ("Ms. Lee") names no unit.
+	{regexp.MustCompile(`(?:\b|_)ms\b|(?i:\bmilliseconds\b)`), 1000},
+}
+
+func statedUnitDivisors(text string) []float64 {
+	var out []float64
+	for _, u := range statedUnits {
+		if u.pattern.MatchString(text) {
+			out = append(out, u.divisor)
+		}
+	}
+	return out
 }
 
 // addValue records the numbers inside a structured value (a code result).
@@ -126,8 +155,8 @@ type scannedNumber struct {
 }
 
 // matches reports whether a source value, rounded to the precision the figure
-// is displayed at, is the figure. Rounding is the only tolerance: no scale
-// factors, so a cents value shown as dollars does not match.
+// is displayed at, is the figure. Rounding is the only tolerance; a unit
+// conversion is credited only when the source named its unit (statedUnits).
 func (n scannedNumber) matches(v float64) bool {
 	got := math.Abs(v)
 	want := math.Abs(n.value)

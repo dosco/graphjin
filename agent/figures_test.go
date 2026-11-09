@@ -226,3 +226,36 @@ func TestLeadReportsWhereEachFigureCameFrom(t *testing.T) {
 		t.Fatalf("unverified = %v", got)
 	}
 }
+
+// A real lead reply (saas-ops demo, 2026-11-09): the data agent answered in
+// cents and said so; the lead's dollars are those values divided by 100.
+func TestFigureLedgerCreditsConversionFromAStatedUnit(t *testing.T) {
+	worker := "Here are the most recent paid invoices:\n\n| Due Date | Amount (Cents) |\n|---|---|\n| 2026-11-04 | 30000 |\n| 2026-11-03 | 140000 |"
+	var l figureLedger
+	l.add(FigureSourceDataAgent, worker)
+	got := figureTexts(l.attribute("| 2026-11-04 | $300.00 |\n| 2026-11-03 | $1,400.00 |\nThat is $1,700.00 in total."))
+	// The head-computed total stays unsourced: only the conversion is exact.
+	want := map[string]string{"$300.00": FigureSourceDataAgent, "$1,400.00": FigureSourceDataAgent, "$1,700.00": ""}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("figures = %v, want %v", got, want)
+	}
+
+	// A column name states the unit as well as prose does.
+	var named figureLedger
+	named.add(FigureSourceDataAgent, `{"amount_cents": 480000, "duration_ms": 2500}`)
+	if got := figureTexts(named.attribute("It was $4,800 and took 2.5 seconds.")); got["$4,800"] != FigureSourceDataAgent || got["2.5"] != FigureSourceDataAgent {
+		t.Fatalf("named units: %v", got)
+	}
+
+	// A title is not a unit, and with no unit named nothing is scaled.
+	var title figureLedger
+	title.add(FigureSourceDataAgent, "Ms Lee owes 30000.")
+	if got := figureTexts(title.attribute("Ms Lee owes $30.")); got["$30"] != "" {
+		t.Fatalf("a title was read as milliseconds: %v", got)
+	}
+	var plain figureLedger
+	plain.add(FigureSourceDataAgent, "The invoice total is 30000.")
+	if got := figureTexts(plain.attribute("The invoice total is $300.")); got["$300"] != "" {
+		t.Fatalf("an unnamed unit was scaled: %v", got)
+	}
+}
