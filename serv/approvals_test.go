@@ -218,9 +218,11 @@ func TestApprovalDryRunTargetRefusesSourcesWithSideEffects(t *testing.T) {
 	}
 }
 
-// A write held during a thread turn reports its outcome in that thread, with
-// no model call.
+// A write held during a thread turn continues in that thread after the
+// decision. With no model configured, the turn still records the outcome.
 func TestApprovalOutcomeLandsInItsThread(t *testing.T) {
+	approvalContinuationsInline = true
+	t.Cleanup(func() { approvalContinuationsInline = false })
 	db, svc := newSQLiteWatchServiceWithOptions(t, 20, func(c *Config) {
 		c.Agent.Enabled = true
 		c.Agent.Lead.Enabled = true
@@ -256,12 +258,23 @@ func TestApprovalOutcomeLandsInItsThread(t *testing.T) {
 	if _, err := svc.decideApproval(ctx, approval.ID, "approve", approval.Hash); err != nil {
 		t.Fatal(err)
 	}
-	messages, err := svc.internalStoreRows(ctx, "messages", `where: { thread_id: { eq: $thread_id } }`, messageStoreFields, map[string]any{"thread_id": threadID})
-	if err != nil || len(messages) != 1 || !strings.Contains(stringMapValue(messages[0], "content"), "Approved and applied: update 1 row in orders") {
+	messages, err := svc.threadMessages(ctx, threadID)
+	if err != nil || len(messages) != 2 ||
+		stringFromAny(messages[0]["content"]) != "Approved: update 1 row in orders" ||
+		!strings.Contains(stringFromAny(messages[1]["content"]), "Approved and applied: update 1 row in orders") {
 		t.Fatalf("thread messages = %v err = %v", messages, err)
 	}
 	if row, _ := svc.threadStoreRow(ctx, threadID); stringMapValue(row, "active_run_id") != "" {
 		t.Fatalf("the outcome left the thread claimed: %v", row)
+	}
+	// The continuation is a real run, so a lost one would be swept.
+	if run, err := svc.runStoreRow(ctx, "run_c_"+approval.ID); err != nil || stringMapValue(run, "status") != runStatusDone {
+		t.Fatalf("continuation run = %v err = %v", run, err)
+	}
+	// Continuing the same decision again starts nothing.
+	svc.continueAfterDecision(ctx, approval.ID)
+	if messages, _ := svc.threadMessages(ctx, threadID); len(messages) != 2 {
+		t.Fatalf("a repeated continuation added messages: %d", len(messages))
 	}
 }
 
@@ -337,5 +350,118 @@ func TestRoutineHeldWriteIsFiledUnderItsWatch(t *testing.T) {
 	if api["origin"] != approvalOriginRoutine || api["watch_id"] != "w_1" || api["event_id"] != "e_1" ||
 		mapFromAny(api["preview"])["available"] != true {
 		t.Fatalf("approval = %v", api)
+	}
+}
+
+// A routine's held write, once approved, continues with the model: it sees the
+// outcome and the original watch event, runs as unattended as the routine
+// did, and the owner is told it followed up.
+func TestApprovedRoutineWriteContinuesWithTheModel(t *testing.T) {
+	approvalContinuationsInline = true
+	t.Cleanup(func() { approvalContinuationsInline = false })
+	db, svc := newSQLiteWatchServiceWithOptions(t, 20, func(c *Config) {
+		c.Agent.Enabled = true
+		c.Agent.Lead.Enabled = true
+		c.Agent.WriteApproval = gjagent.WriteApprovalRequired
+		c.MCP.AllowMutations = true
+		c.MCP.IncludeToolsWithAgent = true
+		c.MCP.AllowRawQueries = true
+		c.Core.Threads.Enabled = true
+		c.Core.Sources[0].Access.Write = core.AccessModeAuthenticated
+		c.Core.Sources[0].Capabilities = map[string]bool{sourcecap.KeyDataWrite: true}
+	})
+	if _, err := db.Exec(`INSERT INTO orders (id, status) VALUES (1, 'open')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatal(err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+	runner := &scriptedAgentRunner{resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "Order 1 is closed now."}}
+	withScriptedAgentRunner(t, runner)
+	rt, err := newServiceAgentRuntime(svc, agentConfigFromService(svc.conf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := approvalUserCtx("user_1")
+	thread, err := svc.createThread(ctx, threadSpec{Title: "routine"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadID := stringFromAny(thread["id"])
+	proposeCtx := withRunOrigin(withRunThread(ctx, threadID, "run_routine"), runOrigin{Origin: approvalOriginRoutine, WatchID: "w_1", EventID: "e_1"})
+	_, approval, err := rt.(*serviceAgentRuntime).ProposeWrite(proposeCtx, map[string]any{"query": approvalTestWrite})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.decideApproval(ctx, approval.ID, "approve", approval.Hash); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(runner.req.Instruction, "was approved and has been applied") {
+		t.Fatalf("continuation instruction = %q", runner.req.Instruction)
+	}
+	if got := mapFromAny(runner.req.Context["_approval"]); got["status"] != approvalStatusExecuted || got["summary"] != "update 1 row in orders" {
+		t.Fatalf("continuation context = %v", runner.req.Context)
+	}
+	if origin := runOriginFrom(runner.ctx); origin.Origin != approvalOriginContinuation || origin.WatchID != "w_1" {
+		t.Fatalf("continuation origin = %+v", origin)
+	}
+	if !runner.conf.HeldWritesOnly {
+		t.Fatal("a routine's continuation must be as unattended as the routine")
+	}
+	messages, _ := svc.threadMessages(ctx, threadID)
+	if len(messages) != 2 || messages[1]["content"] != "Order 1 is closed now." {
+		t.Fatalf("thread messages = %v", messages)
+	}
+	notes, _ := svc.listNotifications(ctx, true, 0, "")
+	if len(notes) != 1 || notes[0]["title"] != "The agent followed up on your decision" {
+		t.Fatalf("notifications = %v", notes)
+	}
+}
+
+// An autonomy rule runs an allowed write at once, records it as decided by
+// the rule, and with notify tells the owner. Over the row cap it waits.
+func TestAutonomyRunsAllowedWritesAndRecordsThem(t *testing.T) {
+	db, svc, _ := newApprovalService(t)
+	svc.conf.Agent.Autonomy = []gjagent.AutonomyRule{{Action: "data.update", Table: "orders", Level: gjagent.AutonomyNotify, MaxRows: 1}}
+	rt, err := newServiceAgentRuntime(svc, agentConfigFromService(svc.conf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := approvalUserCtx("user_1")
+	out, approval, err := rt.(*serviceAgentRuntime).ProposeWrite(ctx, map[string]any{"query": approvalTestWrite})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !approval.Decided() || approval.Status != approvalStatusExecuted || approval.DecidedBy != "autonomy:data.update:orders:notify" {
+		t.Fatalf("approval = %+v", approval)
+	}
+	if orderStatus(t, db, 1) != "closed" || !strings.Contains(fmt.Sprint(out), "closed") {
+		t.Fatalf("the allowed write did not run: out=%v status=%s", out, orderStatus(t, db, 1))
+	}
+	row, _ := svc.approvalRow(ctx, approval.ID)
+	if stringMapValue(row, "status") != approvalStatusExecuted || stringMapValue(row, "decided_by") != approval.DecidedBy {
+		t.Fatalf("record = %v", row)
+	}
+	notes, _ := svc.listNotifications(ctx, true, 0, "")
+	if len(notes) != 1 || notes[0]["kind"] != notificationAutonomousWrite {
+		t.Fatalf("notifications = %v", notes)
+	}
+
+	// Two rows is over the cap: the write waits for the user.
+	if _, err := db.Exec(`UPDATE orders SET status = 'open'`); err != nil {
+		t.Fatal(err)
+	}
+	_, held, err := rt.(*serviceAgentRuntime).ProposeWrite(ctx, map[string]any{"query": `mutation { orders(where: { status: { eq: "open" } }, update: { status: "closed" }) { id } }`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held.Decided() || orderStatus(t, db, 1) != "open" || orderStatus(t, db, 2) != "open" {
+		t.Fatalf("over the cap: approval=%+v statuses %s %s", held, orderStatus(t, db, 1), orderStatus(t, db, 2))
+	}
+	// An update filtered on the column it sets returns no rows afterwards;
+	// the preview still counts the two it changes.
+	if held.Preview["rows"] != int64(2) || held.Summary != "update 2 rows in orders" {
+		t.Fatalf("preview = %v summary = %q", held.Preview, held.Summary)
 	}
 }

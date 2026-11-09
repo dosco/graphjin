@@ -1285,6 +1285,11 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	} else {
 		out, err = r.base.ExecuteGraphQL(ctx, args)
 	}
+	if approval.Decided() {
+		// An autonomy rule ran the write at once: out is its real result, and
+		// it is handled like any execution below.
+		approval = nil
+	}
 	if approval != nil && err == nil && !executionFailed(out) {
 		// The dry run succeeded and was rolled back: nothing changed, and
 		// nothing is cached or recorded as done.
@@ -3468,7 +3473,7 @@ func (s *discoveryState) missingCapabilityActions(query string) []string {
 	}
 	var missing []string
 	for _, item := range mutationRootActions(query) {
-		action := capabilityActionForMutation(item.root, item.action)
+		action := capabilityActionForRoot(s.capabilities.apiRoots(), item.root, item.action)
 		if action != "" && !profileHasAction(s.capabilities, action) {
 			missing = appendUniqueString(missing, action)
 		}

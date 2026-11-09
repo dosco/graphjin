@@ -121,6 +121,19 @@
 					"description": "WriteApprovalTTL is how long a held write stays approvable, as a Go\nduration such as \"24h\". Empty means 24h.",
 					"default": "24h"
 				},
+				"budgets": {
+					"$ref": "#/$defs/BudgetConfig",
+					"title": "Agent Budgets",
+					"description": "Budgets cap model usage per person and per routine over a rolling day."
+				},
+				"autonomy": {
+					"items": {
+						"$ref": "#/$defs/AutonomyRule"
+					},
+					"type": "array",
+					"title": "Agent Autonomy Rules",
+					"description": "Autonomy lets some held writes run at once: per action and table, ask\n(the default), notify (run, then tell the owner) or auto (run and\nrecord), checked against the rows the dry run changed."
+				},
 				"return_trace": {
 					"type": "boolean",
 					"title": "Return Agent Trace",
@@ -426,6 +439,60 @@
 			"additionalProperties": false,
 			"type": "object",
 			"description": "AuthLoginOIDC configures a generic OIDC identity provider for AuthLogin."
+		},
+		"AutonomyRule": {
+			"properties": {
+				"action": {
+					"type": "string",
+					"enum": [
+						"data.insert",
+						"data.update",
+						"data.delete"
+					],
+					"description": "Action is data.insert, data.update or data.delete."
+				},
+				"table": {
+					"type": "string",
+					"description": "Table is the table the write changes, or * for any table."
+				},
+				"level": {
+					"type": "string",
+					"enum": [
+						"ask",
+						"notify",
+						"auto"
+					],
+					"description": "Level is ask, notify or auto."
+				},
+				"max_rows": {
+					"type": "integer",
+					"description": "MaxRows caps the rows the dry run may change for the rule to apply;\nzero means no cap."
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "AutonomyRule is one row of agent.autonomy."
+		},
+		"BudgetConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"description": "Enabled turns budgets on or off; unset follows the mode."
+				},
+				"user_daily_tokens": {
+					"type": "integer",
+					"description": "UserDailyTokens caps one person's agent runs, including runs made on\ntheir behalf. Zero means the default (2,000,000).",
+					"default": 2000000
+				},
+				"routine_daily_tokens": {
+					"type": "integer",
+					"description": "RoutineDailyTokens caps one watch routine, its continuations included.\nZero means the default (200,000).",
+					"default": 200000
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "BudgetConfig caps model tokens over a rolling 24 hours."
 		},
 		"CachingConfig": {
 			"properties": {

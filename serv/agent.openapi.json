@@ -44,6 +44,10 @@
         "additionalProperties": false,
         "description": "Approval is a held write as the caller sees it.",
         "properties": {
+          "decided_by": {
+            "description": "DecidedBy names the autonomy rule that decided it.",
+            "type": "string"
+          },
           "expires_at": {
             "type": "string"
           },
@@ -59,6 +63,10 @@
           },
           "query": {
             "description": "Query and Variables are exactly what runs once approved.",
+            "type": "string"
+          },
+          "status": {
+            "description": "Status is empty while the write waits for the user. A configured\nautonomy rule can decide it at once: \"executed\" (it ran; the proposal's\nresult is the real one) or \"failed\".",
             "type": "string"
           },
           "summary": {

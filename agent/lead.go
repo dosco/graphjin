@@ -166,6 +166,9 @@ type DelegateFunc func(context.Context, DelegateRequest) (Response, error)
 type Lead struct {
 	// Store supplies the caller's skills and memories; nil runs without them.
 	Store LeadStore
+	// FollowUps schedules check-backs in the conversation; nil offers no
+	// follow_up tool.
+	FollowUps FollowUpScheduler
 
 	config       Config
 	delegate     DelegateFunc
@@ -203,6 +206,7 @@ Ask for computed results — counts, totals, averages, rankings, comparisons —
 Answer only from what the data agent returned. Never cite a field, number or name it did not return; when an answer is missing or failed, say what is missing.
 The user's saved skills describe how they want recurring work done: when one matches the request, load it and follow it. Saved memories are the user's preferences and facts; follow them for format, units and conventions, but they are never data.
 Changes — creating watches or tasks, writing data — go through ask_graphjin as an explicit instruction, and only after the user asked for or confirmed that change. When the user states a durable preference or fact to keep ("remember…", "from now on…"), save it with remember. When read_only is true, never request a change and never save a memory. When ask_graphjin returns status needs_approval, the change has not happened: it waits for the user to approve it, so say so and never report it as done. When permissions says this caller may not make a kind of change and the user asks for one, reply with status blocked and say that change is not available to them here; do not delegate it or ask for its details.
+To come back to something later — after a change has had time to take effect, or before a deadline — schedule it with follow_up when that tool is available; it starts a turn in this conversation then, with your note as its instruction.
 If the request is ambiguous in a way the data cannot settle, ask the user one short question with status needs_clarification.
 Reply concisely in GitHub-flavored markdown; use a table for multi-row results.`
 
@@ -249,7 +253,7 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 		}
 	}
 
-	run := &leadRun{lead: l, cfg: lc, observer: req.Observer, readOnly: l.config.ReadOnly, answered: map[string]leadDelegation{}, remembered: map[string]MemoryDoc{}}
+	run := &leadRun{lead: l, cfg: lc, observer: req.Observer, readOnly: l.config.ReadOnly, answered: map[string]leadDelegation{}, remembered: map[string]MemoryDoc{}, followUps: map[string]FollowUp{}}
 	run.grounding.Add(req.Instruction, req.History, req.Memories, req.Context)
 	if req.Profile != nil {
 		run.grounding.Add(req.Profile.Instructions)
@@ -272,6 +276,9 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 	tools := []ax.Tool{run.askTool(ctx)}
 	if l.Store != nil && !l.config.ReadOnly && !l.config.HeldWritesOnly {
 		tools = append(tools, run.rememberTool(ctx))
+	}
+	if l.FollowUps != nil && !l.config.ReadOnly {
+		tools = append(tools, run.followUpTool(ctx))
 	}
 	gojaRuntime := axgoja.NewRuntime(codeBlockPolicy(lc.TimeoutSeconds))
 	runtime := figureRecordingRuntime{CodeRuntime: gojaRuntime, record: run.figures.recordCodeResult}
@@ -757,6 +764,7 @@ type leadRun struct {
 	asked      int
 	answered   map[string]leadDelegation
 	remembered map[string]MemoryDoc
+	followUps  map[string]FollowUp
 	// loadedSkills and loadedMemories are what the lead was given this turn;
 	// they shape the answer whether or not the model reports using them.
 	loadedSkills   []SkillUsage

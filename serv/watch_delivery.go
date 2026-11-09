@@ -647,7 +647,13 @@ func (s *graphjinService) processWatchDeliveryRow(ctx context.Context, row map[s
 		receipt["error"] = err.Error()
 		return s.completeWatchDelivery(ctx, event, "failed", attempts, receipt)
 	}
-	return s.completeWatchDelivery(ctx, event, "delivered", attempts, receipt)
+	if err := s.completeWatchDelivery(ctx, event, "delivered", attempts, receipt); err != nil {
+		return err
+	}
+	if eventDelivery.Kind == "agent" && eventDelivery.Agent.Once {
+		s.retireFollowUpWatch(ctx, def.ID)
+	}
+	return nil
 }
 
 func (s *graphjinService) claimWatchDelivery(ctx context.Context, event watchDeliveryEvent) (map[string]any, bool, error) {

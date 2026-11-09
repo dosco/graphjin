@@ -109,9 +109,10 @@ var errConversationNeedsLead = errors.New("conversations (thread_id, history) re
 func (s *graphjinService) agentEntryRunner(conf gjagent.Config) (graphjinAgentRunner, error) {
 	worker, err := newGraphJinAgentRunner(s, conf)
 	if err != nil || !conf.Lead.Enabled {
-		return worker, err
+		return s.withBudgets(worker), err
 	}
-	return s.threadAgentRunner(conf, worker)
+	runner, err := s.threadAgentRunner(conf, worker)
+	return s.withBudgets(runner), err
 }
 
 // threadAgentRunner is what a thread turn runs: the lead, holding the
@@ -132,7 +133,11 @@ var newGraphJinLeadRunner = func(s *graphjinService, conf gjagent.Config, worker
 	if err != nil {
 		return nil, err
 	}
-	return leadRunner{conf: conf, worker: worker, opts: opts, store: s.leadStore()}, nil
+	runner := leadRunner{conf: conf, worker: worker, opts: opts, store: s.leadStore()}
+	if s.followUpsEnabled() {
+		runner.followUps = followUpScheduler{service: s}
+	}
+	return runner, nil
 }
 
 type leadRunner struct {
@@ -141,6 +146,9 @@ type leadRunner struct {
 	opts   []gjagent.Option
 	// store serves the caller's skills and memories through the graph.
 	store gjagent.LeadStore
+	// followUps schedules check-backs in the caller's thread; nil without
+	// threads and watches.
+	followUps gjagent.FollowUpScheduler
 }
 
 func (r leadRunner) Run(ctx context.Context, req gjagent.Request) (gjagent.Response, error) {
@@ -159,6 +167,9 @@ func (r leadRunner) Run(ctx context.Context, req gjagent.Request) (gjagent.Respo
 		return gjagent.Response{}, err
 	}
 	lead.Store = r.store
+	if r.followUps != nil {
+		lead.FollowUps = r.followUps
+	}
 	return lead.Run(ctx, req)
 }
 

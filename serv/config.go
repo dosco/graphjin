@@ -1149,6 +1149,12 @@ func normalizeAgentConfig(c *Config) error {
 	if err := gjagent.ValidateWriteApproval(c.Agent.WriteApproval); err != nil {
 		return err
 	}
+	if err := gjagent.ValidateAutonomy(c.Agent.Autonomy); err != nil {
+		return err
+	}
+	if err := c.Agent.Budgets.Validate(); err != nil {
+		return err
+	}
 	if ttl := strings.TrimSpace(c.Agent.WriteApprovalTTL); ttl != "" {
 		if d, err := time.ParseDuration(ttl); err != nil || d <= 0 {
 			return fmt.Errorf("agent.write_approval_ttl must be a positive duration such as 24h, got %q", ttl)

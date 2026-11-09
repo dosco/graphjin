@@ -132,6 +132,9 @@ func configStoreTableNames(conf *Config) []string {
 	if configNotificationsEnabled(conf) {
 		names = append(names, "notifications")
 	}
+	if configBudgetsEnabled(conf) {
+		names = append(names, "agent_usage")
+	}
 	return names
 }
 

@@ -50,6 +50,7 @@ const (
 	notificationRoutineAnswer   = "routine_answer"
 	notificationRunFailed       = "run_failed"
 	notificationTaskVerifyFail  = "task_verify_failed"
+	notificationAutonomousWrite = "autonomous_write"
 )
 
 var errNotificationNotFound = errors.New("notification not found")

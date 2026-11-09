@@ -655,6 +655,13 @@ func (s *graphjinService) ensureStoreTables() error {
 			}
 		}
 	}
+	if s.budgetsEnabled() {
+		for _, stmt := range usageDDL(dbType, s.conf.Core.EffectiveArtifactsConfig().Schema) {
+			if _, err := db.ExecContext(context.Background(), stmt); err != nil {
+				return err
+			}
+		}
+	}
 	if s.authStoreEnabled() {
 		for _, stmt := range authStoreDDL(dbType, s.conf.Core.EffectiveArtifactsConfig().Schema) {
 			if _, err := db.ExecContext(context.Background(), stmt); err != nil {

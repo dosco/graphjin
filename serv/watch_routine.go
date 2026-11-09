@@ -29,6 +29,9 @@ type watchAgentConfig struct {
 	// Profile names an agent_profile: the routine answers in the owner's home
 	// thread for that agent, with the agent's instructions.
 	Profile string
+	// Once makes the watch a one-time follow-up: it is deleted after it has
+	// delivered once.
+	Once bool
 }
 
 func parseWatchAgentConfig(m map[string]any) (watchAgentConfig, error) {
@@ -40,6 +43,7 @@ func parseWatchAgentConfig(m map[string]any) (watchAgentConfig, error) {
 		Prompt:   strings.TrimSpace(stringFromAny(src["prompt"])),
 		ThreadID: strings.TrimSpace(stringFromAny(src["thread_id"])),
 		Profile:  strings.TrimSpace(stringFromAny(src["profile"])),
+		Once:     boolMapValue(src, "once"),
 	}
 	if cfg.Prompt == "" {
 		cfg.Prompt = watchRoutineDefaultPrompt
@@ -149,6 +153,14 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 		Capabilities: s.agentCapabilityProfile(ownerCtx),
 	}
 	opts := threadRunOptions{RunID: runID, Display: watchRoutineDisplay(def, mapFromAny(data)) + "\n" + cfg.Prompt}
+	if cfg.Once {
+		// A follow-up the agent scheduled: the note is the whole story.
+		req.Instruction = cfg.Prompt
+		if s.approvalsEnabled() {
+			req.Instruction += "\n\n" + watchRoutineProposeNote
+		}
+		opts.Display = "Follow-up: " + cfg.Prompt
+	}
 	run, err := s.prepareWatchRoutineRun(ownerCtx, threadID, &req, opts)
 	if err != nil {
 		return receipt, err

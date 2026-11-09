@@ -339,6 +339,11 @@ func (f *configFieldFiller) set(t *testing.T, field reflect.Value, name string) 
 		field.Set(element)
 	case reflect.Struct:
 		f.fill(t, field, name)
+	case reflect.Slice:
+		// One filled element: a bridge that dropped the slice hands back nil.
+		slice := reflect.MakeSlice(field.Type(), 1, 1)
+		f.set(t, slice.Index(0), name+"[0]")
+		field.Set(slice)
 	default:
 		t.Fatalf("%s has kind %s, which this guard cannot fill: teach it that kind rather than leaving the field unchecked", name, field.Kind())
 	}

@@ -68,6 +68,9 @@ func normalizeWatchDeliveryJSON(raw string) (string, watchDeliveryConfig, bool, 
 		if cfg.Agent.Profile != "" {
 			value["profile"] = cfg.Agent.Profile
 		}
+		if cfg.Agent.Once {
+			value["once"] = true
+		}
 	}
 	out, err := json.Marshal(value)
 	if err != nil {

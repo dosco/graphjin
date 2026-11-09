@@ -40,6 +40,18 @@ type Approval struct {
 	// back; Preview["available"] is false when the source cannot dry-run.
 	Preview   map[string]any `json:"preview,omitempty"`
 	ExpiresAt string         `json:"expires_at,omitempty"`
+	// Status is empty while the write waits for the user. A configured
+	// autonomy rule can decide it at once: "executed" (it ran; the proposal's
+	// result is the real one) or "failed".
+	Status string `json:"status,omitempty"`
+	// DecidedBy names the autonomy rule that decided it.
+	DecidedBy string `json:"decided_by,omitempty"`
+}
+
+// Decided reports whether an autonomy rule already ran the write, so nothing
+// waits for the user.
+func (a *Approval) Decided() bool {
+	return a != nil && a.Status != ""
 }
 
 // WriteProposer is implemented by a runtime that can hold a write for the
@@ -124,11 +136,86 @@ func heldWriteResult(approval *Approval) executeResult {
 // MutationActions lists the capability actions a mutation needs, such as
 // data.update, so an approval can re-check them when the user decides.
 func MutationActions(query string) []string {
+	return MutationActionsWith(query, nil)
+}
+
+// MutationActionsWith is MutationActions knowing which roots are API
+// operations (root name to api.write or api.delete).
+func MutationActionsWith(query string, apiRoots map[string]string) []string {
 	var out []string
 	for _, item := range mutationRootActions(query) {
-		if action := capabilityActionForMutation(item.root, item.action); action != "" {
+		if action := capabilityActionForRoot(apiRoots, item.root, item.action); action != "" {
 			out = appendUniqueString(out, action)
 		}
 	}
 	return out
+}
+
+// capabilityActionForRoot classifies one mutation root. A root that is an
+// API operation needs api.write or api.delete, by its HTTP method; anything
+// else is classified by capabilityActionForMutation.
+func capabilityActionForRoot(apiRoots map[string]string, root, action string) string {
+	if apiAction := apiRoots[strings.ToLower(strings.TrimSpace(root))]; apiAction != "" {
+		return apiAction
+	}
+	return capabilityActionForMutation(root, action)
+}
+
+// MutationTargetCountQuery is a read that counts the rows a single-root
+// update or delete mutation targets: the same root and where clause, with the
+// mutation's variable definitions. A mutation's returned rows are not that
+// count: an update filtered on a column it sets returns only the rows still
+// matching afterwards. ok is false for anything else (inserts, several roots,
+// no where clause).
+func MutationTargetCountQuery(query string) (string, bool) {
+	if !ContainsMutationOperation(query) {
+		return "", false
+	}
+	roots := MutationRootFields(query)
+	if len(roots) != 1 {
+		return "", false
+	}
+	root := roots[0]
+	counted := false
+	for _, item := range mutationRootActions(query) {
+		switch item.action {
+		case "update", "delete":
+			counted = true
+		default:
+			return "", false
+		}
+	}
+	if !counted {
+		return "", false
+	}
+	// Two aliased writes to one table share a root name: one where block each.
+	if len(mutationInputBlocks(graphQLStructure(query), root, "where")) != 1 {
+		return "", false
+	}
+	where, ok := remoteJoinWhereBody(query, root)
+	if !ok {
+		return "", false
+	}
+	return "query" + mutationVariableDefinitions(query) + " { " + root + "(where: { " + where + " }) { count_id } }", true
+}
+
+// mutationVariableDefinitions is the "($id: Int!)" part of a mutation's
+// header, or "" when it has none.
+func mutationVariableDefinitions(query string) string {
+	clean := graphQLStructure(query)
+	start := strings.Index(strings.ToLower(clean), "mutation")
+	if start < 0 {
+		return ""
+	}
+	brace := strings.Index(clean[start:], "{")
+	if brace < 0 {
+		return ""
+	}
+	header := clean[start : start+brace]
+	open := strings.Index(header, "(")
+	close := strings.LastIndex(header, ")")
+	if open < 0 || close < open {
+		return ""
+	}
+	return query[start+open : start+close+1]
 }

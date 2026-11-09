@@ -171,7 +171,7 @@ func (r *serviceAgentRuntime) ProposeWrite(ctx context.Context, args map[string]
 		varsJSON = string(raw)
 	}
 	namespace := stringArg(args, "namespace")
-	actions := gjagent.MutationActions(query)
+	actions := gjagent.MutationActionsWith(query, s.apiRootActions())
 
 	database, table, reason, compileErrors := s.approvalDryRunTarget(ctx, query, varsJSON)
 	if len(compileErrors) != 0 {
@@ -186,7 +186,7 @@ func (r *serviceAgentRuntime) ProposeWrite(ctx context.Context, args map[string]
 	out := any(map[string]any{"data": map[string]any{}})
 	preview := map[string]any{"available": false, "reason": reason}
 	if reason == "" {
-		dryRun, rows, err := r.dryRunWrite(ctx, database, args)
+		dryRun, rows, changed, err := r.dryRunWrite(ctx, database, args)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -194,7 +194,12 @@ func (r *serviceAgentRuntime) ProposeWrite(ctx context.Context, args map[string]
 			return dryRun, nil, nil
 		}
 		out = dryRun
-		preview = map[string]any{"available": true, "rows": len(rows), "sample": capRows(rows, approvalPreviewRowsMax)}
+		// rows is how many rows the write changes: the engine's own count when
+		// it keeps one, else the rows the write returned, which can undercount.
+		preview = map[string]any{"available": true, "rows": len(rows), "counted": changed >= 0, "sample": capRows(rows, approvalPreviewRowsMax)}
+		if changed >= 0 {
+			preview["rows"] = changed
+		}
 	}
 
 	summary := approvalSummary(actions, table, preview)
@@ -222,15 +227,80 @@ func (r *serviceAgentRuntime) ProposeWrite(ctx context.Context, args map[string]
 	} {
 		input[k] = v
 	}
+	approval := &gjagent.Approval{
+		ID: stringFromAny(input["id"]), Hash: hash, Summary: summary,
+		Query: query, Variables: parseJSONValue(varsJSON), Preview: preview,
+		ExpiresAt: expires.Format(time.RFC3339),
+	}
+
+	// A configured autonomy rule may run the write now instead of holding it.
+	decision := gjagent.AutonomyDecision{Level: gjagent.AutonomyAsk}
+	// Autonomy needs the engine's own count of changed rows: max_rows must not
+	// rest on a count that can be low.
+	if preview["available"] == true && preview["counted"] == true && len(gjagent.MutationRootFields(query)) == 1 {
+		decision = gjagent.ResolveAutonomy(s.conf.Agent.Autonomy, actions, table, intFromAny(preview["rows"]))
+	}
+	if decision.Level != gjagent.AutonomyAsk {
+		if err := s.approvalStillPermitted(ctx, input); err == nil {
+			return r.runAutonomousWrite(ctx, input, approval, decision)
+		}
+	}
+
 	if _, err := s.internalStoreMutationRows(ctx, "approvals", `insert: $input`, approvalStoreFields, map[string]any{"input": input}); err != nil {
 		return nil, nil, fmt.Errorf("this write did NOT execute: storing it for approval failed: %w", err)
 	}
 	s.notify(ctx, approvalPendingNotification(input, summary))
-	return out, &gjagent.Approval{
-		ID: stringFromAny(input["id"]), Hash: hash, Summary: summary,
-		Query: query, Variables: parseJSONValue(varsJSON), Preview: preview,
-		ExpiresAt: expires.Format(time.RFC3339),
-	}, nil
+	return out, approval, nil
+}
+
+// runAutonomousWrite runs a write an autonomy rule allows, as the run's own
+// identity, and records it as an approval decided by that rule, so every
+// change the agent made on its own is on the record. With notify, the owner
+// is told.
+func (r *serviceAgentRuntime) runAutonomousWrite(ctx context.Context, input map[string]any, approval *gjagent.Approval, decision gjagent.AutonomyDecision) (any, *gjagent.Approval, error) {
+	s := r.service
+	var rc core.RequestConfig
+	if ns := stringFromAny(input["namespace"]); ns != "" {
+		rc.SetNamespace(ns)
+	}
+	res, runErr := s.gj.GraphQL(ctx, stringFromAny(input["query"]), json.RawMessage(stringFromAny(input["variables_json"])), &rc)
+	status, resultJSON, errText := approvalStatusExecuted, "", ""
+	out := map[string]any{"data": map[string]any{}}
+	if res != nil {
+		raw, _ := json.Marshal(res)
+		resultJSON = string(raw)
+		if len(res.Data) != 0 {
+			out["data"] = parseJSONValue(string(res.Data))
+		}
+	}
+	if runErr != nil {
+		status, errText = approvalStatusFailed, runErr.Error()
+	} else if res != nil && len(res.Errors) != 0 {
+		status, errText = approvalStatusFailed, res.Errors[0].Message
+	}
+	if errText != "" {
+		out["errors"] = []any{map[string]any{"message": errText}}
+	}
+	input["status"] = status
+	input["result_json"] = resultJSON
+	input["error"] = truncateUTF8(errText, 4096)
+	input["decided_by"] = decision.Rule
+	input["decided_at"] = storeNow()
+	if _, err := s.internalStoreMutationRows(ctx, "approvals", `insert: $input`, approvalStoreFields, map[string]any{"input": input}); err != nil && s.log != nil {
+		// The write ran; losing its record must not report it as not run.
+		s.log.Warnf("autonomous write %s ran but its record failed: %v", input["id"], err)
+	}
+	approval.Status, approval.DecidedBy = status, decision.Rule
+	if decision.Level == gjagent.AutonomyNotify && status == approvalStatusExecuted {
+		s.notify(ctx, notification{
+			OwnerID: stringFromAny(input["owner_id"]), AccountID: stringFromAny(input["account_id"]), DelegatedBy: stringFromAny(input["delegated_by"]),
+			Kind: notificationAutonomousWrite, Severity: notificationSeverityInfo,
+			Title: "The agent made a change on its own", Body: approval.Summary + " (allowed by " + decision.Rule + ")",
+			RefKind: "approval", RefID: approval.ID, Link: approvalLink(stringFromAny(input["thread_id"])),
+			DedupeKey: "autonomy:" + approval.ID,
+		})
+	}
+	return out, approval, nil
 }
 
 // approvalPendingNotification asks the owner to decide a held write. Deciding
@@ -289,35 +359,102 @@ func (s *graphjinService) approvalDryRunTarget(ctx context.Context, query, varsJ
 	if database == "" {
 		database = core.DefaultDBName
 	}
-	dbConf, ok := s.conf.Core.Databases[database]
-	if !ok && len(s.conf.Core.Databases) == 0 {
-		dbConf = core.DatabaseConfig{Type: s.conf.Core.DBType}
-		ok = true
-	}
-	kind := strings.ToLower(strings.TrimSpace(dbConf.Type))
-	if !ok || dbConf.ManagedType != "" || !dryRunDatabaseTypes[kind] || s.dbs[database] == nil {
+	kind, ok := s.dryRunDatabaseKind(database)
+	if !ok || !dryRunDatabaseTypes[kind] || s.dbs[database] == nil {
 		return database, table, "this source cannot be dry-run without side effects", nil
 	}
 	return database, table, "", nil
 }
 
+// dryRunDatabaseKind is a configured database's engine, or false for a
+// managed or unknown one.
+func (s *graphjinService) dryRunDatabaseKind(database string) (string, bool) {
+	dbConf, ok := s.conf.Core.Databases[database]
+	if !ok && len(s.conf.Core.Databases) == 0 {
+		dbConf = core.DatabaseConfig{Type: s.conf.Core.DBType}
+		ok = true
+	}
+	if !ok || dbConf.ManagedType != "" {
+		return "", false
+	}
+	return strings.ToLower(strings.TrimSpace(dbConf.Type)), true
+}
+
 // dryRunWrite runs the write inside a transaction it always rolls back, and
 // returns the result with the rows the write returned.
-func (r *serviceAgentRuntime) dryRunWrite(ctx context.Context, database string, args map[string]any) (any, []any, error) {
+func (r *serviceAgentRuntime) dryRunWrite(ctx context.Context, database string, args map[string]any) (any, []any, int64, error) {
 	db := r.service.dbs[database]
 	if db == nil {
-		return nil, nil, fmt.Errorf("this write did NOT execute: its database %q is not connected", database)
+		return nil, nil, -1, fmt.Errorf("this write did NOT execute: its database %q is not connected", database)
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("this write did NOT execute: its preview could not start: %w", err)
+		return nil, nil, -1, fmt.Errorf("this write did NOT execute: its preview could not start: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck
-	out, err := r.ExecuteGraphQL(gjagent.WithDryRun(ctx, tx), args)
-	if err != nil {
-		return out, nil, err
+	dryCtx := gjagent.WithDryRun(ctx, tx)
+	query := stringArg(args, "query")
+	// How many rows the write changes. An update or delete is counted before
+	// it runs, by its own where clause: its returned rows can undercount. An
+	// insert's returned rows are the rows it inserted. Anything else is
+	// unknown (-1).
+	changed := int64(-1)
+	if countQuery, ok := gjagent.MutationTargetCountQuery(query); ok {
+		countArgs := map[string]any{"query": countQuery, "variables": args["variables"], "namespace": args["namespace"]}
+		if counted, err := r.ExecuteGraphQL(dryCtx, countArgs); err == nil {
+			if n, ok := countFromResult(counted); ok {
+				changed = n
+			}
+		}
 	}
-	return out, resultRows(out), nil
+	out, err := r.ExecuteGraphQL(dryCtx, args)
+	if err != nil {
+		return out, nil, -1, err
+	}
+	rows := resultRows(out)
+	if insertOnly(query) {
+		changed = int64(len(rows))
+	}
+	return out, rows, changed, nil
+}
+
+// countFromResult reads count_id from a single-root count query's result.
+func countFromResult(out any) (int64, bool) {
+	value := resultMap(out)
+	if errs, _ := value["errors"].([]any); len(errs) != 0 {
+		return 0, false
+	}
+	data, _ := value["data"].(map[string]any)
+	for _, root := range data {
+		switch v := root.(type) {
+		case map[string]any:
+			if _, ok := v["count_id"]; ok {
+				return int64(intFromAny(v["count_id"])), true
+			}
+		case []any:
+			if len(v) == 1 {
+				if m, ok := v[0].(map[string]any); ok {
+					if _, ok := m["count_id"]; ok {
+						return int64(intFromAny(m["count_id"])), true
+					}
+				}
+			}
+		}
+	}
+	return 0, false
+}
+
+func insertOnly(query string) bool {
+	actions := gjagent.MutationActions(query)
+	if len(actions) == 0 {
+		return false
+	}
+	for _, action := range actions {
+		if action != gjagent.CapabilityActionDataInsert {
+			return false
+		}
+	}
+	return true
 }
 
 // dryRunFailed reports a dry run that returned errors and no data.
@@ -431,7 +568,7 @@ func (s *graphjinService) decideApproval(ctx context.Context, id, decision, expe
 	if decision == "reject" {
 		settled, err := s.settleApproval(ctx, id, approvalStatusRejected, "", "")
 		if err == nil {
-			s.reportApprovalOutcome(ctx, settled)
+			s.continueAfterDecision(ctx, id)
 		}
 		return settled, err
 	}
@@ -469,7 +606,7 @@ func (s *graphjinService) decideApproval(ctx context.Context, id, decision, expe
 	}
 	settled, err := s.settleApproval(ctx, id, status, resultJSON, errText)
 	if err == nil {
-		s.reportApprovalOutcome(ctx, settled)
+		s.continueAfterDecision(ctx, id)
 	}
 	return settled, err
 }
@@ -530,36 +667,174 @@ func (s *graphjinService) settleApproval(ctx context.Context, id, status, result
 	return approvalAPIRow(rows[0], time.Now().UTC()), nil
 }
 
-// reportApprovalOutcome tells the thread the proposal came from what happened,
-// without a model call. A thread busy with another turn keeps the outcome on
-// the approval row instead.
-func (s *graphjinService) reportApprovalOutcome(ctx context.Context, row map[string]any) {
+// approvalContinuationsInline runs continuations before decideApproval
+// returns; tests set it to observe them. In production they run in the
+// background, so a decision answers at once.
+var approvalContinuationsInline = false
+
+// continueAfterDecision resumes the work a held write came from. The thread
+// it was proposed in gets a real turn (a run row, so a lost run is swept like
+// any other), started from the decision: the agent sees the outcome and the
+// original context, then verifies the effect, reports it, or proposes the
+// next step. It runs as the approval's owner, never under the decider's
+// request, which ends when the HTTP call does.
+func (s *graphjinService) continueAfterDecision(ctx context.Context, approvalID string) {
+	if !s.threadsEnabled() {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	row, err := s.approvalRow(ctx, approvalID)
+	if err != nil || row == nil || stringMapValue(row, "thread_id") == "" {
+		return
+	}
+	if approvalContinuationsInline {
+		s.runApprovalContinuation(ctx, row)
+		return
+	}
+	go s.runApprovalContinuation(ctx, row)
+}
+
+func (s *graphjinService) runApprovalContinuation(ctx context.Context, row map[string]any) {
+	approvalID := stringMapValue(row, "id")
 	threadID := stringMapValue(row, "thread_id")
-	if threadID == "" || !s.threadsEnabled() {
+	origin := runOrigin{
+		Origin: approvalOriginContinuation, WatchID: stringMapValue(row, "watch_id"), EventID: stringMapValue(row, "event_id"),
+		Profile: stringMapValue(row, "profile"), DelegatedBy: stringMapValue(row, "delegated_by"),
+		RunAsID: stringMapValue(row, "run_as_id"), RunAsRole: stringMapValue(row, "run_as_role"),
+	}
+	identityID, identityRole := stringMapValue(row, "owner_id"), stringMapValue(row, "owner_role")
+	if origin.RunAsID != "" {
+		identityID, identityRole = origin.RunAsID, origin.RunAsRole
+	}
+	ownerCtx := withRunOrigin(s.ownerContext(ctx, identityID, identityRole, stringMapValue(row, "account_id")), origin)
+
+	outcome := approvalOutcomeText(row)
+	if outcome == "" {
 		return
 	}
-	runID := "run_" + stringMapValue(row, "id")
-	if err := s.claimThreadRun(ctx, threadID, runID); err != nil {
+	req := gjagent.Request{
+		Instruction: approvalContinuationInstruction(row),
+		Context:     s.approvalContinuationContext(ownerCtx, row),
+		Capabilities: s.agentCapabilityProfile(ownerCtx),
+	}
+	opts := threadRunOptions{RunID: "run_c_" + approvalID, Display: approvalContinuationDisplay(row)}
+	run, err := s.prepareWatchRoutineRun(ownerCtx, threadID, &req, opts)
+	if err != nil {
+		if s.log != nil && !errors.Is(err, errThreadNotFound) {
+			s.log.Warnf("approval %s: continue in thread %s: %v", approvalID, threadID, err)
+		}
 		return
 	}
-	defer s.releaseThreadRun(ctx, threadID, runID) //nolint:errcheck
-	summary := stringMapValue(mapFromAny(row["summary"]), "text")
-	content := ""
+	conf := agentConfigFromService(s.conf)
+	if origin.WatchID != "" {
+		// A routine's continuation is as unattended as the routine was.
+		conf = watchRoutineAgentConfig(s.conf)
+	}
+	var runner graphjinAgentRunner = staticAgentRunner{answer: outcome}
+	if built, err := s.agentEntryRunner(conf); err == nil {
+		runner = continuationRunner{inner: built, fallback: outcome}
+	}
+	resp, _ := run.execute(ownerCtx, runner, req, s.watchRoutineSettle(req), nil)
+	if origin.WatchID != "" || origin.DelegatedBy != "" {
+		// The owner decided from the inbox and may not be in this thread.
+		s.notify(ownerCtx, notification{
+			OwnerID: stringMapValue(row, "owner_id"), AccountID: stringMapValue(row, "account_id"), DelegatedBy: origin.DelegatedBy,
+			Kind: notificationRoutineAnswer, Severity: notificationSeverityInfo,
+			Title: "The agent followed up on your decision", Body: truncateUTF8(strings.TrimSpace(resp.Answer), 600),
+			RefKind: "thread", RefID: threadID, Link: "/user/agent?thread=" + threadID,
+			DedupeKey: "continuation:" + approvalID,
+		})
+	}
+}
+
+// approvalSummaryText is the one-line summary of a stored approval row.
+func approvalSummaryText(row map[string]any) string {
+	return stringMapValue(mapFromAny(parseJSONValue(stringMapValue(row, "summary_json"))), "text")
+}
+
+// approvalOutcomeText is the plain outcome of a decision, which is also the
+// reply when no model can run.
+func approvalOutcomeText(row map[string]any) string {
+	summary := approvalSummaryText(row)
 	switch stringMapValue(row, "status") {
 	case approvalStatusExecuted:
-		content = "Approved and applied: " + summary + "."
+		return "Approved and applied: " + summary + "."
 	case approvalStatusFailed:
-		content = "Approved, but the change failed and nothing was applied: " + stringMapValue(row, "error")
+		return "Approved, but the change failed and nothing was applied: " + stringMapValue(row, "error")
 	case approvalStatusRejected:
-		content = "Rejected: " + summary + ". Nothing was changed."
-	default:
-		return
+		return "Rejected: " + summary + ". Nothing was changed."
 	}
-	raw, _ := json.Marshal(map[string]any{"status": "answered", "answer": content, "approval": map[string]any{"id": row["id"], "status": row["status"]}})
-	_, _ = s.appendMessage(ctx, messageSpec{
-		ThreadID: threadID, Role: "assistant", Content: content, Status: "answered", RunID: runID,
-		ResponseJSON: string(raw), AccountID: stringMapValue(row, "account_id"), OwnerID: stringMapValue(row, "owner_id"),
-	})
+	return ""
+}
+
+// approvalContinuationDisplay is the thread line that starts the turn.
+func approvalContinuationDisplay(row map[string]any) string {
+	summary := approvalSummaryText(row)
+	switch stringMapValue(row, "status") {
+	case approvalStatusExecuted:
+		return "Approved: " + summary
+	case approvalStatusFailed:
+		return "Approved, but it failed: " + summary
+	default:
+		return "Rejected: " + summary
+	}
+}
+
+func approvalContinuationInstruction(row map[string]any) string {
+	summary := approvalSummaryText(row)
+	switch stringMapValue(row, "status") {
+	case approvalStatusExecuted:
+		return "The change you proposed earlier in this conversation (" + summary + ") was approved and has been applied. " +
+			"Confirm the effect from the data if that is quick, then tell the user in a sentence or two what changed. " +
+			"If the earlier plan had a next step, carry it out or propose it."
+	case approvalStatusFailed:
+		return "The change you proposed earlier in this conversation (" + summary + ") was approved, but it failed and nothing was applied: " +
+			stringMapValue(row, "error") + ". Tell the user briefly what went wrong and what they could do."
+	default:
+		return "The user rejected the change you proposed earlier in this conversation (" + summary + "). Nothing was changed. " +
+			"Acknowledge it in one sentence. Propose something else only if the situation clearly needs it."
+	}
+}
+
+// approvalContinuationContext gives the continuation the decided approval and,
+// for a routine, the watch event it ran for.
+func (s *graphjinService) approvalContinuationContext(ctx context.Context, row map[string]any) map[string]any {
+	approval := map[string]any{
+		"id": row["id"], "status": row["status"], "summary": approvalSummaryText(row),
+		"result": parseJSONValue(stringMapValue(row, "result_json")), "error": row["error"],
+	}
+	out := map[string]any{"_approval": approval}
+	if eventID := stringMapValue(row, "event_id"); eventID != "" {
+		if event, err := s.internalWatchEventStoreRow(ctx, eventID); err == nil && event != nil {
+			out["_watch_events"] = []any{map[string]any{
+				"id": eventID, "watch_id": stringMapValue(row, "watch_id"), "data_json": parseJSONValue(jsonMapString(event, "data_json")),
+			}}
+		}
+	}
+	return out
+}
+
+// staticAgentRunner answers with a fixed sentence: the outcome of a decision
+// when no model is configured.
+type staticAgentRunner struct{ answer string }
+
+func (r staticAgentRunner) Run(context.Context, gjagent.Request) (gjagent.Response, error) {
+	return gjagent.Response{Status: gjagent.StatusAnswered, Answer: r.answer}, nil
+}
+
+// continuationRunner falls back to the plain outcome when the model fails,
+// so the decision always reaches the thread.
+type continuationRunner struct {
+	inner    graphjinAgentRunner
+	fallback string
+}
+
+func (r continuationRunner) Run(ctx context.Context, req gjagent.Request) (gjagent.Response, error) {
+	resp, err := r.inner.Run(ctx, req)
+	if err != nil || strings.TrimSpace(resp.Answer) == "" {
+		return gjagent.Response{Status: gjagent.StatusAnswered, Answer: r.fallback, TraceID: resp.TraceID, Usage: resp.Usage}, nil
+	}
+	return resp, nil
 }
 
 // approvalStatus is the row's status, reading a lapsed pending proposal as

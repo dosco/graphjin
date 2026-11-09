@@ -370,6 +370,10 @@ func configureEvalInstance(config *serv.Config, spec gjeval.EnvSpec) {
 	// Episodes grade the agent's writes as it makes them; nobody is there to
 	// approve them.
 	config.Agent.WriteApproval = "off"
+	// An eval run spends many tokens on one identity by design; a daily cap
+	// would stop it partway and change what the board measures.
+	budgetsOff := false
+	config.Agent.Budgets.Enabled = &budgetsOff
 	config.Agent.ReturnTrace = true
 	// A sampling run pins how the model draws; a benchmark leaves it alone.
 	if spec.Temperature != nil {

@@ -2,6 +2,7 @@ package serv
 
 import (
 	"context"
+	"strings"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
 )
@@ -37,7 +38,38 @@ func (s *graphjinService) agentCapabilityProfile(ctx context.Context) *gjagent.C
 		BlockedSystemRoots:    systemRootNames(mp.BlockedRoots),
 		RecommendedEntrypoint: mp.RecommendedEntrypoint,
 		SafetyNotes:           mp.SafetyNotes,
+		APIRoots:              s.apiRootActions(),
 	}
+}
+
+// apiRootActions maps each active API operation's mutation root to the action
+// it needs: api.delete for DELETE, api.write for other writing methods. The
+// agent classifies a write by its roots, and only the service knows which
+// roots are API calls.
+func (s *graphjinService) apiRootActions() map[string]string {
+	if s == nil || s.gj == nil {
+		return nil
+	}
+	md, err := s.gj.MetadataSnapshot(s.metadataSnapshotExcludes()...)
+	if err != nil || md == nil || len(md.APIOperations) == 0 {
+		return nil
+	}
+	out := map[string]string{}
+	for _, op := range md.APIOperations {
+		if !op.Active || op.RootName == "" {
+			continue
+		}
+		switch strings.ToUpper(op.Method) {
+		case "DELETE":
+			out[strings.ToLower(op.RootName)] = gjagent.CapabilityActionAPIDelete
+		case "POST", "PUT", "PATCH":
+			out[strings.ToLower(op.RootName)] = gjagent.CapabilityActionAPIWrite
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // systemRootNames extracts root names from MCP root profiles. The MCP profile only ever

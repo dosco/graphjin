@@ -111,6 +111,12 @@ type Config struct {
 	// WriteApprovalTTL is how long a held write stays approvable, as a Go
 	// duration such as "24h". Empty means 24h.
 	WriteApprovalTTL string `mapstructure:"write_approval_ttl" json:"write_approval_ttl,omitempty" jsonschema:"title=Agent Write Approval TTL,default=24h"`
+	// Budgets cap model usage per person and per routine over a rolling day.
+	Budgets BudgetConfig `mapstructure:"budgets" json:"budgets,omitempty" jsonschema:"title=Agent Budgets"`
+	// Autonomy lets some held writes run at once: per action and table, ask
+	// (the default), notify (run, then tell the owner) or auto (run and
+	// record), checked against the rows the dry run changed.
+	Autonomy []AutonomyRule `mapstructure:"autonomy" json:"autonomy,omitempty" jsonschema:"title=Agent Autonomy Rules"`
 	// HeldWritesOnly lets a run propose data and API writes for approval but
 	// run none itself, and refuses writes to GraphJin's own roots. GraphJin
 	// sets it for runs no person is watching, such as watch routines; it is
@@ -221,6 +227,17 @@ type CapabilityProfile struct {
 	BlockedSystemRoots    []string `json:"blocked_system_roots,omitempty"`
 	RecommendedEntrypoint string   `json:"recommended_entrypoint,omitempty"`
 	SafetyNotes           []string `json:"safety_notes,omitempty"`
+	// APIRoots maps each API operation's mutation root to the action it
+	// needs (api.write or api.delete, by HTTP method). Other mutation roots
+	// are data writes.
+	APIRoots map[string]string `json:"-"`
+}
+
+func (p *CapabilityProfile) apiRoots() map[string]string {
+	if p == nil {
+		return nil
+	}
+	return p.APIRoots
 }
 
 // Bounded caller-action vocabulary carried by CapabilityProfile. Reads stay
