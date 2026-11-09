@@ -465,3 +465,29 @@ func TestAutonomyRunsAllowedWritesAndRecordsThem(t *testing.T) {
 		t.Fatalf("preview = %v summary = %q", held.Preview, held.Summary)
 	}
 }
+
+// A write a service-identity run proposes belongs to the person who delegated
+// it: they decide it, and it runs as the service identity.
+func TestServiceRunApprovalBelongsToTheDelegator(t *testing.T) {
+	db, svc, rt := newApprovalService(t)
+	svc.conf.Agent.ServiceIdentity = gjagent.ServiceIdentityConfig{UserID: "svc_ops", Role: "user"}
+	origin := runOrigin{Origin: approvalOriginRoutine, WatchID: "w_1", DelegatedBy: "user_1", RunAsID: "svc_ops", RunAsRole: "user"}
+	serviceCtx := withRunOrigin(svc.ownerContext(context.Background(), "svc_ops", "user", ""), origin)
+	_, approval, err := rt.ProposeWrite(serviceCtx, map[string]any{"query": approvalTestWrite})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, _ := svc.approvalRow(serviceCtx, approval.ID)
+	if stringMapValue(row, "owner_id") != "user_1" || stringMapValue(row, "run_as_id") != "svc_ops" || stringMapValue(row, "delegated_by") != "user_1" {
+		t.Fatalf("approval row = %v", row)
+	}
+	if _, err := svc.decideApproval(approvalUserCtx("svc_ops"), approval.ID, "approve", approval.Hash); !errors.Is(err, errApprovalNotFound) {
+		t.Fatalf("the service identity decided its own write: %v", err)
+	}
+	if _, err := svc.decideApproval(approvalUserCtx("user_1"), approval.ID, "approve", approval.Hash); err != nil {
+		t.Fatal(err)
+	}
+	if orderStatus(t, db, 1) != "closed" {
+		t.Fatal("the approved write did not run")
+	}
+}

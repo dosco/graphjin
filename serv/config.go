@@ -1155,6 +1155,9 @@ func normalizeAgentConfig(c *Config) error {
 	if err := c.Agent.Budgets.Validate(); err != nil {
 		return err
 	}
+	if err := validateServiceIdentity(c); err != nil {
+		return err
+	}
 	if ttl := strings.TrimSpace(c.Agent.WriteApprovalTTL); ttl != "" {
 		if d, err := time.ParseDuration(ttl); err != nil || d <= 0 {
 			return fmt.Errorf("agent.write_approval_ttl must be a positive duration such as 24h, got %q", ttl)
@@ -1522,4 +1525,39 @@ func GetConfigName() string {
 	default:
 		return goEnv
 	}
+}
+
+// validateServiceIdentity checks agent.service_identity: both fields or
+// neither, and a role this config defines, so a background run never falls
+// back to a role nobody chose.
+func validateServiceIdentity(c *Config) error {
+	id := c.Agent.ServiceIdentity
+	userID, role := strings.TrimSpace(id.UserID), strings.TrimSpace(id.Role)
+	if userID == "" && role == "" {
+		return nil
+	}
+	if userID == "" || role == "" {
+		return fmt.Errorf("agent.service_identity needs both user_id and role")
+	}
+	if strings.EqualFold(role, "anon") {
+		return fmt.Errorf("agent.service_identity.role cannot be anon")
+	}
+	if strings.EqualFold(role, "user") {
+		return nil
+	}
+	for _, configured := range c.Core.Roles {
+		if strings.EqualFold(strings.TrimSpace(configured.Name), role) {
+			return nil
+		}
+	}
+	admins := c.Core.EffectiveIdentityConfig().AdminRoles
+	if len(admins) == 0 {
+		admins = []string{"admin"}
+	}
+	for _, admin := range admins {
+		if strings.EqualFold(strings.TrimSpace(admin), role) {
+			return nil
+		}
+	}
+	return fmt.Errorf("agent.service_identity.role %q is not a configured role", role)
 }

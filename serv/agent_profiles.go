@@ -51,7 +51,7 @@ func (h artifactControlPlane) upsertAgentProfile(ctx context.Context, root core.
 	}
 	for field := range root.Input {
 		switch field {
-		case "kind", "name", "instructions", "content", "icon", "tier", "id":
+		case "kind", "name", "instructions", "content", "icon", "tier", "id", "runs_as":
 		default:
 			return nil, fmt.Errorf("agent profile %s is not writable", field)
 		}
@@ -93,6 +93,26 @@ func (h artifactControlPlane) upsertAgentProfile(ctx context.Context, root core.
 	}
 	if len(icon) > maxProfileIconBytes {
 		return nil, fmt.Errorf("agent profile icon exceeds %d bytes", maxProfileIconBytes)
+	}
+	// runs_as "service" makes the agent's routines run as the configured
+	// service identity. Only an admin sets it, and anyone else changing the
+	// instructions turns it off, so nobody repurposes the service account.
+	runsAs := profileRunsAs(existing)
+	admin := s.identityRoleIsAdmin(ctx)
+	if _, supplied := root.Input["runs_as"]; supplied {
+		requested := strings.TrimSpace(stringInput(root.Input, "runs_as", ""))
+		if requested != "" && requested != profileRunsAsService {
+			return nil, fmt.Errorf(`agent profile runs_as must be "service" or empty`)
+		}
+		if requested != runsAs && !admin {
+			return nil, fmt.Errorf("only an admin can set an agent's runs_as")
+		}
+		if requested == profileRunsAsService && !s.conf.Agent.ServiceIdentity.Configured() {
+			return nil, fmt.Errorf("runs_as service needs agent.service_identity configured")
+		}
+		runsAs = requested
+	} else if existing != nil && !admin && instructions != stringMapValue(existing, "content") {
+		runsAs = ""
 	}
 	tier := annotationTierObserved
 	if existing != nil {
@@ -138,8 +158,15 @@ func (h artifactControlPlane) upsertAgentProfile(ctx context.Context, root core.
 		approvedBy, approvedAt = "", ""
 	}
 	metadata := ""
-	if icon != "" {
-		raw, _ := json.Marshal(map[string]string{"icon": icon})
+	if icon != "" || runsAs != "" {
+		meta := map[string]string{}
+		if icon != "" {
+			meta["icon"] = icon
+		}
+		if runsAs != "" {
+			meta["runs_as"] = runsAs
+		}
+		raw, _ := json.Marshal(meta)
 		metadata = string(raw)
 	}
 	input := map[string]any{
@@ -168,7 +195,6 @@ func (h artifactControlPlane) upsertAgentProfile(ctx context.Context, root core.
 		return nil, err
 	}
 	s.markArtifactChanged("agent profile mutation")
-	admin := s.identityRoleIsAdmin(ctx)
 	if len(rows) != 0 {
 		return artifactProjectionRow(rows[0], admin), nil
 	}
@@ -225,6 +251,19 @@ func (s *graphjinService) requestProfile(ctx context.Context, thread map[string]
 		return nil
 	}
 	return &gjagent.ProfileInstructions{Name: stringMapValue(row, "name"), Instructions: stringMapValue(row, "content")}
+}
+
+const profileRunsAsService = "service"
+
+// profileRunsAs is the profile's runs_as: "service" or empty.
+func profileRunsAs(row map[string]any) string {
+	var meta struct {
+		RunsAs string `json:"runs_as"`
+	}
+	if raw := jsonMapString(row, "metadata_json"); raw != "" {
+		_ = json.Unmarshal([]byte(raw), &meta)
+	}
+	return meta.RunsAs
 }
 
 func profileIcon(row map[string]any) string {

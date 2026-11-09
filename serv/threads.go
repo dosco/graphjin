@@ -25,7 +25,7 @@ import (
 const (
 	threadStoreFields   = `id title profile status channel channel_ref active_run_id account_id owner_id owner_role last_message_at last_seen_at created_at updated_at`
 	messageStoreFields  = `id thread_id seq role content status run_id catalog_ids response_json account_id owner_id created_at`
-	runStoreFields      = `id thread_id status lease_until_ms replica tokens_in tokens_out llm_calls used_skills used_memories unverified_figures error account_id owner_id created_at updated_at finished_at`
+	runStoreFields      = `id thread_id status lease_until_ms replica tokens_in tokens_out llm_calls used_skills used_memories unverified_figures error account_id owner_id delegated_by run_as_id created_at updated_at finished_at`
 	runEventStoreFields = `id run_id seq kind payload created_at`
 
 	maxThreadTitleBytes   = 200
@@ -468,6 +468,9 @@ func (s *graphjinService) insertRun(ctx context.Context, thread map[string]any, 
 		"owner_id":       stringMapValue(thread, "owner_id"),
 		"created_at":     now,
 		"updated_at":     now,
+	}
+	if origin := runOriginFrom(ctx); origin.DelegatedBy != "" {
+		input["delegated_by"], input["run_as_id"] = origin.DelegatedBy, origin.RunAsID
 	}
 	_, err := s.internalStoreMutationRows(ctx, "runs", `insert: $input`, "id", map[string]any{"input": input})
 	return err
@@ -958,7 +961,9 @@ func migrateThreadSchema(ctx context.Context, db *sql.DB, dbType, schema string)
 	if dbType == "sqlite" {
 		counter = "INTEGER NOT NULL DEFAULT 0"
 	}
-	for _, col := range [][2]string{{"llm_calls", counter}, {"used_skills", "TEXT"}, {"used_memories", "TEXT"}, {"unverified_figures", "TEXT"}} {
+	// delegated_by and run_as_id say whom a service-identity run acted for and
+	// as.
+	for _, col := range [][2]string{{"llm_calls", counter}, {"used_skills", "TEXT"}, {"used_memories", "TEXT"}, {"unverified_figures", "TEXT"}, {"delegated_by", "TEXT"}, {"run_as_id", "TEXT"}} {
 		if err := ensureSQLColumn(ctx, db, dbType, runs, col[0], col[1]); err != nil {
 			return err
 		}

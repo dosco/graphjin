@@ -20,6 +20,7 @@ type threadRun struct {
 	thread   map[string]any
 	threadID string
 	runID    string
+	runAs    func(context.Context) context.Context
 
 	mu  sync.Mutex
 	seq int64
@@ -35,6 +36,10 @@ type threadRunEmit func(seq int64, kind string, payload any)
 type threadRunOptions struct {
 	RunID   string
 	Display string
+	// RunAs, when set, gives the agent a different identity than the
+	// thread's owner: a service-identity routine thinks and acts as the
+	// service, while the thread, its messages and its run stay the owner's.
+	RunAs func(context.Context) context.Context
 }
 
 func (s *graphjinService) prepareThreadRun(ctx context.Context, threadID string, req *gjagent.Request) (*threadRun, error) {
@@ -62,7 +67,7 @@ func (s *graphjinService) prepareThreadRunWith(ctx context.Context, threadID str
 	if runID == "" {
 		runID = "run_" + taskRandomHex()
 	}
-	run := &threadRun{s: s, thread: thread, threadID: threadID, runID: runID}
+	run := &threadRun{s: s, thread: thread, threadID: threadID, runID: runID, runAs: opts.RunAs}
 	if err := s.claimThreadRun(ctx, threadID, run.runID); err != nil {
 		return nil, err
 	}
@@ -161,7 +166,11 @@ func (r *threadRun) execute(ctx context.Context, runner graphjinAgentRunner, req
 			emit(0, "delta", map[string]any{"text": gjagent.SanitizeText(text, secret), "reset": reset})
 		}
 	}
-	resp, err := runner.Run(runCtx, req)
+	agentCtx := runCtx
+	if r.runAs != nil {
+		agentCtx = r.runAs(runCtx)
+	}
+	resp, err := runner.Run(agentCtx, req)
 	close(stopMonitor)
 	<-monitorDone
 

@@ -63,6 +63,7 @@ func artifactColumns() []core.ManagedColumn {
 		cpCol("description", "text", false),
 		// icon is metadata_json.icon, an agent profile's console icon.
 		cpCol("icon", "text", false),
+		cpCol("runs_as", "text", false),
 		cpCol("content_hash", "text", false),
 		cpCol("status", "text", false),
 		cpCol("target_ref", "text", false),
@@ -1246,6 +1247,7 @@ func artifactProjectionRow(row map[string]any, rawIDs bool) map[string]any {
 		"metadata_json":    row["metadata_json"],
 		"description":      skillDescription(row),
 		"icon":             profileIcon(row),
+		"runs_as":          profileRunsAs(row),
 		"content_hash":     stringMapValue(row, "content_hash"),
 		"status":           artifactStatus(stringMapValue(row, "status")),
 		"target_ref":       stringMapValue(row, "target_ref"),

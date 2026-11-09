@@ -121,6 +121,11 @@
 					"description": "WriteApprovalTTL is how long a held write stays approvable, as a Go\nduration such as \"24h\". Empty means 24h.",
 					"default": "24h"
 				},
+				"service_identity": {
+					"$ref": "#/$defs/ServiceIdentityConfig",
+					"title": "Agent Service Identity",
+					"description": "ServiceIdentity is the identity an organization agent acts as in the\nbackground: an admin marks a saved agent runs_as service, and routines\nan admin owns on that agent run as this identity, recording who\ndelegated them."
+				},
 				"budgets": {
 					"$ref": "#/$defs/BudgetConfig",
 					"title": "Agent Budgets",
@@ -2005,6 +2010,19 @@
 			"additionalProperties": false,
 			"type": "object",
 			"description": "SemanticCatalogSearchConfig configures the service-owned Ax embedding layer."
+		},
+		"ServiceIdentityConfig": {
+			"properties": {
+				"user_id": {
+					"type": "string"
+				},
+				"role": {
+					"type": "string"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "ServiceIdentityConfig is agent.service_identity: a user id and a configured role an organization agent runs as."
 		},
 		"SourceAccessConfig": {
 			"properties": {

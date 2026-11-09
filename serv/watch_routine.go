@@ -54,6 +54,32 @@ func parseWatchAgentConfig(m map[string]any) (watchAgentConfig, error) {
 	return cfg, nil
 }
 
+// routineServiceIdentity returns how to give a routine's agent the service
+// identity, or nil to run as the watch's owner. Both must hold: the routine's
+// saved agent is marked runs_as service, and the watch's owner is an admin.
+// Anyone else's routine on that agent runs as themselves, so the service's
+// role is never borrowed by someone who could not have granted it.
+func (s *graphjinService) routineServiceIdentity(ownerCtx context.Context, def watchRuntimeDefinition, cfg watchAgentConfig) func(context.Context) context.Context {
+	identity := s.conf.Agent.ServiceIdentity
+	if !identity.Configured() || cfg.Profile == "" {
+		return nil
+	}
+	profile, err := s.visibleProfileRow(ownerCtx, cfg.Profile)
+	if err != nil || profile == nil || profileRunsAs(profile) != profileRunsAsService {
+		return nil
+	}
+	if !s.identityRoleIsAdmin(ownerCtx) {
+		if s.log != nil {
+			s.log.Warnf("watch %s: agent %s runs as the service identity, but the watch's owner is not an admin; the routine runs as its owner", def.ID, cfg.Profile)
+		}
+		return nil
+	}
+	return func(c context.Context) context.Context {
+		origin := runOriginFrom(c)
+		return withRunOrigin(s.ownerContext(c, identity.UserID, identity.Role, def.AccountID), origin)
+	}
+}
+
 // watchRoutineProposeNote tells a routine it may act through approvals. The
 // watch's owner set the routine up, so proposing a change is doing what they
 // asked; it still runs only once they approve it.
@@ -129,9 +155,17 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 	if !s.threadsEnabled() {
 		return receipt, errors.New("agent delivery needs agent threads; enable threads in the agent config")
 	}
-	ownerCtx := withRunOrigin(s.watchOwnerContext(ctx, def), runOrigin{
-		Origin: approvalOriginRoutine, WatchID: def.ID, EventID: event.ID, Profile: cfg.Profile,
-	})
+	origin := runOrigin{Origin: approvalOriginRoutine, WatchID: def.ID, EventID: event.ID, Profile: cfg.Profile}
+	runAs := s.routineServiceIdentity(s.watchOwnerContext(ctx, def), def, cfg)
+	if runAs != nil {
+		origin.DelegatedBy = def.OwnerID
+		origin.RunAsID, origin.RunAsRole = s.conf.Agent.ServiceIdentity.UserID, s.conf.Agent.ServiceIdentity.Role
+	}
+	ownerCtx := withRunOrigin(s.watchOwnerContext(ctx, def), origin)
+	agentCtx := ownerCtx
+	if runAs != nil {
+		agentCtx = runAs(ownerCtx)
+	}
 	threadID, err := s.watchRoutineThread(ownerCtx, def, cfg)
 	if err != nil {
 		return receipt, err
@@ -150,9 +184,9 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 			"_watch_events": []any{map[string]any{"id": event.ID, "watch_id": def.ID, "data_json": data}},
 			"watch":         map[string]any{"id": def.ID, "name": def.Name},
 		},
-		Capabilities: s.agentCapabilityProfile(ownerCtx),
+		Capabilities: s.agentCapabilityProfile(agentCtx),
 	}
-	opts := threadRunOptions{RunID: runID, Display: watchRoutineDisplay(def, mapFromAny(data)) + "\n" + cfg.Prompt}
+	opts := threadRunOptions{RunID: runID, Display: watchRoutineDisplay(def, mapFromAny(data)) + "\n" + cfg.Prompt, RunAs: runAs}
 	if cfg.Once {
 		// A follow-up the agent scheduled: the note is the whole story.
 		req.Instruction = cfg.Prompt

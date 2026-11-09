@@ -134,3 +134,15 @@ func (b BudgetConfig) Validate() error {
 	}
 	return nil
 }
+
+// ServiceIdentityConfig is agent.service_identity: a user id and a configured
+// role an organization agent runs as.
+type ServiceIdentityConfig struct {
+	UserID string `mapstructure:"user_id" json:"user_id,omitempty"`
+	Role   string `mapstructure:"role" json:"role,omitempty"`
+}
+
+// Configured reports whether a service identity is set.
+func (c ServiceIdentityConfig) Configured() bool {
+	return strings.TrimSpace(c.UserID) != "" && strings.TrimSpace(c.Role) != ""
+}

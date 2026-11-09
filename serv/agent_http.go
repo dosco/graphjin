@@ -568,6 +568,15 @@ func recordAgentRuntimeEvent(s *graphjinService, ctx context.Context, req gjagen
 		// Deprecated v3 alias retained for existing audit consumers.
 		event.Details["skill"] = resp.Skill
 	}
+	// Who ran it, and for whom: the durable record is the run, approval and
+	// usage rows; this makes the runtime view say the same.
+	if userID, ok := artifactUserID(ctx); ok {
+		event.Details["user_id"] = userID
+	}
+	if origin := runOriginFrom(ctx); origin.DelegatedBy != "" {
+		event.Details["delegated_by"] = origin.DelegatedBy
+		event.Details["run_as"] = origin.RunAsID
+	}
 	if resp.Refusal != nil && strings.TrimSpace(resp.Refusal.Code) != "" {
 		event.Details["refusal_code"] = resp.Refusal.Code
 	}

@@ -111,6 +111,11 @@ type Config struct {
 	// WriteApprovalTTL is how long a held write stays approvable, as a Go
 	// duration such as "24h". Empty means 24h.
 	WriteApprovalTTL string `mapstructure:"write_approval_ttl" json:"write_approval_ttl,omitempty" jsonschema:"title=Agent Write Approval TTL,default=24h"`
+	// ServiceIdentity is the identity an organization agent acts as in the
+	// background: an admin marks a saved agent runs_as service, and routines
+	// an admin owns on that agent run as this identity, recording who
+	// delegated them.
+	ServiceIdentity ServiceIdentityConfig `mapstructure:"service_identity" json:"service_identity,omitempty" jsonschema:"title=Agent Service Identity"`
 	// Budgets cap model usage per person and per routine over a rolling day.
 	Budgets BudgetConfig `mapstructure:"budgets" json:"budgets,omitempty" jsonschema:"title=Agent Budgets"`
 	// Autonomy lets some held writes run at once: per action and table, ask

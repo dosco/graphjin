@@ -219,6 +219,13 @@ func TestWatchRoutineAnswersInItsAgentsHomeThread(t *testing.T) {
 // makes it fire once and delivers it.
 func fireOpenOrdersRoutine(t *testing.T, svc *graphjinService, ctx context.Context) string {
 	t.Helper()
+	return fireRoutine(t, svc, ctx, map[string]any{"kind": "agent", "prompt": "Close stale open orders if any."})
+}
+
+// fireRoutine creates a routine watch on open orders with this delivery, makes
+// it fire once and delivers it.
+func fireRoutine(t *testing.T, svc *graphjinService, ctx context.Context, delivery map[string]any) string {
+	t.Helper()
 	db := svc.dbs["app"]
 	setOpenOrders(t, db, 1)
 	row, err := newWatchControlPlane(svc).mutateRow(ctx, core.ManagedMutationRoot{
@@ -228,7 +235,7 @@ func fireOpenOrdersRoutine(t *testing.T, svc *graphjinService, ctx context.Conte
 			"schedule":      map[string]any{"cron": "*/5 * * * *"},
 			"query":         `query { orders(where: { status: { eq: "open" } }) { count_id } }`,
 			"metric":        map[string]any{"path": "orders.0.count_id", "op": "gt", "threshold": 1},
-			"delivery_json": map[string]any{"kind": "agent", "prompt": "Close stale open orders if any."},
+			"delivery_json": delivery,
 		},
 	})
 	if err != nil {

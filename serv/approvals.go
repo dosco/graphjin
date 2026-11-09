@@ -161,6 +161,11 @@ func (r *serviceAgentRuntime) ProposeWrite(ctx context.Context, args map[string]
 	if !ok {
 		return nil, nil, fmt.Errorf("this write did NOT execute: a write that needs approval needs a signed-in user to approve it")
 	}
+	if delegator := runOriginFrom(ctx).DelegatedBy; delegator != "" {
+		// A service-identity run proposes on behalf of the person who
+		// delegated it: they approve it, and it runs as the service.
+		ownerID = delegator
+	}
 	query := strings.TrimSpace(stringArg(args, "query"))
 	varsJSON := "{}"
 	if v, ok := args["variables"]; ok && v != nil {
@@ -572,7 +577,13 @@ func (s *graphjinService) decideApproval(ctx context.Context, id, decision, expe
 		}
 		return settled, err
 	}
-	if err := s.approvalStillPermitted(ctx, row); err != nil {
+	// A write a service-identity run proposed runs as that identity; the
+	// owner only decides it.
+	execCtx := ctx
+	if runAs := stringMapValue(row, "run_as_id"); runAs != "" {
+		execCtx = s.ownerContext(ctx, runAs, stringMapValue(row, "run_as_role"), stringMapValue(row, "account_id"))
+	}
+	if err := s.approvalStillPermitted(execCtx, row); err != nil {
 		return nil, err
 	}
 	// Claim it before running, so two approvals of one proposal run it once:
@@ -593,7 +604,7 @@ func (s *graphjinService) decideApproval(ctx context.Context, id, decision, expe
 	if ns := stringMapValue(row, "namespace"); ns != "" {
 		rc.SetNamespace(ns)
 	}
-	res, runErr := s.gj.GraphQL(ctx, stringMapValue(row, "query"), json.RawMessage(stringMapValue(row, "variables_json")), &rc)
+	res, runErr := s.gj.GraphQL(execCtx, stringMapValue(row, "query"), json.RawMessage(stringMapValue(row, "variables_json")), &rc)
 	status, resultJSON, errText := approvalStatusExecuted, "", ""
 	if res != nil {
 		raw, _ := json.Marshal(res)
@@ -702,11 +713,22 @@ func (s *graphjinService) runApprovalContinuation(ctx context.Context, row map[s
 		Profile: stringMapValue(row, "profile"), DelegatedBy: stringMapValue(row, "delegated_by"),
 		RunAsID: stringMapValue(row, "run_as_id"), RunAsRole: stringMapValue(row, "run_as_role"),
 	}
-	identityID, identityRole := stringMapValue(row, "owner_id"), stringMapValue(row, "owner_role")
+	accountID := stringMapValue(row, "account_id")
+	ownerRole := stringMapValue(row, "owner_role")
+	var runAs func(context.Context) context.Context
 	if origin.RunAsID != "" {
-		identityID, identityRole = origin.RunAsID, origin.RunAsRole
+		// The thread is the delegator's; the agent thinks and acts as the
+		// service identity, as the run that proposed the write did.
+		ownerRole = "user"
+		runAs = func(c context.Context) context.Context {
+			return withRunOrigin(s.ownerContext(c, origin.RunAsID, origin.RunAsRole, accountID), origin)
+		}
 	}
-	ownerCtx := withRunOrigin(s.ownerContext(ctx, identityID, identityRole, stringMapValue(row, "account_id")), origin)
+	ownerCtx := withRunOrigin(s.ownerContext(ctx, stringMapValue(row, "owner_id"), ownerRole, accountID), origin)
+	agentCtx := ownerCtx
+	if runAs != nil {
+		agentCtx = runAs(ownerCtx)
+	}
 
 	outcome := approvalOutcomeText(row)
 	if outcome == "" {
@@ -715,9 +737,9 @@ func (s *graphjinService) runApprovalContinuation(ctx context.Context, row map[s
 	req := gjagent.Request{
 		Instruction: approvalContinuationInstruction(row),
 		Context:     s.approvalContinuationContext(ownerCtx, row),
-		Capabilities: s.agentCapabilityProfile(ownerCtx),
+		Capabilities: s.agentCapabilityProfile(agentCtx),
 	}
-	opts := threadRunOptions{RunID: "run_c_" + approvalID, Display: approvalContinuationDisplay(row)}
+	opts := threadRunOptions{RunID: "run_c_" + approvalID, Display: approvalContinuationDisplay(row), RunAs: runAs}
 	run, err := s.prepareWatchRoutineRun(ownerCtx, threadID, &req, opts)
 	if err != nil {
 		if s.log != nil && !errors.Is(err, errThreadNotFound) {
