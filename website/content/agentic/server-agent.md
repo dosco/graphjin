@@ -153,6 +153,12 @@ The REST endpoint streams progress when called with `Accept: text/event-stream`:
 
 A `blocked` response is machine-actionable, not prose. It carries a `refusal` object: a stable `code` (`access_unauthorized`, `capability_disabled`, `mutation_evidence_required`, ...), the `blocked_action`, evidence-backed `because` reasons, ordered `unblock` steps (each names a tool and args, filtered to the caller's visible capabilities so nothing hidden leaks), a `lawful_alternative` for when unblocking is impossible, and the `policy_final` / `retryable` pair. A calling agent should execute the unblock steps and retry only when `retryable` is true; `policy_final` means stop and escalate to an operator. The contract is discoverable at runtime with `query_catalog(id: "help:refusals")`.
 
+## OpenAPI description
+
+`GET /api/v1/openapi.json` describes every agent endpoint that is switched on — ask, status, run events and cancel, profile home threads, approvals and feedback — beside the saved-query REST endpoints, as OpenAPI 3.1. The schemas come from the server's own Go types, and a test checks that real responses validate against them, so a client generated from the spec matches what the server sends. The console's API page renders it.
+
+{{< verified by="TestAgentOpenAPISchemasAcceptWhatTheServerSends" file="serv/agent_openapi_test.go" >}}
+
 ## Display hints
 
 An answered reply carries `display`, built from the compiled query and the schema rather than the model's text: for each result root, a suggested `kind` (`value`, `bar`, `line` or `table`), typed `columns` with a `role` (`key`, `reference`, `measure`, `time`, `text`) and any `aggregate`, and the `rows` themselves (at most 50). A text column whose every value is an ISO 8601 date counts as `time`. A GUI can lay out the data behind an answer without guessing which numbers are measures or which column names the rows, and the built-in console draws bar and line hints as charts under the answer.

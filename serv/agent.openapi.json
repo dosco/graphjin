@@ -1,0 +1,1639 @@
+{
+  "components": {
+    "schemas": {
+      "AgentActionEvent": {
+        "additionalProperties": false,
+        "description": "ActionEvent describes one completed (or rejected) tool call inside a run.",
+        "properties": {
+          "args": {
+            "type": "object"
+          },
+          "delegate": {
+            "description": "Delegate is the 1-based delegated question an event belongs to when a\nlead runs workers; Question is set on the lead's own event for it.",
+            "type": "integer"
+          },
+          "elapsed_ms": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "index": {
+            "description": "1-based action counter",
+            "type": "integer"
+          },
+          "question": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "object"
+          },
+          "tool": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AgentApproval": {
+        "additionalProperties": false,
+        "description": "Approval is a held write as the caller sees it.",
+        "properties": {
+          "expires_at": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "preview": {
+            "description": "Preview is what the write would change, from a dry run that was rolled\nback; Preview[\"available\"] is false when the source cannot dry-run.",
+            "type": "object"
+          },
+          "query": {
+            "description": "Query and Variables are exactly what runs once approved.",
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "variables": true
+        },
+        "type": "object"
+      },
+      "AgentApprovalRecord": {
+        "properties": {
+          "created_at": {
+            "description": "RFC 3339.",
+            "type": "string"
+          },
+          "decided_at": {
+            "description": "RFC 3339.",
+            "type": "string"
+          },
+          "error": {
+            "description": "Why an approved write failed.",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "RFC 3339; a pending approval reads as expired after it.",
+            "type": "string"
+          },
+          "hash": {
+            "description": "Binds a decision to this exact write.",
+            "type": "string"
+          },
+          "id": {
+            "description": "Approval id.",
+            "type": "string"
+          },
+          "namespace": {
+            "description": "The namespace it runs in.",
+            "type": "string"
+          },
+          "owner_id": {
+            "description": "Who asked; only they can decide it.",
+            "type": "string"
+          },
+          "preview": {
+            "description": "Rows from a dry run that was rolled back, or {available: false, reason}."
+          },
+          "query": {
+            "description": "The exact mutation that runs on approval.",
+            "type": "string"
+          },
+          "result": {
+            "description": "The write's result once executed."
+          },
+          "run_id": {
+            "description": "The run that proposed it, if any.",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "executed",
+              "failed",
+              "rejected",
+              "expired"
+            ],
+            "type": "string"
+          },
+          "summary": {
+            "description": "What it changes: target, operation and values."
+          },
+          "thread_id": {
+            "description": "The thread of the turn that proposed it, if any.",
+            "type": "string"
+          },
+          "variables": {
+            "description": "Its variables."
+          }
+        },
+        "required": [
+          "id",
+          "hash",
+          "status",
+          "query"
+        ],
+        "type": "object"
+      },
+      "AgentDeltaEvent": {
+        "properties": {
+          "reset": {
+            "description": "The text restarted (the model began a new draft); replace what was shown.",
+            "type": "boolean"
+          },
+          "text": {
+            "description": "The reply text so far.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "reset"
+        ],
+        "type": "object"
+      },
+      "AgentDisplayColumn": {
+        "additionalProperties": false,
+        "description": "DisplayColumn is a field of the rows, named by its path inside a row.",
+        "properties": {
+          "aggregate": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AgentDisplayHint": {
+        "additionalProperties": false,
+        "description": "DisplayHint lays out one result root.",
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/AgentDisplayColumn"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "description": "Kind suggests a form: value (one number), bar (one label against one\nmeasure), line (measures over time) or table.",
+            "type": "string"
+          },
+          "question": {
+            "description": "Question is the delegated question the data answers, on a lead reply.",
+            "type": "string"
+          },
+          "root": {
+            "type": "string"
+          },
+          "row_count": {
+            "type": "integer"
+          },
+          "rows": {
+            "description": "Rows are the root's rows, at most maxDisplayRows; RowCount is how many\nthe query returned.",
+            "items": true,
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "AgentErrorInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "extensions": {
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AgentFeedbackCorpusCase": {
+        "properties": {
+          "draft": {
+            "description": "Always true: a draft has no oracle yet.",
+            "type": "boolean"
+          },
+          "expected": {
+            "description": "The person's correction.",
+            "type": "string"
+          },
+          "group": {
+            "description": "Always field.",
+            "type": "string"
+          },
+          "id": {
+            "description": "Draft case id.",
+            "type": "string"
+          },
+          "observed": {
+            "properties": {
+              "answer": {
+                "description": "What the agent said.",
+                "type": "string"
+              },
+              "status": {
+                "description": "Its reply status.",
+                "type": "string"
+              },
+              "trace_id": {
+                "description": "Its trace.",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "prompt": {
+            "description": "The question.",
+            "type": "string"
+          },
+          "todo": {
+            "description": "What to add before the case joins the corpus.",
+            "type": "string"
+          },
+          "turns": {
+            "items": {
+              "description": "An earlier user turn to replay.",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "prompt",
+          "draft"
+        ],
+        "type": "object"
+      },
+      "AgentFeedbackReport": {
+        "properties": {
+          "answer": {
+            "description": "The answer as stored.",
+            "type": "string"
+          },
+          "answer_status": {
+            "description": "The answer's reply status.",
+            "type": "string"
+          },
+          "correction": {
+            "description": "What the answer should have said, in the person's words.",
+            "type": "string"
+          },
+          "history": {
+            "items": {
+              "properties": {
+                "content": {
+                  "description": "The turn.",
+                  "type": "string"
+                },
+                "role": {
+                  "description": "user or assistant",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "id": {
+            "description": "Feedback artifact id.",
+            "type": "string"
+          },
+          "message_id": {
+            "description": "The rated answer.",
+            "type": "string"
+          },
+          "question": {
+            "description": "The question it answered, from the thread.",
+            "type": "string"
+          },
+          "rating": {
+            "enum": [
+              "up",
+              "down"
+            ],
+            "type": "string"
+          },
+          "run_id": {
+            "description": "Its run.",
+            "type": "string"
+          },
+          "thread_id": {
+            "description": "Its thread.",
+            "type": "string"
+          },
+          "trace_id": {
+            "description": "The run's trace id.",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "RFC 3339.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "message_id",
+          "rating"
+        ],
+        "type": "object"
+      },
+      "AgentFigure": {
+        "additionalProperties": false,
+        "description": "Figure is one number in a lead answer and where it came from.",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AgentMemoryUsage": {
+        "additionalProperties": false,
+        "description": "MemoryUsage names a memory that shaped a turn.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AgentPreparationStats": {
+        "additionalProperties": false,
+        "description": "PreparationStats reports the entire decision stage, including failed calls.",
+        "properties": {
+          "catalog_reads": {
+            "type": "integer"
+          },
+          "consumed": {
+            "type": "boolean"
+          },
+          "context_bytes": {
+            "type": "integer"
+          },
+          "decision_calls": {
+            "type": "integer"
+          },
+          "decisions": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "detail_cache_hits": {
+            "type": "integer"
+          },
+          "detail_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "elapsed_ms": {
+            "type": "integer"
+          },
+          "fallbacks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "first_execution_ms": {
+            "type": "integer"
+          },
+          "loaded_skill_bytes": {
+            "type": "integer"
+          },
+          "loaded_skill_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "on_demand_ms": {
+            "type": "integer"
+          },
+          "prepared_handoff": {
+            "type": "boolean"
+          },
+          "skill_reloads": {
+            "type": "integer"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/AgentUsageTotals"
+          }
+        },
+        "type": "object"
+      },
+      "AgentRateLimitConfig": {
+        "additionalProperties": false,
+        "description": "RateLimitConfig sets process-local limits for model calls made with the server-owned agent provider.",
+        "properties": {
+          "requests_per_minute": {
+            "default": 0,
+            "description": "Process-local rolling-minute request ceiling; zero disables request limiting",
+            "title": "Agent Provider Requests Per Minute",
+            "type": "integer"
+          },
+          "tokens_per_minute": {
+            "default": 0,
+            "description": "Process-local rolling-minute provider-reported token ceiling; zero disables token limiting",
+            "title": "Agent Provider Tokens Per Minute",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AgentRefusal": {
+        "additionalProperties": false,
+        "properties": {
+          "because": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "blocked_action": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "lawful_alternative": {
+            "type": "string"
+          },
+          "policy_final": {
+            "type": "boolean"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "unblock": {
+            "items": {
+              "$ref": "#/components/schemas/AgentUnblockStep"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "AgentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "type": "object"
+          },
+          "history": {
+            "description": "History carries prior conversation turns for follow-up resolution. It is\nuntrusted model context: it reaches the model only as an ax context field\n(available to runtime code as inputs.history) and never satisfies a\nprotocol guard — every run must re-establish its own tool evidence.",
+            "items": {
+              "$ref": "#/components/schemas/AgentTurn"
+            },
+            "type": "array"
+          },
+          "instruction": {
+            "type": "string"
+          },
+          "max_steps": {
+            "type": "integer"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "return_trace": {
+            "type": "boolean"
+          },
+          "task_id": {
+            "description": "TaskID is an owner-scoped correlation label used by the service to load\ndeclared task context and append a run trail. Like History, it never\nsatisfies a protocol evidence guard and never grants access.",
+            "type": "string"
+          },
+          "thread_id": {
+            "description": "Run the turn in this thread (create it with the gj_thread GraphQL root). Its stored history replaces any history in the body, and the turn is stored with its run.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AgentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": true,
+          "answer": {
+            "type": "string"
+          },
+          "approval": {
+            "$ref": "#/components/schemas/AgentApproval",
+            "description": "Approval is the held write a needs_approval reply asks the user to\napprove or reject."
+          },
+          "data": true,
+          "display": {
+            "description": "Display describes the data behind an answer so a GUI can lay it out\nwithout guessing: typed columns, the rows, and a suggested form.",
+            "items": {
+              "$ref": "#/components/schemas/AgentDisplayHint"
+            },
+            "type": "array"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/AgentErrorInfo"
+            },
+            "type": "array"
+          },
+          "evidence": true,
+          "figures": {
+            "description": "Figures names where each figure in a lead's answer came from; a figure\nwith no source is listed in an unverified_figures notice.",
+            "items": {
+              "$ref": "#/components/schemas/AgentFigure"
+            },
+            "type": "array"
+          },
+          "memories": {
+            "description": "Memories names the saved memories that shaped a lead's answer.",
+            "items": {
+              "$ref": "#/components/schemas/AgentMemoryUsage"
+            },
+            "type": "array"
+          },
+          "next": true,
+          "notices": {
+            "items": {
+              "$ref": "#/components/schemas/AgentResponseNotice"
+            },
+            "type": "array"
+          },
+          "preparation": {
+            "$ref": "#/components/schemas/AgentPreparationStats"
+          },
+          "refusal": {
+            "$ref": "#/components/schemas/AgentRefusal"
+          },
+          "skill": {
+            "description": "Deprecated through v3.",
+            "type": "string"
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/AgentSkillUsage"
+            },
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "answered",
+              "needs_clarification",
+              "needs_approval",
+              "blocked",
+              "error"
+            ],
+            "type": "string"
+          },
+          "trace": true,
+          "trace_id": {
+            "type": "string"
+          },
+          "usage": true
+        },
+        "type": "object"
+      },
+      "AgentResponseNotice": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "since": {
+            "type": "string"
+          },
+          "task_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "watch_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "AgentRun": {
+        "properties": {
+          "created_at": {
+            "description": "RFC 3339.",
+            "type": "string"
+          },
+          "error": {
+            "description": "Why it failed.",
+            "type": "string"
+          },
+          "finished_at": {
+            "description": "RFC 3339.",
+            "type": "string"
+          },
+          "id": {
+            "description": "Run id.",
+            "type": "string"
+          },
+          "llm_calls": {
+            "description": "Model calls.",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "cancel_requested",
+              "done",
+              "cancelled",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "thread_id": {
+            "description": "Its thread.",
+            "type": "string"
+          },
+          "tokens_in": {
+            "description": "Model input tokens.",
+            "type": "integer"
+          },
+          "tokens_out": {
+            "description": "Model output tokens.",
+            "type": "integer"
+          },
+          "updated_at": {
+            "description": "RFC 3339.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "AgentSelectionConfig": {
+        "additionalProperties": false,
+        "description": "SelectionConfig configures the independent, tool-less Ax decision stage.",
+        "properties": {
+          "api_key_env": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "concurrency": {
+            "default": 4,
+            "type": "integer"
+          },
+          "context_bytes": {
+            "default": 98304,
+            "type": "integer"
+          },
+          "enabled": {
+            "default": false,
+            "type": "boolean"
+          },
+          "mode": {
+            "default": "both",
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "startup_budget_ms": {
+            "default": 2000,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AgentSkillUsage": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AgentStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "api_key_configured": {
+            "type": "boolean"
+          },
+          "api_key_env": {
+            "type": "string"
+          },
+          "api_key_file": {
+            "type": "string"
+          },
+          "available_system_roots": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "blocked_system_roots": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "eval_fingerprint": {
+            "type": "string"
+          },
+          "max_steps": {
+            "type": "integer"
+          },
+          "mcp_tool": {
+            "type": "string"
+          },
+          "memory_enabled": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "rate_limit": {
+            "$ref": "#/components/schemas/AgentRateLimitConfig"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "reasoning": {
+            "type": "string"
+          },
+          "response_format": {
+            "type": "string"
+          },
+          "rest_ready": {
+            "type": "boolean"
+          },
+          "return_trace": {
+            "type": "boolean"
+          },
+          "role_class": {
+            "type": "string"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/AgentSelectionConfig"
+          },
+          "server_model_ready": {
+            "type": "boolean"
+          },
+          "service_tier": {
+            "type": "string"
+          },
+          "show_thoughts": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "structured_output_mode": {
+            "type": "string"
+          },
+          "temperature": {
+            "type": "number"
+          },
+          "threads_enabled": {
+            "type": "boolean"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          },
+          "top_p": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "AgentThread": {
+        "properties": {
+          "active_run_id": {
+            "description": "The running turn, if any.",
+            "type": "string"
+          },
+          "channel": {
+            "description": "Where the thread lives.",
+            "type": "string"
+          },
+          "created_at": {
+            "description": "RFC 3339.",
+            "type": "string"
+          },
+          "id": {
+            "description": "Thread id.",
+            "type": "string"
+          },
+          "last_message_at": {
+            "description": "RFC 3339.",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "description": "RFC 3339.",
+            "type": "string"
+          },
+          "owner_ref": {
+            "description": "An opaque reference to the owner.",
+            "type": "string"
+          },
+          "profile": {
+            "description": "The saved agent (agent_profile id) the thread talks to, if any.",
+            "type": "string"
+          },
+          "status": {
+            "description": "Thread status.",
+            "type": "string"
+          },
+          "title": {
+            "description": "Title.",
+            "type": "string"
+          },
+          "unread": {
+            "description": "An answer arrived after the owner last looked.",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "description": "RFC 3339.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "AgentThreadResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": true,
+          "answer": {
+            "type": "string"
+          },
+          "approval": {
+            "$ref": "#/components/schemas/AgentApproval",
+            "description": "Approval is the held write a needs_approval reply asks the user to\napprove or reject."
+          },
+          "data": true,
+          "display": {
+            "description": "Display describes the data behind an answer so a GUI can lay it out\nwithout guessing: typed columns, the rows, and a suggested form.",
+            "items": {
+              "$ref": "#/components/schemas/AgentDisplayHint"
+            },
+            "type": "array"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/AgentErrorInfo"
+            },
+            "type": "array"
+          },
+          "evidence": true,
+          "figures": {
+            "description": "Figures names where each figure in a lead's answer came from; a figure\nwith no source is listed in an unverified_figures notice.",
+            "items": {
+              "$ref": "#/components/schemas/AgentFigure"
+            },
+            "type": "array"
+          },
+          "memories": {
+            "description": "Memories names the saved memories that shaped a lead's answer.",
+            "items": {
+              "$ref": "#/components/schemas/AgentMemoryUsage"
+            },
+            "type": "array"
+          },
+          "next": true,
+          "notices": {
+            "items": {
+              "$ref": "#/components/schemas/AgentResponseNotice"
+            },
+            "type": "array"
+          },
+          "preparation": {
+            "$ref": "#/components/schemas/AgentPreparationStats"
+          },
+          "refusal": {
+            "$ref": "#/components/schemas/AgentRefusal"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "skill": {
+            "description": "Deprecated through v3.",
+            "type": "string"
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/AgentSkillUsage"
+            },
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "answered",
+              "needs_clarification",
+              "needs_approval",
+              "blocked",
+              "error"
+            ],
+            "type": "string"
+          },
+          "thread_id": {
+            "type": "string"
+          },
+          "trace": true,
+          "trace_id": {
+            "type": "string"
+          },
+          "usage": true
+        },
+        "type": "object"
+      },
+      "AgentTurn": {
+        "additionalProperties": false,
+        "description": "Turn is one prior conversation exchange, most recent last.",
+        "properties": {
+          "content": {
+            "description": "user instruction or assistant answer",
+            "type": "string"
+          },
+          "role": {
+            "description": "\"user\" or \"assistant\"",
+            "type": "string"
+          },
+          "status": {
+            "description": "assistant turns: answered/blocked/needs_clarification",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AgentUnblockStep": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "type": "object"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AgentUsageTotals": {
+        "additionalProperties": false,
+        "description": "UsageTotals is the stable, provider-neutral token accounting exposed by an agent run.",
+        "properties": {
+          "completion_tokens": {
+            "type": "integer"
+          },
+          "llm_calls": {
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "type": "integer"
+          },
+          "total_tokens": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    }
+  },
+  "paths": {
+    "/api/v1/agent": {
+      "post": {
+        "description": "Runs one agent turn. Without thread_id the call is stateless; with it the turn is stored in that thread and the reply carries thread_id and run_id. With `Accept: text/event-stream` the turn streams as server-sent events: `run` ({thread_id, run_id}, threaded turns only), `action` (AgentActionEvent, one per tool step), `delta` (AgentDeltaEvent, the reply text as it is written; not stored, so a reconnecting client never sees it), `result` (the final AgentResponse, authoritative), `complete` ({status}) and `error` ({error}).",
+        "operationId": "askAgent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AgentThreadResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AgentResponse"
+                    }
+                  ]
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "description": "With `Accept: text/event-stream` the turn streams as server-sent events: `run` ({thread_id, run_id}, threaded turns only), `action` (AgentActionEvent, one per tool step), `delta` (AgentDeltaEvent, the reply text as it is written; not stored, so a reconnecting client never sees it), `result` (the final AgentResponse, authoritative), `complete` ({status}) and `error` ({error}).",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The agent's reply. Check status: answered, needs_clarification, needs_approval (approval holds the pending write), blocked (refusal says why) or error."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentResponse"
+                }
+              }
+            },
+            "description": "The body could not be read, or names a thread when threads are off."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentResponse"
+                }
+              }
+            },
+            "description": "The agent is disabled."
+          }
+        },
+        "summary": "Ask the agent",
+        "tags": [
+          "agent"
+        ]
+      },
+      "x-graphjin-feature": "agent"
+    },
+    "/api/v1/agent/approvals": {
+      "get": {
+        "operationId": "listAgentApprovals",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "approvals": {
+                      "items": {
+                        "$ref": "#/components/schemas/AgentApprovalRecord"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "approvals"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Approvals."
+          }
+        },
+        "summary": "The caller's write approvals, newest first",
+        "tags": [
+          "agent"
+        ]
+      },
+      "x-graphjin-feature": "approvals"
+    },
+    "/api/v1/agent/approvals/{approval_id}": {
+      "get": {
+        "operationId": "getAgentApproval",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentApprovalRecord"
+                }
+              }
+            },
+            "description": "The approval."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "description": "What went wrong.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No such approval for this caller."
+          }
+        },
+        "summary": "One write approval",
+        "tags": [
+          "agent"
+        ]
+      },
+      "parameters": [
+        {
+          "description": "The approval id from a needs_approval reply.",
+          "in": "path",
+          "name": "approval_id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Approving runs exactly the stored query and variables, once, as the caller. The hash must match the one in the approval.",
+        "operationId": "decideAgentApproval",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "decision": {
+                    "enum": [
+                      "approve",
+                      "reject"
+                    ],
+                    "type": "string"
+                  },
+                  "hash": {
+                    "description": "The approval's hash, binding the decision to the exact write.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "decision",
+                  "hash"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentApprovalRecord"
+                }
+              }
+            },
+            "description": "The decided approval; status is executed, failed or rejected."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "description": "What went wrong.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No such approval for this caller."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "description": "What went wrong.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Already decided, expired, or the hash does not match."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "description": "What went wrong.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The decision could not be applied."
+          }
+        },
+        "summary": "Approve or reject a held write",
+        "tags": [
+          "agent"
+        ]
+      },
+      "x-graphjin-feature": "approvals"
+    },
+    "/api/v1/agent/feedback": {
+      "get": {
+        "description": "The caller's ratings of agent answers (an admin reads everyone's). Write a rating through gj_artifacts with kind feedback, target_ref the message id, content_json {rating: up|down} and content the correction. ?format=corpus returns wrong-answer reports as draft lead-corpus cases.",
+        "operationId": "listAgentFeedback",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "enum": [
+                "corpus"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "properties": {
+                        "feedback": {
+                          "items": {
+                            "$ref": "#/components/schemas/AgentFeedbackReport"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "feedback"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "properties": {
+                        "cases": {
+                          "items": {
+                            "$ref": "#/components/schemas/AgentFeedbackCorpusCase"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "cases"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Reports, or corpus drafts with ?format=corpus."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "description": "What went wrong.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Feedback needs a signed-in user."
+          }
+        },
+        "summary": "Answer feedback",
+        "tags": [
+          "agent"
+        ]
+      },
+      "x-graphjin-feature": "threads"
+    },
+    "/api/v1/agent/profiles/{profile_id}/thread": {
+      "get": {
+        "description": "Finds or creates it. Profiles themselves are gj_artifacts rows of kind agent_profile.",
+        "operationId": "getAgentProfileThread",
+        "parameters": [
+          {
+            "description": "The agent_profile artifact id.",
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AgentThread"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The home thread."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "description": "What went wrong.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No such profile visible to the caller."
+          }
+        },
+        "summary": "The caller's home thread with a saved agent",
+        "tags": [
+          "agent"
+        ]
+      },
+      "x-graphjin-feature": "profiles"
+    },
+    "/api/v1/agent/runs/{run_id}/cancel": {
+      "post": {
+        "operationId": "cancelAgentRun",
+        "parameters": [
+          {
+            "description": "The run to cancel.",
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AgentRun"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Cancel requested."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "description": "What went wrong.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No such run for this caller."
+          }
+        },
+        "summary": "Cancel a threaded run on any replica",
+        "tags": [
+          "agent"
+        ]
+      },
+      "x-graphjin-feature": "threads"
+    },
+    "/api/v1/agent/runs/{run_id}/events": {
+      "get": {
+        "description": "Replays the run's stored events after Last-Event-ID (or ?after=N), then follows new ones until `complete`. Any replica can serve it. Events: `action`, `result`, `complete`, `error`; `delta` is live-only and never replayed.",
+        "operationId": "streamAgentRunEvents",
+        "parameters": [
+          {
+            "description": "The run id from the `run` event or a thread response.",
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay events after this sequence number.",
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Standard SSE resume; wins over ?after.",
+            "in": "header",
+            "name": "Last-Event-ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Server-sent events."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "description": "What went wrong.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No such run for this caller."
+          }
+        },
+        "summary": "Follow a threaded run",
+        "tags": [
+          "agent"
+        ]
+      },
+      "x-graphjin-feature": "threads"
+    },
+    "/api/v1/agent/status": {
+      "get": {
+        "operationId": "getAgentStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentStatus"
+                }
+              }
+            },
+            "description": "Readiness, model settings and the caller's capability profile."
+          }
+        },
+        "summary": "Agent readiness and what the caller may do",
+        "tags": [
+          "agent"
+        ]
+      },
+      "x-graphjin-feature": "status"
+    }
+  }
+}

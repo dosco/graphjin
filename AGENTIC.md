@@ -139,6 +139,13 @@ tool, `ask_graphjin_agent`, and one endpoint, `POST /api/v1/agent`. The caller
 sends a single instruction; GraphJin discovers, validates, executes approved
 operations, and returns a typed, evidence-backed answer.
 
+`GET /api/v1/openapi.json` describes the agent endpoints that are switched on
+(ask, status, run events and cancel, profile home threads, approvals,
+feedback) next to the saved-query REST endpoints, as OpenAPI 3.1. The agent
+schemas are generated from the Go types and their doc comments into
+`serv/agent.openapi.json` (`make agent-openapi`), and a test fails when the
+checked-in file falls behind the types or rejects a value the server sends.
+
 | | External MCP loop | Server-side agent |
 | :--- | :--- | :--- |
 | Drives discovery | the caller's model, call by call | GraphJin, internally |

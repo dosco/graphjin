@@ -550,6 +550,9 @@ func (s1 *HttpService) openAPIHandler(ns *string) http.Handler {
 
 		// Generate OpenAPI specification
 		spec, err := s.gj.GetOpenAPISpec()
+		if err == nil {
+			spec, err = withAgentOpenAPI(spec, s.agentOpenAPIFeatures())
+		}
 		if err != nil {
 			s.log.Error("Failed to generate OpenAPI spec", zap.Error(err))
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
