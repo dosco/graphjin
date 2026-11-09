@@ -45,6 +45,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { AnswerDisplays } from "./AnswerDisplay";
 
 const initialMessages = [];
 
@@ -1051,6 +1052,7 @@ function ChatMessage({ message, onPinTask, onInspect, onApprovalDecided, rating,
             {isUser ? <div className="whitespace-pre-wrap break-words">{message.content}</div> : <MarkdownContent value={message.content} />}
           </BubbleContent>
         </Bubble>
+        {!isUser && response?.display?.length > 0 && <AnswerDisplays hints={response.display} />}
         {response?.status === "needs_approval" && response.approval && (
           <ApprovalCard approval={response.approval} onDecided={onApprovalDecided} />
         )}

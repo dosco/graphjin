@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -86,10 +87,55 @@ func buildDisplayHints(columns []core.ResultColumn, data map[string]any) []Displ
 			rows, hint.Truncated = rows[:maxDisplayRows], true
 		}
 		hint.Rows = rows
+		markTextTimes(hint.Columns, rows)
 		hint.Kind = displayKind(hint.Columns, hint.RowCount)
 		out = append(out, hint)
 	}
 	return out
+}
+
+// isoTime matches an ISO 8601 date or timestamp.
+var isoTime = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}(:?\d{2})?)?)?$`)
+
+// markTextTimes marks a text column as a time when every value it holds is an
+// ISO date. Databases like SQLite keep dates in TEXT columns, so the declared
+// type alone would call them labels.
+func markTextTimes(columns []DisplayColumn, rows []any) {
+	for i, c := range columns {
+		if c.Role != "text" {
+			continue
+		}
+		seen := false
+		dates := true
+		for _, row := range rows {
+			v := rowValue(row, c.Name)
+			if v == nil {
+				continue
+			}
+			s, ok := v.(string)
+			if !ok || !isoTime.MatchString(s) {
+				dates = false
+				break
+			}
+			seen = true
+		}
+		if seen && dates {
+			columns[i].Role = "time"
+		}
+	}
+}
+
+// rowValue reads a column by its path inside a row ("plan.name").
+func rowValue(row any, path string) any {
+	v := row
+	for _, key := range strings.Split(path, ".") {
+		m, ok := v.(map[string]any)
+		if !ok {
+			return nil
+		}
+		v = m[key]
+	}
+	return v
 }
 
 func displayRows(value any) []any {

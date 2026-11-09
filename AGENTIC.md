@@ -367,8 +367,16 @@ model's text, and the model never sees it:
 | `columns` | Each field inside a row (`plan.name` for nested ones) with its database `type`, its `role` (`key`, `reference`, `measure`, `time`, `text`) and its `aggregate` (`count`, `sum`, …). |
 | `rows`, `row_count`, `truncated` | The rows themselves, at most 50, and how many the query returned. |
 
+A `time` column is one whose type is a date or timestamp, or a text column
+whose every value is an ISO 8601 date (SQLite keeps dates in TEXT).
+
 `core.Result.Columns()` exposes the same column facts to library callers; it is
 computed on request, so queries that never ask pay nothing.
+
+The console draws the hints under each answer: a ranked bar list for `bar`, a
+line with a hover and arrow-key readout for `line`, and a collapsed table for
+`table`. Every chart has a table view. A `value` hint draws nothing, since the
+answer already states the number.
 
 ### Answer Feedback
 

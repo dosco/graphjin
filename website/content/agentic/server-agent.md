@@ -155,7 +155,7 @@ A `blocked` response is machine-actionable, not prose. It carries a `refusal` ob
 
 ## Display hints
 
-An answered reply carries `display`, built from the compiled query and the schema rather than the model's text: for each result root, a suggested `kind` (`value`, `bar`, `line` or `table`), typed `columns` with a `role` (`key`, `reference`, `measure`, `time`, `text`) and any `aggregate`, and the `rows` themselves (at most 50). A GUI can lay out the data behind an answer without guessing which numbers are measures or which column names the rows.
+An answered reply carries `display`, built from the compiled query and the schema rather than the model's text: for each result root, a suggested `kind` (`value`, `bar`, `line` or `table`), typed `columns` with a `role` (`key`, `reference`, `measure`, `time`, `text`) and any `aggregate`, and the `rows` themselves (at most 50). A text column whose every value is an ISO 8601 date counts as `time`. A GUI can lay out the data behind an answer without guessing which numbers are measures or which column names the rows, and the built-in console draws bar and line hints as charts under the answer.
 
 {{< verified by="TestDisplayKindFollowsTheColumnRoles" file="agent/display_test.go" >}}
 

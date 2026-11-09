@@ -80,3 +80,32 @@ func TestLeadCarriesItsQuestionsDisplay(t *testing.T) {
 		t.Fatalf("display = %+v", resp.Display)
 	}
 }
+
+// SQLite keeps dates in TEXT columns; the values, not the declared type,
+// make them a time.
+func TestDisplayHintsReadDatesStoredAsText(t *testing.T) {
+	columns := []core.ResultColumn{
+		{Path: "invoices.due_at", Root: "invoices", Name: "due_at", Type: "text", Role: "text"},
+		{Path: "invoices.amount_cents", Root: "invoices", Name: "amount_cents", Type: "integer", Role: "measure"},
+		{Path: "invoices.status", Root: "invoices", Name: "status", Type: "text", Role: "text"},
+	}
+	data := map[string]any{"invoices": []any{
+		map[string]any{"due_at": "2026-11-04", "amount_cents": 30000, "status": "paid"},
+		map[string]any{"due_at": "2026-11-03T09:30:00Z", "amount_cents": 140000, "status": "paid"},
+		map[string]any{"due_at": nil, "amount_cents": 1, "status": "paid"},
+	}}
+	hints := buildDisplayHints(columns, data)
+	if len(hints) != 1 || hints[0].Columns[0].Role != "time" || hints[0].Columns[2].Role != "text" {
+		t.Fatalf("columns = %+v", hints[0].Columns)
+	}
+	if hints[0].Kind != "table" {
+		t.Fatalf("a time, a measure and a label is a table, got %s", hints[0].Kind)
+	}
+	if hints := buildDisplayHints(columns[:2], data); hints[0].Kind != "line" {
+		t.Fatalf("dates against a measure = %s, want line", hints[0].Kind)
+	}
+	data["invoices"] = append(data["invoices"].([]any), map[string]any{"due_at": "soon", "amount_cents": 2})
+	if hints := buildDisplayHints(columns[:2], data); hints[0].Columns[0].Role != "text" {
+		t.Fatalf("one non-date value keeps the column text: %+v", hints[0].Columns)
+	}
+}

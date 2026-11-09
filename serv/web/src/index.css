@@ -86,6 +86,11 @@
   --chart-3: oklch(0.66 0.14 70);
   --chart-4: oklch(0.56 0.16 290);
   --chart-5: oklch(0.6 0.14 160);
+  /* Answer charts: validated for CVD and contrast on this surface. Pink stays
+     the call-to-action colour, so charts start from the next hue. */
+  --viz-1: oklch(0.6 0.13 215);
+  --viz-2: oklch(0.56 0.16 290);
+  --viz-3: oklch(0.6 0.14 160);
   --ribbon: oklch(1 0 0);
   --ribbon-foreground: oklch(0.16 0.006 265);
   --stars: oklch(0.2 0.01 265 / 9%);
@@ -125,6 +130,9 @@
   --chart-3: oklch(0.82 0.14 80);
   --chart-4: oklch(0.7 0.16 295);
   --chart-5: oklch(0.76 0.15 158);
+  --viz-1: oklch(0.66 0.12 215);
+  --viz-2: oklch(0.64 0.17 295);
+  --viz-3: oklch(0.66 0.15 158);
   --ribbon: oklch(0 0 0);
   --ribbon-foreground: oklch(0.94 0.003 250);
   --stars: oklch(1 0 0 / 45%);
