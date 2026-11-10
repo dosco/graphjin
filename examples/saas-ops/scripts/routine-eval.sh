@@ -11,7 +11,9 @@
 # Metrics (majority of repeats per case):
 #   verdict_recall      act cases where the routine proposed a change
 #   false_alarm_rate    no_action cases where it proposed one anyway
-#   proposal_precision  proposals that touched the right ticket, one row
+#   proposal_precision  approved proposals whose change touched exactly the
+#                       right ticket: every ticket's state is read just before
+#                       and just after approval, and only that one may differ
 #   effect_correct      act cases whose approved change left the right state
 #   continuation_rate   approved changes followed by a continuation turn
 #
@@ -52,6 +54,9 @@ CASES=(
   "near_miss_subject|no_action|Is this a duplicate charge on my invoice?|normal|"
 )
 
+# Every ticket's state, to see which ones an approved change touched.
+TICKET_STATE_QUERY='query { support_tickets(order_by: { id: asc }, limit: 1000) { id subject severity status resolution_note resolved_at } }'
+
 results="$TMP_DIR/routine-results.jsonl"
 : >"$results"
 for line in "${CASES[@]}"; do
@@ -61,16 +66,21 @@ for line in "${CASES[@]}"; do
     routine_ticket_case "$ROUTINE_DUPLICATE_PROMPT" "${subject} [smoke $(date +%s)${RANDOM}]" "$severity" || true
     verdict="$(cat "$ROUTINE_VERDICT")"
     proposed="$(jq -r '.approval != null and .approval.status == "pending"' <<<"$verdict")"
-    precise=false effect=false continued=false
+    precise=null effect=false continued=false
     if [ "$proposed" = "true" ]; then
       ticket="$(jq -r '.ticket_id' <<<"$verdict")"
-      precise="$(jq -r --argjson t "$ticket" '
-        .approval.preview.rows == 1
-        and (.approval.query | test("support_tickets"))
-        and ((.approval.preview.sample // []) | map(.id) | index($t)) != null
-      ' <<<"$verdict")"
       if [ "$expect" = "act" ]; then
+        # Precision is what the change did, not what it returned: a mutation
+        # may return affected_rows or nothing that names the ticket.
+        before="$(graphql_vars eval-before "$TICKET_STATE_QUERY" '{}')"
         approval_decide "$(jq -r '.approval.id' <<<"$verdict")" approve "$(jq -r '.approval.hash' <<<"$verdict")" "$TMP_DIR/eval-approve.json" >/dev/null
+        after="$(graphql_vars eval-after "$TICKET_STATE_QUERY" '{}')"
+        precise="$(jq -n --argjson t "$ticket" --slurpfile b "$before" --slurpfile a "$after" '
+          ($b[0].data.support_tickets // []) as $before | ($a[0].data.support_tickets // []) as $after
+          | ($before | map({key: (.id | tostring), value: .}) | from_entries) as $was
+          | [$after[] | select(. != $was[.id | tostring]) | .id] as $changed
+          | ($before | length) > 0 and ($before | length) == ($after | length) and $changed == [$t]
+        ')"
         state="$(graphql_vars eval-state "query { support_tickets(where: { id: { eq: ${ticket} } }) { status } }" '{}')"
         effect="$(jq -r --arg s "$expected_status" '.data.support_tickets[0].status == $s' "$state")"
         messages="$(routine_wait_continuation "$(jq -r '.thread_id' <<<"$verdict")" "$(jq -r '.approval.id' <<<"$verdict")")"
@@ -93,7 +103,8 @@ report="$(jq -s '
   def majority(f): (map(f) | map(select(.)) | length) * 2 > length;
   group_by(.case) as $cases
   | [ $cases[] | {case: .[0].case, expect: .[0].expect, runs: length,
-        proposed: majority(.proposed), precise: majority(.precise),
+        proposed: majority(.proposed),
+        precise: (map(select(.proposed and .precise != null)) | if length == 0 then null else majority(.precise) end),
         effect: majority(.effect), continued: majority(.continued),
         consistent: ((map(.proposed) | unique | length) == 1)} ] as $verdicts
   | ($verdicts | map(select(.expect == "act"))) as $act
@@ -103,7 +114,7 @@ report="$(jq -s '
     metrics: {
       verdict_recall: rate($act; .proposed),
       false_alarm_rate: rate($quiet; .proposed),
-      proposal_precision: rate($verdicts | map(select(.proposed)); .precise),
+      proposal_precision: rate($verdicts | map(select(.proposed and .precise != null)); .precise),
       effect_correct: rate($act; .effect),
       continuation_rate: rate($act | map(select(.proposed)); .continued),
       consistency: rate($verdicts; .consistent)
