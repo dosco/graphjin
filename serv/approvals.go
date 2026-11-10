@@ -807,6 +807,9 @@ func (s *graphjinService) runApprovalTurn(ctx context.Context, row map[string]an
 		// runs where it did: on the data agent.
 		conf = watchRoutineAgentConfig(s.conf, false)
 		foldProfileIntoTask(&req)
+		// It starts with the evidence of the table its change touched.
+		summary := mapFromAny(parseJSONValue(stringMapValue(row, "summary_json")))
+		req.PrefetchCatalogIDs = s.catalogTableIDs(agentCtx, [][3]string{{stringFromAny(summary["database"]), "", stringFromAny(summary["table"])}})
 	}
 	var runner graphjinAgentRunner = staticAgentRunner{answer: turn.fallback}
 	if built, err := s.agentEntryRunner(conf); err == nil {

@@ -177,6 +177,13 @@ type Request struct {
 	// Profile is the agent profile the run speaks as: the instructions the
 	// caller gave one of their agents. Server-populated only, like Memories.
 	Profile *ProfileInstructions `json:"-"`
+
+	// PrefetchCatalogIDs are catalog details the server already knows the
+	// run is about, such as the tables a watch routine's query reads. They
+	// are fetched before the run and offered as prepared evidence the model
+	// consumes with use_prepared_catalog, instead of rediscovering them step
+	// by step. Server-set only.
+	PrefetchCatalogIDs []string `json:"-"`
 }
 
 // ProfileInstructions are an agent profile's standing instructions.
@@ -670,6 +677,9 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		}), nil
 	}
 	prepared = prep.finish(protocol, seed)
+	if prepared == nil && len(req.PrefetchCatalogIDs) != 0 {
+		prepared = a.prefetchCatalog(ctx, req)
+	}
 	if err := ctx.Err(); err != nil {
 		return Response{}, err
 	}

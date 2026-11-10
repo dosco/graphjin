@@ -9,6 +9,7 @@ import (
 	"time"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
+	"github.com/dosco/graphjin/core/v3"
 )
 
 // A routine is a watch whose delivery is an agent turn: when the watch fires,
@@ -52,6 +53,67 @@ func parseWatchAgentConfig(m map[string]any) (watchAgentConfig, error) {
 		return cfg, fmt.Errorf("agent delivery prompt is longer than %d bytes", watchRoutinePromptMaxBytes)
 	}
 	return cfg, nil
+}
+
+// unattendedMinSteps is the step budget floor for runs nobody watches.
+const unattendedMinSteps = 16
+
+// queryCatalogTableIDs names the catalog details of the tables query reads,
+// compiled as ctx's role, for a run to start with as evidence. Empty when the
+// query does not compile or names nothing the caller's catalog has.
+func (s *graphjinService) queryCatalogTableIDs(ctx context.Context, query string) []string {
+	return s.catalogTableIDs(ctx, s.queryTables(ctx, query))
+}
+
+// queryTables is the {database, schema, table} of each table query reads.
+func (s *graphjinService) queryTables(ctx context.Context, query string) [][3]string {
+	if s.gj == nil || strings.TrimSpace(query) == "" {
+		return nil
+	}
+	exp, err := s.gj.ExplainQuery(query, nil, s.gj.RequestRole(ctx))
+	if err != nil || exp == nil {
+		return nil
+	}
+	tables := make([][3]string, 0, len(exp.Tables))
+	for _, t := range exp.Tables {
+		tables = append(tables, [3]string{t.Database, t.Schema, t.Table})
+	}
+	return tables
+}
+
+// catalogTableIDs maps tables to the ids of the table cards ctx's caller can
+// see in the catalog.
+func (s *graphjinService) catalogTableIDs(ctx context.Context, tables [][3]string) []string {
+	if len(tables) == 0 {
+		return nil
+	}
+	snap, err := s.catalogSnapshotForContext(ctx)
+	if err != nil || snap == nil {
+		return nil
+	}
+	return tableCardIDs(snap.Cards, tables)
+}
+
+// tableCardIDs picks the table card for each {database, schema, table}; an
+// empty database or schema matches any.
+func tableCardIDs(cards []core.CatalogCard, tables [][3]string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, want := range tables {
+		for _, card := range cards {
+			if card.Kind != "table" || !strings.EqualFold(card.TableName, want[2]) ||
+				(want[0] != "" && !strings.EqualFold(card.DatabaseName, want[0])) ||
+				(want[1] != "" && !strings.EqualFold(card.SchemaName, want[1])) {
+				continue
+			}
+			if !seen[card.ID] {
+				seen[card.ID] = true
+				out = append(out, card.ID)
+			}
+			break
+		}
+	}
+	return out
 }
 
 // foldProfileIntoTask carries a saved agent's standing instructions into a
@@ -118,6 +180,11 @@ func watchRoutineAgentConfig(conf *Config, lead bool) gjagent.Config {
 	agentConf := agentConfigFromService(conf)
 	if !lead {
 		agentConf.Lead.Enabled = false
+	}
+	// Nobody is waiting on an unattended run, and a change it proposes takes
+	// a lookup, the write and its expectation: give it room to finish.
+	if agentConf.MaxSteps < unattendedMinSteps {
+		agentConf.MaxSteps = unattendedMinSteps
 	}
 	if configApprovalsEnabled(conf) {
 		agentConf.HeldWritesOnly = true
@@ -229,6 +296,8 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 	}
 	if !cfg.Once {
 		foldProfileIntoTask(&req)
+		// The watch already knows what it is about: its query's tables.
+		req.PrefetchCatalogIDs = s.queryCatalogTableIDs(agentCtx, def.Query)
 	}
 
 	runner, err := s.agentEntryRunner(watchRoutineAgentConfig(s.conf, cfg.Once))

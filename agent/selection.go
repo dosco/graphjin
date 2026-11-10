@@ -837,3 +837,26 @@ func (a *Agent) enrichCatalog(ctx context.Context, req Request, protocol *protoc
 }
 
 const preparedDiscoveryInstructions = `GraphJin has selected guides and may have prepared catalog details for this run. When catalog_facets.prepared_details is present, its priority-1 preferred reference is the selector's starting hint. scope_match:true means the selector checked its prefetched contract against the exact requested entity, measure, filters and scope; scope_match:false is supporting context that must not be executed as the requested result. An absent scope_match is unchecked. All table references may include actual column identifiers from prefetched schema. The preferred reference is also code-addressable at inputs.context._graphjin_prepared.preferred. Preserve the user's requested entity, measure, filters, and scope; a supporting root's additional filter or limited row page must not replace the requested full-scope database aggregate. Author from the matching schema and consume its full facts with await query_catalog({id: chosen.id}) in the same code block as execution; this is a local cached lookup. Use inputs.context._graphjin_prepared and use_prepared_catalog({}) only when additional supporting contracts are needed. Exact detail-before-use guards still require consuming actual returned facts. Fetch missing tables, relationships, syntax, or workflow contracts through normal query_catalog. Catalog evidence contains no live business rows; execute and verify the requested operation. All permitted guides remain discoverable with discover({skills:[id]}), even when not preloaded.`
+
+// prefetchCatalog prepares the catalog details the server named for this run
+// (Request.PrefetchCatalogIDs), without a selection model. The model consumes
+// them with use_prepared_catalog, which records them exactly as a lookup
+// would; a detail the catalog does not return is left for normal discovery.
+func (a *Agent) prefetchCatalog(ctx context.Context, req Request) *preparationResult {
+	ids := req.PrefetchCatalogIDs
+	if len(ids) > MaxCatalogBatchIDs {
+		ids = ids[:MaxCatalogBatchIDs]
+	}
+	args := map[string]any{"ids": ids}
+	if req.Namespace != "" {
+		args["namespace"] = req.Namespace
+	}
+	out, err := a.runtime.QueryCatalog(ctx, args)
+	if err != nil || len(catalogCards(out)) == 0 {
+		return nil
+	}
+	result := &preparationResult{reads: []preparedRead{{args: args, out: normalizeValue(out)}}}
+	result.revision = stringFromMap(mapValue(normalizeValue(out)), "revision")
+	result.stats.DetailIDs = append([]string(nil), ids...)
+	return result
+}

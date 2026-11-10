@@ -290,6 +290,10 @@ func TestWatchRoutineMayProposeWritesForApproval(t *testing.T) {
 	if !strings.Contains(runner.req.Instruction, watchRoutineProposeNote) {
 		t.Fatalf("routine instruction = %q", runner.req.Instruction)
 	}
+	// The routine starts with its watch's table as evidence, and room to finish.
+	if runner.conf.MaxSteps < unattendedMinSteps {
+		t.Fatalf("max steps = %d", runner.conf.MaxSteps)
+	}
 	origin := runOriginFrom(runner.ctx)
 	events, _ := newWatchControlPlane(svc).watchEventRows(ctx)
 	if len(events) != 1 {
@@ -347,5 +351,23 @@ func TestRoutineTaskCarriesTheRowsItFiredOn(t *testing.T) {
 	}
 	if rows := watchRoutineEventRows(map[string]any{"kind": "metric", "value": 3}); rows != "" {
 		t.Fatalf("a metric event's brief already says what happened: %q", rows)
+	}
+}
+
+// A data watch's cursor subscription compiles to the tables it reads.
+func TestWatchQueryNamesItsCatalogTables(t *testing.T) {
+	// The watch fixtures keep data in the control-plane store, which the
+	// catalog leaves out; this one keeps them apart, like a real deployment.
+	svc := newArtifactOverlayTestService(t, nil)
+	ctx := annotationAccountCtx("routine_owner", "acct_1", "user")
+	ids := svc.queryCatalogTableIDs(ctx, `subscription w { users(where: { id: { eq: 1 } }, first: 5, after: $cursor) { id name } users_cursor }`)
+	if len(ids) != 1 || !strings.HasPrefix(ids[0], "table:") || !strings.HasSuffix(ids[0], ".users") {
+		t.Fatalf("ids = %v", ids)
+	}
+	if ids := svc.queryCatalogTableIDs(ctx, `query { nope { id } }`); len(ids) != 0 {
+		t.Fatalf("an unknown table named %v", ids)
+	}
+	if ids := svc.catalogTableIDs(ctx, [][3]string{{"", "", "USERS"}, {"", "", "users"}}); len(ids) != 1 {
+		t.Fatalf("one table named twice = %v", ids)
 	}
 }
