@@ -48,6 +48,10 @@
             "description": "DecidedBy names the autonomy rule that decided it.",
             "type": "string"
           },
+          "expect": {
+            "description": "Expect says what the change should achieve, which GraphJin checks\nafter it runs: \"invoices.0.count_id up by at least 3 within 72h\".",
+            "type": "string"
+          },
           "expires_at": {
             "type": "string"
           },
@@ -102,6 +106,9 @@
             "description": "The watch event that routine ran for.",
             "type": "string"
           },
+          "expect": {
+            "description": "What the change should achieve, checked after it runs: {query, path, op, value, within_hours, baseline, text}. null when none was given."
+          },
           "expires_at": {
             "description": "RFC 3339; a pending approval reads as expired after it.",
             "type": "string"
@@ -127,6 +134,9 @@
               "continuation"
             ],
             "type": "string"
+          },
+          "outcome": {
+            "description": "The outcome check once the change ran: {status: pending|checking|hit|miss|error, value, due_at, checked_at}. null before."
           },
           "owner_id": {
             "description": "Who asked; only they can decide it.",
@@ -448,7 +458,11 @@
               "routine_answer",
               "run_failed",
               "task_verify_failed",
-              "task_verified"
+              "task_verified",
+              "autonomous_write",
+              "outcome_hit",
+              "outcome_miss",
+              "budget_exceeded"
             ],
             "type": "string"
           },
@@ -612,6 +626,40 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "AgentReliabilityTally": {
+        "properties": {
+          "checked": {
+            "description": "Changes checked.",
+            "type": "integer"
+          },
+          "hit_rate": {
+            "description": "hits / checked.",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "hits": {
+            "description": "Changes that did what they were expected to.",
+            "type": "integer"
+          },
+          "key": {
+            "description": "What is tallied: all, a watch id, an agent_profile id, or a change such as data.update support_tickets.",
+            "type": "string"
+          },
+          "misses": {
+            "description": "Changes that did not.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "checked",
+          "hits",
+          "misses"
+        ],
         "type": "object"
       },
       "AgentRequest": {
@@ -1593,6 +1641,77 @@
         ]
       },
       "x-graphjin-feature": "profiles"
+    },
+    "/api/v1/agent/reliability": {
+      "get": {
+        "description": "The caller's changes whose outcome was checked (a change proposed with expect), tallied overall, per routine (watch), per saved agent and per kind of change.",
+        "operationId": "getAgentReliability",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "by_agent": {
+                      "items": {
+                        "$ref": "#/components/schemas/AgentReliabilityTally"
+                      },
+                      "type": "array"
+                    },
+                    "by_change": {
+                      "items": {
+                        "$ref": "#/components/schemas/AgentReliabilityTally"
+                      },
+                      "type": "array"
+                    },
+                    "by_routine": {
+                      "items": {
+                        "$ref": "#/components/schemas/AgentReliabilityTally"
+                      },
+                      "type": "array"
+                    },
+                    "overall": {
+                      "$ref": "#/components/schemas/AgentReliabilityTally"
+                    }
+                  },
+                  "required": [
+                    "overall",
+                    "by_routine",
+                    "by_agent",
+                    "by_change"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The ledger."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "description": "What went wrong.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The ledger needs a signed-in user."
+          }
+        },
+        "summary": "How the agent's changes turned out",
+        "tags": [
+          "agent"
+        ]
+      },
+      "x-graphjin-feature": "approvals"
     },
     "/api/v1/agent/runs/{run_id}/cancel": {
       "post": {

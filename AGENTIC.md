@@ -474,6 +474,23 @@ a write whose rows cannot be counted, and every API call (which cannot be tried
 in a rolled-back transaction) still waits for the user. API operations are
 classified `api.write` or `api.delete` by HTTP method.
 
+### Outcomes
+
+A change the agent proposes can say what it should achieve, as `expect` on the
+mutation: a read query that measures the effect, a `path` to one number in its
+result, an `op` (`gte`, `lte`, `eq`, `increase`, `decrease`), a `value` and
+`within_hours` (up to 30 days). `increase` and `decrease` compare with the
+number before the change, which GraphJin measures when the change is proposed;
+an expectation it cannot measure then is refused, since it could never be
+checked later. Once the change has run (approved, or allowed by an autonomy
+rule) and the window has passed, GraphJin measures again as the identity the
+change ran as and records `hit` or `miss` on the approval
+(`gj_approval.outcome`). The owner is notified either way; a miss also starts a
+turn in the change's thread so the agent can find out why and propose a
+correction or an undo. `GET /api/v1/agent/reliability` tallies the caller's
+checked changes overall, per routine, per saved agent and per kind of change:
+the record that says how far a routine or an agent can be trusted.
+
 ### Routines That Act
 
 A watch whose delivery is an agent turn (`delivery_json: { kind: "agent",

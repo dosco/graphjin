@@ -159,6 +159,10 @@ A `blocked` response is machine-actionable, not prose. It carries a `refusal` ob
 
 {{< verified by="TestAutonomyRunsAllowedWritesAndRecordsThem" file="serv/approvals_test.go" >}}
 
+A proposed change can carry `expect`: a read query, the number to read from it, and what that number should do within a window. GraphJin measures it before the change, checks it again once the change has run and the window has passed, records `hit` or `miss`, notifies the owner, and on a miss starts a turn so the agent can look into it. `GET /api/v1/agent/reliability` tallies how the caller's changes turned out, per routine, saved agent and kind of change.
+
+{{< verified by="TestApprovedChangeIsCheckedAgainstItsExpectation" file="serv/outcomes_test.go" >}}
+
 `gj_notification` and `/api/v1/notifications` carry what a person needs to know while away — a change waiting for approval, a routine's answer, a stopped run, a task check — with a live stream at `/api/v1/notifications/stream`. The console's Inbox shows them.
 
 {{< verified by="TestNotificationStreamFollowsNewNotifications" file="serv/notifications_test.go" >}}

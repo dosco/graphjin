@@ -114,6 +114,7 @@ function PendingApproval({ approvalID, onDecided }) {
     preview: row.preview || {},
     query: row.query,
     expires_at: row.expires_at,
+    expect: row.expect?.text || "",
   };
   return <ApprovalCard approval={approval} onDecided={onDecided} />;
 }

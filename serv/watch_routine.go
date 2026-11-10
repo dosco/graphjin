@@ -100,7 +100,7 @@ func (s *graphjinService) routineServiceIdentity(ownerCtx context.Context, def w
 // watch's owner set the routine up, so proposing a change is doing what they
 // asked; it still runs only once they approve it. A routine runs on the data
 // agent, which proposes a change by writing it.
-const watchRoutineProposeNote = "If what you find calls for a change to the data, make it with a mutation: GraphJin holds the write for the watch owner's approval and nothing changes until they approve. Writing the mutation is how a change is proposed; describing a change in your answer proposes nothing. Then say what you proposed and why. If nothing needs changing, say so."
+const watchRoutineProposeNote = "If what you find calls for a change to the data, make it with a mutation: GraphJin holds the write for the watch owner's approval and nothing changes until they approve. Writing the mutation is how a change is proposed; describing a change in your answer proposes nothing. Pass expect with the mutation to say what the change should achieve, so GraphJin can check later whether it worked. Then say what you proposed and why. If nothing needs changing, say so."
 
 // followUpProposeNote is the same for a follow-up, which runs on the lead.
 const followUpProposeNote = "If what you find calls for a change to the data, ask the data agent to make it, in plain words, with ask_graphjin: GraphJin holds the change for the watch owner's approval and nothing changes until they approve. That request is how a change is proposed; describing a change in your reply proposes nothing. Then say what you proposed and why. If nothing needs changing, say so."

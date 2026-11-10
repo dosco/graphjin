@@ -349,6 +349,24 @@ func agentOpenAPIPaths() map[string]any {
 				"responses": map[string]any{"200": map[string]any{"description": "Server-sent events.", "content": map[string]any{"text/event-stream": map[string]any{"schema": map[string]any{"type": "string"}}}}},
 			},
 		},
+		routeAgentReliability: map[string]any{
+			"x-graphjin-feature": "approvals",
+			"get": map[string]any{
+				"operationId": "getAgentReliability",
+				"tags":        agentTag,
+				"summary":     "How the agent's changes turned out",
+				"description": "The caller's changes whose outcome was checked (a change proposed with expect), tallied overall, per routine (watch), per saved agent and per kind of change.",
+				"responses": map[string]any{
+					"200": jsonResponse("The ledger.", objectOf(map[string]any{
+						"overall":    ref("AgentReliabilityTally"),
+						"by_routine": arrayOf(ref("AgentReliabilityTally")),
+						"by_agent":   arrayOf(ref("AgentReliabilityTally")),
+						"by_change":  arrayOf(ref("AgentReliabilityTally")),
+					}, "overall", "by_routine", "by_agent", "by_change")),
+					"401": jsonResponse("The ledger needs a signed-in user.", errorBody()),
+				},
+			},
+		},
 		routeAgentFeedback: map[string]any{
 			"x-graphjin-feature": "threads",
 			"get": map[string]any{
@@ -378,7 +396,7 @@ func agentOpenAPIRowSchemas() map[string]any {
 	return map[string]any{
 		"AgentNotification": objectOf(map[string]any{
 			"id":           str("Notification id."),
-			"kind":         map[string]any{"type": "string", "description": "What happened.", "enum": []any{notificationApprovalPending, notificationRoutineAnswer, notificationRunFailed, notificationTaskVerifyFail, "task_verified"}},
+			"kind":         map[string]any{"type": "string", "description": "What happened.", "enum": []any{notificationApprovalPending, notificationRoutineAnswer, notificationRunFailed, notificationTaskVerifyFail, "task_verified", notificationAutonomousWrite, notificationOutcomeHit, notificationOutcomeMiss, refusalBudgetExceeded}},
 			"severity":     map[string]any{"type": "string", "enum": []any{notificationSeverityInfo, notificationSeverityAction, notificationSeverityWarning}, "description": "action: something waits for you."},
 			"title":        str("One line."),
 			"body":         str("Detail, such as the change's summary or the routine's answer."),
@@ -417,7 +435,16 @@ func agentOpenAPIRowSchemas() map[string]any {
 			"profile":      str("The saved agent the run used, if any."),
 			"decided_by":   str("Who or what decided it: the owner, or autonomy:<rule> when a configured rule let it run."),
 			"delegated_by": str("Whom a service-identity run acted for."),
+			"expect":       map[string]any{"description": "What the change should achieve, checked after it runs: {query, path, op, value, within_hours, baseline, text}. null when none was given."},
+			"outcome":      map[string]any{"description": "The outcome check once the change ran: {status: pending|checking|hit|miss|error, value, due_at, checked_at}. null before."},
 		}, "id", "hash", "status", "query"),
+		"AgentReliabilityTally": objectOf(map[string]any{
+			"key":      str("What is tallied: all, a watch id, an agent_profile id, or a change such as data.update support_tickets."),
+			"checked":  prop("integer", "Changes checked."),
+			"hits":     prop("integer", "Changes that did what they were expected to."),
+			"misses":   prop("integer", "Changes that did not."),
+			"hit_rate": map[string]any{"type": []any{"number", "null"}, "description": "hits / checked."},
+		}, "key", "checked", "hits", "misses"),
 		"AgentThread": objectOf(map[string]any{
 			"id":              str("Thread id."),
 			"title":           str("Title."),
@@ -509,7 +536,7 @@ func TestAgentOpenAPICoversEveryAgentRoute(t *testing.T) {
 	if err := json.Unmarshal(agentOpenAPISpec, &doc); err != nil {
 		t.Fatal(err)
 	}
-	for _, route := range []string{routeAgent, routeAgentStatus, routeAgentRuns, routeAgentProfiles, routeAgentApprovals, routeAgentFeedback, routeNotifications} {
+	for _, route := range []string{routeAgent, routeAgentStatus, routeAgentRuns, routeAgentProfiles, routeAgentApprovals, routeAgentFeedback, routeNotifications, routeAgentReliability} {
 		found := false
 		for path := range doc.Paths {
 			if path == route || strings.HasPrefix(path, strings.TrimSuffix(route, "/")+"/") {

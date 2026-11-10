@@ -335,7 +335,7 @@ func TestRoutineHeldWriteIsFiledUnderItsWatch(t *testing.T) {
 	if orderStatus(t, db, 1) != "open" {
 		t.Fatal("a direct mutation changed the database")
 	}
-	_, approval, err := rt.ProposeWrite(ctx, map[string]any{"query": approvalTestWrite})
+	_, approval, err := rt.ProposeWrite(ctx, map[string]any{"query": approvalTestWrite, "expect": closedOrdersExpect})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,7 +390,7 @@ func TestApprovedRoutineWriteContinuesWithTheModel(t *testing.T) {
 	}
 	threadID := stringFromAny(thread["id"])
 	proposeCtx := withRunOrigin(withRunThread(ctx, threadID, "run_routine"), runOrigin{Origin: approvalOriginRoutine, WatchID: "w_1", EventID: "e_1"})
-	_, approval, err := rt.(*serviceAgentRuntime).ProposeWrite(proposeCtx, map[string]any{"query": approvalTestWrite})
+	_, approval, err := rt.(*serviceAgentRuntime).ProposeWrite(proposeCtx, map[string]any{"query": approvalTestWrite, "expect": closedOrdersExpect})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -473,7 +473,7 @@ func TestServiceRunApprovalBelongsToTheDelegator(t *testing.T) {
 	svc.conf.Agent.ServiceIdentity = gjagent.ServiceIdentityConfig{UserID: "svc_ops", Role: "user"}
 	origin := runOrigin{Origin: approvalOriginRoutine, WatchID: "w_1", DelegatedBy: "user_1", RunAsID: "svc_ops", RunAsRole: "user"}
 	serviceCtx := withRunOrigin(svc.ownerContext(context.Background(), "svc_ops", "user", ""), origin)
-	_, approval, err := rt.ProposeWrite(serviceCtx, map[string]any{"query": approvalTestWrite})
+	_, approval, err := rt.ProposeWrite(serviceCtx, map[string]any{"query": approvalTestWrite, "expect": closedOrdersExpect})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -523,7 +523,7 @@ func TestUnattendedOutcomeNamesAutonomousChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := withRunOrigin(withRunThread(approvalUserCtx("user_1"), "th_1", "run_7"), runOrigin{Origin: approvalOriginRoutine, WatchID: "w_1"})
-	if _, approval, err := rt.(*serviceAgentRuntime).ProposeWrite(ctx, map[string]any{"query": approvalTestWrite}); err != nil || !approval.Decided() {
+	if _, approval, err := rt.(*serviceAgentRuntime).ProposeWrite(ctx, map[string]any{"query": approvalTestWrite, "expect": closedOrdersExpect}); err != nil || !approval.Decided() {
 		t.Fatalf("autonomous write = %+v err %v", approval, err)
 	}
 	got := svc.stateUnattendedOutcome(ctx, gjagent.Response{Status: gjagent.StatusAnswered, Answer: "Closed it."})

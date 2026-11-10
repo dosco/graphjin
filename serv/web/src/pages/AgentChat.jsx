@@ -1268,7 +1268,7 @@ export function AnswerFeedback({ messageID, rating, onRate }) {
 // only on Approve, once; the card reads the approval's current state, so a
 // reloaded thread never offers a decision that was already made.
 export function ApprovalCard({ approval, onDecided }) {
-  const [state, setState] = React.useState({ status: "pending", error: "", result: null });
+  const [state, setState] = React.useState({ status: "pending", error: "", result: null, outcome: null });
   const [deciding, setDeciding] = React.useState("");
 
   React.useEffect(() => {
@@ -1276,7 +1276,7 @@ export function ApprovalCard({ approval, onDecided }) {
     fetchApproval(approval.id)
       .then((row) => {
         if (!cancelled && row?.status) {
-          setState({ status: row.status, error: row.error || "", result: row.result || null });
+          setState({ status: row.status, error: row.error || "", result: row.result || null, outcome: row.outcome || null });
         }
       })
       .catch(() => {});
@@ -1311,6 +1311,9 @@ export function ApprovalCard({ approval, onDecided }) {
             : `Not previewed: ${preview.reason || "this source cannot be tried safely"}.`}
         </p>
       </div>
+      {approval.expect && (
+        <p className="text-xs leading-5 text-muted-foreground">Expected: {approval.expect}{state.outcome ? ` — ${outcomeText(state.outcome)}` : ""}</p>
+      )}
       {sample.length > 0 && (
         <div className="grid gap-1 font-mono text-[0.6875rem] text-muted-foreground">
           {sample.map((row, index) => (
@@ -1337,6 +1340,23 @@ export function ApprovalCard({ approval, onDecided }) {
       {pending && state.error && <p className="text-xs text-destructive">{state.error}</p>}
     </section>
   );
+}
+
+// outcomeText says how a change's outcome check came out.
+export function outcomeText(outcome) {
+  switch (outcome?.status) {
+    case "hit":
+      return `it did (measured ${outcome.value})`;
+    case "miss":
+      return `it missed (measured ${outcome.value})`;
+    case "error":
+      return "the check could not run";
+    case "pending":
+    case "checking":
+      return "checked once its window passes";
+    default:
+      return "";
+  }
 }
 
 function approvalOutcome({ status, error }) {

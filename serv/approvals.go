@@ -27,7 +27,7 @@ import (
 
 const (
 	approvalsRootTable  = "gj_approval"
-	approvalStoreFields = `id thread_id run_id query variables_json namespace actions summary_json preview_json hash status result_json error account_id owner_id owner_role created_at expires_at decided_at origin watch_id event_id profile decided_by delegated_by run_as_id run_as_role`
+	approvalStoreFields = `id thread_id run_id query variables_json namespace actions summary_json preview_json hash status result_json error account_id owner_id owner_role created_at expires_at decided_at origin watch_id event_id profile decided_by delegated_by run_as_id run_as_role expect_json outcome_status outcome_value outcome_due_at outcome_checked_at`
 
 	approvalStatusPending  = "pending"
 	approvalStatusRejected = "rejected"
@@ -188,6 +188,17 @@ func (r *serviceAgentRuntime) ProposeWrite(ctx context.Context, args map[string]
 		}
 		return map[string]any{"errors": errs}, nil, nil
 	}
+	// A change proposed with nobody watching must say what it should achieve:
+	// that is how its owner, and the ledger, learn whether it worked.
+	if origin := runOriginFrom(ctx); args["expect"] == nil && (origin.Origin == approvalOriginRoutine || origin.Origin == approvalOriginContinuation) {
+		return nil, nil, fmt.Errorf("this write did NOT execute: a change proposed with nobody watching must say what it should achieve. "+
+			"Execute the same mutation again with expect, for example expect: %s", expectationExample(table))
+	}
+	// What the change should achieve, measured now, before anything changes.
+	expectation, expectJSON, err := s.prepareExpectation(ctx, args["expect"])
+	if err != nil {
+		return nil, nil, fmt.Errorf("this write did NOT execute: %w", err)
+	}
 	out := any(map[string]any{"data": map[string]any{}})
 	preview := map[string]any{"available": false, "reason": reason}
 	if reason == "" {
@@ -229,6 +240,7 @@ func (r *serviceAgentRuntime) ProposeWrite(ctx context.Context, args map[string]
 	for k, v := range map[string]string{
 		"origin": origin.Origin, "watch_id": origin.WatchID, "event_id": origin.EventID, "profile": origin.Profile,
 		"decided_by": "", "delegated_by": origin.DelegatedBy, "run_as_id": origin.RunAsID, "run_as_role": origin.RunAsRole,
+		"expect_json": expectJSON, "outcome_status": "", "outcome_value": "", "outcome_due_at": "", "outcome_checked_at": "",
 	} {
 		input[k] = v
 	}
@@ -236,6 +248,9 @@ func (r *serviceAgentRuntime) ProposeWrite(ctx context.Context, args map[string]
 		ID: stringFromAny(input["id"]), Hash: hash, Summary: summary,
 		Query: query, Variables: parseJSONValue(varsJSON), Preview: preview,
 		ExpiresAt: expires.Format(time.RFC3339),
+	}
+	if expectation != nil {
+		approval.Expect = expectation.describe()
 	}
 
 	// A configured autonomy rule may run the write now instead of holding it.
@@ -291,6 +306,11 @@ func (r *serviceAgentRuntime) runAutonomousWrite(ctx context.Context, input map[
 	input["error"] = truncateUTF8(errText, 4096)
 	input["decided_by"] = decision.Rule
 	input["decided_at"] = storeNow()
+	if status == approvalStatusExecuted {
+		for k, v := range outcomeSchedule(stringFromAny(input["expect_json"]), time.Now()) {
+			input[k] = v
+		}
+	}
 	if _, err := s.internalStoreMutationRows(ctx, "approvals", `insert: $input`, approvalStoreFields, map[string]any{"input": input}); err != nil && s.log != nil {
 		// The write ran; losing its record must not report it as not run.
 		s.log.Warnf("autonomous write %s ran but its record failed: %v", input["id"], err)
@@ -617,6 +637,9 @@ func (s *graphjinService) decideApproval(ctx context.Context, id, decision, expe
 	}
 	settled, err := s.settleApproval(ctx, id, status, resultJSON, errText)
 	if err == nil {
+		if status == approvalStatusExecuted {
+			s.scheduleOutcomeCheck(ctx, id)
+		}
 		s.continueAfterDecision(ctx, id)
 	}
 	return settled, err
@@ -706,8 +729,40 @@ func (s *graphjinService) continueAfterDecision(ctx context.Context, approvalID 
 }
 
 func (s *graphjinService) runApprovalContinuation(ctx context.Context, row map[string]any) {
+	outcome := approvalOutcomeText(row)
+	if outcome == "" {
+		return
+	}
+	s.runApprovalTurn(ctx, row, approvalTurn{
+		runID: "run_c_" + stringMapValue(row, "id"), display: approvalContinuationDisplay(row),
+		instruction: approvalContinuationInstruction(row), fallback: outcome,
+		notifyTitle: "The agent followed up on your decision", notifyKey: "continuation:" + stringMapValue(row, "id"),
+	})
+}
+
+// approvalTurn is one turn GraphJin starts in an approval's thread: after
+// its decision, or after its outcome check missed.
+type approvalTurn struct {
+	runID, display, instruction string
+	// fallback is the reply when no model can run.
+	fallback string
+	// extra context beside the approval and its watch event.
+	context map[string]any
+	// notifyTitle is posted when the owner may not be in the thread (a
+	// routine's or a delegated run's approval), or always when notifyAlways.
+	notifyTitle, notifyKey string
+	notifyAlways           bool
+}
+
+// runApprovalTurn runs an approval's follow-up turn in its thread, as the
+// identity that proposed it and where it ran: a routine's on the data agent,
+// a chat's on the lead.
+func (s *graphjinService) runApprovalTurn(ctx context.Context, row map[string]any, turn approvalTurn) {
 	approvalID := stringMapValue(row, "id")
 	threadID := stringMapValue(row, "thread_id")
+	if threadID == "" {
+		return
+	}
 	origin := runOrigin{
 		Origin: approvalOriginContinuation, WatchID: stringMapValue(row, "watch_id"), EventID: stringMapValue(row, "event_id"),
 		Profile: stringMapValue(row, "profile"), DelegatedBy: stringMapValue(row, "delegated_by"),
@@ -729,44 +784,43 @@ func (s *graphjinService) runApprovalContinuation(ctx context.Context, row map[s
 	if runAs != nil {
 		agentCtx = runAs(ownerCtx)
 	}
-
-	outcome := approvalOutcomeText(row)
-	if outcome == "" {
-		return
+	reqContext := s.approvalContinuationContext(ownerCtx, row)
+	for k, v := range turn.context {
+		reqContext[k] = v
 	}
 	req := gjagent.Request{
-		Instruction: approvalContinuationInstruction(row),
-		Context:     s.approvalContinuationContext(ownerCtx, row),
+		Instruction:  turn.instruction,
+		Context:      reqContext,
 		Capabilities: s.agentCapabilityProfile(agentCtx),
 	}
-	opts := threadRunOptions{RunID: "run_c_" + approvalID, Display: approvalContinuationDisplay(row), RunAs: runAs}
+	opts := threadRunOptions{RunID: turn.runID, Display: turn.display, RunAs: runAs}
 	run, err := s.prepareWatchRoutineRun(ownerCtx, threadID, &req, opts)
 	if err != nil {
 		if s.log != nil && !errors.Is(err, errThreadNotFound) {
-			s.log.Warnf("approval %s: continue in thread %s: %v", approvalID, threadID, err)
+			s.log.Warnf("approval %s: turn %s in thread %s: %v", approvalID, turn.runID, threadID, err)
 		}
 		return
 	}
 	conf := agentConfigFromService(s.conf)
 	if origin.WatchID != "" {
-		// A routine's continuation is as unattended as the routine was, and
+		// A routine's follow-up is as unattended as the routine was, and
 		// runs where it did: on the data agent.
 		conf = watchRoutineAgentConfig(s.conf, false)
 		foldProfileIntoTask(&req)
 	}
-	var runner graphjinAgentRunner = staticAgentRunner{answer: outcome}
+	var runner graphjinAgentRunner = staticAgentRunner{answer: turn.fallback}
 	if built, err := s.agentEntryRunner(conf); err == nil {
-		runner = continuationRunner{inner: built, fallback: outcome}
+		runner = continuationRunner{inner: built, fallback: turn.fallback}
 	}
 	resp, _ := run.execute(ownerCtx, runner, req, s.watchRoutineSettle(req), nil)
-	if origin.WatchID != "" || origin.DelegatedBy != "" {
-		// The owner decided from the inbox and may not be in this thread.
+	if turn.notifyAlways || origin.WatchID != "" || origin.DelegatedBy != "" {
+		// The owner may not be in this thread.
 		s.notify(ownerCtx, notification{
-			OwnerID: stringMapValue(row, "owner_id"), AccountID: stringMapValue(row, "account_id"), DelegatedBy: origin.DelegatedBy,
+			OwnerID: stringMapValue(row, "owner_id"), AccountID: accountID, DelegatedBy: origin.DelegatedBy,
 			Kind: notificationRoutineAnswer, Severity: notificationSeverityInfo,
-			Title: "The agent followed up on your decision", Body: truncateUTF8(strings.TrimSpace(resp.Answer), 600),
+			Title: turn.notifyTitle, Body: truncateUTF8(strings.TrimSpace(resp.Answer), 600),
 			RefKind: "thread", RefID: threadID, Link: "/user/agent?thread=" + threadID,
-			DedupeKey: "continuation:" + approvalID,
+			DedupeKey: turn.notifyKey,
 		})
 	}
 }
@@ -884,6 +938,32 @@ func approvalAPIRow(row map[string]any, now time.Time) map[string]any {
 		"owner_id": row["owner_id"],
 		"origin": row["origin"], "watch_id": row["watch_id"], "event_id": row["event_id"], "profile": row["profile"],
 		"decided_by": row["decided_by"], "delegated_by": row["delegated_by"],
+		"expect": approvalExpectAPI(row), "outcome": approvalOutcomeAPI(row),
+	}
+}
+
+// approvalExpectAPI is a row's expectation for readers, or nil.
+func approvalExpectAPI(row map[string]any) any {
+	exp := expectationFromRow(row)
+	if exp == nil {
+		return nil
+	}
+	out := map[string]any{"query": exp.Query, "path": exp.Path, "op": exp.Op, "value": exp.Value, "within_hours": exp.WithinHours, "text": exp.describe()}
+	if exp.Baseline != nil {
+		out["baseline"] = *exp.Baseline
+	}
+	return out
+}
+
+// approvalOutcomeAPI is a row's outcome check, or nil before one is due.
+func approvalOutcomeAPI(row map[string]any) any {
+	status := stringMapValue(row, "outcome_status")
+	if status == "" {
+		return nil
+	}
+	return map[string]any{
+		"status": status, "value": stringMapValue(row, "outcome_value"),
+		"due_at": stringMapValue(row, "outcome_due_at"), "checked_at": stringMapValue(row, "outcome_checked_at"),
 	}
 }
 
@@ -1130,7 +1210,10 @@ func migrateApprovalSchema(ctx context.Context, db *sql.DB, dbType, schema strin
 	if dbType == "mysql" || dbType == "mariadb" {
 		definition = "VARCHAR(191) NOT NULL DEFAULT ''"
 	}
-	for _, col := range []string{"origin", "watch_id", "event_id", "profile", "decided_by", "delegated_by", "run_as_id", "run_as_role"} {
+	// expect_json and outcome_*: what a change should achieve and whether,
+	// when checked, it did (outcomes.go).
+	for _, col := range []string{"origin", "watch_id", "event_id", "profile", "decided_by", "delegated_by", "run_as_id", "run_as_role",
+		"expect_json", "outcome_status", "outcome_value", "outcome_due_at", "outcome_checked_at"} {
 		if err := ensureSQLColumn(ctx, db, dbType, table, col, definition); err != nil {
 			return err
 		}

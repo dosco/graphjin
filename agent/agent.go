@@ -1089,6 +1089,7 @@ func (a *Agent) tools(ctx context.Context, req Request, rt GraphRuntime) []ax.To
 			field("query", "string", "GraphJin GraphQL query or mutation.", false),
 			field("variables", "json", "Optional variables object.", true),
 			field("namespace", "string", "Optional namespace override.", true),
+			field("expect", "json", "Optional, for a data change: what it should achieve, so GraphJin can check later whether it worked. {query: a read query that measures it, path: dot path to one number in its result, op: gte|lte|eq|increase|decrease, value: number, within_hours: number}. increase and decrease compare with the number before the change.", true),
 		},
 		func(args map[string]ax.Value) (ax.Value, error) {
 			return a.call(ctx, req.Namespace, args, rt.ExecuteGraphQL)

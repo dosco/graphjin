@@ -46,6 +46,9 @@ type Approval struct {
 	Status string `json:"status,omitempty"`
 	// DecidedBy names the autonomy rule that decided it.
 	DecidedBy string `json:"decided_by,omitempty"`
+	// Expect says what the change should achieve, which GraphJin checks
+	// after it runs: "invoices.0.count_id up by at least 3 within 72h".
+	Expect string `json:"expect,omitempty"`
 }
 
 // Decided reports whether an autonomy rule already ran the write, so nothing

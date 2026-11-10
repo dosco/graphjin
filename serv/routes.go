@@ -15,6 +15,7 @@ const (
 	routeAgentApprovals    = "/api/v1/agent/approvals"
 	routeAgentFeedback     = "/api/v1/agent/feedback"
 	routeNotifications     = "/api/v1/notifications"
+	routeAgentReliability  = "/api/v1/agent/reliability"
 	routeConsoleBootstrap  = "/api/v1/console/bootstrap"
 	routeEvalReports       = "/api/v1/eval/reports"
 	routeEvalScore         = "/api/v1/eval/score"
@@ -94,6 +95,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 				if s.approvalsEnabled() {
 					mux.Handle(routeAgentApprovals, s1.AgentApprovals(ah, nil))
 					mux.Handle(routeAgentApprovals+"/", s1.AgentApprovals(ah, nil))
+					mux.Handle(routeAgentReliability, s1.AgentReliability(ah, nil))
 				}
 			}
 			if s.notificationsEnabled() {
@@ -130,6 +132,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 				if s.approvalsEnabled() {
 					mux.Handle(routeAgentApprovals, s1.AgentApprovals(ah, ns))
 					mux.Handle(routeAgentApprovals+"/", s1.AgentApprovals(ah, ns))
+					mux.Handle(routeAgentReliability, s1.AgentReliability(ah, ns))
 				}
 			}
 			if s.notificationsEnabled() {
