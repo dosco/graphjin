@@ -127,7 +127,7 @@ type Config struct {
 	// sets it for runs no person is watching, such as watch routines; it is
 	// not configurable. It needs WriteApproval required.
 	HeldWritesOnly bool `mapstructure:"-" json:"-" jsonschema:"-"`
-	ReturnTrace      bool   `mapstructure:"return_trace" jsonschema:"title=Return Agent Trace,default=false"`
+	ReturnTrace    bool `mapstructure:"return_trace" jsonschema:"title=Return Agent Trace,default=false"`
 	// SeedLimit caps the initial query_catalog(search: instruction) seed rows.
 	SeedLimit int `mapstructure:"seed_limit" jsonschema:"title=Agent Seed Catalog Limit,default=40"`
 	// CatalogDefaultLimit is the default row limit for model-issued catalog queries.
@@ -184,6 +184,13 @@ type Request struct {
 	// consumes with use_prepared_catalog, instead of rediscovering them step
 	// by step. Server-set only.
 	PrefetchCatalogIDs []string `json:"-"`
+
+	// ObservedRows are rows GraphJin itself read and handed the run as its
+	// subject, such as the rows a watch fired on. They are evidence the run
+	// already holds: an answer drawn from them needs no further discovery,
+	// and citing them is grounded. They do not stand in for the catalog
+	// detail a query or write needs. Server-set only.
+	ObservedRows any `json:"-"`
 }
 
 // ProfileInstructions are an agent profile's standing instructions.
@@ -649,6 +656,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	protocol = newProtocolRuntime(a.runtime, strings.TrimSpace(req.Instruction), req.Namespace, cfg.SeedLimit, req.Capabilities, req.Observer, a.catalogSearch)
 	protocol.writeApproval = strings.TrimSpace(cfg.WriteApproval) == WriteApprovalRequired
 	protocol.heldWritesOnly = cfg.HeldWritesOnly
+	protocol.state.observeHandedRows(req.ObservedRows)
 	permittedSkills := allowedSkills(readOnly, req.Capabilities)
 	prep := a.startPreparation(ctx, req, permittedSkills)
 	seed, err := protocol.Seed(ctx)

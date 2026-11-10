@@ -48,6 +48,7 @@ type discoveryState struct {
 	seedOK                  bool
 	seedResult              any
 	modelDiscoveryAction    bool
+	handedRows              bool // the server handed the run its subject rows (Request.ObservedRows)
 	catalogIDs              map[string]bool
 	catalogKinds            map[string]bool
 	securityRuntimeEvidence bool
@@ -2726,7 +2727,7 @@ func (s *discoveryState) finalize(resp Response) Response {
 		case !s.seedOK:
 			s.addViolation("catalog_seed_required", "agent answered without successful initial catalog discovery", "", true, nil)
 			resp = blockResponse(resp)
-		case !s.modelDiscoveryAction:
+		case !s.modelDiscoveryAction && !s.handedRows:
 			s.addViolation("model_discovery_required", "agent answered without a model-driven catalog/help/detail discovery action", "", true, nil)
 			resp = blockResponse(resp)
 		case s.pendingApproval != nil:

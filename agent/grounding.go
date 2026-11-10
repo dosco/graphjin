@@ -62,6 +62,30 @@ var groundingVocabulary = strings.ToLower(strings.Join([]string{
 // addGrounding appends observed run evidence to the grounding corpus. Values
 // are serialized and lowercased; once the corpus would exceed its bound the
 // check degrades to disabled instead of risking false blocks.
+// observeHandedRows records rows the server read and handed the run as
+// evidence it holds from the start. Empty rows hand over nothing.
+func (s *discoveryState) observeHandedRows(rows any) {
+	if s == nil || isEmptyHandedRows(rows) {
+		return
+	}
+	s.handedRows = true
+	s.addGrounding(normalizeValue(rows))
+}
+
+func isEmptyHandedRows(rows any) bool {
+	switch v := normalizeValue(rows).(type) {
+	case nil:
+		return true
+	case []any:
+		return len(v) == 0
+	case map[string]any:
+		return len(v) == 0
+	case string:
+		return strings.TrimSpace(v) == ""
+	}
+	return false
+}
+
 func (s *discoveryState) addGrounding(values ...any) {
 	addGroundingText(&s.groundingCorpus, &s.groundingOverflow, values...)
 }

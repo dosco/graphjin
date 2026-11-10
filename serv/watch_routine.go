@@ -298,6 +298,11 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 		foldProfileIntoTask(&req)
 		// The watch already knows what it is about: its query's tables.
 		req.PrefetchCatalogIDs = s.queryCatalogTableIDs(agentCtx, def.Query)
+		// The rows it fired on were read by GraphJin and are in the task: a
+		// verdict drawn from them is grounded without more discovery.
+		if rows := watchRoutineRows(mapFromAny(data)); rows != nil {
+			req.ObservedRows = rows
+		}
 	}
 
 	runner, err := s.agentEntryRunner(watchRoutineAgentConfig(s.conf, cfg.Once))
@@ -467,22 +472,11 @@ func watchRoutineInstruction(def watchRuntimeDefinition, prompt string, data map
 
 const watchRoutineEventRowsMaxBytes = 3000
 
-// watchRoutineEventRows is a data event's rows as compact JSON, without the
-// pagination cursors, capped in size; empty for metric, schedule and absence
-// events, whose brief already says what happened.
+// watchRoutineEventRows is a data event's rows as compact JSON, capped in
+// size; empty when watchRoutineRows has none.
 func watchRoutineEventRows(data map[string]any) string {
-	switch stringFromAny(data["kind"]) {
-	case "metric", "schedule", "absence":
-		return ""
-	}
-	rows := map[string]any{}
-	for key, value := range data {
-		if strings.HasSuffix(key, "_cursor") || key == "kind" {
-			continue
-		}
-		rows[key] = value
-	}
-	if len(rows) == 0 {
+	rows := watchRoutineRows(data)
+	if rows == nil {
 		return ""
 	}
 	raw, err := json.Marshal(rows)
@@ -493,6 +487,27 @@ func watchRoutineEventRows(data map[string]any) string {
 		return truncateUTF8(string(raw), watchRoutineEventRowsMaxBytes) + " (truncated; the full event is in the run context)"
 	}
 	return string(raw)
+}
+
+// watchRoutineRows is a data event's rows, without the pagination cursors;
+// nil for metric, schedule and absence events, whose brief already says what
+// happened.
+func watchRoutineRows(data map[string]any) map[string]any {
+	switch stringFromAny(data["kind"]) {
+	case "metric", "schedule", "absence":
+		return nil
+	}
+	rows := map[string]any{}
+	for key, value := range data {
+		if strings.HasSuffix(key, "_cursor") || key == "kind" {
+			continue
+		}
+		rows[key] = value
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	return rows
 }
 
 var watchRoutineOpWords = map[string]string{

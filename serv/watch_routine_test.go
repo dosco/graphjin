@@ -51,6 +51,9 @@ func TestWatchRoutineAnswersInTheWatchThreadOnce(t *testing.T) {
 	if !runner.conf.ReadOnly {
 		t.Fatalf("routine must run read-only")
 	}
+	if runner.req.ObservedRows != nil {
+		t.Fatalf("a metric event hands no rows: %v", runner.req.ObservedRows)
+	}
 	if !strings.Contains(runner.req.Instruction, "Which open orders are new?") || !strings.Contains(runner.req.Instruction, "the number it watches is now 3, it was 1; it fires when the number is above 1.") ||
 		strings.Contains(runner.req.Instruction, "count_id") {
 		t.Fatalf("routine instruction = %q", runner.req.Instruction)
@@ -351,6 +354,13 @@ func TestRoutineTaskCarriesTheRowsItFiredOn(t *testing.T) {
 	}
 	if rows := watchRoutineEventRows(map[string]any{"kind": "metric", "value": 3}); rows != "" {
 		t.Fatalf("a metric event's brief already says what happened: %q", rows)
+	}
+	// The same rows are handed to the run as evidence it already holds.
+	if rows := watchRoutineRows(data); len(rows) != 1 || rows["support_tickets"] == nil {
+		t.Fatalf("handed rows = %v", rows)
+	}
+	if rows := watchRoutineRows(map[string]any{"kind": "metric", "value": 3}); rows != nil {
+		t.Fatalf("a metric event hands no rows: %v", rows)
 	}
 }
 
