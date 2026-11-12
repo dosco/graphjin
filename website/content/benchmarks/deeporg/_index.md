@@ -33,7 +33,8 @@ One number cannot answer two different questions. Each selected row also scores
 three headline groups under a frozen mapping (v1): **questions** — stateless
 answers computed from live data (aggregates, windows, rankings, discovery,
 saved metrics); **operations** — work that carries state (writes, watches,
-follow-ups, multi-source); **governance** — refusing what policy forbids. A
+multi-source, and follow-ups in test versions before `2028.6`); **governance**
+— refusing what policy forbids. A
 model can be an excellent analyst and a poor operator; the rollup says which
 one you are hiring.
 

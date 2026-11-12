@@ -63,18 +63,42 @@ func TestAuthoredTasksSurviveVerificationAgainstALiveDatabase(t *testing.T) {
 		return map[string]any{"picks_json": "[]"}, nil
 	}
 
-	authored, report, err := gjeval.AuthorFamilies(context.Background(), call, census, nil,
-		gjeval.AuthoringOptions{
-			Kinds:      []gjeval.AuthoringKind{gjeval.AuthoringWatch, gjeval.AuthoringConfirmation},
-			Seed:       23,
-			AuthoredBy: "test/model prompts@" + gjeval.AuthoringPromptsHash(),
-		})
+	options := gjeval.AuthoringOptions{
+		Kinds:      []gjeval.AuthoringKind{gjeval.AuthoringWatch, gjeval.AuthoringConfirmation},
+		Seed:       23,
+		AuthoredBy: "test/model prompts@" + gjeval.AuthoringPromptsHash(),
+	}
+	authored, report, err := gjeval.AuthorFamilies(context.Background(), call, census, nil, options)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(authored) == 0 {
 		t.Fatalf("nothing was authored: %+v", report)
 	}
+	// This instance answers with the data agent alone and refuses history, so
+	// the confirmation, whose question is an earlier turn, is not written for
+	// it. The watch is.
+	if !census.NoConversation {
+		t.Fatal("an eval instance holds no conversation, and its census has to say so")
+	}
+	for _, task := range authored {
+		if len(task.Turns) != 0 {
+			t.Fatalf("a task with earlier turns was authored for an instance that refuses them: %s", task.Slug)
+		}
+	}
+	if notes := strings.Join(report.Notes, "\n"); !strings.Contains(notes, "confirmation skipped") {
+		t.Fatalf("the skipped confirmation was not explained: %q", notes)
+	}
+	// A server that does hold a conversation still gets one, and it has to
+	// meet the same bar against this database.
+	conversational := census
+	conversational.NoConversation = false
+	options.Kinds = []gjeval.AuthoringKind{gjeval.AuthoringConfirmation}
+	confirmations, _, err := gjeval.AuthorFamilies(context.Background(), call, conversational, nil, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authored = append(authored, confirmations...)
 
 	generator := gjeval.Generator{Source: source, Verifier: verifier}
 	verified, err := generator.VerifyTasks(context.Background(), authored, 23, 4)

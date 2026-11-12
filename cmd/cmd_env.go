@@ -281,6 +281,12 @@ func envServeCmd() *cobra.Command {
 			if err := assertSuiteMatchesWorld(suite, pool.instances[0].Fingerprint(), allowDrift); err != nil {
 				return err
 			}
+			// A task with earlier turns is refused by the world's own agent
+			// endpoint, and the episode would come back graded as a failure.
+			if err := gjeval.AssertConversationsRunnable(cmd.Context(), &http.Client{Timeout: 30 * time.Second},
+				pool.instances[0], suite.Tasks); err != nil {
+				return err
+			}
 			server.catalogMatch = catalogAgreement(suite, pool.instances[0].Fingerprint())
 			server.suiteSource = suiteSource
 			server.splitLabel = splitLabel

@@ -28,8 +28,33 @@ detail. The package must stay usable against a GraphJin it does not link.
 `Env`, `Instance`, `InstancePool`, `ResettableInstance`, versioned `Episode`,
 `RewardProfile` and `RewardVersion` were once described here as future seams.
 They are implemented. Instance pools, reset primitives, mutation tasks,
-multi-turn episodes, parallel collection and trainer-facing drive modes all
-ship.
+parallel collection and trainer-facing drive modes all ship.
+
+## What an episode grades
+
+The environment grades the data agent answering one self-contained question.
+`configureEvalInstance` pins `agent.lead.enabled` off, because with the lead on
+the agent endpoint would run the lead and every number would measure something
+else. The data agent holds no conversation, and a server exposing it alone
+refuses a request that carries history: HTTP 400, before any agent runs.
+
+So a task with earlier turns (`turns`) cannot run here. The task shape still
+loads, because older suites and stored episodes carry it, and it still runs
+against a server whose lead is enabled. Four things keep it away from an
+instance that would refuse it:
+
+- No generated family writes one (generator v20 on).
+- `eval author` skips its `confirmation` and `history` kinds when the instance
+  reports `lead_enabled: false`, before the model call that would write them.
+- `Generate` leaves out any curated or already-authored candidate that sends
+  earlier turns on such an instance, and says how many.
+- `Runner.Prepare` and `env serve` ask the instance's status and refuse to
+  start, naming the tasks, rather than let each one be rejected and scored as
+  the model failing. A server that does not report `lead_enabled` predates the
+  field and is let through.
+
+Conversations are scored on the lead, in `agent/testdata/lead_eval_cases.json`
+(`scripts/agent-data-eval.sh --corpus lead`).
 
 ## Versions, and when to move them
 
@@ -41,7 +66,7 @@ consequences downstream; not moving one when semantics changed is worse.
 | `GeneratorVersion` | Generated task semantics change | Older binaries refuse the suite. Append the previous literal to `SupportedGeneratorVersions` so new binaries still read old suites. |
 | `RewardVersion` | Any scoring rule changes | Runs either side are not comparable. Published board rows record which version graded them. |
 | `SuiteSchemaVersion` / `SplitSchemaVersion` | The file shape changes | `LoadSuite` uses `DisallowUnknownFields`; a new field is a breaking read for old binaries. |
-| `PublicBenchmarkGeneration` | The frozen public suite is regenerated | Earlier generations keep their own cohort and history. Currently `2028.5`. |
+| `PublicBenchmarkGeneration` | The frozen public suite is regenerated | Earlier generations keep their own cohort and history. Currently `2028.6`. |
 
 A suite whose generator this binary does not know is refused at load and at
 serve, rather than run under rules never written for it.
@@ -92,9 +117,21 @@ demo, and **re-verifies every hidden oracle against the live instance** before
 any evaluated-agent traffic. `graphjin env serve --suite public` serves the same
 artifact.
 
-Regenerating it is the hidden `freeze-suite` command plus a
-`PublicBenchmarkGeneration` bump. `import-corpus` is likewise hidden and
-converts the frozen skill-eval corpora into tasks.
+Changing it is the hidden `freeze-suite` command plus a
+`PublicBenchmarkGeneration` bump and the new `publicBenchmarkSuiteFingerprint`.
+Run bare, the command regenerates every task, which is rarely what a change
+needs: the demo's data follows the calendar, and a same-day regeneration was
+measured to swap a third of the questions. To take a family out, use
+`freeze-suite --retire <category>`. It keeps every other committed task
+byte-identical, re-verifies them against the live demo, and refills only the
+freed intent-tier slots, round-robin over the sampler's backfill categories,
+each taking the first task of a fresh draw the suite does not already ask. The
+same day and catalog give the same file. Generations 2028.5 (saved-metric) and
+2028.6 (multi-turn) were both retirements of a family the data agent could no
+longer be asked about.
+
+`import-corpus` is likewise hidden and converts the frozen skill-eval corpora
+into tasks.
 
 ## Publishing
 
@@ -159,6 +196,10 @@ fetches a current definition to stand in for historical evidence.
    alternative trains a model on text it never produced.
 6. **Held-out episodes do not become training corpora** without an explicit
    override that names how many were found.
+7. **A request the instance would refuse is never sent and scored.** A run does
+   not start on a suite whose tasks the instance has said it will reject
+   unanswered. `TestEmbeddedSuitesSendNoHistoryToAnInstanceThatRefusesIt` holds
+   the embedded suites to it.
 
 ## Deprecated
 

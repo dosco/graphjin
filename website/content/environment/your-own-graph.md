@@ -54,13 +54,13 @@ training side and a held-out side by content identifier.
 ## Let a bigger model write the harder tasks
 
 Generated tasks cover what can be derived mechanically. The richer ones —
-standing questions, multi-turn confirmations, questions spanning a database and
-a document — are phrased by a capable model and then assembled and verified by
-the engine:
+standing questions, questions phrased as the situation behind them, questions
+spanning a database and a document — are phrased by a capable model and then
+assembled and verified by the engine:
 
 ```bash
 export GJ_GENERATOR_MODEL=<a-capable-model>
-graphjin eval author --demo --path ./clone-acme --kinds watch,confirmation,file --yes
+graphjin eval author --demo --path ./clone-acme --kinds watch,scenario,file --yes
 ```
 
 The authoring model chooses and phrases; the engine constructs, gates
@@ -71,6 +71,12 @@ and model are printed first.
 
 The result lands in `eval/authored.yml` and is picked up by the next
 `eval create`.
+
+Two kinds, `confirmation` and `history`, write tasks whose question depends on
+an earlier turn. The environment built here grades the data agent, which
+answers one self-contained question and holds no conversation, so `eval author`
+skips both and says so. They are written only against a server whose
+`agent.lead.enabled` is on.
 
 ## Serve it
 

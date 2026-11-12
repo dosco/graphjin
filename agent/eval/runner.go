@@ -168,6 +168,12 @@ func (r Runner) Prepare(ctx context.Context, suite Suite, instance Instance, opt
 		}
 		client = &http.Client{Timeout: timeout}
 	}
+	// Before a run id is minted or anything is stored: a suite this instance
+	// would reject unanswered is not a run that failed, it is one that should
+	// not start.
+	if err := AssertConversationsRunnable(ctx, client, instance, suite.Tasks); err != nil {
+		return nil, err
+	}
 	requestedRunID := opts.RunID
 	if requestedRunID == "" {
 		requestedRunID = newRunID(r.now())

@@ -172,6 +172,48 @@ func TestAuthoringSkipsWatchesWhenTheCallerCannotCreateThem(t *testing.T) {
 	}
 }
 
+// A confirmation and a follow-up both put the question in earlier turns. An
+// instance that answers with the data agent alone refuses those before any
+// agent runs, so authoring them there buys tasks nothing can pass. The skip
+// happens before the model is called, and the kinds that send no history are
+// still written.
+func TestAuthoringSkipsConversationsTheInstanceCannotHold(t *testing.T) {
+	source := verifiedReadTask(t)
+	off, on := false, true
+	if !BuildCensus(CatalogSnapshot{Status: AgentStatus{LeadEnabled: &off}}).NoConversation ||
+		BuildCensus(CatalogSnapshot{Status: AgentStatus{LeadEnabled: &on}}).NoConversation ||
+		BuildCensus(CatalogSnapshot{}).NoConversation {
+		t.Fatal("the census must hold back conversations only when the instance says its lead is off")
+	}
+
+	census := authoringCensus()
+	census.NoConversation = true
+	calls := 0
+	call := func(ctx context.Context, signature string, values map[string]any) (map[string]any, error) {
+		calls++
+		return replyWith([]ScenarioPick{{TaskID: source.ID, Prompt: "Finance is closing the month and wants the invoice total."}})(ctx, signature, values)
+	}
+	tasks, report, err := AuthorFamilies(context.Background(), call, census, []Task{source},
+		AuthoringOptions{Kinds: []AuthoringKind{AuthoringConfirmation, AuthoringHistory, AuthoringScenario}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("model calls = %d, want only the scenario call", calls)
+	}
+	for _, task := range tasks {
+		if len(task.Turns) != 0 {
+			t.Fatalf("authored a conversation for an instance that refuses them: %+v", task)
+		}
+	}
+	if report.ByKind[AuthoringConfirmation] != 0 || report.ByKind[AuthoringHistory] != 0 {
+		t.Fatalf("conversation kinds were authored: %+v", report.ByKind)
+	}
+	if got := strings.Join(report.Notes, "\n"); !strings.Contains(got, "confirmation skipped") || !strings.Contains(got, "history skipped") {
+		t.Fatalf("the skips were not explained: %q", got)
+	}
+}
+
 // A confirmation asserts that a watch exists, never that an event was
 // delivered: only reactive tasks turn the watch runner on, and a confirmation
 // is a multi-turn task, so asserting delivery would wait for a runner that is

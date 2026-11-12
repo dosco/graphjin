@@ -62,7 +62,12 @@ const (
 	// agent's catalog leaves them out, so a prompt naming "the approved X
 	// saved metric" pointed at something it could not see; annotation-sourced
 	// metrics, which it can read, still generate.
-	GeneratorVersion = "graphjin.eval.generator/v19"
+	// v20: no generated task sends earlier turns. The data agent has carried
+	// no conversation since the lead took it over, and an environment that
+	// grades the data agent alone refuses history outright, so the reference
+	// family's five follow-ups and two "yes, go ahead" confirmations could not
+	// be answered by any model. Follow-ups are scored on the lead instead.
+	GeneratorVersion = "graphjin.eval.generator/v20"
 	// RewardVersion v6: a dimension that starts with a number is no longer
 	// satisfied by a larger number ending in the same digits. "24 hours"
 	// contains "4 hours", so an answer stating the wrong service level scored as
@@ -100,6 +105,7 @@ var SupportedGeneratorVersions = []string{
 	"graphjin.eval.generator/v16",
 	"graphjin.eval.generator/v17",
 	"graphjin.eval.generator/v18",
+	"graphjin.eval.generator/v19",
 	GeneratorVersion,
 }
 

@@ -506,8 +506,8 @@ agent still work".
 The same engine also runs as a graded training environment, and answers a
 different question: how well does *this policy* do, and can it be made better.
 That path serves pooled, resettable worlds — writes and mutation reset, parallel
-collection across an instance pool, multi-turn episodes, held-out splits, and
-trainer integration through three drive modes.
+collection across an instance pool, held-out splits, and trainer integration
+through three drive modes.
 
 {{< verified by="TestPoolBootsIsolatedDemoInstancesThatAgree" file="cmd/eval_pool_test.go" >}}
 

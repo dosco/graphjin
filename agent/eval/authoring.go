@@ -116,15 +116,20 @@ type SchemaCensus struct {
 	// task can filter, aggregate or write, and a file source is none of those —
 	// it is a place an answer is written down.
 	FileTables []string
+	// NoConversation is set when the instance has said it answers with the
+	// data agent alone. A task whose question lives in earlier turns is
+	// refused there before any agent runs, so none is authored for it.
+	NoConversation bool
 }
 
 // BuildCensus reads the census out of a catalog snapshot.
 func BuildCensus(snapshot CatalogSnapshot) SchemaCensus {
 	census := SchemaCensus{
-		Tables:        catalogTables(snapshot.Rows),
-		ClosedSets:    observedValueColumns(snapshot.Rows),
-		Profile:       writeCapabilityProfile(snapshot),
-		Relationships: nil,
+		Tables:         catalogTables(snapshot.Rows),
+		ClosedSets:     observedValueColumns(snapshot.Rows),
+		Profile:        writeCapabilityProfile(snapshot),
+		Relationships:  nil,
+		NoConversation: snapshot.Status.RefusesConversations(),
 	}
 	census.Relationships = catalogRelationships(snapshot.Rows, census.Tables)
 	for _, row := range snapshot.Rows {
@@ -274,6 +279,15 @@ func AuthorFamilies(ctx context.Context, call OneShotFunc, census SchemaCensus, 
 
 func authorKind(ctx context.Context, call OneShotFunc, kind AuthoringKind, census SchemaCensus,
 	readPool []Task, collateral []OracleSpec, count int, opts AuthoringOptions, report *AuthoringReport) ([]Task, error) {
+	// Checked before any call is made: a confirmation or a follow-up puts the
+	// question in earlier turns, and the model call that writes one costs the
+	// same whether or not the result can ever run.
+	if census.NoConversation && (kind == AuthoringConfirmation || kind == AuthoringHistory) {
+		report.Notes = append(report.Notes,
+			string(kind)+" skipped: this instance answers with the data agent alone, which holds no conversation, "+
+				"so a task that sends earlier turns would be refused before the agent ran")
+		return nil, nil
+	}
 	switch kind {
 	case AuthoringWatch, AuthoringConfirmation:
 		if !census.canWatch() {

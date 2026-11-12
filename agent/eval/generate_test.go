@@ -672,43 +672,49 @@ func TestAcceptedDimensionsAllowBoundedCadence(t *testing.T) {
 	}
 }
 
-// TestConfirmationFlowsCarryTheProposal pins the one honest home for operational
-// phrasing. The final instruction may name a watch and a cadence only because the
-// agent's own proposal introduced them; the caller never knew GraphJin's
-// vocabulary. The plan must therefore live in history, not in the prompt.
-func TestConfirmationFlowsCarryTheProposal(t *testing.T) {
-	checked := 0
-	for _, task := range generateDeepORGCandidates(deeporgWatchSnapshot(), 23) {
-		if task.Provenance.Source != "deeporg-reference-confirmation" {
-			continue
+// A conversation written before the instance stopped holding one must not be
+// sampled back into every suite generated afterwards, where the runner would
+// refuse to start on it. An instance that does not say is left alone.
+func TestGenerateLeavesOutConversationsTheInstanceRefuses(t *testing.T) {
+	conversation := curatedTask("follow-up", DifficultyT1)
+	conversation.Turns = []TurnSpec{{Role: "user", Content: "Which account is Meridian Robotics?"}}
+	candidates := []Task{curatedTask("one", DifficultyT1), conversation, curatedTask("two", DifficultyT2)}
+	off, on := false, true
+	for name, tc := range map[string]struct {
+		lead *bool
+		want int
+	}{
+		"lead off": {&off, 2}, "lead on": {&on, 3}, "status says nothing": {nil, 3},
+	} {
+		source := staticCatalogSource{snapshot: CatalogSnapshot{Fingerprint: "catalog", Status: AgentStatus{LeadEnabled: tc.lead}}}
+		suite, err := (Generator{Source: source}).Generate(context.Background(),
+			GeneratorOptions{Seed: 23, Scale: 10, Curated: append([]Task(nil), candidates...)})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
 		}
-		checked++
-		if len(task.Turns) != 2 {
-			t.Fatalf("%s must carry the need and the agent's proposal, got %d turns", task.Slug, len(task.Turns))
-		}
-		if task.Turns[0].Role != "user" || task.Turns[1].Role != "assistant" {
-			t.Errorf("%s turn roles = %q,%q; want user then assistant", task.Slug, task.Turns[0].Role, task.Turns[1].Role)
-		}
-		// The proposal is what makes the operational vocabulary legitimate.
-		proposal := strings.ToLower(task.Turns[1].Content)
-		if !strings.Contains(proposal, "watch named") || !strings.Contains(proposal, "hour") {
-			t.Errorf("%s proposal does not name a watch and a cadence: %s", task.Slug, task.Turns[1].Content)
-		}
-		// The prompt must be a bare approval: no plan, no vocabulary.
-		prompt := strings.ToLower(task.Prompt)
-		for _, leak := range []string{"watch", "invoices", "support_tickets", "digest", "hour"} {
-			if strings.Contains(prompt, leak) {
-				t.Errorf("%s approval prompt restates the plan (%q): %s", task.Slug, leak, task.Prompt)
-			}
-		}
-		if task.Mutation == nil || task.Mutation.ExpectedValue != "1" {
-			t.Errorf("%s must verify exactly one satisfying watch", task.Slug)
-		}
-		if strings.Contains(task.Mutation.PostState.Query, "name: {eq:") {
-			t.Errorf("%s pins a name; the agent proposed it and may vary it: %s", task.Slug, task.Mutation.PostState.Query)
+		if got := len(ConversationTasks(suite.Tasks)); len(suite.Tasks) != tc.want || got != tc.want-2 {
+			t.Errorf("%s: suite has %d task(s), %d sending earlier turns; want %d and %d",
+				name, len(suite.Tasks), got, tc.want, tc.want-2)
 		}
 	}
-	if checked == 0 {
-		t.Fatal("no confirmation-flow tasks were generated")
+}
+
+// The suites these families fill grade the data agent, which answers one
+// self-contained question and holds no conversation. A generated task that sent
+// earlier turns would be refused before the agent ran, on every run and for
+// every model, which is how one whole family scored zero unnoticed.
+func TestGeneratedTasksNeverSendEarlierTurns(t *testing.T) {
+	for _, family := range candidateFamilies {
+		for _, category := range family.Categories {
+			if category == CategoryMultiTurn {
+				t.Errorf("family %s still declares the multi-turn category", family.Name)
+			}
+		}
+		for _, task := range family.Generate(deeporgWatchSnapshot(), 23) {
+			if len(task.Turns) != 0 || task.Category == CategoryMultiTurn {
+				t.Errorf("family %s generated a conversation: %s (%s, %d earlier turns)",
+					family.Name, task.Slug, task.Category, len(task.Turns))
+			}
+		}
 	}
 }

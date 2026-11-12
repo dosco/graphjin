@@ -394,6 +394,22 @@ func TestProviderAgentRateLimiterIsSharedAndHotUpdated(t *testing.T) {
 	}
 }
 
+// A client that sends history is refused when the lead is off, so the status
+// has to say which it is before the request is made. The key is always
+// present: a client telling "off" from "this server does not say" depends on it.
+func TestAgentStatusReportsWhetherItHoldsAConversation(t *testing.T) {
+	for _, lead := range []bool{false, true} {
+		conf := &Config{Serv: Serv{Agent: AgentConfig{Enabled: true}}}
+		conf.Agent.Lead.Enabled = lead
+		rec := httptest.NewRecorder()
+		newAgentHTTPTestService(conf).AgentStatus(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, routeAgentStatus, nil))
+		want := fmt.Sprintf(`"lead_enabled":%t`, lead)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("lead %t: status %d must report %s: %s", lead, rec.Code, want, rec.Body.String())
+		}
+	}
+}
+
 func TestAgentStatusMethodNotAllowed(t *testing.T) {
 	hs := newAgentHTTPTestService(&Config{})
 	req := httptest.NewRequest(http.MethodPost, routeAgentStatus, nil)

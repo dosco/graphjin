@@ -966,6 +966,9 @@
           "eval_fingerprint": {
             "type": "string"
           },
+          "lead_enabled": {
+            "type": "boolean"
+          },
           "max_steps": {
             "type": "integer"
           },

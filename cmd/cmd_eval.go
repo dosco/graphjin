@@ -926,7 +926,10 @@ func evalBenchEnvSpec(target gjeval.Target, projectPath string, seed int64, publ
 }
 
 func evalFreezeSuiteCmd(opts *evalCLIOptions) *cobra.Command {
-	var output string
+	var (
+		output string
+		retire []string
+	)
 	cmd := &cobra.Command{
 		Use:    "freeze-suite",
 		Short:  "Regenerate the frozen public benchmark suite",
@@ -951,10 +954,47 @@ func evalFreezeSuiteCmd(opts *evalCLIOptions) *cobra.Command {
 			}
 			defer instance.Close() //nolint:errcheck
 			client := &http.Client{Timeout: 120 * time.Second}
-			suite, err := (gjeval.Generator{
+			generator := gjeval.Generator{
 				Source:   gjeval.HTTPCatalogSource{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
 				Verifier: &gjeval.Verifier{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
-			}).Generate(cmd.Context(), gjeval.GeneratorOptions{Seed: spec.Seed, Scale: spec.Scale, Name: "DeepORG Public Benchmark " + spec.Generation})
+			}
+			name := "DeepORG Public Benchmark " + spec.Generation
+			if len(retire) != 0 {
+				// Retiring a family keeps every other committed task exactly as
+				// frozen and refills only the slots the family held; a full
+				// regeneration would swap questions that had no reason to move.
+				frozen, err := loadPublicEvalSuite()
+				if err != nil {
+					return err
+				}
+				categories := make([]gjeval.Category, 0, len(retire))
+				for _, value := range retire {
+					categories = append(categories, gjeval.Category(strings.ToLower(strings.TrimSpace(value))))
+				}
+				suite, report, err := generator.Refreeze(cmd.Context(), *frozen, gjeval.RefreezeOptions{
+					Seed: spec.Seed, Name: name, Retire: categories,
+				})
+				if err != nil {
+					return &evalExitError{Code: 2, Err: err}
+				}
+				if err := gjeval.SaveSuite(output, *suite); err != nil {
+					return err
+				}
+				if err := os.Chmod(output, 0o644); err != nil {
+					return err
+				}
+				out := cmd.OutOrStdout()
+				for _, task := range report.Retired {
+					fmt.Fprintf(out, "  retired %s %s\n", task.ID, task.Slug)
+				}
+				for _, task := range report.Added {
+					fmt.Fprintf(out, "  added   %s %s: %s\n", task.ID, task.Category, task.Prompt)
+				}
+				fmt.Fprintf(out, "Refroze %d public benchmark tasks to %s: %d kept as frozen, %d retired, %d added (suite fingerprint %s).\n",
+					len(suite.Tasks), output, report.Kept, len(report.Retired), len(report.Added), gjeval.SuiteFingerprint(*suite))
+				return nil
+			}
+			suite, err := generator.Generate(cmd.Context(), gjeval.GeneratorOptions{Seed: spec.Seed, Scale: spec.Scale, Name: name})
 			if err != nil {
 				return &evalExitError{Code: 2, Err: err}
 			}
@@ -969,6 +1009,7 @@ func evalFreezeSuiteCmd(opts *evalCLIOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&output, "out", "cmd/benchmark/public-suite.json", "output path for the committed public suite")
+	cmd.Flags().StringSliceVar(&retire, "retire", nil, "retire these task categories from the committed suite, keeping every other task as frozen and refilling the freed slots")
 	return cmd
 }
 

@@ -65,7 +65,29 @@ builds:
 - **`suiteIdentityProjection`** — a new field changes every existing run's
   identity unless it is `omitempty` at its zero value.
 
+- **Tasks with earlier turns** — the environment grades the data agent, which
+  holds no conversation, and its server refuses history with HTTP 400. Never
+  add a generated family, an embedded suite task or an env config that sends
+  `turns` to it; conversations are scored in the lead corpus
+  (`scripts/agent-data-eval.sh --corpus lead`).
+
 See `docs/GRAPHJIN-EVAL.md` for the full contract.
+
+## Taking a family out of the public suite
+
+Do not regenerate the suite and do not edit the file. Stop the generator
+writing the family (bump `GeneratorVersion`), bump `PublicBenchmarkGeneration`,
+then from an empty scratch directory run:
+
+```sh
+graphjin eval freeze-suite --demo --retire <category> --out <repo>/cmd/benchmark/public-suite.json
+```
+
+It keeps every other task byte-identical, refills the freed slots from a fresh
+draw, and prints the new suite fingerprint for `publicBenchmarkSuiteFingerprint`.
+It calls no model. Then update the category counts in
+`TestEmbeddedPublicBenchmarkSuiteMatchesPinnedSpec` and the generation paragraph
+in `website/content/benchmarks/deeporg/methodology.md`.
 
 ## Files that must change together
 

@@ -49,7 +49,8 @@ container that agree.
 Written by `eval author`. Read by the next `eval create`.
 
 Tasks a capable model phrased and the engine assembled and verified — watches,
-confirmations, follow-ups, cross-source questions. Carries `authored_by`
+scenarios, cross-source questions, and, against a server that holds a
+conversation, confirmations and follow-ups. Carries `authored_by`
 recording the model and the hash of the authoring prompts, so a task's origin is
 part of its record.
 

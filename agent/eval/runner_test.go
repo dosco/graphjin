@@ -122,7 +122,9 @@ func TestRunnerInvalidOracleAbortsBeforeAgentTraffic(t *testing.T) {
 	}
 }
 
-func TestRunnerPassesDeclaredConversationHistory(t *testing.T) {
+// conversationSuite is one scored task whose question lives in earlier turns.
+func conversationSuite(t *testing.T) Suite {
+	t.Helper()
 	task := scoredTask(t)
 	task.Category = CategoryMultiTurn
 	task.Turns = []TurnSpec{
@@ -136,10 +138,21 @@ func TestRunnerPassesDeclaredConversationHistory(t *testing.T) {
 	if err := suite.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	doer := doerFunc(func(request *http.Request) (*http.Response, error) {
-		if strings.HasSuffix(request.URL.Path, "/graphql") {
+	return suite
+}
+
+// conversationDoer answers the status endpoint with the given body and counts
+// the agent requests that follow it.
+func conversationDoer(t *testing.T, status string, agentRequests *int) doerFunc {
+	t.Helper()
+	return func(request *http.Request) (*http.Response, error) {
+		switch {
+		case strings.HasSuffix(request.URL.Path, "/agent/status"):
+			return jsonResponse(200, status), nil
+		case strings.HasSuffix(request.URL.Path, "/graphql"):
 			return jsonResponse(200, `{"data":{"accounts":[{"sum_mrr":42}]}}`), nil
 		}
+		*agentRequests++
 		var payload gjagent.Request
 		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
 			t.Fatal(err)
@@ -148,9 +161,74 @@ func TestRunnerPassesDeclaredConversationHistory(t *testing.T) {
 			t.Fatalf("history = %+v", payload.History)
 		}
 		return passingAgentResponse(), nil
-	})
+	}
+}
+
+// An endpoint that holds a conversation is sent the task's earlier turns. One
+// that does not say whether it does was built before the status carried the
+// answer, and is sent them too: it may well accept them.
+func TestRunnerPassesDeclaredConversationHistory(t *testing.T) {
+	for name, status := range map[string]string{
+		"lead on":             `{"enabled":true,"ready":true,"lead_enabled":true}`,
+		"status says nothing": `{"enabled":true,"ready":true}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			agentRequests := 0
+			instance := &StaticInstance{URL: "http://graphjin.test", TargetLabel: "test"}
+			runner := Runner{Client: conversationDoer(t, status, &agentRequests)}
+			if _, err := runner.Run(context.Background(), conversationSuite(t), instance, RunOptions{Repeats: 1}); err != nil {
+				t.Fatal(err)
+			}
+			if agentRequests != 1 {
+				t.Fatalf("agent requests = %d, want the one episode", agentRequests)
+			}
+		})
+	}
+}
+
+// The regression this guards: an eval instance answers with the data agent
+// alone, the server rejects history there with HTTP 400 before any agent runs,
+// and the scorer read each rejection as the model refusing. A run must not
+// start on a suite the instance has already said it will reject, and it must
+// not store a run that would resume into the same rejections.
+func TestRunnerRefusesConversationsTheInstanceWouldReject(t *testing.T) {
+	agentRequests := 0
+	store := NewStore(t.TempDir())
 	instance := &StaticInstance{URL: "http://graphjin.test", TargetLabel: "test"}
-	if _, err := (Runner{Client: doer}).Run(context.Background(), suite, instance, RunOptions{Repeats: 1}); err != nil {
+	runner := Runner{Client: conversationDoer(t, `{"enabled":true,"ready":true,"lead_enabled":false}`, &agentRequests)}
+	suite := conversationSuite(t)
+	report, err := runner.Run(context.Background(), suite, instance, RunOptions{Repeats: 3, Store: store})
+	if err == nil {
+		t.Fatalf("a suite the instance would reject ran anyway: %+v", report)
+	}
+	for _, want := range []string{"1 task(s) send earlier turns", suite.Tasks[0].Slug, "agent.lead.enabled", "graphjin eval rm"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal does not say %q: %v", want, err)
+		}
+	}
+	if agentRequests != 0 {
+		t.Fatalf("%d agent request(s) were sent to an instance that refuses them", agentRequests)
+	}
+	if runs, listErr := store.ListRuns(); listErr != nil || len(runs) != 0 {
+		t.Fatalf("a refused suite left a run behind: %v %v", runs, listErr)
+	}
+
+	// The same instance runs the same suite once the conversation is gone.
+	suite.Tasks[0].Turns = nil
+	suite.Tasks[0].ID = ""
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	single := Runner{Client: doerFunc(func(request *http.Request) (*http.Response, error) {
+		switch {
+		case strings.HasSuffix(request.URL.Path, "/agent/status"):
+			t.Fatal("a suite of single questions asked the instance about conversations")
+		case strings.HasSuffix(request.URL.Path, "/graphql"):
+			return jsonResponse(200, `{"data":{"accounts":[{"sum_mrr":42}]}}`), nil
+		}
+		return passingAgentResponse(), nil
+	})}
+	if _, err := single.Run(context.Background(), suite, instance, RunOptions{Repeats: 1}); err != nil {
 		t.Fatal(err)
 	}
 }

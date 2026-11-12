@@ -365,6 +365,10 @@ func configureEvalInstance(config *serv.Config, spec gjeval.EnvSpec) {
 	// measures the worker answering one question. With the lead on, the agent
 	// endpoint would run the lead instead and change what the board measures.
 	// The lead is scored separately (scripts/agent-data-eval.sh --corpus lead).
+	// The data agent holds no conversation, so the server refuses history here
+	// and a suite run on this instance must send none: the runner checks
+	// (gjeval.AssertConversationsRunnable) and the embedded suites are held to
+	// it by TestEmbeddedSuitesSendNoHistoryToAnInstanceThatRefusesIt.
 	config.Agent.Lead.Enabled = false
 	config.Agent.ReadOnly = !spec.Writable
 	// Episodes grade the agent's writes as it makes them; nobody is there to

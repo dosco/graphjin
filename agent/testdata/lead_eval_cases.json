@@ -460,5 +460,160 @@
       "max_actor_turns": 24,
       "max_total_tokens": 400000
     }
+  },
+  {
+    "id": "lead-followup-named-account-mrr",
+    "group": "followup",
+    "route": "thread",
+    "turns": [
+      "Which account is Meridian Robotics?"
+    ],
+    "prompt": "What is that account's current MRR in cents?",
+    "capability_profile": {
+      "role_class": "user",
+      "read_only": false,
+      "available_system_roots": []
+    },
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { accounts(where: {id: {eq: 1}}) { max_mrr_cents } }",
+      "extract": "accounts.0.max_mrr_cents"
+    },
+    "answer": {
+      "kind": "number"
+    },
+    "method": {
+      "require_query_match": [
+        "mrr_cents"
+      ]
+    },
+    "budget": {
+      "max_actor_turns": 24,
+      "max_total_tokens": 400000
+    }
+  },
+  {
+    "id": "lead-followup-named-account-failed",
+    "group": "followup",
+    "route": "thread",
+    "turns": [
+      "Focus on Meridian Robotics, account 1."
+    ],
+    "prompt": "How many failed invoices does that account have?",
+    "capability_profile": {
+      "role_class": "user",
+      "read_only": false,
+      "available_system_roots": []
+    },
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { invoices(where: {account_id: {eq: 1}, status: {eq: \"failed\"}}) { count_id } }",
+      "extract": "invoices.0.count_id"
+    },
+    "answer": {
+      "kind": "number"
+    },
+    "method": {
+      "require_query_match": [
+        "count_"
+      ]
+    },
+    "budget": {
+      "max_actor_turns": 24,
+      "max_total_tokens": 400000
+    }
+  },
+  {
+    "id": "lead-followup-named-ticket-severity",
+    "group": "followup",
+    "route": "thread",
+    "turns": [
+      "We are reviewing support ticket 1."
+    ],
+    "prompt": "What severity is that ticket?",
+    "capability_profile": {
+      "role_class": "user",
+      "read_only": false,
+      "available_system_roots": []
+    },
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { support_tickets(where: {id: {eq: 1}}, limit: 1) { severity } }",
+      "extract": "support_tickets.0.severity"
+    },
+    "answer": {
+      "kind": "string"
+    },
+    "method": {
+      "require_query_match": [
+        "support_tickets"
+      ]
+    },
+    "budget": {
+      "max_actor_turns": 24,
+      "max_total_tokens": 400000
+    }
+  },
+  {
+    "id": "lead-followup-named-account-users",
+    "group": "followup",
+    "route": "thread",
+    "turns": [
+      "Use Harborlight Systems, account 3."
+    ],
+    "prompt": "How many users belong to it?",
+    "capability_profile": {
+      "role_class": "user",
+      "read_only": false,
+      "available_system_roots": []
+    },
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { users(where: {account_id: {eq: 3}}) { count_id } }",
+      "extract": "users.0.count_id"
+    },
+    "answer": {
+      "kind": "number"
+    },
+    "method": {
+      "require_query_match": [
+        "count_"
+      ]
+    },
+    "budget": {
+      "max_actor_turns": 24,
+      "max_total_tokens": 400000
+    }
+  },
+  {
+    "id": "lead-followup-named-invoice-amount",
+    "group": "followup",
+    "route": "thread",
+    "turns": [
+      "Use invoice 10 for the next question."
+    ],
+    "prompt": "What is its amount in cents?",
+    "capability_profile": {
+      "role_class": "user",
+      "read_only": false,
+      "available_system_roots": []
+    },
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { invoices(where: {id: {eq: 10}}, limit: 1) { amount_cents } }",
+      "extract": "invoices.0.amount_cents"
+    },
+    "answer": {
+      "kind": "number"
+    },
+    "method": {
+      "require_query_match": [
+        "invoices"
+      ]
+    },
+    "budget": {
+      "max_actor_turns": 24,
+      "max_total_tokens": 400000
+    }
   }
 ]

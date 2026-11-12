@@ -26,17 +26,24 @@ invalidation status even when it is not selected for the public board.
 
 ## Frozen suite, live verification
 
-The current `2028.5` test version uses generator contract
-`graphjin.eval.generator/v19` and a committed, deterministic 113-task suite
-built from the bundled SaaS Ops demo at seed `23`. 104 of its tasks are
-unchanged from the v12-built `2028.4`; the nine saved-metric tasks were
-dropped, because the server agent now authors every query itself and its
-catalog no longer lists saved queries, and nine new aggregate, window, ranking,
-discovery and refusal questions took their slots. Alongside organizational
-questions and governed refusals, it measures writes with post-state and
-collateral-safety checks, standing-watch definition and delivery,
-history-grounded follow-ups, and work that joins database evidence with file or
-API sources. Tasks are intent-phrased with hidden executable oracles, and
+The current `2028.6` test version uses generator contract
+`graphjin.eval.generator/v20` and a committed, deterministic 113-task suite
+built from the bundled SaaS Ops demo at seed `23`. 106 of its tasks are
+unchanged from `2028.5`, and 97 from the v12-built `2028.4`. Two families have
+left since then, each because the benchmark grades the data agent answering one
+question and could no longer ask it for them. `2028.5` dropped the nine
+saved-metric tasks: the data agent authors every query itself and its catalog
+no longer lists saved queries. `2028.6` dropped the seven multi-turn tasks,
+follow-up questions and confirmations that only make sense after an earlier
+turn: the conversation is now held by the lead agent in front of the data
+agent, so the benchmark's environment refused those requests before any agent
+ran. In both versions, new aggregate, window, ranking, discovery and refusal
+questions took the freed slots. Follow-ups are measured on the lead agent, in
+its own evaluation corpus, and are not part of this board. Alongside
+organizational questions and governed refusals, the suite measures writes with
+post-state and collateral-safety checks, standing-watch definition and
+delivery, and work that joins database evidence with file or API sources.
+Tasks are intent-phrased with hidden executable oracles, and
 execution twins isolate planning from execution. Publishing the suite makes a
 run reproducible. Later test versions can improve the exam without rewriting
 or hiding older trustworthy results.

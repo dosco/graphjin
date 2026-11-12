@@ -62,7 +62,11 @@ type agentStatusResponse struct {
 	Selection            *gjagent.SelectionConfig `json:"selection,omitempty"`
 	ThreadsEnabled       bool                     `json:"threads_enabled"`
 	MemoryEnabled        bool                     `json:"memory_enabled"`
-	Message              string                   `json:"message"`
+	// LeadEnabled says whether this endpoint holds a conversation. Without the
+	// lead a request carrying history or a thread is refused, so a client that
+	// means to send either can find out here first.
+	LeadEnabled bool   `json:"lead_enabled"`
+	Message     string `json:"message"`
 }
 
 // Agent is the HTTP handler for the server-side GraphJin agent endpoint.
@@ -313,6 +317,7 @@ func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient
 		TimeoutSeconds:       timeoutSeconds,
 		ReadOnly:             conf.ReadOnly,
 		ReturnTrace:          conf.ReturnTrace,
+		LeadEnabled:          conf.Lead.Enabled,
 		Message:              message,
 	}
 	if ns != nil {

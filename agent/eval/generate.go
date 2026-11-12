@@ -56,7 +56,18 @@ type AgentStatus struct {
 	AllowedActions       []string                `json:"allowed_actions,omitempty"`
 	AvailableSystemRoots []string                `json:"available_system_roots,omitempty"`
 	BlockedSystemRoots   []string                `json:"blocked_system_roots,omitempty"`
-	Message              string                  `json:"message,omitempty"`
+	// LeadEnabled says whether the endpoint holds a conversation. It is a
+	// pointer because a server built before the status carried it says nothing,
+	// which is not the same as saying no.
+	LeadEnabled *bool  `json:"lead_enabled,omitempty"`
+	Message     string `json:"message,omitempty"`
+}
+
+// RefusesConversations reports whether the endpoint has said it answers with
+// the data agent alone. Such an endpoint rejects a request that carries earlier
+// turns before any agent runs.
+func (s AgentStatus) RefusesConversations() bool {
+	return s.LeadEnabled != nil && !*s.LeadEnabled
 }
 
 type CatalogSnapshot struct {
@@ -185,7 +196,7 @@ var candidateFamilies = []candidateFamily{
 	{
 		Name:         "deeporg-reference",
 		SinceVersion: "graphjin.eval.generator/v12",
-		Categories:   []Category{CategoryAction, CategoryReactive, CategoryMultiTurn, CategoryCrossSource},
+		Categories:   []Category{CategoryAction, CategoryReactive, CategoryCrossSource},
 		Generate:     generateDeepORGCandidates,
 	},
 	{
@@ -392,6 +403,21 @@ func (g Generator) Generate(ctx context.Context, opts GeneratorOptions) (*Suite,
 		candidates = append(candidates, family.Generate(snapshot, opts.Seed)...)
 	}
 	candidates = append(candidates, opts.Authored...)
+	// A task authored or curated before the instance stopped holding a
+	// conversation would otherwise be sampled into a suite the runner then
+	// refuses to start, on every regeneration.
+	if snapshot.Status.RefusesConversations() {
+		single := candidates[:0]
+		for _, candidate := range candidates {
+			if len(candidate.Turns) == 0 {
+				single = append(single, candidate)
+			}
+		}
+		if dropped := len(candidates) - len(single); dropped > 0 {
+			fmt.Fprintf(os.Stderr, "Dropped %d candidate(s) that send earlier turns: this instance answers with the data agent alone and would refuse them\n", dropped)
+		}
+		candidates = single
+	}
 	// Read oracles are resolved ahead of the selection loop so a large candidate
 	// pool is not gated on a serial round trip each. Only the resolution is
 	// concurrent: the loop below still decides in candidate order, so the
@@ -928,94 +954,14 @@ func generateDeepORGCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 				},
 			})
 		}
-
-		// Confirmation flows. This is the one place operational phrasing occurs
-		// honestly: the caller states a need, the agent proposes a concrete watch,
-		// and the caller approves it. The final instruction names a watch and a
-		// cadence because the agent's own proposal introduced them, not because the
-		// caller knew GraphJin's vocabulary. It also exercises the two-run approval
-		// path the runtime enforces via watch_action_confirmation_required.
-		for _, flow := range []struct{ slug, need, proposal, table, filter string }{
-			{
-				"confirm-failed-invoice-watch",
-				"Finance keeps missing invoices that fail to collect, and wants to stop finding out late.",
-				"I can set up a standing watch named finance_failed_invoices over invoices filtered to failed, delivering an inbox digest every hour. Shall I create it?",
-				"invoices", "failed",
-			},
-			{
-				"confirm-urgent-ticket-watch",
-				"Support leadership is tired of discovering urgent tickets after the fact.",
-				"I can set up a standing watch named support_urgent_tickets over support tickets filtered to urgent, delivering an inbox digest every hour. Shall I create it?",
-				"support_tickets", "urgent",
-			},
-		} {
-			clauses := []string{
-				fmt.Sprintf(`{query: {like: %q}}`, "%"+flow.table+"_cursor%"),
-				fmt.Sprintf(`{query: {like: %q}}`, "%"+flow.filter+"%"),
-				`{delivery_json: {is_null: false}}`,
-			}
-			tasks = append(tasks, Task{
-				Category: CategoryMultiTurn, Difficulty: DifficultyT4,
-				Slug: "multi-turn-" + flow.slug, Tier: TierIntent,
-				// The approval itself is the instruction; the plan lives in history.
-				Prompt: "Yes, go ahead and set that up.",
-				Turns: []TurnSpec{
-					{Role: "user", Content: flow.need},
-					{Role: "assistant", Content: flow.proposal},
-				},
-				Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference-confirmation", Seed: seed, SourceID: flow.slug},
-				CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
-				Method:   MethodRule{RequireQueryMatch: []string{`(?s)mutation.*gj_watch.*insert`}},
-				Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql:mutation"}},
-				Mutation: &MutationSpec{
-					ResetStrategy: "sqlite-copy",
-					// Name-agnostic on purpose: the agent proposed a name and may
-					// reasonably use it or a close variant. What must hold is that the
-					// approved watch matches what was proposed semantically.
-					PostState: OracleSpec{
-						Query: fmt.Sprintf(`query { gj_watch(where: {and: [%s]}) { count_id } }`,
-							strings.Join(clauses, ", ")),
-						Extract: "gj_watch.0.count_id", AllowMissing: true,
-					},
-					ExpectedValue: "1",
-					Collateral:    append([]OracleSpec(nil), commonCollateral...),
-				},
-			})
-		}
 	}
 
-	tasks = append(tasks, deepORGMultiTurnTasks(seed, profile)...)
+	// No task here sends earlier turns. Carrying a conversation is the lead's
+	// job; the data agent these suites grade answers one self-contained question
+	// and drops any history it is handed, so a follow-up or a bare "yes, go
+	// ahead" asked of it names something it cannot see. Those are scored where
+	// they can be answered, in the lead corpus.
 	tasks = append(tasks, deepORGCrossSourceTasks(seed, profile)...)
-	return tasks
-}
-
-func deepORGMultiTurnTasks(seed int64, profile CapabilityProfile) []Task {
-	type spec struct {
-		slug, firstQuestion, priorAnswer, prompt, query, extract, method string
-	}
-	specs := []spec{
-		{"same-account-mrr", "Which account is Meridian Robotics?", "Meridian Robotics is account 1.", "What is that account's current MRR in cents?", `query { accounts(where: {id: {eq: 1}}) { max_mrr_cents } }`, "accounts.0.max_mrr_cents", "mrr_cents"},
-		{"same-account-failed", "Focus on Meridian Robotics, account 1.", "I will use account 1 as the subject.", "How many failed invoices does that account have?", `query { invoices(where: {account_id: {eq: 1}, status: {eq: "failed"}}) { count_id } }`, "invoices.0.count_id", "count_id"},
-		{"same-ticket-severity", "We are reviewing support ticket 1.", "Ticket 1 is the current subject.", "What severity is that ticket?", `query { support_tickets(where: {id: {eq: 1}}, limit: 1) { severity } }`, "support_tickets.0.severity", "support_tickets"},
-		{"same-account-users", "Use Harborlight Systems, account 3.", "The retained account id is 3.", "How many users belong to it?", `query { users(where: {account_id: {eq: 3}}) { count_id } }`, "users.0.count_id", "count_id"},
-		{"same-invoice-amount", "Use invoice 10 for the next question.", "Invoice 10 is selected.", "What is its amount in cents?", `query { invoices(where: {id: {eq: 10}}, limit: 1) { amount_cents } }`, "invoices.0.amount_cents", "invoices"},
-	}
-	tasks := make([]Task, 0, len(specs))
-	for _, item := range specs {
-		kind := "number"
-		if item.slug == "same-ticket-severity" {
-			kind = "string"
-		}
-		tasks = append(tasks, Task{
-			Category: CategoryMultiTurn, Difficulty: DifficultyT3, Slug: "multi-turn-" + item.slug, Prompt: item.prompt,
-			Turns:             []TurnSpec{{Role: "user", Content: item.firstQuestion}, {Role: "assistant", Content: item.priorAnswer}},
-			Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference-history", Seed: seed, SourceID: item.slug},
-			CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
-			Oracle: &OracleSpec{Query: item.query, Extract: item.extract}, Answer: AnswerRule{Kind: kind},
-			Method:   MethodRule{RequireQueryMatch: []string{item.method}},
-			Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql"}, ForbiddenActions: []string{"execute_graphql:mutation"}},
-		})
-	}
 	return tasks
 }
 
@@ -1561,7 +1507,7 @@ func stratifiedSample(tasks []Task, limit int, seed int64) []Task {
 	if limit >= len(tasks) {
 		return append([]Task(nil), tasks...)
 	}
-	// The DeepORG reference families — actions, watches, cross-source, multi-turn —
+	// The DeepORG reference families — actions, watches, cross-source —
 	// are small hand-authored sets, not samples from a large generated pool.
 	// Sampling them competitively against thousands of catalog-derived candidates
 	// dropped whole needs, so they are kept in full and the generated families fill

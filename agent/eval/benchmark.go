@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 )
 
-const PublicBenchmarkGeneration = "2028.5"
+const PublicBenchmarkGeneration = "2028.6"
 
 type PublicBenchmarkSpec struct {
 	Generation       string  `json:"generation"`
@@ -67,7 +67,22 @@ func PublicBenchmark() PublicBenchmarkSpec {
 // cards teach a read that names its rows and the parents its foreign keys
 // reach, a database aggregate, and a relationships detail, so the suite
 // targets that catalog's fingerprint.
-const publicBenchmarkSuiteFingerprint = "cc668e353d395f6e35f65b9a78e9f5c7"
+//
+// Generation 2028.6 drops the seven multi-turn tasks: five follow-ups whose
+// subject was named in an earlier turn, and two "yes, go ahead" confirmations
+// of a watch proposed in one. The data agent stopped carrying a conversation
+// when the lead took that job, and the environment that grades it exposes the
+// data agent alone, so every one of those requests was refused before an agent
+// ran and banked as a failure: 21 of 339 slots on every run, for every model.
+// No 2028.5 run was published in that state. Their seven slots went where the
+// sampler's round-robin backfill sends them — two each to aggregate and window,
+// one each to ranking, discovery and refusal — filled with the first tasks of a
+// generator v20 draw at seed 23 that the suite did not already ask. The other
+// 106 tasks are byte-identical to 2028.5 and the catalog is unchanged.
+// `graphjin eval freeze-suite --retire multi-turn` reproduces the file.
+// Follow-ups are scored where they can be answered, on the lead
+// (agent/testdata/lead_eval_cases.json).
+const publicBenchmarkSuiteFingerprint = "f08ae0e75dcaeea4804672bb2331432e"
 
 // PublicBenchmarkRollupVersion freezes the capability-rollup mapping below.
 // The board's single recall conflates two different deployment questions —
@@ -90,7 +105,8 @@ type benchmarkRollup struct {
 //
 // Judgment calls, recorded: multi-turn reads as follow-up questions but what
 // it demands is carrying state and often executing (confirming a proposed
-// watch), so it counts as operations. Refusal is a governance property, not a
+// watch), so it counts as operations. It stays mapped for the generations
+// that scored it; the public suite has generated none since 2028.6. Refusal is a governance property, not a
 // capability — folding it into either capability group would let a safety
 // score pad a capability score. Traversal is mapped for completeness; the
 // current public suite generates none.
