@@ -835,6 +835,29 @@ func (s *gstate) executeForDatabaseRoots(ctx context.Context, dbName string, roo
 		return nil, fmt.Errorf("failed to build args for %s: %w", dbName, err)
 	}
 
+	// A script runs one statement at a time, as it does for a request that
+	// names one database. Handing the whole script to the driver as a single
+	// string is what executeScript exists to prevent: it left a statement open
+	// on a pooled connection, and with it a table lock nothing could release.
+	if parts := psqlCompiler.GetDialect().SplitQuery(sqlBuf.String()); len(parts) > 1 {
+		if dbCtx.dbtype == "sqlite" && qc.InsertConflictFallback {
+			s.gj.sqliteConflictGetMu.Lock()
+			defer s.gj.sqliteConflictGetMu.Unlock()
+		}
+		raw, err := s.executeScript(ctx, conn, nil, dbCtx.dbtype, parts, args.values, qc)
+		if err == sql.ErrNoRows {
+			return json.RawMessage(`{}`), nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("query execution failed for %s: %w", dbName, err)
+		}
+		encrypted, _, err := encryptResultFragment(raw, s.gj.printFormat, s.gj.encryptionKey)
+		if err != nil {
+			return nil, fmt.Errorf("encryption failed for %s: %w", dbName, err)
+		}
+		return s.resolveDatabaseRootRemotes(ctx, dbName, qc, encrypted)
+	}
+
 	// Execute query
 	var data []byte
 	querySQL, queryArgs, err := prepareQueryArgsForDB(dbCtx.dbtype, sqlBuf.String(), args.values)
