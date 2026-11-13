@@ -18,7 +18,6 @@ func TestLeadCallablesAnswerUnderTheNameThePromptAdvertises(t *testing.T) {
 	question := "Which account has the soonest upcoming renewal after 2026-11-07?"
 	client := &scriptedLeadClient{responses: []ax.Value{
 		leadCode(`const r = await utils.ask_graphjin({ questions: ["` + question + `"] }); console.log(JSON.stringify(r)); final("answer with the account", { r })`),
-		leadCode(`final("answer with the account")`),
 		leadReply(StatusAnswered, "Meridian Robotics renews soonest, on 2026-11-16."),
 	}}
 	var mu sync.Mutex
@@ -53,7 +52,6 @@ func TestLeadSlowDelegationReturnsItsAnswer(t *testing.T) {
 	}
 	client := &scriptedLeadClient{responses: []ax.Value{
 		leadCode(`const r = await ask_graphjin({ questions: ["Which account renews soonest?"] }); console.log(JSON.stringify(r)); final("answer", { r })`),
-		leadCode(`final("answer")`),
 		leadReply(StatusAnswered, "Meridian Robotics renews soonest."),
 	}}
 	lead := newTestLead(t, Config{}, client, func(_ context.Context, d DelegateRequest) (Response, error) {

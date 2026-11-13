@@ -89,11 +89,15 @@ type preparedRead struct {
 	out  any
 }
 type preparationResult struct {
-	reads    []preparedRead
-	skills   []skillDefinition
-	usage    any
-	stats    PreparationStats
-	revision string
+	reads  []preparedRead
+	skills []skillDefinition
+	// unselected marks a result no model chose guides for (a server
+	// prefetch): the run loads every permitted guide the way an unprepared
+	// run does, and skills is left empty.
+	unselected bool
+	usage      any
+	stats      PreparationStats
+	revision   string
 }
 
 func (r *preparationResult) context() any {
@@ -809,6 +813,12 @@ func (a *Agent) enrichCatalog(ctx context.Context, req Request, protocol *protoc
 	}
 	p := a.startPreparationMode(ctx, req, nil, config, true)
 	extra := p.finish(protocol, out)
+	if extra == nil {
+		// No selection model (agent.selection is off): a run can still hold
+		// prepared detail the server prefetched, and its searches come back
+		// as the catalog returned them.
+		return out
+	}
 	prepared.usage = mergedUsage(prepared.usage, extra.usage)
 	prepared.stats.Usage = SummarizeUsage(prepared.usage)
 	prepared.stats.OnDemandMS += extra.stats.ElapsedMS
@@ -842,7 +852,15 @@ const preparedDiscoveryInstructions = `GraphJin has selected guides and may have
 // (Request.PrefetchCatalogIDs), without a selection model. The model consumes
 // them with use_prepared_catalog, which records them exactly as a lookup
 // would; a detail the catalog does not return is left for normal discovery.
-func (a *Agent) prefetchCatalog(ctx context.Context, req Request) *preparationResult {
+//
+// No model chose this run's guides, so the result is marked unselected and
+// the run keeps every guide the caller is permitted, loaded as a run without
+// preparation loads them. A prepared run otherwise loads only the guides its
+// result names: with none named, every routine's data agent ran with no guide
+// at all, and wrote its changes in mutation syntax it made up
+// (update_support_tickets, set:, gj_task(propose:)) where the same model in
+// chat, guides loaded, wrote GraphJin's every time.
+func (a *Agent) prefetchCatalog(ctx context.Context, req Request, allowed []skillDefinition) *preparationResult {
 	ids := req.PrefetchCatalogIDs
 	if len(ids) > MaxCatalogBatchIDs {
 		ids = ids[:MaxCatalogBatchIDs]
@@ -855,8 +873,12 @@ func (a *Agent) prefetchCatalog(ctx context.Context, req Request) *preparationRe
 	if err != nil || len(catalogCards(out)) == 0 {
 		return nil
 	}
-	result := &preparationResult{reads: []preparedRead{{args: args, out: normalizeValue(out)}}}
+	result := &preparationResult{reads: []preparedRead{{args: args, out: normalizeValue(out)}}, unselected: true}
 	result.revision = stringFromMap(mapValue(normalizeValue(out)), "revision")
 	result.stats.DetailIDs = append([]string(nil), ids...)
+	for _, skill := range allowed {
+		result.stats.LoadedSkillIDs = append(result.stats.LoadedSkillIDs, skill.id)
+		result.stats.LoadedSkillBytes += len(skill.content)
+	}
 	return result
 }

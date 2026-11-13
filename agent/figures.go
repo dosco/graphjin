@@ -304,6 +304,35 @@ func (r figureRecordingRuntime) CreateSession(globals map[string]ax.Value, optio
 	return figureRecordingSession{CodeSession: session, record: r.record}, nil
 }
 
+// RegisterHostCallable keeps the one thing Ax registers through its
+// structural hook that the lead needs: its own llmQuery primitive. Embedding
+// the CodeRuntime interface hid the method, so the lead's prompt advertised
+// llmQuery and its runtime answered "llmQuery is not defined".
+//
+// Ax offers the lead's functions through the same hook under their qualified
+// names (utils.ask_graphjin). Those stay the lead's own registration
+// (registerAdvertisedCallable): Ax's version fails the whole turn when a
+// function returns an error, where the lead's hands the error to the model.
+// The follow-up check that refuses a question which lost the user's
+// reference depends on that: taken over by Ax, it ended the turn instead of
+// getting the question restated.
+func (r figureRecordingRuntime) RegisterHostCallable(name string, handler func(ax.Value) (ax.Value, error)) {
+	registerAxPrimitive(r.CodeRuntime, name, handler)
+}
+
+// registerAxPrimitive passes Ax's llmQuery registration to the wrapped
+// runtime and drops any other.
+func registerAxPrimitive(runtime ax.CodeRuntime, name string, handler func(ax.Value) (ax.Value, error)) {
+	if name != "llmQuery" {
+		return
+	}
+	if reg, ok := runtime.(interface {
+		RegisterHostCallable(string, func(ax.Value) (ax.Value, error))
+	}); ok {
+		reg.RegisterHostCallable(name, handler)
+	}
+}
+
 type figureRecordingSession struct {
 	ax.CodeSession
 	record func(code string, result ax.Value)

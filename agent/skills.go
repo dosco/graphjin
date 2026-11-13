@@ -377,7 +377,8 @@ const dataAggregationInstruction = `Skill: data_aggregation. The model plans, th
 const dataWriteInstruction = `Skill: data_write. ` +
 	`Inspect exact catalog IDs for help:security, help:runtime, mutation_pattern, and target table details; validate, then use execute_graphql. ` +
 	`Use GraphJin table-root mutation syntax: mutation { support_tickets(where:{id:{eq:2}},update:{status:"resolved"}){id status} }; never invent Hasura update_<table>_by_pk, pk_columns, or _set. ` +
-	`Core enforces role/RLS. Preview/validate first, verify after; if unavailable, return blocked with catalog evidence and missing capability.`
+	`Core enforces role/RLS. Preview/validate first, verify after; if unavailable, return blocked with catalog evidence and missing capability. ` +
+	`Asked to propose, suggest or queue a change, run its mutation: where writes need approval GraphJin holds it for the user and nothing changes until they approve. A change only described in the answer is not proposed; never write a proposal row yourself.`
 
 const codeReadInstruction = `Skill: code_read (gj_code / CodeSQL source). ` +
 	`Discover gj_code symbols, references, db_references, and docs through help:code and code system-capability rows; trace symbol-to-reference-to-schema provenance and answer from that evidence.`

@@ -185,6 +185,13 @@ type Request struct {
 	// by step. Server-set only.
 	PrefetchCatalogIDs []string `json:"-"`
 
+	// ChangeAlreadyMade says the turn reports on a change GraphJin already
+	// ran: the approved change it follows. Its reply says a change was made
+	// and has none of its own to propose, so an unattended lead runs it under
+	// the conversation's signature and sends no change for it. Server-set
+	// only.
+	ChangeAlreadyMade bool `json:"-"`
+
 	// ObservedRows are rows GraphJin itself read and handed the run as its
 	// subject, such as the rows a watch fired on. They are evidence the run
 	// already holds: an answer drawn from them needs no further discovery,
@@ -686,7 +693,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	}
 	prepared = prep.finish(protocol, seed)
 	if prepared == nil && len(req.PrefetchCatalogIDs) != 0 {
-		prepared = a.prefetchCatalog(ctx, req)
+		prepared = a.prefetchCatalog(ctx, req, permittedSkills)
 	}
 	if err := ctx.Err(); err != nil {
 		return Response{}, err
@@ -718,7 +725,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	protocol.state.addGrounding(runReq.Context)
 	tools := a.tools(ctx, runReq, protocol)
 	skills := permittedSkills
-	if prepared != nil {
+	if prepared != nil && !prepared.unselected {
 		skills = prepared.skills
 	}
 	capabilityInstructions := capabilityCompletionInstructions(permittedSkills, req.Capabilities)
@@ -808,6 +815,12 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		runtimeOptions := options["runtime"].(map[string]ax.Value)
 		var selectedGuides strings.Builder
 		for _, guide := range skills {
+			if prepared.unselected {
+				// Nothing was selected: the executor loads every permitted
+				// guide as usual, and repeating them all here would only
+				// double the prompt.
+				break
+			}
 			selectedGuides.WriteString("\n\n")
 			selectedGuides.WriteString(guide.content)
 		}
@@ -841,7 +854,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		}
 	}
 	output, err := program.Forward(ctx, client, map[string]ax.Value{
-		"instruction":    strings.TrimSpace(req.Instruction),
+		"instruction":    shownInstruction(req.Instruction, cfg.HeldWritesOnly && !readOnly),
 		"context":        runReq.Context,
 		"catalog_facets": facets,
 		"namespace":      req.Namespace,
@@ -1979,8 +1992,8 @@ func NamingFor(res *core.Result) *NamingInfo {
 }
 
 // attachNaming decorates a successful execution result with the naming
-// notice. The agent protocol throws the first such result back (see
-// namingRefusal); MCP clients read the notice from the value.
+// notice. The agent protocol reads it to run the query again with the names
+// (protocolRuntime.nameRows); MCP clients read the notice from the value.
 func attachNaming(result executeResult, res *core.Result) executeResult {
 	if naming := NamingFor(res); naming != nil {
 		result.Naming = naming
@@ -2325,6 +2338,37 @@ func (r *coreRuntime) ValidateWhereClause(ctx context.Context, args map[string]a
 	}
 	result.Valid = len(result.Errors) == 0 && len(result.CompilerErrors) == 0
 	return result, nil
+}
+
+// heldWritesNote tells a run that may only propose changes how a change is
+// proposed here: by running its mutation, which GraphJin holds.
+//
+// A routine's data agent starts with its table's catalog detail and the rows
+// the watch fired on, so nothing makes it run a query before it answers.
+// Asked to "propose" a change and not told this, it answered with the change
+// written out in words, which is a truthful answer and proposes nothing: on
+// gpt-5.4-mini that was every such question in a routine, where the same
+// question asked in chat, without the head start, ran the mutation every
+// time. Routines that ran on the data agent alone carried this note in their
+// task; it belongs to the run, so the lead's questions get it too. Measured
+// with its guides loaded, the data agent never attempted 6 of 13 requested
+// changes without the note and attempted all 8 with it.
+//
+// The shape of expect is spelled out because a model told only to pass one
+// guessed it ({table, operation, where}) and spent its steps being corrected.
+const heldWritesNote = "GraphJin: nobody is watching this run, so a change it makes is held for the owner's approval and nothing changes until they approve. " +
+	"If this asks you to make, propose or suggest a change to the data, run its mutation with execute_graphql: that is how the change is proposed. " +
+	"Describing a change in your answer proposes nothing. Pass expect with the mutation, a read query and the number it should reach once the change has worked: " +
+	`execute_graphql({query: "mutation { ... }", expect: {query: "query { <table>(where: { <the condition the change brings about> }) { count_id } }", path: "<table>.0.count_id", op: "increase", value: 1, within_hours: 24}}).`
+
+// shownInstruction is the instruction as the model reads it. The catalog
+// seed, policy checks and answer rewrites keep the caller's own words.
+func shownInstruction(instruction string, heldWrites bool) string {
+	instruction = strings.TrimSpace(instruction)
+	if heldWrites {
+		instruction += "\n\n" + heldWritesNote
+	}
+	return instruction
 }
 
 func (r *coreRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (any, error) {

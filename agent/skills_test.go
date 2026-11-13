@@ -211,7 +211,14 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		// through the relationship for a foreign key). Without it the data
 		// agent answered "account ID 2": it selected only the columns that
 		// rank, and grounding then lets it state nothing else.
-		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3*1024 + 128 + 128 + 160},
+		// +256: data_write's proposing clause (to propose a change, run its
+		// mutation; GraphJin holds it where writes need approval). The lead
+		// asks the data agent to "propose" a routine's change. Without the
+		// clause gpt-5.4-mini answered in prose or tried to write a proposal
+		// row, and held 0 of 6 plain duplicate changes; routines used to
+		// carry this sentence in their own prompt when they ran on the data
+		// agent.
+		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3*1024 + 128 + 128 + 160 + 256},
 		// +192: watch_write's schedule clause (cron + IANA timezone, no query)
 		// so agents can create time-triggered watches.
 		// +416: watch_write's metric clause (schedule + query + metric
@@ -220,7 +227,8 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		// +192: the read-only agent routine delivery (kind "agent").
 		// +128: data_aggregation's forward-looking clause, as above.
 		// +160: data_discovery's naming clause, as above.
-		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 18*512 + 128 + 192 + 416 + 192 + 128 + 160},
+		// +256: data_write's proposing clause, as above.
+		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 18*512 + 128 + 192 + 416 + 192 + 128 + 160 + 256},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			definitions := allowedSkills(false, tc.profile)

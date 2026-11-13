@@ -158,6 +158,7 @@ Smoke suites run against a **persistent, reused** demo state (`<path>/demo`). An
 -   **Unique names**: every created resource uses a `smoke_` prefix plus a `$(date +%s)_$$` suffix.
 -   **Track and clean**: append created IDs to suite-level arrays and delete them in `smoke_extra_cleanup` (invoked by the shared EXIT trap). Cleanup must be idempotent — suffix every delete with `|| true`.
 -   **Known leak**: inserting a `gj_watch` registers its named subscription as a `gj_artifacts` row with `kind: "saved_query"` that currently outlives the watch. Until watch deletion cascades, cleanup must also delete that artifact by name.
+-   **Check-backs**: a routine runs on the lead, which can schedule a follow-up in any run: a one-time `gj_watch` named `followup_<thread>_…` that fires up to 30 days later. `routine_cleanup` deletes them for every thread in `SMOKE_ROUTINE_THREADS`, so a suite that runs a routine must track its thread there.
 -   **Owner scoping**: `gj_artifacts`, `gj_watch`, and `gj_task` rows are owner-scoped — delete them under the same identity that created them; an admin bulk-delete will silently skip other owners' rows.
 -   **Reset**: interrupted runs leak by design. To reset a demo completely, stop the server and delete `<path>/demo`; a fresh provision also clears the `<path>/.graphjin` control-plane store (artifacts, watches, tasks) — on older builds delete that directory yourself, or stale saved queries survive the reset.
 

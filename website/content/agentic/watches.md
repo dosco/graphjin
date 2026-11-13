@@ -276,10 +276,11 @@ An agent must stop for confirmation after proposing the action; it cannot create
 
 ## Routines that act
 
-A watch whose delivery is an agent turn (`delivery_json: { kind: "agent", prompt: "..." }`) is a routine: when it fires, the data agent investigates the event in a thread nobody is watching. A routine runs on the data agent rather than the lead, because its guards refuse an answer no tool call backs; a saved agent's standing instructions become part of the task. With write approvals on, a routine may propose the data change its prompt calls for. The change is dry-run and held for the watch's owner like any agent write, and the routine itself can never write GraphJin's own roots. The owner sees an "action needed" notification, approves or rejects it, and the decision starts a follow-up turn in the routine's thread that checks the effect. Its answer arrives as a notification, and its watch event leaves the watch inbox.
+A watch whose delivery is an agent turn (`delivery_json: { kind: "agent", prompt: "..." }`) is a routine: when it fires, the [lead](/agentic/lead-agent/) investigates the event in a thread nobody is watching. It runs like a chat turn, so the owner's skills, memories and saved agent apply. The data agents it asks start with the catalog detail of the tables the watch reads and the rows it fired on. With write approvals on, a routine may propose the data change its prompt calls for, and may schedule a check-back in its own thread with `follow_up`. The lead looks up what the prompt's decision depends on, states the change in its reply, and GraphJin sends it to a data agent. The change is dry-run and held for the watch's owner like any agent write, and apart from that check-back the routine can never write GraphJin's own roots. The owner sees an "action needed" notification, approves or rejects it, and the decision starts a follow-up turn in the routine's thread that checks the effect. Its answer arrives as a notification, and its watch event leaves the watch inbox.
 
 {{< verified by="TestWatchRoutineMayProposeWritesForApproval" file="serv/watch_routine_test.go" >}}
 {{< verified by="TestApprovedRoutineWriteContinuesWithTheModel" file="serv/approvals_test.go" >}}
+{{< verified by="TestLeadWorkersStartWithWhatTheServerHandedTheTurn" file="serv/lead_runner_test.go" >}}
 
 A saved agent an admin marks `runs_as: service` runs the routines an admin owns as `agent.service_identity`, recording whom it acted for; anyone else's routine on it runs as themselves.
 

@@ -409,6 +409,11 @@ func TestApprovedRoutineWriteContinuesWithTheModel(t *testing.T) {
 	if !runner.conf.HeldWritesOnly {
 		t.Fatal("a routine's continuation must be as unattended as the routine")
 	}
+	// The turn reports on the change that was approved and ran: a reply saying
+	// it was made is backed by it.
+	if !runner.req.ChangeAlreadyMade {
+		t.Fatal("the turn after an approved change must carry that the change was made")
+	}
 	messages, _ := svc.threadMessages(ctx, threadID)
 	if len(messages) != 2 || messages[1]["content"] != "Order 1 is closed now.\n\nNo further change was proposed." {
 		t.Fatalf("thread messages = %v", messages)

@@ -229,6 +229,16 @@ func TestUnattendedChangeMustCarryAnExpectation(t *testing.T) {
 	if orderStatus(t, db, 1) != "open" {
 		t.Fatal("a refused proposal changed the database")
 	}
+	// A guessed shape is answered with the whole shape, not one field of it:
+	// each field refused in turn cost a model a step.
+	_, _, err = rt.ProposeWrite(ctx, map[string]any{"query": approvalTestWrite, "expect": map[string]any{"table": "orders", "operation": "update"}})
+	if err == nil || !strings.Contains(err.Error(), "expect.value must be a number") || !strings.Contains(err.Error(), `path: "orders.0.count_id"`) ||
+		!strings.Contains(err.Error(), "within_hours: 24") {
+		t.Fatalf("a malformed expect: err = %v", err)
+	}
+	if orderStatus(t, db, 1) != "open" {
+		t.Fatal("a refused proposal changed the database")
+	}
 	// A person in the conversation may leave it out.
 	if _, approval, err := rt.ProposeWrite(approvalUserCtx("user_1"), map[string]any{"query": approvalTestWrite}); err != nil || approval == nil {
 		t.Fatalf("a chat proposal without expect = %v", err)

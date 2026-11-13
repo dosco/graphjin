@@ -299,6 +299,20 @@ conversation first, and questions sent together run in parallel
 (`agent.lead.max_parallel`, default 4). It never computes aggregates itself; it
 asks a worker, which computes them in the database.
 
+A turn with nothing attached, such as console chat or a single question, skips
+Ax's distillation, as a worker's plain question does: the lead goes straight to
+asking, one model call fewer per turn. A turn that carries attached data, such
+as a routine's watch event or a caller's `context`, keeps distillation, which
+reads what is attached and looks up what is missing before the lead decides.
+
+Every stage of a lead turn is given the lead's instructions: the stages that
+write its code, which decide what a worker is asked and in what words, and the
+stage that writes the reply. Ax hands a signature's instructions to the reply
+stage alone, so GraphJin passes them to the code stages with the runtime's
+usage instructions. A delegated result's `status` is one of `answered`,
+`needs_clarification`, `needs_approval`, `blocked` or `error`, and the code is
+told so.
+
 The lead is an Ax agent with Ax's own memory and skill callbacks, both served
 from the graph as the caller:
 
@@ -321,8 +335,9 @@ The lead's reply is grounded the same way a worker's is: an identifier no
 delegated question returned triggers one restatement, then a
 `ungrounded_answer_fields` refusal. Changes such as creating a watch are
 delegated as explicit instructions after the user asked or confirmed. A
-routine can at most propose a data change for its owner's approval (see
-[Routines That Act](#routines-that-act)) and has no `remember`.
+routine can propose a data change for its owner's approval and schedule a
+check-back, nothing more (see [Routines That Act](#routines-that-act)), and
+has no `remember`.
 
 Configure the lead under `agent.lead`; unset, it runs on the worker's model.
 A typical split is a capable lead over a fast worker:
@@ -494,11 +509,21 @@ the record that says how far a routine or an agent can be trusted.
 ### Routines That Act
 
 A watch whose delivery is an agent turn (`delivery_json: { kind: "agent",
-prompt }`) is a routine. A routine is one task with its event attached, so it
-runs on the data agent itself rather than the lead, whose guards refuse an
-answer no tool call backs; a saved agent's standing instructions become part of
-the task. With write approvals on, a routine runs with held writes only: it can propose a data or API change, which is held for the watch
-owner exactly like a chat write, and it can never write GraphJin's own roots
+prompt }`) is a routine. It runs on the lead, like chat, so the owner's skills,
+memories and saved agent apply to it. Its data agents start with the catalog
+detail of the tables its watch reads and the rows it fired on.
+With write approvals on, a routine runs with held writes only: it can propose a data or API change, which is held for the watch
+owner exactly like a chat write, and it can schedule a check-back in its own
+thread with `follow_up` (not when it runs as the service identity). A routine
+proposes a change by stating it. Its code looks up what the prompt's decision
+depends on; GraphJin hands the reply stage the turn's own record (every answer
+the data agent gave, or that nothing was asked, the skills the turn loaded and
+the check-backs it scheduled) and nothing the code concluded from it; and the
+reply says whether the prompt calls for a change and what the change is, in
+plain words. GraphJin sends that to a data agent, which writes
+the mutation and holds it. A change the reply states and the data agent does
+not hold is said so in the answer, with a `stated_change_not_held` notice. Apart from
+that check-back it can never write GraphJin's own roots
 (watches, tasks, memories, config). Its answer becomes a notification and its
 watch event leaves the watch inbox. Without approvals a routine is read-only.
 GraphJin, not the model, states what an unattended run did to the data: its

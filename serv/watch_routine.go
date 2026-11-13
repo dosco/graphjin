@@ -13,10 +13,11 @@ import (
 )
 
 // A routine is a watch whose delivery is an agent turn: when the watch fires,
-// GraphJin asks the agent the stored prompt as the watch owner, read-only, in
-// a thread, and the answer lands there like any other turn. It runs through
-// the same thread run path as chat, so it gets the run lease, cancel, resume
-// and the lost-run sweep.
+// GraphJin asks the lead the stored prompt as the watch owner, in a thread,
+// and the answer lands there like any other turn. It runs through the same
+// thread run path as chat, so it gets the run lease, cancel, resume and the
+// lost-run sweep, and the owner's skills, memories and saved agent apply to
+// it as they do in chat.
 
 const (
 	watchRoutinePromptMaxBytes = 2048
@@ -116,22 +117,6 @@ func tableCardIDs(cards []core.CatalogCard, tables [][3]string) []string {
 	return out
 }
 
-// foldProfileIntoTask carries a saved agent's standing instructions into a
-// routine's task. The data agent drops the conversation-level profile, so a
-// routine that runs on it gets the instructions as part of what it is asked
-// to do.
-func foldProfileIntoTask(req *gjagent.Request) {
-	if req.Profile == nil || strings.TrimSpace(req.Profile.Instructions) == "" {
-		return
-	}
-	name := strings.TrimSpace(req.Profile.Name)
-	if name == "" {
-		name = "this agent"
-	}
-	req.Instruction = "Standing instructions for " + name + ": " + strings.TrimSpace(req.Profile.Instructions) + "\n\n" + req.Instruction
-	req.Profile = nil
-}
-
 // routineServiceIdentity returns how to give a routine's agent the service
 // identity, or nil to run as the watch's owner. Both must hold: the routine's
 // saved agent is marked runs_as service, and the watch's owner is an admin.
@@ -158,31 +143,24 @@ func (s *graphjinService) routineServiceIdentity(ownerCtx context.Context, def w
 	}
 }
 
-// watchRoutineProposeNote tells a routine it may act through approvals. The
-// watch's owner set the routine up, so proposing a change is doing what they
-// asked; it still runs only once they approve it. A routine runs on the data
-// agent, which proposes a change by writing it.
-const watchRoutineProposeNote = "If what you find calls for a change to the data, make it with a mutation: GraphJin holds the write for the watch owner's approval and nothing changes until they approve. Writing the mutation is how a change is proposed; describing a change in your answer proposes nothing. Pass expect with the mutation to say what the change should achieve, so GraphJin can check later whether it worked. Then say what you proposed and why. If nothing needs changing, say so."
-
-// followUpProposeNote is the same for a follow-up, which runs on the lead.
-const followUpProposeNote = "If what you find calls for a change to the data, ask the data agent to make it, in plain words, with ask_graphjin: GraphJin holds the change for the watch owner's approval and nothing changes until they approve. That request is how a change is proposed; describing a change in your reply proposes nothing. Then say what you proposed and why. If nothing needs changing, say so."
-
-// watchRoutineAgentConfig is the agent config an unattended run uses. Nobody
-// is watching it, so with write approvals on it may propose data and API
-// writes and run none itself (HeldWritesOnly); without approvals it is
+// watchRoutineAgentConfig is the agent config an unattended run uses: a
+// routine, a follow-up, or the turn after one of their changes is decided.
+// Nobody is watching it, so with write approvals on it may propose data and
+// API writes and run none itself (HeldWritesOnly); without approvals it is
 // read-only, as every routine used to be.
 //
-// A routine is one task with its event attached, so it runs on the data agent
-// itself: the worker's guards refuse an answer no tool call backs, where the
-// lead could answer "I proposed the change" without asking for it. A
-// follow-up continues a conversation, so it keeps the lead (lead true).
-func watchRoutineAgentConfig(conf *Config, lead bool) gjagent.Config {
+// It runs on the lead, like chat. Routines ran on the data agent alone for a
+// while, to keep a lead from saying "I proposed the change" without asking
+// for it. Measured again, the lead held as many changes, GraphJin's own
+// outcome line (stateUnattendedOutcome) states what happened either way, and
+// only the lead can follow the owner's skills and memories or schedule a
+// check-back: on the routine eval's extended cases the data agent alone
+// passed 12 of 30 runs and the lead 27 to 30.
+func watchRoutineAgentConfig(conf *Config) gjagent.Config {
 	agentConf := agentConfigFromService(conf)
-	if !lead {
-		agentConf.Lead.Enabled = false
-	}
 	// Nobody is waiting on an unattended run, and a change it proposes takes
-	// a lookup, the write and its expectation: give it room to finish.
+	// a lookup, the write and its expectation: give its data agents room to
+	// finish.
 	if agentConf.MaxSteps < unattendedMinSteps {
 		agentConf.MaxSteps = unattendedMinSteps
 	}
@@ -270,9 +248,6 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 
 	data := parseJSONValue(event.DataJSON)
 	instruction := watchRoutineInstruction(def, cfg.Prompt, mapFromAny(data))
-	if s.approvalsEnabled() {
-		instruction += "\n\n" + watchRoutineProposeNote
-	}
 	req := gjagent.Request{
 		Instruction: instruction,
 		Context: map[string]any{
@@ -285,9 +260,6 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 	if cfg.Once {
 		// A follow-up the agent scheduled: the note is the whole story.
 		req.Instruction = cfg.Prompt
-		if s.approvalsEnabled() {
-			req.Instruction += "\n\n" + followUpProposeNote
-		}
 		opts.Display = "Follow-up: " + cfg.Prompt
 	}
 	run, err := s.prepareWatchRoutineRun(ownerCtx, threadID, &req, opts)
@@ -295,8 +267,8 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 		return receipt, err
 	}
 	if !cfg.Once {
-		foldProfileIntoTask(&req)
-		// The watch already knows what it is about: its query's tables.
+		// The watch already knows what it is about: its query's tables. The
+		// lead's data agents start with that detail (leadRunner.Run).
 		req.PrefetchCatalogIDs = s.queryCatalogTableIDs(agentCtx, def.Query)
 		// The rows it fired on were read by GraphJin and are in the task: a
 		// verdict drawn from them is grounded without more discovery.
@@ -305,7 +277,7 @@ func (s *graphjinService) deliverWatchAgent(ctx context.Context, def watchRuntim
 		}
 	}
 
-	runner, err := s.agentEntryRunner(watchRoutineAgentConfig(s.conf, cfg.Once))
+	runner, err := s.agentEntryRunner(watchRoutineAgentConfig(s.conf))
 	if err != nil {
 		// The run row exists; record the failure in the thread rather than
 		// leaving it for the lease sweep.
@@ -398,18 +370,30 @@ func (s *graphjinService) watchRoutineSettle(req gjagent.Request) func(context.C
 // A held write already carries the engine's own sentence (approvalAnswer).
 func (s *graphjinService) stateUnattendedOutcome(ctx context.Context, resp gjagent.Response) gjagent.Response {
 	if resp.Status == gjagent.StatusNeedsApproval {
+		// A lead that has read GraphJin's no-change line in the thread's
+		// earlier turns can open its reply with it out of habit, and a reply
+		// that states its change is written before the change is held. The
+		// line is GraphJin's, and with a change held it is false.
+		if answer := strings.TrimSpace(resp.Answer); strings.HasPrefix(answer, unattendedNoChange(runOriginFrom(ctx))) {
+			resp.Answer = strings.TrimSpace(strings.TrimPrefix(answer, unattendedNoChange(runOriginFrom(ctx))))
+		}
 		return resp
 	}
 	outcome := unattendedNoChange(runOriginFrom(ctx))
 	if changes := s.autonomousChangesInRun(ctx, runThreadFrom(ctx).runID); len(changes) != 0 {
 		outcome = "Made " + strings.Join(changes, "; ") + " on its own, as configured."
 	}
+	answer := strings.TrimSpace(resp.Answer)
+	continuation := runOriginFrom(ctx).Origin == approvalOriginContinuation
 	switch {
-	case strings.TrimSpace(resp.Answer) == "":
+	case answer == "":
 		if len(resp.Errors) == 0 {
 			resp.Answer = outcome
 		}
-	case runOriginFrom(ctx).Origin == approvalOriginContinuation:
+	case continuation && strings.HasSuffix(answer, outcome), !continuation && strings.HasPrefix(answer, outcome):
+		// The lead has seen GraphJin's line in the thread's earlier turns and
+		// wrote the same one itself, where it belongs: once is enough.
+	case continuation:
 		// A follow-up leads with the decision's result; the engine's line
 		// closes it.
 		resp.Answer = resp.Answer + "\n\n" + outcome
@@ -459,8 +443,8 @@ func (r failingAgentRunner) Run(context.Context, gjagent.Request) (gjagent.Respo
 // full event rides in the run context (_watch_events).
 //
 // A data event's rows are the routine's subject, so they are part of the task
-// (watchRoutineEventRows): the data agent reads its context only from code,
-// and a routine that cannot see the rows it fired on goes looking for them.
+// (watchRoutineEventRows): a routine that cannot see the rows it fired on
+// goes looking for them, and one that can often needs no data agent at all.
 // Their keys are columns the run context carries, so citing them is grounded.
 func watchRoutineInstruction(def watchRuntimeDefinition, prompt string, data map[string]any) string {
 	out := prompt + "\n\n" + watchRoutineBrief(data)

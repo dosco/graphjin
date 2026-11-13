@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -396,5 +398,53 @@ func TestGraphJinRuntimeLetsInformedClarificationThrough(t *testing.T) {
 	ask := mapValue(session.Execute(`await askClarification("Two invoices tables exist; which one?");`, nil))
 	if runtimeCompletionType(ask) != "askclarification" {
 		t.Fatalf("informed ask must pass through untouched, got %+v", ask)
+	}
+}
+
+// A function's error is a message for the model: the recovery it carries is
+// read on the next step, whichever name the code called the function by. Ax's
+// own registration of the qualified name failed the run instead.
+func TestDataAgentFunctionErrorReachesTheModelUnderEitherName(t *testing.T) {
+	hint := "this call did NOT return data: field 'amount' is not a column; available columns: id, mrr_cents"
+	for _, call := range []string{"execute_graphql", axFlatFunctionNamespace + ".execute_graphql"} {
+		client := &scriptedLeadClient{responses: []ax.Value{
+			leadSteps{
+				leadCode(`final("go", {})`),
+				leadCode(`await ` + call + `({ query: "query { accounts { amount } }" })`),
+				leadCode(`final("done", {})`),
+			},
+			leadReply(StatusAnswered, "ok"),
+		}}
+		tool := ax.Fn("execute_graphql").WithHandler(func(map[string]ax.Value) (ax.Value, error) {
+			return nil, errors.New(hint)
+		})
+		tool.Description = "Run a GraphQL query."
+		tool.Args = map[string]ax.Field{"query": {Name: "query", Type: ax.FieldType{Name: "string"}}}
+		runtime := newGraphJinCodeRuntime(func() any { return nil }, func(any) {}, func() string { return "" }, func() string { return "" })
+		registerAdvertisedCallable(runtime.RegisterCallable, tool.Name, func(params ax.Value) (ax.Value, error) {
+			return tool.Handler(asMap(params))
+		})
+		program := ax.NewAgent(`question:string -> answer:string`, map[string]ax.Value{
+			"functions": toolArray([]ax.Tool{tool}), "functionDiscovery": false,
+			"runtime": map[string]ax.Value{"language": "JavaScript"}, "max_actor_steps": 4,
+		})
+		if _, err := program.Forward(context.Background(), client, map[string]ax.Value{"question": "Which account has the most MRR?"}, map[string]ax.Value{"runtime": runtime, "max_actor_steps": 4}); err != nil {
+			t.Fatalf("%s: a function error ended the run: %v", call, err)
+		}
+		if len(client.requests) != 4 || !strings.Contains(client.requests[2], "available columns: id, mrr_cents") {
+			t.Fatalf("%s: the model never saw the recovery (%d model calls)", call, len(client.requests))
+		}
+	}
+	// llmQuery is Ax's own primitive and still arrives through the hook.
+	runtime := newGraphJinCodeRuntime(func() any { return nil }, func(any) {}, func() string { return "" }, func() string { return "" })
+	runtime.RegisterHostCallable("llmQuery", func(ax.Value) (ax.Value, error) { return "ok", nil })
+	runtime.RegisterHostCallable("utils.execute_graphql", func(ax.Value) (ax.Value, error) { return nil, errors.New("must not be registered") })
+	session, err := runtime.CreateSession(map[string]ax.Value{"inputs": map[string]any{}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := mapValue(session.Execute(`console.log(typeof llmQuery + " " + typeof utils)`, nil))
+	if logs := fmt.Sprint(result["logs"]); !strings.Contains(logs, "function undefined") {
+		t.Fatalf("after Ax's registrations the runtime has %v, want llmQuery only", logs)
 	}
 }

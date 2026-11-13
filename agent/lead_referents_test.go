@@ -106,7 +106,6 @@ func TestLeadHoldsBackAnUnresolvedQuestionOnce(t *testing.T) {
 	restated := "What is the total amount of failed invoices for Meridian Robotics?"
 	run := func(retry string) ([]string, string) {
 		client := &scriptedLeadClient{responses: []ax.Value{
-			leadCode(`final({ plan: "total their failed invoices" })`),
 			leadCode(`const r = await ask_graphjin({ questions: ["` + dangling + `"] }); console.log(JSON.stringify(r))`),
 			leadCode(`const r2 = await ask_graphjin({ questions: ["` + retry + `"] }); console.log(JSON.stringify(r2))`),
 			leadCode(`final("answer with the total")`),

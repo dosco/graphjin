@@ -197,7 +197,12 @@ func (r *serviceAgentRuntime) ProposeWrite(ctx context.Context, args map[string]
 	// What the change should achieve, measured now, before anything changes.
 	expectation, expectJSON, err := s.prepareExpectation(ctx, args["expect"])
 	if err != nil {
-		return nil, nil, fmt.Errorf("this write did NOT execute: %w", err)
+		// Name the whole shape, not only the field that failed first. Told
+		// one field at a time, a model that guessed the shape (expect:
+		// {table, operation, where}) spent a step on value, another on
+		// within_hours, then query, then path, and ran out before the change
+		// was ever proposed.
+		return nil, nil, fmt.Errorf("this write did NOT execute: %w. Execute the same mutation again with expect in this shape, for example expect: %s", err, expectationExample(table))
 	}
 	out := any(map[string]any{"data": map[string]any{}})
 	preview := map[string]any{"available": false, "reason": reason}
@@ -754,9 +759,8 @@ type approvalTurn struct {
 	notifyAlways           bool
 }
 
-// runApprovalTurn runs an approval's follow-up turn in its thread, as the
-// identity that proposed it and where it ran: a routine's on the data agent,
-// a chat's on the lead.
+// runApprovalTurn runs an approval's follow-up turn in its thread, on the
+// lead, as the identity that proposed it.
 func (s *graphjinService) runApprovalTurn(ctx context.Context, row map[string]any, turn approvalTurn) {
 	approvalID := stringMapValue(row, "id")
 	threadID := stringMapValue(row, "thread_id")
@@ -792,6 +796,9 @@ func (s *graphjinService) runApprovalTurn(ctx context.Context, row map[string]an
 		Instruction:  turn.instruction,
 		Context:      reqContext,
 		Capabilities: s.agentCapabilityProfile(agentCtx),
+		// A reply here that says the change was made is reporting this
+		// approval, not proposing a new one.
+		ChangeAlreadyMade: stringMapValue(row, "status") == approvalStatusExecuted,
 	}
 	opts := threadRunOptions{RunID: turn.runID, Display: turn.display, RunAs: runAs}
 	run, err := s.prepareWatchRoutineRun(ownerCtx, threadID, &req, opts)
@@ -803,11 +810,10 @@ func (s *graphjinService) runApprovalTurn(ctx context.Context, row map[string]an
 	}
 	conf := agentConfigFromService(s.conf)
 	if origin.WatchID != "" {
-		// A routine's follow-up is as unattended as the routine was, and
-		// runs where it did: on the data agent.
-		conf = watchRoutineAgentConfig(s.conf, false)
-		foldProfileIntoTask(&req)
-		// It starts with the evidence of the table its change touched.
+		// A routine's follow-up is as unattended as the routine was.
+		conf = watchRoutineAgentConfig(s.conf)
+		// Its data agents start with the evidence of the table its change
+		// touched.
 		summary := mapFromAny(parseJSONValue(stringMapValue(row, "summary_json")))
 		req.PrefetchCatalogIDs = s.catalogTableIDs(agentCtx, [][3]string{{stringFromAny(summary["database"]), "", stringFromAny(summary["table"])}})
 	}

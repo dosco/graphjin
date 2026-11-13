@@ -178,10 +178,10 @@ func TestWatchRoutineAnswersInItsAgentsHomeThread(t *testing.T) {
 	if err := svc.processPendingWatchDeliveries(alice); err != nil {
 		t.Fatalf("deliver: %v", err)
 	}
-	// The routine runs on the data agent, which takes no profile: the agent's
-	// standing instructions are part of its task instead.
-	if runner.req.Profile != nil || !strings.HasPrefix(runner.req.Instruction, "Standing instructions for ") ||
-		!strings.Contains(runner.req.Instruction, "Focus on late shipments.") {
+	// The routine runs on the lead, which speaks as the saved agent: its
+	// standing instructions arrive as the run's profile, not in the task.
+	if runner.req.Profile == nil || runner.req.Profile.Instructions != "Focus on late shipments." ||
+		strings.Contains(runner.req.Instruction, "Focus on late shipments.") {
 		t.Fatalf("routine task = %q profile %+v", runner.req.Instruction, runner.req.Profile)
 	}
 	if got := runThreadProfile(runner.ctx); got != ops {
@@ -283,17 +283,19 @@ func TestWatchRoutineMayProposeWritesForApproval(t *testing.T) {
 	ctx := threadUserCtx("user_1")
 	watchID := fireOpenOrdersRoutine(t, svc, ctx)
 
-	// A routine runs on the data agent, not the lead.
-	if runner.conf.Lead.Enabled {
-		t.Fatal("a routine must run on the data agent")
+	// A routine runs on the lead, like chat.
+	if !runner.conf.Lead.Enabled {
+		t.Fatal("a routine must run on the lead")
 	}
 	if runner.conf.ReadOnly || !runner.conf.HeldWritesOnly || runner.conf.WriteApproval != gjagent.WriteApprovalRequired {
 		t.Fatalf("routine config: read_only=%v held_writes_only=%v write_approval=%q", runner.conf.ReadOnly, runner.conf.HeldWritesOnly, runner.conf.WriteApproval)
 	}
-	if !strings.Contains(runner.req.Instruction, watchRoutineProposeNote) {
+	// How such a turn proposes a change is the lead's own rule for a turn
+	// nobody is watching, not a line added to the owner's prompt.
+	if strings.Contains(runner.req.Instruction, "ask_graphjin") {
 		t.Fatalf("routine instruction = %q", runner.req.Instruction)
 	}
-	// The routine starts with its watch's table as evidence, and room to finish.
+	// Its data agents get room to finish.
 	if runner.conf.MaxSteps < unattendedMinSteps {
 		t.Fatalf("max steps = %d", runner.conf.MaxSteps)
 	}
@@ -319,7 +321,7 @@ func TestWatchRoutineMayProposeWritesForApproval(t *testing.T) {
 func TestWatchRoutineConfigFollowsApprovals(t *testing.T) {
 	conf := &Config{}
 	conf.Agent.Enabled = true
-	if c := watchRoutineAgentConfig(conf, false); !c.ReadOnly || c.HeldWritesOnly {
+	if c := watchRoutineAgentConfig(conf); !c.ReadOnly || c.HeldWritesOnly {
 		t.Fatalf("without approvals a routine is read-only: %+v", c)
 	}
 }
@@ -334,6 +336,23 @@ func TestUnattendedRunsStateTheirOwnOutcome(t *testing.T) {
 	if got.Answer != "No change was proposed.\n\nI have proposed resolving the ticket." {
 		t.Fatalf("answer = %q", got.Answer)
 	}
+	// A lead that has seen GraphJin's line in earlier turns of the thread writes
+	// it itself; the reply carries it once.
+	echoed := gjagent.Response{Status: gjagent.StatusAnswered, Answer: "No change was proposed.\n\nThe subject does not start with DUPLICATE:."}
+	if got := svc.stateUnattendedOutcome(ctx, echoed); got.Answer != echoed.Answer {
+		t.Fatalf("an echoed outcome line was repeated: %q", got.Answer)
+	}
+	// Written anywhere else, it does not stand in for GraphJin's own.
+	buried := gjagent.Response{Status: gjagent.StatusAnswered, Answer: "I proposed it. No change was proposed."}
+	if got := svc.stateUnattendedOutcome(ctx, buried); !strings.HasPrefix(got.Answer, "No change was proposed.\n\nI proposed it.") {
+		t.Fatalf("the outcome line must lead: %q", got.Answer)
+	}
+	// A reply that opens with the no-change line while its change is held
+	// loses the line: it is GraphJin's sentence, and it is false there.
+	habit := gjagent.Response{Status: gjagent.StatusNeedsApproval, Answer: "No change was proposed.\n\nTicket 33's account is at churn risk.\n\nThis change needs your approval before it runs: x. Nothing has been changed yet.", Approval: &gjagent.Approval{ID: "apr_1"}}
+	if got := svc.stateUnattendedOutcome(ctx, habit); got.Answer != "Ticket 33's account is at churn risk.\n\nThis change needs your approval before it runs: x. Nothing has been changed yet." {
+		t.Fatalf("a held change must not open with the no-change line: %q", got.Answer)
+	}
 	held := gjagent.Response{Status: gjagent.StatusNeedsApproval, Answer: "This change needs your approval before it runs: x. Nothing has been changed yet.", Approval: &gjagent.Approval{ID: "apr_1"}}
 	if got := svc.stateUnattendedOutcome(ctx, held); got.Answer != held.Answer {
 		t.Fatalf("a held write keeps the engine's own sentence: %q", got.Answer)
@@ -344,8 +363,8 @@ func TestUnattendedRunsStateTheirOwnOutcome(t *testing.T) {
 	}
 }
 
-// A data event's rows are part of a routine's task: the data agent sees its
-// context only from code.
+// A data event's rows are part of a routine's task, so the routine can judge
+// them without going to look for them.
 func TestRoutineTaskCarriesTheRowsItFiredOn(t *testing.T) {
 	data := map[string]any{"support_tickets": []any{map[string]any{"id": 1, "subject": "DUPLICATE: x"}}, "support_tickets_cursor": "c1"}
 	got := watchRoutineInstruction(watchRuntimeDefinition{}, "Check it.", data)

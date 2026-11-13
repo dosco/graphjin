@@ -61,12 +61,12 @@ func (c *leadModelClient) Stream(context.Context, map[string]ax.Value, map[strin
 	return nil, nil
 }
 
-// leadAsks scripts a lead turn that asks the data agent questions: the
-// context stage hands off, the executor asks and logs, then finishes.
+// leadAsks scripts a conversation turn that asks the data agent questions: the
+// lead asks and logs, then finishes. A turn with nothing attached has no first
+// stage of its own, so no step is scripted for one.
 func leadAsks(questions ...string) ax.Value {
 	raw, _ := json.Marshal(questions)
 	return leadSteps{
-		leadCode(`final({ plan: "delegate" })`),
 		leadCode(`const results = await ask_graphjin({ questions: ` + string(raw) + ` }); console.log(JSON.stringify(results))`),
 		leadCode(`final("delegated")`),
 	}
@@ -165,12 +165,13 @@ func TestThreadTurnRunsTheLeadOverStatelessWorkers(t *testing.T) {
 		}
 	}
 
-	// The run row counts every model call the turn made, lead and workers.
+	// The run row counts every model call the turn made. This worker reports
+	// none, so the count is the lead's three: ask, finish, reply.
 	runs, err := newThreadControlPlane(svc).queryRows(ctx, core.ManagedQueryRoot{
 		Table: threadRunsRootTable, Where: map[string]any{"id": map[string]any{"eq": first.RunID}},
 	})
-	if err != nil || len(runs) != 1 || runs[0]["llm_calls"].(int64) < 4 {
-		t.Fatalf("gj_thread_run for the first turn = %+v err=%v, want llm_calls counted", runs, err)
+	if err != nil || len(runs) != 1 || runs[0]["llm_calls"].(int64) != 3 {
+		t.Fatalf("gj_thread_run for the first turn = %+v err=%v, want the lead's 3 llm_calls", runs, err)
 	}
 	if runs[0]["unverified_figures"] != nil {
 		t.Fatalf("first turn's figures all came from the worker, got unverified %v", runs[0]["unverified_figures"])
@@ -279,5 +280,44 @@ func TestAgentRequestsRunTheLeadWhenEnabled(t *testing.T) {
 	refused := post(off, `{"instruction":"and orders?","history":[{"role":"user","content":"hi"}]}`, http.StatusBadRequest)
 	if !strings.Contains(fmt.Sprint(refused), "agent.lead.enabled") {
 		t.Fatalf("history with the lead off = %v, want the lead-required error", refused)
+	}
+}
+
+// A routine's lead sends its data agents questions with nothing from the
+// conversation, but what the server itself handed the turn goes with them: the
+// catalog detail of the tables the watch reads and the rows it fired on.
+func TestLeadWorkersStartWithWhatTheServerHandedTheTurn(t *testing.T) {
+	svc := newSQLiteThreadService(t)
+	worker := &statelessWorker{answers: map[string]string{"Is support ticket 1 open?": "Ticket 1 is open"}}
+	model := &leadModelClient{responses: []ax.Value{
+		leadAsks("Is support ticket 1 open?"),
+		leadAnswers("Ticket 1 is open."),
+	}}
+	svc.agentClientFactory = func(gjagent.Config) (ax.AIClient, error) { return model, nil }
+	conf := agentConfigFromService(svc.conf)
+	conf.Lead.Enabled = true
+	lead, err := newGraphJinLeadRunner(svc, conf, worker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := map[string]any{"support_tickets": []any{map[string]any{"id": 1, "subject": "DUPLICATE: x"}}}
+	resp, err := lead.Run(threadUserCtx("user_1"), gjagent.Request{
+		Instruction:        "A support ticket this watch follows just changed.",
+		History:            []gjagent.Turn{{Role: "user", Content: "Watch \"tickets\" fired."}},
+		PrefetchCatalogIDs: []string{"table:app:main.support_tickets"},
+		ObservedRows:       rows,
+	})
+	if err != nil || resp.Status != gjagent.StatusAnswered {
+		t.Fatalf("lead turn = %+v, %v", resp, err)
+	}
+	if len(worker.requests) != 1 {
+		t.Fatalf("worker requests = %d", len(worker.requests))
+	}
+	got := worker.requests[0]
+	if len(got.PrefetchCatalogIDs) != 1 || got.PrefetchCatalogIDs[0] != "table:app:main.support_tickets" || got.ObservedRows == nil {
+		t.Fatalf("worker evidence: prefetch %v rows %v", got.PrefetchCatalogIDs, got.ObservedRows)
+	}
+	if got.Instruction != "Is support ticket 1 open?" || len(got.History) != 0 || got.Profile != nil {
+		t.Fatalf("worker request = %+v, want only the lead's question", got)
 	}
 }

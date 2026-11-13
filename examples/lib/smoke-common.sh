@@ -1019,7 +1019,7 @@ routine_ticket_case() {
   # The watch selects only what the routine does not change, so resolving
   # the ticket does not fire it again.
   out="$(graphql_vars routine-watch 'mutation ($n: String!, $q: String!, $d: JSON) { gj_watch(insert: { name: $n, query: $q, delivery_json: $d }) { id } }' \
-    "$(jq -nc --arg n "$watch_name" --arg q "subscription ${watch_name} { support_tickets(where: { id: { eq: ${ticket_id} } }, first: 5, after: \$cursor) { id subject severity } support_tickets_cursor }" --arg p "$prompt" '{n:$n, q:$q, d:{kind:"agent", prompt:$p}}')")"
+    "$(jq -nc --arg n "$watch_name" --arg q "subscription ${watch_name} { support_tickets(where: { id: { eq: ${ticket_id} } }, first: 5, after: \$cursor) { id subject severity } support_tickets_cursor }" --arg p "$prompt" --arg t "${ROUTINE_THREAD_ID:-}" '{n:$n, q:$q, d:({kind:"agent", prompt:$p} + (if $t == "" then {} else {thread_id:$t} end))}')")"
   watch_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id // empty' "$out")"
   [ -n "$watch_id" ] || { echo "routine case: could not create the watch" >&2; jq . "$out" >&2; return 1; }
   SMOKE_ROUTINE_WATCHES+=("$watch_id")
@@ -1034,7 +1034,9 @@ routine_ticket_case() {
   done
   thread="$(jq -r '[.data.gj_watch_event[]? | .receipt_json | (if type == "string" then fromjson else . end) | .thread_id // empty] | .[0] // ""' "$out")"
   if [ -n "$thread" ]; then
-    SMOKE_ROUTINE_THREADS+=("$thread")
+    # A thread the caller named (ROUTINE_THREAD_ID) is the caller's to sweep
+    # and delete; only a routine's own thread goes with the routine.
+    [ "$thread" = "${ROUTINE_THREAD_ID:-}" ] || SMOKE_ROUTINE_THREADS+=("$thread")
     out="$(graphql_vars routine-reply 'query ($t: String!) { gj_thread_message(where: { thread_id: { eq: $t }, role: { eq: "assistant" } }, order_by: { seq: desc }, limit: 1) { status content } }' "$(jq -nc --arg t "$thread" '{t:$t}')")"
     reply="$(jq -c '.data.gj_thread_message[0] // {} | {status, answer: ((.content // "") | .[0:300])}' "$out")"
   fi
@@ -1059,6 +1061,20 @@ routine_wait_continuation() {
   printf '%s\n' "$out"
 }
 
+# routine_sweep_followups <thread>... deletes the check-backs scheduled in
+# the given threads: one-time watches named followup_<thread>_...
+routine_sweep_followups() {
+  local followups thread id
+  followups="$(graphql_vars routine-cleanup-followups 'query { gj_watch(limit: 500) { id name } }' '{}')"
+  for thread in "$@"; do
+    [ -n "$thread" ] || continue
+    while read -r id; do
+      [ -n "$id" ] || continue
+      graphql_vars routine-cleanup-followup "mutation { gj_watch(delete: true, where: { id: { eq: \"${id}\" } }) { id } }" '{}' >/dev/null
+    done < <(jq -r --arg p "followup_${thread}_" '.data.gj_watch[]? | select((.name // "") | startswith($p)) | .id' "$followups" 2>/dev/null || true)
+  done
+}
+
 routine_cleanup() {
   local id hash pending
   # Reject anything a routine left waiting, so no approval outlives its run.
@@ -1078,6 +1094,13 @@ routine_cleanup() {
     [ -n "$id" ] || continue
     graphql_vars routine-cleanup-artifact "mutation { gj_artifacts(delete: true, where: { name: { eq: \"${id}\" }, kind: { eq: \"saved_query\" } }) { id } }" '{}' >/dev/null
   done
+  # A routine runs on the lead, which can schedule a check-back in its thread
+  # in any run: a one-time watch named followup_<thread>_... It would fire
+  # long after this run, into a thread that is gone, so it goes with the
+  # routine even when the thread is kept.
+  if [ "${#SMOKE_ROUTINE_THREADS[@]}" -gt 0 ]; then
+    routine_sweep_followups "${SMOKE_ROUTINE_THREADS[@]}"
+  fi
   for id in "${SMOKE_ROUTINE_THREADS[@]-}"; do
     # ROUTINE_KEEP_THREADS=1 keeps the routines' threads for diagnosis.
     [ -n "$id" ] && [ "${ROUTINE_KEEP_THREADS:-}" != "1" ] || continue

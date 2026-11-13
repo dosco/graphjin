@@ -1,6 +1,7 @@
 package serv
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -106,5 +107,22 @@ func TestServiceAgentRoutineRunsAsTheServiceForAnAdmin(t *testing.T) {
 	fireRoutine(t, svc, user, map[string]any{"kind": "agent", "prompt": "Check orders.", "profile": profile})
 	if got, _ := artifactUserID(runner.ctx); got != "user_1" || runOriginFrom(runner.ctx).DelegatedBy != "" {
 		t.Fatalf("a non-admin's routine ran as %q (%+v)", got, runOriginFrom(runner.ctx))
+	}
+}
+
+// A run acting as the service identity schedules no check-backs: the watch
+// would be the service's, in a thread owned by whoever delegated the run, and
+// could never deliver there.
+func TestServiceIdentityRunsScheduleNoFollowUps(t *testing.T) {
+	r := leadRunner{followUps: followUpScheduler{}}
+	if r.followUpsFor(context.Background()) == nil {
+		t.Fatal("an owner's run should be able to schedule a follow-up")
+	}
+	asService := withRunOrigin(context.Background(), runOrigin{Origin: approvalOriginRoutine, DelegatedBy: "admin_1", RunAsID: "svc_ops", RunAsRole: "ops_agent"})
+	if r.followUpsFor(asService) != nil {
+		t.Fatal("a service-identity run must not schedule a follow-up")
+	}
+	if (leadRunner{}).followUpsFor(context.Background()) != nil {
+		t.Fatal("no scheduler, no follow-ups")
 	}
 }

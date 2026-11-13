@@ -85,9 +85,20 @@ func (r *graphJinCodeRuntime) RegisterCallable(name string, handler axgoja.HostC
 	return r
 }
 
-// RegisterHostCallable preserves Ax's structural hook for llmQuery.
+// RegisterHostCallable preserves Ax's structural hook for llmQuery, and only
+// for llmQuery.
+//
+// Through the same hook Ax registers the agent's functions under the
+// qualified names its prompt advertises (utils.execute_graphql), replacing
+// the registration made here (registerAdvertisedCallable). Ax's version fails
+// the whole run when a function returns an error. Every recovery this agent
+// throws for the model to act on — the real column names after an unknown
+// column, a corrected query, the detail to inspect first — then ended the run
+// instead, whenever the model had called the function the way the prompt
+// shows it. Called by the bare name, the same error reached the model and the
+// run went on.
 func (r *graphJinCodeRuntime) RegisterHostCallable(name string, handler func(ax.Value) (ax.Value, error)) {
-	r.base.RegisterHostCallable(name, handler)
+	registerAxPrimitive(r.base, name, handler)
 }
 
 func (r *graphJinCodeRuntime) CreateSession(globals map[string]ax.Value, options map[string]ax.Value) (ax.CodeSession, error) {

@@ -2,7 +2,10 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"testing"
+
+	ax "github.com/ax-llm/ax/packages/go"
 )
 
 // A run the server already knows the subject of starts with that table's
@@ -12,7 +15,7 @@ import (
 func TestPrefetchedCatalogIsConsumedAsDiscovery(t *testing.T) {
 	rt := &fakeRuntime{}
 	a := &Agent{runtime: rt}
-	prepared := a.prefetchCatalog(context.Background(), Request{PrefetchCatalogIDs: []string{"table:app:main.support_tickets"}})
+	prepared := a.prefetchCatalog(context.Background(), Request{PrefetchCatalogIDs: []string{"table:app:main.support_tickets"}}, nil)
 	if prepared == nil || len(prepared.reads) != 1 {
 		t.Fatalf("prepared = %+v", prepared)
 	}
@@ -28,7 +31,7 @@ func TestPrefetchedCatalogIsConsumedAsDiscovery(t *testing.T) {
 	}
 	// A detail the catalog does not return prepares nothing.
 	empty := &fakeRuntime{catalogOverride: func(map[string]any) any { return map[string]any{"cards": []any{}} }}
-	if got := (&Agent{runtime: empty}).prefetchCatalog(context.Background(), Request{PrefetchCatalogIDs: []string{"table:app:main.gone"}}); got != nil {
+	if got := (&Agent{runtime: empty}).prefetchCatalog(context.Background(), Request{PrefetchCatalogIDs: []string{"table:app:main.gone"}}, nil); got != nil {
 		t.Fatalf("an unknown table prepared %+v", got)
 	}
 }
@@ -67,6 +70,81 @@ func TestHandedRowsGroundAnAnswerWithoutDiscovery(t *testing.T) {
 		s.observeHandedRows(empty)
 		if s.handedRows {
 			t.Fatalf("%#v counted as handed rows", empty)
+		}
+	}
+}
+
+// A run that starts from prefetched detail has no selection model when
+// agent.selection is off. A catalog search it makes later comes back as the
+// catalog returned it; it must not fail the run.
+func TestPrefetchedRunSearchesTheCatalogWithSelectionOff(t *testing.T) {
+	rt := &fakeRuntime{catalogOverride: func(args map[string]any) any {
+		if len(detailIDsFromArgs(args)) != 0 {
+			return fakeCatalogResult(args)
+		}
+		return map[string]any{"cards": []any{map[string]any{"id": "table:app:main.accounts", "kind": "table", "title": "accounts"}}}
+	}}
+	a := &Agent{runtime: rt}
+	req := Request{Instruction: "Flag the ticket if its account is at churn risk.", PrefetchCatalogIDs: []string{"table:app:main.support_tickets"}}
+	prepared := a.prefetchCatalog(context.Background(), req, nil)
+	if prepared == nil {
+		t.Fatal("nothing was prepared")
+	}
+	protocol := newProtocolRuntime(rt, req.Instruction, "", 8, nil, nil, CatalogSearchFeatures{})
+	search, err := rt.QueryCatalog(context.Background(), map[string]any{"search": "accounts"})
+	if err != nil || len(catalogCards(search)) != 1 {
+		t.Fatalf("search = %v, %v", search, err)
+	}
+	got := a.enrichCatalog(context.Background(), req, protocol, prepared, search)
+	if cards := catalogCards(got); len(cards) != 1 || stringValue(cards[0]["id"]) != "table:app:main.accounts" {
+		t.Fatalf("a search with selection off came back as %v", got)
+	}
+	if _, enriched := mapValue(got)["prefetched_catalog"]; enriched {
+		t.Fatalf("nothing can be selected without a selection model: %v", got)
+	}
+}
+
+// A prefetched run has no selection model to choose its guides, so it keeps
+// every guide its caller is permitted. Left with none, a routine's data agent
+// never saw GraphJin's mutation syntax and made its own up.
+func TestPrefetchedRunKeepsItsPermittedGuides(t *testing.T) {
+	permitted := allowedSkills(false, profileWithRoleAndRoots("user"))
+	if len(permitted) == 0 {
+		t.Fatal("the test profile permits no guides")
+	}
+	prepared := (&Agent{runtime: &fakeRuntime{}}).prefetchCatalog(context.Background(),
+		Request{PrefetchCatalogIDs: []string{"table:app:main.support_tickets"}}, permitted)
+	if prepared == nil || !prepared.unselected || len(prepared.stats.LoadedSkillIDs) != len(permitted) {
+		t.Fatalf("prepared = %+v, want it unselected with the %d permitted guides recorded", prepared, len(permitted))
+	}
+
+	// End to end, through Ax's own prompt assembly: the guide reaches the
+	// model of a prefetched run, as it does without the prefetch.
+	for name, ids := range map[string][]string{"prefetched": {"table:app:main.support_tickets"}, "plain": nil} {
+		rec := &recordingClient{}
+		runner := newAgent(
+			Config{Provider: "openai", APIKeyEnv: "GRAPHJIN_UNUSED", TimeoutSeconds: 50, MaxSteps: 4},
+			&fakeRuntime{},
+			WithClientFactory(func(Config) (ax.AIClient, error) { return rec, nil }),
+		)
+		_, _ = runner.Run(context.Background(), Request{
+			Instruction:        "Set support ticket 7 to resolved.",
+			Capabilities:       profileWithRoleAndRoots("user"),
+			PrefetchCatalogIDs: ids,
+		})
+		reached := false
+		for i, call := range rec.calls {
+			// Once per prompt: the executor's loaded guides, not a second
+			// copy in the runtime instructions.
+			switch n := strings.Count(dumpAXValue(call.values), "Skill: data_write"); {
+			case n == 1:
+				reached = true
+			case n > 1:
+				t.Errorf("%s run: model call %d carries the data_write guide %d times", name, i, n)
+			}
+		}
+		if !reached {
+			t.Errorf("%s run: the data_write guide reached no prompt (%d model calls)", name, len(rec.calls))
 		}
 	}
 }

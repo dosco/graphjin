@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -60,12 +61,12 @@ func (c *scriptedLeadClient) Stream(context.Context, map[string]ax.Value, map[st
 	return nil, nil
 }
 
-// leadToolCall scripts a lead turn that asks the data agent questions: the
-// context stage hands off, the executor asks and logs, then finishes.
+// leadToolCall scripts a conversation turn that asks the data agent questions:
+// the lead asks and logs, then finishes. A turn with nothing attached has no
+// first stage of its own (newLeadProgram), so no step is scripted for one.
 func leadToolCall(_ string, questions ...string) ax.Value {
 	raw, _ := json.Marshal(questions)
 	return leadSteps{
-		leadCode(`final({ plan: "delegate" })`),
 		leadCode(`const results = await ask_graphjin({ questions: ` + string(raw) + ` }); console.log(JSON.stringify(results))`),
 		leadCode(`final("delegated")`),
 	}
@@ -162,9 +163,9 @@ func TestLeadFansOutQuestionsInParallel(t *testing.T) {
 		}
 	}
 	usage := SummarizeUsage(resp.Usage)
-	// The lead's four calls: hand-off, ask, finish, reply.
-	if usage.LLMCalls != 4+3*2 || usage.PromptTokens != 420+3*50 {
-		t.Fatalf("usage = %+v, want the lead's four calls plus every worker's", usage)
+	// The lead's three calls: ask, finish, reply.
+	if usage.LLMCalls != 3+3*2 || usage.PromptTokens != 320+3*50 {
+		t.Fatalf("usage = %+v, want the lead's three calls plus every worker's", usage)
 	}
 	for _, req := range got {
 		if req.ReadOnly {
@@ -349,7 +350,6 @@ func (s *fakeLeadStore) Remember(_ context.Context, content string) (MemoryDoc, 
 func TestLeadLoadsOnlyCatalogSkills(t *testing.T) {
 	store := &fakeLeadStore{skills: []SkillDoc{{ID: "skill-churn", Name: "churn review", Description: "How we report churn", Content: "Report churn as a count and the MRR lost, last 30 days."}}}
 	client := &scriptedLeadClient{responses: []ax.Value{
-		leadCode(`final({ plan: "use the churn skill" })`),
 		leadCode(`await discover({ skills: ["churn review", "someone else's skill"] }); console.log("loaded")`),
 		leadToolCall("c1", "How many open tickets are there?"),
 		leadReply(StatusAnswered, "2 open tickets."),
@@ -383,7 +383,6 @@ func TestLeadRecallsMemoriesThroughTheStore(t *testing.T) {
 	store := &fakeLeadStore{memories: []MemoryDoc{{ID: "mem-eur", Content: "Report amounts in EUR."}}}
 	client := &scriptedLeadClient{responses: []ax.Value{
 		leadCode(`await recall(["currency"]); console.log(JSON.stringify(inputs.memories))`),
-		leadCode(`final({ plan: "delegate" })`),
 		leadCode(`final("nothing to ask")`),
 		leadReply(StatusAnswered, "Noted."),
 	}}
@@ -411,7 +410,6 @@ func TestLeadRemembersOnlyOnWritableTurns(t *testing.T) {
 	run := func(readOnly bool) (*fakeLeadStore, *scriptedLeadClient) {
 		store := &fakeLeadStore{}
 		client := &scriptedLeadClient{responses: []ax.Value{
-			leadCode(`final({ plan: "save the preference" })`),
 			leadCode(`if (typeof remember === "function") { console.log(JSON.stringify(await remember({ content: "Report amounts in EUR." }))) } else { console.log("no remember") }`),
 			leadCode(`if (typeof remember === "function") { console.log(JSON.stringify(await remember({ content: "Report amounts in EUR." }))) }`),
 			leadCode(`final("done")`),
@@ -441,7 +439,6 @@ func TestLeadRemembersOnlyOnWritableTurns(t *testing.T) {
 // a later stage — is answered from the first result, not by a second worker.
 func TestLeadAnswersARepeatedQuestionOnce(t *testing.T) {
 	client := &scriptedLeadClient{responses: []ax.Value{
-		leadCode(`final({ plan: "delegate" })`),
 		leadCode(`const first = await ask_graphjin({ questions: ["How many open tickets are there?"] }); console.log(JSON.stringify(first))`),
 		leadCode(`const again = await ask_graphjin({ questions: ["how many open  tickets are there?", "How many roast batches ran this week?"] }); console.log(JSON.stringify(again))`),
 		leadCode(`final("done")`),
@@ -546,7 +543,6 @@ func TestLeadBlockedReplyCarriesARefusal(t *testing.T) {
 // the error message.
 func TestLeadClarificationIsAReplyNotAnError(t *testing.T) {
 	client := &scriptedLeadClient{responses: []ax.Value{
-		leadCode(`final({ plan: "clarify" })`),
 		leadCode(`askClarification("Which name should the new admin role have?")`),
 	}}
 	lead := newTestLead(t, Config{}, client, func(context.Context, DelegateRequest) (Response, error) {
@@ -591,7 +587,6 @@ func TestLeadPermissionsFollowTheCallersAccess(t *testing.T) {
 	}
 
 	client := &scriptedLeadClient{responses: []ax.Value{
-		leadCode(`final({ plan: "refuse" })`),
 		leadCode(`final("refuse")`),
 		leadReply(StatusBlocked, "Only an administrator can change the GraphJin configuration."),
 	}}
@@ -645,5 +640,687 @@ func TestLeadStreamsItsAnswer(t *testing.T) {
 	}
 	if streamedResp.Status != plain.Status || streamedResp.Answer != plain.Answer {
 		t.Fatalf("streamed response %+v differs from plain %+v", streamedResp, plain)
+	}
+}
+
+// A conversation turn gives a first stage nothing to read but the message, so
+// the lead goes straight to the stage that asks: one model call fewer. A turn
+// with data attached, such as a routine's watch event, keeps the first stage,
+// which reads what is attached and hands on what it found.
+func TestLeadSkipsTheFirstStageOnlyWhenNothingIsAttached(t *testing.T) {
+	question := "How many open tickets are there?"
+	delegate := func(_ context.Context, req DelegateRequest) (Response, error) {
+		return leadTestAnswers[req.Question], nil
+	}
+	asked := func(resp Response) int {
+		delegations, _ := mapValue(resp.Data)["delegations"].([]any)
+		return len(delegations)
+	}
+
+	client := &scriptedLeadClient{responses: []ax.Value{
+		leadToolCall("", question),
+		leadReply(StatusAnswered, "2 open tickets."),
+	}}
+	resp, err := newTestLead(t, Config{}, client, delegate).Run(context.Background(), Request{
+		Instruction: "and how many are open?",
+		History:     []Turn{{Role: "user", Content: "Tell me about tickets"}, {Role: "assistant", Content: "There are 3 tickets."}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ask, finish, reply.
+	if len(client.requests) != 3 || len(client.responses) != 0 || asked(resp) != 1 || resp.Answer != "2 open tickets." {
+		t.Fatalf("conversation turn: %d model calls, %d scripted replies unused, %d questions, answer %q", len(client.requests), len(client.responses), asked(resp), resp.Answer)
+	}
+	if usage := SummarizeUsage(resp.Usage); usage.LLMCalls != 3 {
+		t.Fatalf("conversation turn reports %d model calls, want the 3 that were made", usage.LLMCalls)
+	}
+
+	client = &scriptedLeadClient{responses: []ax.Value{
+		leadSteps{
+			// First stage: reads the attached event and hands on what it found.
+			leadCode(`final("check the ticket", { ticketId: inputs.attached._watch_events[0].data_json.id })`),
+			// Second stage: what was handed on is there to read.
+			leadCode(`console.log("handed=" + inputs.distilledContext.ticketId); const r = await ask_graphjin({ questions: ["` + question + `"] }); console.log(JSON.stringify(r))`),
+			leadCode(`final("done")`),
+		},
+		leadReply(StatusAnswered, "2 open tickets."),
+	}}
+	resp, err = newTestLead(t, Config{}, client, delegate).Run(context.Background(), Request{
+		Instruction: "Check this ticket.",
+		Context:     map[string]any{"_watch_events": []any{map[string]any{"id": "we1", "data_json": map[string]any{"id": 13}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Hand on, ask, finish, reply.
+	if len(client.requests) != 4 || len(client.responses) != 0 || asked(resp) != 1 {
+		t.Fatalf("attached turn: %d model calls, %d scripted replies unused, %d questions", len(client.requests), len(client.responses), asked(resp))
+	}
+	if !strings.Contains(client.requests[2], "handed=13") {
+		t.Fatal("the second stage never read what the first handed on")
+	}
+}
+
+// A step that calls a function for its effect and prints nothing used to come
+// back as "(no output)", and the model, unable to tell the call had run, ran
+// the same step again until it was out of steps. Such a step now shows what
+// the function returned. A step that printed is shown as it printed, and a
+// step that called nothing still reads "(no output)".
+func TestLeadStepThatPrintsNothingShowsWhatItsCallReturned(t *testing.T) {
+	change := "Set support ticket 21's status to resolved."
+	lookup := "How many open tickets are there?"
+	client := &scriptedLeadClient{responses: []ax.Value{
+		leadSteps{
+			// First stage: called for its effect, nothing printed.
+			leadCode(`await ask_graphjin({ questions: ["` + change + `"] });`),
+			leadCode(`final("report the change", {})`),
+			// Second stage: a step that prints what it needs.
+			leadCode(`const r = await ask_graphjin({ questions: ["` + lookup + `"] }); console.log("printed=" + r[0].status)`),
+			// No call and nothing printed.
+			leadCode(`let quiet = 1;`),
+			leadCode(`final("done")`),
+		},
+		leadReply(StatusAnswered, "The change waits for approval."),
+	}}
+	lead := newTestLead(t, Config{}, client, func(_ context.Context, d DelegateRequest) (Response, error) {
+		if d.Question == change {
+			return Response{Status: StatusNeedsApproval, Answer: "Ticket change held for the owner.", Approval: &Approval{ID: "apr_1", Summary: "update 1 row in support_tickets"}}, nil
+		}
+		return Response{Status: StatusAnswered, Answer: "Zeta answer."}, nil
+	})
+	_, err := lead.Run(context.Background(), Request{
+		Instruction: "A support ticket changed.",
+		Context:     map[string]any{"_watch_events": []any{map[string]any{"id": "we1"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(client.requests) != 6 || len(client.responses) != 0 {
+		t.Fatalf("%d model calls, %d scripted replies unused", len(client.requests), len(client.responses))
+	}
+	after := client.requests[1]
+	for _, want := range []string{"ask_graphjin returned (this step printed nothing)", StatusNeedsApproval, "Ticket change held for the owner."} {
+		if !strings.Contains(after, want) {
+			t.Fatalf("the step after an unprinted call does not show %q", want)
+		}
+	}
+	if printed := client.requests[3]; !strings.Contains(printed, "printed="+StatusAnswered) || strings.Contains(printed, "Zeta answer.") {
+		t.Fatal("a step that printed was not shown as it printed")
+	}
+	if !strings.Contains(client.requests[4], "(no output)") {
+		t.Fatal("a step that called nothing and printed nothing no longer reads (no output)")
+	}
+}
+
+// A returned value too long for a step result is shown without its row data,
+// which the code can still read from the call's result.
+func TestReturnedTextLeavesOutRowDataWhenLong(t *testing.T) {
+	rows := make([]any, 0, 400)
+	for i := 0; i < 400; i++ {
+		rows = append(rows, map[string]any{"id": i, "subject": "a ticket subject"})
+	}
+	value := []any{map[string]any{"question": "q", "status": StatusAnswered, "answer": "400 tickets.", "data": map[string]any{"support_tickets": rows}}}
+	text := returnedText(value)
+	if len(text) > returnedTextLimit || !strings.Contains(text, "400 tickets.") || !strings.Contains(text, StatusAnswered) || strings.Contains(text, "a ticket subject") {
+		t.Fatalf("long value shown as %d chars: %.200s", len(text), text)
+	}
+	if short := returnedText([]any{map[string]any{"status": StatusAnswered, "data": map[string]any{"n": 4}}}); !strings.Contains(short, `"n":4`) {
+		t.Fatalf("a short value lost its data: %s", short)
+	}
+	var calls unprintedCalls
+	calls.record("ask_graphjin", value)
+	failed := map[string]ax.Value{"kind": "error", "is_error": true, "error": "boom"}
+	showReturned(failed, calls.take())
+	if _, shown := failed["logs"]; shown {
+		t.Fatal("a failed step was given the returned value as output")
+	}
+	if len(calls.take()) != 0 {
+		t.Fatal("take left calls behind for the next step")
+	}
+}
+
+// The lead's prompt shows each input under its label and lists no context
+// fields; it must also say where an input lives in code, or a model reading
+// the attached watch event guesses a path and fails every step.
+func TestLeadPromptNamesWhereInputsLiveInCode(t *testing.T) {
+	client := &scriptedLeadClient{responses: []ax.Value{
+		leadSteps{
+			leadCode(`console.log("subject=" + inputs.attached._watch_events[0].data_json.support_tickets[0].subject); console.log("turns=" + inputs.history.length); console.log("llmQuery=" + typeof llmQuery)`),
+			leadCode(`respond("say what the subject is", { subject: inputs.attached._watch_events[0].data_json.support_tickets[0].subject })`),
+		},
+		leadReply(StatusAnswered, "The subject is DUPLICATE: x."),
+	}}
+	lead := newTestLead(t, Config{}, client, func(context.Context, DelegateRequest) (Response, error) {
+		return Response{Status: StatusAnswered}, nil
+	})
+	_, err := lead.Run(context.Background(), Request{
+		Instruction: "A support ticket changed.",
+		History:     []Turn{{Role: "user", Content: "earlier"}, {Role: "assistant", Content: "reply"}},
+		Context: map[string]any{"_watch_events": []any{map[string]any{"data_json": map[string]any{
+			"support_tickets": []any{map[string]any{"id": 13, "subject": "DUPLICATE: x"}},
+		}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := client.requests[0]
+	for _, want := range []string{"inputs.attached", "inputs.history"} {
+		if !strings.Contains(first, want) {
+			t.Fatalf("the lead's prompt never names %s", want)
+		}
+	}
+	second := client.requests[1]
+	for _, want := range []string{"subject=DUPLICATE: x", "turns=2"} {
+		if !strings.Contains(second, want) {
+			t.Fatalf("code reading the inputs the way the prompt says got no %q:\n%s", want, second[max(0, len(second)-600):])
+		}
+	}
+	// Ax registers llmQuery through a hook the runtime wrappers must keep.
+	if !strings.Contains(second, "llmQuery=function") {
+		t.Fatal("the prompt advertises llmQuery and the lead's runtime does not define it")
+	}
+}
+
+// Lead code in the second stage that reads a value under inputs when it is
+// not an input gets the value it meant: a variable the first stage created,
+// or evidence it handed on. Behind optional chaining the wrong name used to
+// read as undefined without an error, and the turn decided on an empty
+// subject that a duplicate ticket needed no change.
+func TestLeadCodeReadsAMisnamedInputAsTheValueItMeant(t *testing.T) {
+	client := &scriptedLeadClient{responses: []ax.Value{
+		leadSteps{
+			// First stage. A key of the attached input read as an input: the
+			// host cannot set inputs here, so the failed step is told where
+			// the value is.
+			leadCode(`console.log(inputs._watch_events[0].id)`),
+			leadCode(`const ticket = inputs.attached._watch_events[0].data_json.support_tickets[0]; final("say whether it is a duplicate", { ticketId: ticket.id })`),
+			// Second stage. The first stage's variable and its evidence, both
+			// read as inputs, the variable behind optional chaining.
+			leadCode(`const subject = inputs.ticket?.subject ?? ""; console.log("subject=" + subject + " id=" + inputs.ticketId)`),
+			// A variable of this stage, read as an input in later steps, is
+			// read where it lives each time: it follows a change. The real
+			// inputs are still there beside it.
+			leadCode(`note = "first"; console.log("set")`),
+			leadCode(`console.log("a=" + inputs.note + " kept=" + inputs.distilledContext.ticketId + " real=" + inputs.attached._watch_events[0].id); note = "second"`),
+			leadCode(`console.log("b=" + inputs.note)`),
+			leadCode(`final("say it is a duplicate", { subject: ticket.subject })`),
+		},
+		leadReply(StatusAnswered, "Ticket 13 is a duplicate."),
+	}}
+	lead := newTestLead(t, Config{}, client, func(context.Context, DelegateRequest) (Response, error) {
+		return Response{Status: StatusAnswered}, nil
+	})
+	if _, err := lead.Run(context.Background(), Request{
+		Instruction: "A support ticket changed.",
+		Context: map[string]any{"_watch_events": []any{map[string]any{"id": "we1", "data_json": map[string]any{
+			"support_tickets": []any{map[string]any{"id": 13, "subject": "DUPLICATE: x"}},
+		}}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.requests) != 8 {
+		t.Fatalf("model calls = %d, want the seven steps and the reply", len(client.requests))
+	}
+	// Each step's result is what the next model call reads.
+	for call, want := range map[int][]string{
+		1: {"inputs._watch_events does not exist", "read inputs.attached._watch_events"},
+		3: {"subject=DUPLICATE: x id=13"},
+		5: {"a=first kept=13 real=we1"},
+		6: {"b=second"},
+	} {
+		for _, text := range want {
+			if !strings.Contains(client.requests[call], text) {
+				t.Errorf("model call %d did not read %q", call+1, text)
+			}
+		}
+	}
+	if strings.Contains(client.requests[3], "does not exist") {
+		t.Error("a name that resolved still drew a hint")
+	}
+}
+
+// What the runtime places, and what it leaves alone: a name nothing holds is
+// never guessed, and a declared input this turn does not carry stays absent
+// even when a variable shares its name.
+func TestLeadPlacesOnlyNamesItCanFind(t *testing.T) {
+	session := &leadNamesSession{
+		CodeSession: variablesSession{vars: map[string]any{"ticket": map[string]any{"id": 7}, "history": []any{"mine"}, "ticketId": 99}},
+		inputs: map[string]any{
+			"instruction":      "x",
+			"attached":         map[string]any{"k": 1},
+			"distilledContext": map[string]any{"ticketId": 13},
+		},
+	}
+	placed := session.place(`inputs.nowhere.x; inputs.attached.k; inputs.history; inputs?.ticket?.id; inputs.ticketId; inputs.k; inputs.instruction`)
+	got := map[string]string{}
+	for _, name := range placed {
+		got[name.name] = name.where
+	}
+	want := map[string]string{
+		"ticket":   "it as ticket",
+		"ticketId": "inputs.distilledContext.ticketId", // handed-on evidence before a variable of the same name
+		"k":        "inputs.attached.k",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("placed = %v, want %v", got, want)
+	}
+	for _, declared := range []string{"instruction", "history", "saved_memories", "saved_skills", "profile", "attached", "current_date", "read_only", "permissions"} {
+		if !leadDeclaredInputs[declared] {
+			t.Errorf("%s is a declared lead input and is not treated as one", declared)
+		}
+	}
+}
+
+// variablesSession is a code session that holds only live variables.
+type variablesSession struct {
+	ax.CodeSession
+	vars map[string]any
+}
+
+func (s variablesSession) Inspect(map[string]ax.Value) ax.Value { return s.vars }
+
+// unattendedReply is the reply of a turn nobody is watching: it says whether
+// the turn calls for a change, and what the change is.
+func unattendedReply(answer string, proposes bool, change string) ax.Value {
+	fields := map[string]any{"status": StatusAnswered, "answer": answer, "proposes_change": proposes}
+	if change != "" {
+		fields["change_request"] = change
+	}
+	content, _ := json.Marshal(fields)
+	return ax.Object("results", ax.Array(ax.Object("content", string(content), "function_calls", ax.Array())),
+		"model_usage", ax.Object("tokens", ax.Object("promptTokens", 120, "completionTokens", 30)))
+}
+
+// routineLookup scripts the code of a routine turn the way a model writes it:
+// the first stage hands the event on, and the second asks the data agent and
+// ends in the same step, on a conclusion it reached without reading the
+// answer.
+func routineLookup(conclusion string, questions ...string) ax.Value {
+	raw, _ := json.Marshal(questions)
+	said, _ := json.Marshal(conclusion)
+	return leadSteps{
+		leadCode(`final("check the ticket", {})`),
+		leadCode(`const r = await ask_graphjin({ questions: ` + string(raw) + ` }); await final(` + string(said) + `, { conditionMet: false })`),
+	}
+}
+
+var routineRequest = Request{
+	Instruction: "Flag ticket 25 if its account is at churn risk and has a failed invoice.",
+	Context:     map[string]any{"_watch_events": []any{map[string]any{"id": "we1", "data_json": map[string]any{"id": 25}}}},
+}
+
+var unattendedConfig = Config{HeldWritesOnly: true, WriteApproval: WriteApprovalRequired}
+
+// A routine's lead looks something up and ends its code on a wrong
+// conclusion, as a model that decides in code before reading the answer does.
+// The reply stage reads what the data agent answered, states the change, and
+// GraphJin sends it: the change is held although no code asked for it.
+func TestUnattendedReplyThatStatesAChangeHasItSent(t *testing.T) {
+	lookup := "Is the account of support ticket 25 at churn risk with a failed invoice?"
+	change := "Set support ticket 25's resolution_note to priority-review"
+	var mu sync.Mutex
+	var asked []string
+	readOnly := map[string]bool{}
+	delegate := func(_ context.Context, d DelegateRequest) (Response, error) {
+		mu.Lock()
+		asked = append(asked, d.Question)
+		readOnly[d.Question] = d.ReadOnly
+		mu.Unlock()
+		if d.Question == change {
+			if d.ReadOnly {
+				return Response{Status: StatusBlocked, Answer: "read-only"}, nil
+			}
+			return Response{Status: StatusNeedsApproval, Answer: "held", Approval: &Approval{ID: "apr_1", Summary: "update 1 row in support_tickets"}}, nil
+		}
+		return Response{Status: StatusAnswered, Answer: "Yes: churn risk, 2 failed invoices."}, nil
+	}
+
+	client := &scriptedLeadClient{responses: []ax.Value{
+		routineLookup("No change is needed.", lookup),
+		unattendedReply("Ticket 25 is proposed for priority review: its account is at churn risk and has 2 failed invoices.", true, change),
+	}}
+	resp, err := newTestLead(t, unattendedConfig, client, delegate).Run(context.Background(), routineRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(asked, "|") != lookup+"|"+change {
+		t.Fatalf("data agent was asked %q, want the look-up and then the stated change", asked)
+	}
+	if resp.Status != StatusNeedsApproval || resp.Approval == nil || resp.Approval.ID != "apr_1" {
+		t.Fatalf("reply = %s %+v, want the stated change held", resp.Status, resp.Approval)
+	}
+	if readOnly[lookup] || readOnly[change] {
+		t.Fatalf("read-only: look-up %v, stated change %v; want neither", readOnly[lookup], readOnly[change])
+	}
+	for _, notice := range resp.Notices {
+		if notice.Kind == noticeStatedChangeNotHeld {
+			t.Fatalf("a held change was reported as not held: %+v", notice)
+		}
+	}
+	// Hand on, ask and end, reply: no second attempt.
+	if len(client.requests) != 3 || len(client.responses) != 0 {
+		t.Fatalf("%d model calls, %d scripted replies unused", len(client.requests), len(client.responses))
+	}
+	// The code ended on its own conclusion. The reply stage was given the task
+	// of deciding and the data agent's answer, and none of what the code
+	// concluded.
+	reply := client.requests[len(client.requests)-1]
+	if !strings.Contains(reply, replyAnswersKey) || !strings.Contains(reply, "Yes: churn risk, 2 failed invoices.") {
+		t.Fatal("the reply stage was not handed what the data agent answered")
+	}
+	if !strings.Contains(reply, "Decide from them whether the instruction calls for a change") {
+		t.Fatal("the reply stage was not given the task of deciding")
+	}
+	if strings.Contains(reply, "conditionMet") || strings.Contains(reply, "No change is needed.") {
+		t.Fatal("the reply stage was handed the conclusion the code reached without reading")
+	}
+
+	made := routineRequest
+	made.ChangeAlreadyMade = true
+	for name, tc := range map[string]struct {
+		cfg   Config
+		req   Request
+		reply ax.Value
+	}{
+		"no change called for":       {unattendedConfig, routineRequest, unattendedReply("No change is needed.", false, "")},
+		"a change named but not due": {unattendedConfig, routineRequest, unattendedReply("No change is needed.", false, change)},
+		"due with nothing to send":   {unattendedConfig, routineRequest, unattendedReply("A change is needed.", true, "")},
+		"a watched turn":             {Config{}, routineRequest, unattendedReply("Ticket 25 is proposed for priority review.", true, change)},
+		"a change already made":      {unattendedConfig, made, unattendedReply("Ticket 25 was updated as approved.", true, change)},
+	} {
+		asked = nil
+		client := &scriptedLeadClient{responses: []ax.Value{routineLookup("No change is needed.", lookup), tc.reply}}
+		resp, err := newTestLead(t, tc.cfg, client, delegate).Run(context.Background(), tc.req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(asked) != 1 || resp.Approval != nil {
+			t.Fatalf("%s: asked %q, approval %+v; want only the look-up", name, asked, resp.Approval)
+		}
+		if strings.Contains(client.requests[len(client.requests)-1], replyAnswersKey) != (name != "a watched turn" && name != "a change already made") {
+			t.Fatalf("%s: the reply stage is handed the answers only on a turn whose reply decides a change", name)
+		}
+	}
+}
+
+// Every stage of a lead turn is told the lead's instructions: the stages that
+// write its code, which decide what the data agent is asked and in what
+// words, and the stage that writes the reply. Ax hands a signature's
+// instructions to the reply stage only, so the code stages get them with the
+// runtime's (leadCodeInstructions).
+func TestEveryLeadStageIsToldTheLeadsInstructions(t *testing.T) {
+	delegate := func(_ context.Context, d DelegateRequest) (Response, error) {
+		return Response{Status: StatusAnswered, Answer: "2 open tickets."}, nil
+	}
+	const forEveryTurn = "The data agent sees no conversation, so every question must stand alone"
+	const forAConversation = "only after the user asked for or confirmed that change"
+	const forAnUnattendedTurn = "Only code can ask the data agent"
+	for name, tc := range map[string]struct {
+		cfg      Config
+		req      Request
+		script   ax.Value
+		reply    ax.Value
+		has, not string
+	}{
+		"a conversation": {Config{}, Request{Instruction: "How many tickets are open?"}, leadToolCall("", "How many support tickets are open?"),
+			leadReply(StatusAnswered, "2 open tickets."), forAConversation, forAnUnattendedTurn},
+		"a routine": {unattendedConfig, routineRequest, routineLookup("No change is needed.", "Is the account of support ticket 25 at churn risk?"),
+			unattendedReply("No change is needed.", false, ""), forAnUnattendedTurn, forAConversation},
+	} {
+		client := &scriptedLeadClient{responses: []ax.Value{tc.script, tc.reply}}
+		if _, err := newTestLead(t, tc.cfg, client, delegate).Run(context.Background(), tc.req); err != nil {
+			t.Fatal(err)
+		}
+		if len(client.requests) < 3 {
+			t.Fatalf("%s: %d model calls, want code stages and a reply", name, len(client.requests))
+		}
+		for i, request := range client.requests {
+			if !strings.Contains(request, forEveryTurn) || !strings.Contains(request, tc.has) || strings.Contains(request, tc.not) {
+				t.Fatalf("%s: model call %d of %d was not told the lead's instructions for this kind of turn", name, i+1, len(client.requests))
+			}
+		}
+	}
+}
+
+// The two kinds of turn differ in how a change comes about, and in nothing
+// else of what the lead is told.
+func TestUnattendedSignatureCarriesItsOwnChangeRules(t *testing.T) {
+	quoted := func(text string) string { return strings.ReplaceAll(text, `"`, `'`) }
+	if !strings.Contains(leadSignature, quoted(leadChangeRules)) || strings.Contains(leadSignature, quoted(leadUnattendedChangeRules)) {
+		t.Fatal("a conversation's signature must carry the conversation's rules for changes")
+	}
+	if !strings.Contains(leadUnattendedSignature, quoted(leadUnattendedChangeRules)) || strings.Contains(leadUnattendedSignature, quoted(leadChangeRules)) {
+		t.Fatal("an unattended signature must carry the unattended rules for changes")
+	}
+	for _, field := range []string{"proposes_change:boolean", "change_request?:string"} {
+		if !strings.Contains(leadUnattendedSignature, field) || strings.Contains(leadSignature, field) {
+			t.Fatalf("%s belongs to the unattended reply only", field)
+		}
+	}
+	rest := func(signature, rules string) string { return strings.Replace(signature, quoted(rules), "", 1) }
+	unattended, _, _ := strings.Cut(rest(leadUnattendedSignature, leadUnattendedChangeRules), ", proposes_change:boolean")
+	if unattended != rest(leadSignature, leadChangeRules) {
+		t.Fatal("the two signatures differ outside their rules for changes and the unattended reply's fields")
+	}
+}
+
+// A stated change the data agent does not hold is said so in the reply, in
+// the data agent's words: the reply was written before the change was sent.
+func TestUnattendedReplyWhoseStatedChangeIsNotHeldSaysSo(t *testing.T) {
+	lookup := "Is the account of support ticket 25 at churn risk with a failed invoice?"
+	change := "Set support ticket 25's resolution_notes to priority-review"
+	delegate := func(_ context.Context, d DelegateRequest) (Response, error) {
+		if d.Question == change {
+			return Response{Status: StatusAnswered, Answer: "support_tickets has no such field; nothing was changed."}, nil
+		}
+		return Response{Status: StatusAnswered, Answer: "Yes: churn risk, 2 failed invoices."}, nil
+	}
+	client := &scriptedLeadClient{responses: []ax.Value{
+		routineLookup("No change is needed.", lookup),
+		unattendedReply("Ticket 25 is proposed for priority review.", true, change),
+	}}
+	resp, err := newTestLead(t, unattendedConfig, client, delegate).Run(context.Background(), routineRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Approval != nil || resp.Status == StatusNeedsApproval {
+		t.Fatalf("reply = %s %+v, want nothing held", resp.Status, resp.Approval)
+	}
+	if !strings.Contains(resp.Answer, "is not held for approval") || !strings.Contains(resp.Answer, "support_tickets has no such field") {
+		t.Fatalf("answer = %q, want it to say the change is not held and why", resp.Answer)
+	}
+	var noted bool
+	for _, notice := range resp.Notices {
+		noted = noted || notice.Kind == noticeStatedChangeNotHeld
+	}
+	if !noted {
+		t.Fatalf("notices = %+v, want the unheld change recorded", resp.Notices)
+	}
+}
+
+// A reply carries one change. When the turn's code asked for one and it is
+// held, a change the reply states is not sent as well.
+func TestUnattendedReplyDoesNotSendASecondChange(t *testing.T) {
+	change := "Set support ticket 25's resolution_note to priority-review"
+	var asked []string
+	delegate := func(_ context.Context, d DelegateRequest) (Response, error) {
+		asked = append(asked, d.Question)
+		return Response{Status: StatusNeedsApproval, Answer: "held", Approval: &Approval{ID: "apr_1", Summary: "update 1 row in support_tickets"}}, nil
+	}
+	for name, stated := range map[string]string{"the same change": change, "another change": "Set support ticket 26's status to resolved"} {
+		asked = nil
+		client := &scriptedLeadClient{responses: []ax.Value{
+			routineLookup("Proposed.", change),
+			unattendedReply("Ticket 25 is proposed for priority review.", true, stated),
+		}}
+		resp, err := newTestLead(t, unattendedConfig, client, delegate).Run(context.Background(), routineRequest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(asked) != 1 || resp.Status != StatusNeedsApproval {
+			t.Fatalf("%s: asked %q, status %s; want the one change the code asked for", name, asked, resp.Status)
+		}
+	}
+}
+
+// A change the turn's code already asked for, in the same words, that the
+// data agent did not hold is not asked for a second time: the reply says it
+// is not held, with what the data agent said.
+func TestUnattendedReplyDoesNotRepeatARequestTheCodeMade(t *testing.T) {
+	change := "Set support ticket 25's resolution_note to priority-review"
+	var asked []string
+	delegate := func(_ context.Context, d DelegateRequest) (Response, error) {
+		asked = append(asked, d.Question)
+		return Response{Status: StatusAnswered, Answer: "Ticket 25 is already flagged; nothing was changed."}, nil
+	}
+	client := &scriptedLeadClient{responses: []ax.Value{
+		routineLookup("Proposed.", change),
+		unattendedReply("Ticket 25 is proposed for priority review.", true, change),
+	}}
+	resp, err := newTestLead(t, unattendedConfig, client, delegate).Run(context.Background(), routineRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) != 1 || resp.Approval != nil {
+		t.Fatalf("asked %q, approval %+v; want the request made once and nothing held", asked, resp.Approval)
+	}
+	if !strings.Contains(resp.Answer, "is not held for approval") || !strings.Contains(resp.Answer, "already flagged") {
+		t.Fatalf("answer = %q, want it to say the change is not held and why", resp.Answer)
+	}
+}
+
+// A routine whose change is worded by one of the owner's skills loads the
+// skill in its code. Ax gives loaded skill text to the code stages only, so
+// the reply that states the change gets it from the turn's record: without it
+// the change read "close it per the playbook" and the note was the model's.
+func TestUnattendedReplyReadsTheSkillsTheCodeLoaded(t *testing.T) {
+	store := &fakeLeadStore{skills: []SkillDoc{{ID: "skill-dup", Name: "duplicate playbook", Description: "How we close duplicate tickets", Content: "Close a duplicate with status resolved and the note merged-into-original."}}}
+	for name, code := range map[string]ax.Value{
+		// The skill is loaded in the step that ends the first stage, the way a
+		// model writes it, and in a step of its own.
+		"loaded in the step that ends the stage": leadSteps{
+			leadCode(`await discover({ skills: ["duplicate playbook"] }); await final("close the duplicate ticket per the playbook", {})`),
+			leadCode(`await final("Propose closing ticket 25 using the duplicate playbook.", {})`),
+		},
+		"loaded in a step of its own": leadSteps{
+			leadCode(`await discover({ skills: ["duplicate playbook"] }); console.log("loaded")`),
+			leadCode(`await final("close the duplicate ticket per the playbook", {})`),
+			leadCode(`await final("Propose closing ticket 25 using the duplicate playbook.", {})`),
+		},
+	} {
+		client := &scriptedLeadClient{responses: []ax.Value{code, unattendedReply("No change is needed.", false, "")}}
+		lead := newTestLead(t, unattendedConfig, client, func(context.Context, DelegateRequest) (Response, error) {
+			return Response{Status: StatusAnswered, Answer: "ok"}, nil
+		})
+		lead.Store = store
+		if _, err := lead.Run(context.Background(), routineRequest); err != nil {
+			t.Fatal(err)
+		}
+		reply := client.requests[len(client.requests)-1]
+		if !strings.Contains(reply, replySkillsKey) || !strings.Contains(reply, "the note merged-into-original") {
+			t.Errorf("%s: the reply stage was not handed the skill the code loaded", name)
+		}
+	}
+}
+
+func TestDiscoveredSkillsReadsTheNamesAStepAsksFor(t *testing.T) {
+	for code, want := range map[string][]ax.Value{
+		`await discover({ skills: ["duplicate playbook"] }); await final("x", {})`:                  {"duplicate playbook"},
+		"await discover({\n  skills: ['a b', `c`],\n});":                                            {"a b", "c"},
+		`const s = await discover({ modules: ["m"], skills: ["one"] }); discover({skills:["two"]})`: {"one", "two"},
+		"await discover({ skills: [`skill ${n}`, name] });":                                         nil,
+		`await ask_graphjin({ questions: ["which skills: [\"x\"] exist?"] })`:                       nil,
+	} {
+		if got := discoveredSkills(code); !reflect.DeepEqual(got, want) {
+			t.Errorf("discoveredSkills(%q) = %v, want %v", code, got, want)
+		}
+	}
+}
+
+// The hand-off to the reply stage of a turn whose reply decides is the task
+// of deciding and the turn's own record. Nothing the code ended on is in it.
+func TestHandDecisionReplacesWhatTheCodeEndedOn(t *testing.T) {
+	record := map[string]any{replyAnswersKey: []any{map[string]any{"question": "q", "status": StatusAnswered, "answer": "a"}}}
+	for name, args := range map[string][]any{
+		"a task alone":            {"No change is needed."},
+		"a task and its evidence": {"Propose the change.", map[string]any{"proposes_change": true, "change_request": "Set ticket 26's note"}},
+		"nothing passed on":       nil,
+	} {
+		for _, kind := range []string{"final", "respond"} {
+			step := map[string]any{"type": kind, "args": args}
+			handDecision(step, record)
+			got := anySlice(step["args"])
+			if len(got) != 2 || got[0] != leadDecisionTask || !reflect.DeepEqual(got[1], record) {
+				t.Errorf("%s (%s): hand-off = %v, want the task of deciding and the turn's record", name, kind, got)
+			}
+		}
+	}
+	// A step that does not end the stage is left as it is.
+	step := map[string]any{"kind": "result", "result": nil}
+	handDecision(step, record)
+	if _, added := step["args"]; added {
+		t.Fatal("a step that did not end the stage was given a hand-off")
+	}
+}
+
+// The turn's record is what its functions returned: every question with how
+// it ended and what came back, the skills it loaded, the check-backs it
+// scheduled. A turn that asked nothing says so, so the reply cannot take the
+// instruction's facts for checked.
+func TestTurnRecordIsWhatTheTurnsFunctionsReturned(t *testing.T) {
+	run := &leadRun{followUps: map[string]FollowUp{}}
+	if got := run.turnRecord(); len(got) != 1 || got[replyAnswersKey] != replyNothingAsked {
+		t.Fatalf("record of a turn that did nothing = %v", got)
+	}
+	run.delegations = []leadDelegation{
+		{question: "Is account 1 at churn risk?", resp: Response{Status: StatusAnswered, Answer: "Yes.", Data: map[string]any{"status": "churn_risk"}}},
+		{question: "Does account 1 have a failed invoice?", err: errors.New("agent actor loop exceeded max steps")},
+	}
+	run.loadedSkillText = []any{map[string]any{"name": "duplicates", "content": "Close duplicates with the note Duplicate per playbook."}}
+	run.followUps["check ticket 25 again"] = FollowUp{ID: "f1", At: "2026-11-12T20:00:00Z"}
+	got := run.turnRecord()
+	answers := anySlice(got[replyAnswersKey])
+	if len(answers) != 2 {
+		t.Fatalf("answers = %v, want both questions", got[replyAnswersKey])
+	}
+	first, second := mapValue(answers[0]), mapValue(answers[1])
+	if first["answer"] != "Yes." || first["status"] != StatusAnswered || mapValue(first["data"])["status"] != "churn_risk" {
+		t.Fatalf("an answered question = %v, want its status, answer and data", first)
+	}
+	if second["status"] != StatusError || !strings.Contains(fmt.Sprint(second["errors"]), "exceeded max steps") {
+		t.Fatalf("a failed question = %v, want its status and error", second)
+	}
+	if skills := anySlice(got[replySkillsKey]); len(skills) != 1 || !strings.Contains(fmt.Sprint(skills[0]), "Duplicate per playbook") {
+		t.Fatalf("loaded skills = %v", got[replySkillsKey])
+	}
+	if want := []any{map[string]any{"at": "2026-11-12T20:00:00Z", "note": "check ticket 25 again"}}; !reflect.DeepEqual(got[replyCheckBacksKey], want) {
+		t.Fatalf("check-backs = %v, want %v", got[replyCheckBacksKey], want)
+	}
+}
+
+// A lead function's error is the model's to read and act on, whichever name
+// the code called it by. Ax's own registration of the qualified name fails
+// the turn instead, which is why the lead keeps its own.
+func TestLeadFunctionErrorReachesTheModelUnderEitherName(t *testing.T) {
+	for _, call := range []string{"ask_graphjin", axFlatFunctionNamespace + ".ask_graphjin"} {
+		client := &scriptedLeadClient{responses: []ax.Value{
+			leadSteps{
+				// No questions: the function returns an error.
+				leadCode(`await ` + call + `({ questions: [] })`),
+				leadCode(`final("done", {})`),
+			},
+			leadReply(StatusAnswered, "ok"),
+		}}
+		lead := newTestLead(t, Config{}, client, func(context.Context, DelegateRequest) (Response, error) {
+			return Response{Status: StatusAnswered}, nil
+		})
+		resp, err := lead.Run(context.Background(), Request{Instruction: "How many orders are open?"})
+		if err != nil || resp.Status != StatusAnswered {
+			t.Fatalf("%s: a function error ended the turn: %s %+v %v", call, resp.Status, resp.Errors, err)
+		}
+		if len(client.requests) != 3 || !strings.Contains(client.requests[1], "questions must list at least one question") {
+			t.Fatalf("%s: the model never saw the function's error (%d model calls)", call, len(client.requests))
+		}
 	}
 }

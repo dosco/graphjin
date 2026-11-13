@@ -170,17 +170,22 @@ func (r leadRunner) workerFor(d gjagent.DelegateRequest) (graphjinAgentRunner, e
 
 func (r leadRunner) Run(ctx context.Context, req gjagent.Request) (gjagent.Response, error) {
 	// Each question runs as the caller, with the caller's capabilities and
-	// namespace and nothing from the conversation.
+	// namespace and nothing from the conversation. What the server itself
+	// handed the turn is not conversation: the catalog detail of the tables a
+	// routine's watch reads, and the rows it fired on, are evidence its data
+	// agents start with instead of rediscovering.
 	delegate := func(ctx context.Context, d gjagent.DelegateRequest) (gjagent.Response, error) {
 		worker, err := r.workerFor(d)
 		if err != nil {
 			return gjagent.Response{}, err
 		}
 		return worker.Run(ctx, gjagent.Request{
-			Instruction:  d.Question,
-			Namespace:    req.Namespace,
-			Capabilities: req.Capabilities,
-			Observer:     d.Observer,
+			Instruction:        d.Question,
+			Namespace:          req.Namespace,
+			Capabilities:       req.Capabilities,
+			Observer:           d.Observer,
+			PrefetchCatalogIDs: req.PrefetchCatalogIDs,
+			ObservedRows:       req.ObservedRows,
 		})
 	}
 	lead, err := gjagent.NewLead(r.conf, delegate, r.opts...)
@@ -188,10 +193,21 @@ func (r leadRunner) Run(ctx context.Context, req gjagent.Request) (gjagent.Respo
 		return gjagent.Response{}, err
 	}
 	lead.Store = r.store
-	if r.followUps != nil {
-		lead.FollowUps = r.followUps
+	if followUps := r.followUpsFor(ctx); followUps != nil {
+		lead.FollowUps = followUps
 	}
 	return lead.Run(ctx, req)
+}
+
+// followUpsFor is the check-back scheduler a turn gets. A run acting as the
+// service identity gets none: its follow-up would be the service's watch, in
+// a thread that belongs to the person who delegated the run, and could never
+// deliver there.
+func (r leadRunner) followUpsFor(ctx context.Context) gjagent.FollowUpScheduler {
+	if r.followUps == nil || runOriginFrom(ctx).RunAsID != "" {
+		return nil
+	}
+	return r.followUps
 }
 
 // providerAgentRateLimiter returns the one process-local limiter shared by all

@@ -186,7 +186,6 @@ func TestLeadReportsWhereEachFigureCameFrom(t *testing.T) {
 	}
 	run := func(code, answer string) Response {
 		client := &scriptedLeadClient{responses: []ax.Value{
-			leadCode(`final({ plan: "combine the three figures" })`),
 			leadCode(code),
 			leadCode(`final("combined")`),
 			leadReply(StatusAnswered, answer),

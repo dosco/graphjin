@@ -167,7 +167,7 @@ mutation {
 }
 ```
 
-A read-only lead has no `remember` tool, and neither does a watch routine, which can at most propose a data change for its owner's approval. The
+A read-only lead has no `remember` tool, and neither does a watch routine, which can propose a data change for its owner's approval and schedule a check-back, nothing more. The
 memories a turn used are recorded on the run (`gj_thread_run.used_memories`)
 and in the response's `memories` field.
 
@@ -323,9 +323,10 @@ roots above.
 
 ## Follow-ups
 
-The lead's `follow_up` tool (`in_hours`, `note`) schedules a one-time turn in the current conversation: when the time comes, the note is the instruction and the conversation is the history, so the lead can check whether a change took effect or a deadline passed. A conversation holds at most three pending follow-ups, at most 30 days ahead; each is a schedule watch that deletes itself after it runs. A read-only lead has no `follow_up` tool.
+The lead's `follow_up` tool (`in_hours`, `note`) schedules a one-time turn in the current conversation: when the time comes, the note is the instruction and the conversation is the history, so the lead can check whether a change took effect or a deadline passed. A conversation holds at most three pending follow-ups, at most 30 days ahead; each is a schedule watch that deletes itself after it runs. With write approvals on, a watch routine can schedule one in its own thread. A read-only lead has no `follow_up` tool, and neither does a routine that runs as the service identity.
 
 {{< verified by="TestFollowUpRunsOnceInItsThread" file="serv/followups_test.go" >}}
+{{< verified by="TestServiceIdentityRunsScheduleNoFollowUps" file="serv/service_identity_test.go" >}}
 
 ## Grounding and changes
 
@@ -337,7 +338,20 @@ turn is answered from the first result.
 The lead delegates changes, such as creating a watch or a task or writing data,
 as explicit instructions, and only after the user asked for or confirmed the
 change. The worker's guards, roles, and row-level security still decide whether
-the change runs. A routine's lead and workers are read-only.
+the change runs. A routine's lead can propose a data change for its owner's
+approval and runs none itself; without write approvals it is read-only.
+
+Nobody is in a routine's thread to confirm a change, so a routine proposes one
+by stating it. Its code looks up what the prompt's decision depends on. The
+reply stage is then given the turn's own record: every answer the data agent
+returned, the skills the turn loaded and the check-backs it scheduled, and
+nothing the code concluded from them. It says whether the prompt calls for a
+change and what the change is, in plain words. GraphJin sends that
+to a data agent, which writes the mutation and holds it for approval. A stated
+change the data agent does not hold is reported as such in the answer.
+
+{{< verified by="TestUnattendedReplyThatStatesAChangeHasItSent" file="agent/lead_test.go" >}}
+{{< verified by="TestUnattendedReplyWhoseStatedChangeIsNotHeldSaysSo" file="agent/lead_test.go" >}}
 
 The lead is told which kinds of change the caller may ask for (application
 data, watches, tasks, workflows, code, and GraphJin configuration), computed

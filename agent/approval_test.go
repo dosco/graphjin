@@ -219,6 +219,50 @@ func TestHeldWritesOnlyProposesDataWritesAndRefusesTheRest(t *testing.T) {
 	}
 }
 
+// A run that may only propose changes is told how a change is proposed, in
+// the instruction its model reads. The catalog seed keeps the caller's own
+// words, and a run that cannot write, or one somebody is watching, is told
+// nothing.
+func TestHeldWritesRunIsToldHowAChangeIsProposed(t *testing.T) {
+	const question = "Propose setting support ticket 7 to resolved."
+	run := func(cfg Config) (shown, seeded string) {
+		t.Helper()
+		rt := &fakeRuntime{}
+		rt.catalogOverride = func(args map[string]any) any {
+			if seeded == "" {
+				seeded = stringArg(args, "search")
+			}
+			return fakeCatalogResult(args)
+		}
+		program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+		cfg.TimeoutSeconds = 5
+		runner := newAgent(cfg, rt,
+			WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+			WithProgramFactory(func(string, map[string]ax.Value) Program { return program }),
+		)
+		if _, err := runner.Run(context.Background(), Request{Instruction: question, Capabilities: profileWithRoleAndRoots("user")}); err != nil {
+			t.Fatal(err)
+		}
+		return stringValue(program.forwardValues["instruction"]), seeded
+	}
+
+	shown, seeded := run(Config{HeldWritesOnly: true, WriteApproval: WriteApprovalRequired})
+	if !strings.HasPrefix(shown, question) || !strings.Contains(shown, heldWritesNote) {
+		t.Fatalf("a held-writes run was not told how a change is proposed: %q", shown)
+	}
+	if seeded != question {
+		t.Fatalf("the catalog seed searched %q, want the caller's own words", seeded)
+	}
+	for name, cfg := range map[string]Config{
+		"watched":   {WriteApproval: WriteApprovalRequired},
+		"read-only": {HeldWritesOnly: true, WriteApproval: WriteApprovalRequired, ReadOnly: true},
+	} {
+		if shown, _ := run(cfg); shown != question {
+			t.Fatalf("%s run: instruction = %q, want it unchanged", name, shown)
+		}
+	}
+}
+
 // The core runtime of a held-writes-only run executes a mutation only as a
 // dry run whose transaction the caller rolls back.
 func TestHeldWritesOnlyCoreRuntimeRunsOnlyDryRuns(t *testing.T) {
@@ -243,9 +287,9 @@ func TestLeadQuestionsAfterAHeldWriteOnlyRead(t *testing.T) {
 		return Response{Status: StatusAnswered, Answer: "ok"}, nil
 	}}
 	run := &leadRun{lead: lead, answered: map[string]leadDelegation{}}
-	run.runOne(context.Background(), 1, "How many tickets are open?")
+	run.runOne(context.Background(), 1, "How many tickets are open?", run.codeOnlyReads())
 	run.delegations = append(run.delegations, leadDelegation{question: "Close ticket 7", resp: Response{Status: StatusNeedsApproval, Approval: &Approval{ID: "apr_1"}}})
-	run.runOne(context.Background(), 2, "And close ticket 8 too.")
+	run.runOne(context.Background(), 2, "And close ticket 8 too.", run.codeOnlyReads())
 	if len(readOnly) != 2 || readOnly[0] || !readOnly[1] {
 		t.Fatalf("read-only flags = %v, want [false true]", readOnly)
 	}

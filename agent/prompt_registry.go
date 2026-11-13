@@ -43,6 +43,9 @@ func PromptRegistryHash() string {
 		RootScopeInstruction          string     `json:"root_scope_instruction"`
 		PreparedDiscoveryInstructions string     `json:"prepared_discovery_instructions"`
 		PreparedRequestHandoff        string     `json:"prepared_request_handoff"`
+		// HeldWritesNote is provider-visible prompt text on every question
+		// of a run that may only propose changes.
+		HeldWritesNote string `json:"held_writes_note"`
 	}
 
 	skills := make([]skillSnapshot, 0, len(builtinSkills))
@@ -72,6 +75,7 @@ func PromptRegistryHash() string {
 		RootScopeInstruction:          rootScopeInstruction,
 		PreparedDiscoveryInstructions: preparedDiscoveryInstructions,
 		PreparedRequestHandoff:        preparedHandoffCode,
+		HeldWritesNote:                heldWritesNote,
 	})
 	if err != nil {
 		panic(err) // The snapshot contains only JSON-native values.
