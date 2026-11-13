@@ -801,7 +801,14 @@ func startMariaDBDemo(ctx context.Context, name, dataDir string, status demoStat
 func startSQLiteDemo(ctx context.Context, name, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
 	_ = ctx
 	dbPath := filepath.Join(dataDir, "graphjin_demo.db")
-	connStr := fmt.Sprintf("file:%s?cache=shared&_pragma=busy_timeout(5000)", dbPath)
+	// No cache=shared. In that mode a statement that meets a table lock waits
+	// in the driver for the holder to finish, and nothing can end the wait: not
+	// busy_timeout, not the caller's context. One statement left open then
+	// freezes every later write to its table for the life of the process.
+	// Each connection with its own cache waits busy_timeout and reports
+	// "database is locked", and this is how the service opens any SQLite
+	// source it is configured with.
+	connStr := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)", dbPath)
 	status.Emit(name, "starting", "opening SQLite database")
 
 	registerSQLiteRegexp()

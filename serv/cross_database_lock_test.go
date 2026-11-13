@@ -20,10 +20,12 @@ import (
 // teardown's DROP fails because the script's own SELECT is still reading the
 // table, drops that SELECT without finalizing it. Closing the pool cannot close
 // a connection with a statement open, so its read lock on the written table
-// lasted as long as the process, and with cache=shared (how the demo opens its
-// database) every later connection to the file inherited it. Reads worked; the
-// next write waited in the driver with no timeout, deaf to its context. A
-// benchmark run stopped on exactly that on 2026-11-13.
+// lasted as long as the process, and with cache=shared (how the demo opened its
+// database then) every later connection to the file inherited it. Reads worked;
+// the next write waited in the driver with no timeout, deaf to its context. A
+// benchmark run stopped on exactly that on 2026-11-13. The demo no longer uses
+// a shared cache; this test still does, because that is the mode in which a
+// statement left open cannot be waited out.
 //
 // This lives in serv because the driver does: core's own tests link the cgo
 // driver, which closes each statement of a multi-statement string and cannot
