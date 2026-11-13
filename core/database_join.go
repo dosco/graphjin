@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -710,6 +711,17 @@ func writeNode(buf *bytes.Buffer, n *graph.Node) {
 	}
 }
 
+// databaseRoots is one database's share of a request that names several: its
+// roots compiled and cleared to run, with nothing sent to the database yet.
+type databaseRoots struct {
+	dbName string
+	dbCtx  *dbContext
+	qc     *qcode.QCode
+	vars   map[string]json.RawMessage
+	sql    string
+	md     psql.Metadata
+}
+
 // executeParallelRoots executes root-level queries to different databases in parallel
 // and merges the results. This is called when a single GraphQL query references
 // tables from multiple databases.
@@ -718,21 +730,57 @@ func (s *gstate) executeParallelRoots(c context.Context) error {
 		return fmt.Errorf("executeParallelRoots called without multi-DB configuration")
 	}
 
-	var wg sync.WaitGroup
-	results := make([]dbResult, len(s.dbGroups))
+	// A fixed order, so the same request always reports the same error.
+	names := make([]string, 0, len(s.dbGroups))
+	for name := range s.dbGroups {
+		names = append(names, name)
+	}
+	sort.Strings(names)
 
-	i := 0
-	for dbName, rootFields := range s.dbGroups {
+	states := make([]gstate, len(names))
+	plans := make([]*databaseRoots, len(names))
+	for i, name := range names {
+		states[i] = s.cloneForDatabaseRoot(name)
+	}
+
+	// A mutation is checked whole before any of it runs. The databases share
+	// no transaction, so a half that is going to be refused (a read-only
+	// database or table, a field that does not compile) has to be found while
+	// the other halves can still be left unwritten. Running them all at once
+	// and reporting afterwards committed the allowed half of a mutation the
+	// caller was then told had been blocked.
+	if s.r.operation == qcode.QTMutation {
+		for i, name := range names {
+			plan, err := states[i].planDatabaseRoots(name, s.dbGroups[name])
+			if err != nil {
+				return fmt.Errorf("database %s: %w", name, err)
+			}
+			plans[i] = plan
+		}
+	}
+
+	var wg sync.WaitGroup
+	results := make([]dbResult, len(names))
+
+	for i, name := range names {
 		wg.Add(1)
-		go func(idx int, db string, fields []string) {
+		go func(idx int, db string) {
 			defer wg.Done()
-			rootState := s.cloneForDatabaseRoot(db)
+			rootState := &states[idx]
 
 			ctx1, span := s.gj.spanStart(c, "Execute Parallel Root")
 			span.SetAttributesString(StringAttr{"query.database", db})
 			defer span.End()
 
-			data, err := rootState.executeForDatabaseRoots(ctx1, db, fields)
+			var data json.RawMessage
+			var err error
+			plan := plans[idx]
+			if plan == nil {
+				plan, err = rootState.planDatabaseRoots(db, s.dbGroups[db])
+			}
+			if err == nil {
+				data, err = rootState.runDatabaseRoots(ctx1, plan)
+			}
 			if err != nil {
 				span.Error(err)
 			}
@@ -744,8 +792,7 @@ func (s *gstate) executeParallelRoots(c context.Context) error {
 				fragmentMisses: rootState.fragmentMisses.Load(),
 				err:            err,
 			}
-		}(i, dbName, rootFields)
-		i++
+		}(i, name)
 	}
 
 	wg.Wait()
@@ -757,24 +804,45 @@ func (s *gstate) executeParallelRoots(c context.Context) error {
 			s.fragmentMisses.Add(result.fragmentMisses)
 		}
 	}
+	if s.r.operation == qcode.QTMutation {
+		if err := partlyAppliedMutationError(results); err != nil {
+			return err
+		}
+	}
 	return s.mergeRootResults(results)
 }
 
-// executeForDatabaseRoots builds a sub-query for the specified root fields,
-// compiles it using the target database's compilers, and executes it.
-func (s *gstate) executeForDatabaseRoots(ctx context.Context, dbName string, rootFields []string) (json.RawMessage, error) {
-	// Get database context
-	var db *sql.DB
-	var qcodeCompiler *qcode.Compiler
-	var psqlCompiler *psql.Compiler
+// partlyAppliedMutationError reports a mutation that failed in one database
+// after it had already committed in another. Checking every half first leaves
+// only failures that need the database to find, a constraint for one, and by
+// then nothing can take the other writes back. The caller is at least told
+// they stand, so it does not repeat them or report that nothing changed.
+func partlyAppliedMutationError(results []dbResult) error {
+	var failed *dbResult
+	var applied []string
+	for i := range results {
+		switch {
+		case results[i].err == nil:
+			applied = append(applied, results[i].database)
+		case failed == nil:
+			failed = &results[i]
+		}
+	}
+	if failed == nil || len(applied) == 0 {
+		return nil
+	}
+	return fmt.Errorf("database %s: %w; the writes this mutation made to database %s were applied and are not rolled back",
+		failed.database, failed.err, strings.Join(applied, ", "))
+}
 
+// planDatabaseRoots builds a sub-query for the specified root fields and
+// compiles it with the target database's compilers. It makes every refusal
+// that can be made without the database, and sends the database nothing.
+func (s *gstate) planDatabaseRoots(dbName string, rootFields []string) (*databaseRoots, error) {
 	dbCtx, ok := s.gj.GetDatabase(dbName)
 	if !ok {
 		return nil, fmt.Errorf("database not found: %s", dbName)
 	}
-	db = dbCtx.db
-	qcodeCompiler = dbCtx.qcodeCompiler
-	psqlCompiler = dbCtx.psqlCompiler
 
 	// Block mutations on read-only databases (absolute, independent of roles)
 	if s.r.operation == qcode.QTMutation {
@@ -797,10 +865,37 @@ func (s *gstate) executeForDatabaseRoots(ctx context.Context, dbName string, roo
 		vars = s.vmap
 	}
 
-	qc, err := qcodeCompiler.Compile(subQuery, vars, s.role, s.r.namespace)
+	qc, err := dbCtx.qcodeCompiler.Compile(subQuery, vars, s.role, s.r.namespace)
 	if err != nil {
 		return nil, fmt.Errorf("qcode compile failed for %s: %w", dbName, err)
 	}
+
+	// A read-only table is read-only whichever databases the rest of the
+	// mutation names.
+	if s.r.operation == qcode.QTMutation {
+		if table, ok := s.gj.readOnlyRoot(dbName, qc); ok {
+			return nil, fmt.Errorf("mutations blocked: table %s is read-only", table)
+		}
+	}
+
+	plan := &databaseRoots{dbName: dbName, dbCtx: dbCtx, qc: qc, vars: vars}
+	if dbCtx.nano != nil {
+		return plan, nil
+	}
+
+	// Compile SQL
+	var sqlBuf bytes.Buffer
+	if plan.md, err = dbCtx.psqlCompiler.Compile(&sqlBuf, qc); err != nil {
+		return nil, fmt.Errorf("sql compile failed for %s: %w", dbName, err)
+	}
+	plan.sql = sqlBuf.String()
+	return plan, nil
+}
+
+// runDatabaseRoots executes what planDatabaseRoots compiled.
+func (s *gstate) runDatabaseRoots(ctx context.Context, plan *databaseRoots) (json.RawMessage, error) {
+	dbName, dbCtx, qc := plan.dbName, plan.dbCtx, plan.qc
+	db, psqlCompiler := dbCtx.db, dbCtx.psqlCompiler
 
 	if dbCtx.nano != nil {
 		raw, err := s.renderNanoDBQuery(ctx, dbCtx, qc)
@@ -814,14 +909,6 @@ func (s *gstate) executeForDatabaseRoots(ctx context.Context, dbName string, roo
 		return encrypted, nil
 	}
 
-	// Compile SQL
-	var sqlBuf bytes.Buffer
-	md, err := psqlCompiler.Compile(&sqlBuf, qc)
-	if err != nil {
-		return nil, fmt.Errorf("sql compile failed for %s: %w", dbName, err)
-	}
-	_ = md // metadata not used for now
-
 	// Get connection
 	conn, err := db.Conn(ctx)
 	if err != nil {
@@ -830,7 +917,7 @@ func (s *gstate) executeForDatabaseRoots(ctx context.Context, dbName string, roo
 	defer conn.Close() //nolint:errcheck
 
 	// Build argument list
-	args, err := s.gj.argList(ctx, md, vars, s.r.requestconfig, false, psqlCompiler)
+	args, err := s.gj.argList(ctx, plan.md, plan.vars, s.r.requestconfig, false, psqlCompiler)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build args for %s: %w", dbName, err)
 	}
@@ -839,7 +926,7 @@ func (s *gstate) executeForDatabaseRoots(ctx context.Context, dbName string, roo
 	// names one database. Handing the whole script to the driver as a single
 	// string is what executeScript exists to prevent: it left a statement open
 	// on a pooled connection, and with it a table lock nothing could release.
-	if parts := psqlCompiler.GetDialect().SplitQuery(sqlBuf.String()); len(parts) > 1 {
+	if parts := psqlCompiler.GetDialect().SplitQuery(plan.sql); len(parts) > 1 {
 		if dbCtx.dbtype == "sqlite" && qc.InsertConflictFallback {
 			s.gj.sqliteConflictGetMu.Lock()
 			defer s.gj.sqliteConflictGetMu.Unlock()
@@ -860,7 +947,7 @@ func (s *gstate) executeForDatabaseRoots(ctx context.Context, dbName string, roo
 
 	// Execute query
 	var data []byte
-	querySQL, queryArgs, err := prepareQueryArgsForDB(dbCtx.dbtype, sqlBuf.String(), args.values)
+	querySQL, queryArgs, err := prepareQueryArgsForDB(dbCtx.dbtype, plan.sql, args.values)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare query args for %s: %w", dbName, err)
 	}
