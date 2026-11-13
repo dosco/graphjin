@@ -147,9 +147,10 @@ func parseTFieldsFunction(fn *sdata.DBFunction, fields []graph.TField) (
 			paramType += "(" + dir.TypeSuffix + ")"
 		}
 		p := sdata.DBFuncParam{
-			ID:   i,
-			Name: f.Name,
-			Type: paramType,
+			ID:    i,
+			Name:  f.Name,
+			Type:  paramType,
+			Array: f.List,
 		}
 		switch {
 		case dir.Input:
