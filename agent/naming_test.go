@@ -39,21 +39,30 @@ func TestNamingIsAbsentWithoutGaps(t *testing.T) {
 
 // unnamedRowsRuntime answers the way executeResultFromCore does for a query
 // selecting subscriptions' account_id without the account's name: the rows,
-// plus the naming notice core derived from the compiled query.
+// plus the naming notice core derived from the compiled query. Asked with
+// the account's name selected, it returns the name beside what was asked for.
 type unnamedRowsRuntime struct {
 	fakeRuntime
-	executed int
+	queries []string
+	// gapPath is where the notice says the unnamed rows are.
+	gapPath string
+	// failNamed makes the query that selects the name fail, as a selection
+	// the engine rejects would.
+	failNamed bool
 }
 
 func (r *unnamedRowsRuntime) ExecuteGraphQL(_ context.Context, args map[string]any) (any, error) {
-	r.executed++
 	query, _ := args["query"].(string)
+	r.queries = append(r.queries, query)
 	if strings.Contains(query, "name") {
+		if r.failNamed {
+			return nil, fmt.Errorf("accounts is not a relationship of subscriptions here")
+		}
 		return executeResult{Data: map[string]any{"subscriptions": []any{
-			map[string]any{"renews_at": "2026-11-16", "accounts": map[string]any{"name": "Meridian Robotics"}},
+			map[string]any{"account_id": 1, "renews_at": "2026-11-16", "accounts": map[string]any{"name": "Meridian Robotics"}},
 		}}}, nil
 	}
-	gaps := []core.NamingGapInfo{{Path: "subscriptions", Table: "accounts", KeyColumn: "account_id", NameColumn: "name", Relationship: "accounts"}}
+	gaps := []core.NamingGapInfo{{Path: r.gapPath, Table: "accounts", KeyColumn: "account_id", NameColumn: "name", Relationship: "accounts"}}
 	return executeResult{
 		Data:   map[string]any{"subscriptions": []any{map[string]any{"account_id": 1, "renews_at": "2026-11-16"}}},
 		Naming: &NamingInfo{Rows: gaps, Message: NamingMessage(gaps)},
@@ -62,7 +71,7 @@ func (r *unnamedRowsRuntime) ExecuteGraphQL(_ context.Context, args map[string]a
 
 func unnamedRowsProtocol(t *testing.T) (*protocolRuntime, *unnamedRowsRuntime) {
 	t.Helper()
-	base := &unnamedRowsRuntime{}
+	base := &unnamedRowsRuntime{gapPath: "subscriptions"}
 	profile := &CapabilityProfile{RoleClass: "user", AllowedActions: []string{}}
 	runtime := newProtocolRuntime(base, "Which account renews soonest?", "", 8, profile, nil, CatalogSearchFeatures{})
 	runtime.state.seedOK = true
@@ -74,53 +83,76 @@ func unnamedRowsProtocol(t *testing.T) (*protocolRuntime, *unnamedRowsRuntime) {
 
 const unnamedQuery = `query { subscriptions(where: { renews_at: { gte: "2026-11-07" } }, order_by: { renews_at: asc }, limit: 1) { account_id renews_at } }`
 
-// The first result that names rows only by key is thrown with the selection
-// that names them, so code that finals right after the query never answers
-// "account 1"; the query restated with the name returns the name.
-func TestUnnamedRowsAreHeldBackWithTheSelectionThatNamesThem(t *testing.T) {
-	runtime, _ := unnamedRowsProtocol(t)
-	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": unnamedQuery})
-	if err == nil {
-		t.Fatal("rows named only by account_id were returned as an answerable result")
+// A query that identifies its rows only by key is not refused: GraphJin runs
+// it again with the selection that names them, and the code that asked reads
+// its own fields with the name beside them. Code that finals right after the
+// query never answers "account 1", and no step is spent on a refusal.
+func TestUnnamedRowsComeBackNamed(t *testing.T) {
+	runtime, base := unnamedRowsProtocol(t)
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": unnamedQuery})
+	if err != nil {
+		t.Fatalf("a query whose rows can be named must not be refused: %v", err)
 	}
-	if !strings.Contains(err.Error(), "select accounts { name } inside subscriptions (it has only account_id)") {
-		t.Fatalf("the refusal must name the selection to add: %v", err)
+	row := mapValue(anySlice(mapValue(mapValue(normalizeValue(out))["data"])["subscriptions"])[0])
+	if stringFromMap(mapValue(row["accounts"]), "name") != "Meridian Robotics" || row["renews_at"] != "2026-11-16" || row["account_id"] == nil {
+		t.Fatalf("the result must carry what was asked for and the name: %v", row)
 	}
-	// Obeying the refusal verbatim must return the name.
-	_, repaired, found := strings.Cut(err.Error(), "exactly as given: ")
-	repaired, _, _ = strings.Cut(repaired, ". An id names")
-	if !found || checkGraphQLParses(repaired) != nil {
-		t.Fatalf("the refusal must carry a corrected query that parses: %v", err)
+	want := `query { subscriptions(where: { renews_at: { gte: "2026-11-07" } }, order_by: { renews_at: asc }, limit: 1) { account_id renews_at accounts { name } } }`
+	if len(base.queries) != 2 || base.queries[1] != want {
+		t.Fatalf("queries run = %q, want the model's and then %q", base.queries, want)
 	}
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": repaired})
-	if err != nil || !strings.Contains(fmt.Sprint(out), "Meridian Robotics") {
-		t.Fatalf("the restated query must return the name: %v %v", out, err)
+	if err := checkGraphQLParses(base.queries[1]); err != nil {
+		t.Fatalf("the query GraphJin ran does not parse: %v", err)
+	}
+	// The trail shows both: what the model wrote, and what GraphJin ran for it.
+	var sources []string
+	for _, action := range runtime.state.actions {
+		if action.Tool == "execute_graphql" {
+			sources = append(sources, action.Source+":"+action.Status)
+		}
+	}
+	if strings.Join(sources, " ") != "model:ok naming:ok" {
+		t.Fatalf("execute actions = %v, want the model's query and GraphJin's naming run", sources)
+	}
+	// The same query again is answered with the named rows, and nothing runs.
+	again, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": unnamedQuery})
+	if err != nil || !strings.Contains(fmt.Sprint(again), "Meridian Robotics") || len(base.queries) != 2 {
+		t.Fatalf("the repeat must return the named rows without running: %v %v, %d queries", again, err, len(base.queries))
 	}
 	resp := runtime.state.finalize(Response{Status: StatusAnswered, Answer: "Meridian Robotics renews soonest, on 2026-11-16."})
 	if resp.Status != StatusAnswered {
-		t.Fatalf("a held-back result must not block the answer, got %s: %+v", resp.Status, resp.Errors)
+		t.Fatalf("an answer from the named rows must stand, got %s: %+v", resp.Status, resp.Errors)
 	}
 }
 
-// When the ids are what the step needs, running the same query again goes
-// through: the check holds back one result per run, never a second.
-func TestUnnamedRowsGoThroughTheSecondTime(t *testing.T) {
+// When the names cannot be added, the rows the query returned are what the
+// code gets: a name is a courtesy to the reader, never a reason to lose the
+// result.
+func TestUnnamedRowsStayWhenTheNamesCannotBeAdded(t *testing.T) {
+	// The selection that names the rows is rejected by the engine.
 	runtime, base := unnamedRowsProtocol(t)
-	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": unnamedQuery}); err == nil {
-		t.Fatal("expected the first unnamed result to be held back")
-	}
+	base.failNamed = true
 	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": unnamedQuery})
-	if err != nil {
-		t.Fatalf("the repeated query must go through: %v", err)
+	if err != nil || !strings.Contains(fmt.Sprint(out), "account_id") || len(base.queries) != 2 {
+		t.Fatalf("the model's result must come back as it was: %v %v, %d queries", out, err, len(base.queries))
 	}
-	if !strings.Contains(fmt.Sprint(out), "account_id") || base.executed != 2 {
-		t.Fatalf("the repeat must execute and return the rows: executed=%d out=%v", base.executed, out)
+	for _, action := range runtime.state.actions {
+		if action.Source == "naming" {
+			t.Fatalf("a naming run that failed must leave no action behind: %+v", action)
+		}
+	}
+	// The notice points at rows the query has no selection set for.
+	runtime, base = unnamedRowsProtocol(t)
+	base.gapPath = "subscriptions.accounts"
+	out, err = runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": unnamedQuery})
+	if err != nil || !strings.Contains(fmt.Sprint(out), "account_id") || len(base.queries) != 1 {
+		t.Fatalf("with nowhere to add the name, the query runs once: %v %v, %d queries", out, err, len(base.queries))
 	}
 }
 
 // Corrected queries are built from what the data agent actually wrote in the
-// 2026-11-07 probe runs, and each must parse.
-func TestNamingRepairAddsTheNameToTheRootSelection(t *testing.T) {
+// 2026-11-07 probe runs and the 2026-11-12 routine runs, and each must parse.
+func TestNamingRepairAddsTheNameWhereTheRowsAre(t *testing.T) {
 	accounts := []namingSelection{{path: "subscriptions", selection: "accounts { name }"}}
 	cases := []struct {
 		name, query string
@@ -138,12 +170,18 @@ func TestNamingRepairAddsTheNameToTheRootSelection(t *testing.T) {
 		{"two roots", `query { a: support_tickets(limit: 1) { account_id } b: invoices(limit: 1) { account_id } }`,
 			[]namingSelection{{path: "a", selection: "accounts { name }"}, {path: "b", selection: "accounts { name }"}},
 			`query { a: support_tickets(limit: 1) { account_id accounts { name } } b: invoices(limit: 1) { account_id accounts { name } } }`},
+		{"a row one level down", `query { support_tickets(where: { id: { eq: 25 } }) { id account_id account { id status } } }`,
+			[]namingSelection{{path: "support_tickets.account", selection: "name"}},
+			`query { support_tickets(where: { id: { eq: 25 } }) { id account_id account { id status name } } }`},
+		{"rows two levels down, behind arguments", `query { support_tickets(where: { id: { eq: 29 } }) { id accounts { id invoices(where: { status: { eq: "failed" } }, limit: 5) { id amount_cents } } } }`,
+			[]namingSelection{{path: "support_tickets.accounts", selection: "name"}, {path: "support_tickets.accounts.invoices", selection: "subscriptions { plan }"}},
+			`query { support_tickets(where: { id: { eq: 29 } }) { id accounts { id invoices(where: { status: { eq: "failed" } }, limit: 5) { id amount_cents subscriptions { plan } } name } } }`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, ok := addNamingSelections(tc.query, tc.gaps)
-			if !ok || got != tc.want {
-				t.Fatalf("addNamingSelections =\n%q (%v), want\n%q", got, ok, tc.want)
+			got, placed := addNamingSelections(tc.query, tc.gaps)
+			if len(placed) != len(tc.gaps) || got != tc.want {
+				t.Fatalf("addNamingSelections =\n%q (%d placed), want\n%q", got, len(placed), tc.want)
 			}
 			if err := checkGraphQLParses(got); err != nil {
 				t.Fatalf("corrected query does not parse: %v", err)
@@ -152,14 +190,35 @@ func TestNamingRepairAddsTheNameToTheRootSelection(t *testing.T) {
 	}
 }
 
-// A gap below the root, or at a root the query does not select, gets the
-// description only: a corrected query never fixes half the rows.
-func TestNamingRepairDeclinesWhatItCannotPlace(t *testing.T) {
+// A selection whose rows the query has no selection set for is left out, and
+// the ones that can be placed still are.
+func TestNamingRepairLeavesOutWhatItCannotPlace(t *testing.T) {
 	query := `query { accounts(limit: 1) { name subscriptions { account_id } } }`
-	if got, ok := addNamingSelections(query, []namingSelection{{path: "accounts.subscriptions", selection: "accounts { name }"}}); ok {
-		t.Fatalf("nested gap repaired: %q", got)
+	absent := namingSelection{path: "invoices", selection: "accounts { name }"}
+	if got, placed := addNamingSelections(query, []namingSelection{absent, {path: "accounts.plans", selection: "name"}}); len(placed) != 0 || got != query {
+		t.Fatalf("selections with nowhere to go were placed: %q %v", got, placed)
 	}
-	if got, ok := addNamingSelections(query, []namingSelection{{path: "invoices", selection: "accounts { name }"}}); ok {
-		t.Fatalf("absent root repaired: %q", got)
+	got, placed := addNamingSelections(query, []namingSelection{absent, {path: "accounts.subscriptions", selection: "plans { name }"}})
+	if len(placed) != 1 || got != `query { accounts(limit: 1) { name subscriptions { account_id plans { name } } } }` {
+		t.Fatalf("the selection that has a place must be added: %q %v", got, placed)
+	}
+}
+
+// A ticket's account selected with only its id is named inside that
+// selection; the notice's second line, which would reach the same account
+// through the ticket's account_id, is not a second join.
+func TestNamingSelectionsNameASelectedRowWhereItIs(t *testing.T) {
+	out := map[string]any{"naming": map[string]any{"rows": []any{
+		map[string]any{"path": "support_tickets", "table": "accounts", "key_column": "account_id", "name_column": "name", "relationship": "accounts"},
+		map[string]any{"path": "support_tickets.account", "table": "accounts", "key_column": "id", "name_column": "name"},
+		map[string]any{"path": "support_tickets", "table": "users", "key_column": "user_id", "name_column": "full_name", "relationship": "users"},
+	}}}
+	got, placed := addNamingSelections(`query { support_tickets(where: { id: { eq: 25 } }) { id account_id user_id account { id status } } }`, namingSelections(out))
+	want := `query { support_tickets(where: { id: { eq: 25 } }) { id account_id user_id account { id status name } users { full_name } } }`
+	if len(placed) != 2 || got != want {
+		t.Fatalf("named query =\n%q (%d placed), want\n%q", got, len(placed), want)
+	}
+	if err := checkGraphQLParses(got); err != nil {
+		t.Fatalf("named query does not parse: %v", err)
 	}
 }

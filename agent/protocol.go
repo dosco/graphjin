@@ -129,6 +129,12 @@ type discoveryState struct {
 	// received. Only successful model calls are recorded; the seed and failed
 	// attempts do not spend this budget.
 	catalogRequestKeys map[string]bool
+	// catalogMemo is what each of those requests returned. A repeat made
+	// before any query has succeeded is served from it (QueryCatalog).
+	catalogMemo map[string]any
+	// replayedWhileOwed records the reads answered from their earlier result
+	// while another operation was owed (replayWhileOwed).
+	replayedWhileOwed map[string]bool
 	// One empty lexical/coverage search is allowed and returned with concrete
 	// recovery guidance. A second blind search is rejected before dispatch so
 	// the actor must consume known ids or enumerate the catalog by kind.
@@ -137,10 +143,7 @@ type discoveryState struct {
 	// guidance. A second unknown guess is rejected before dispatch. A detail id
 	// already surfaced by this run remains eligible for lookup so following the
 	// recovery guidance can resolve and reset the streak.
-	emptyDetailStreak int
-	// namingRefused records that this run already refused one result whose
-	// rows carried keys without names; the next such result goes through.
-	namingRefused      bool
+	emptyDetailStreak  int
 	capabilities       *CapabilityProfile
 	observe            func(ActionEvent)
 	coverageSearchUsed bool
@@ -325,6 +328,7 @@ func newDiscoveryState(instruction string) *discoveryState {
 		tablesValidated:      map[string]bool{},
 		workflowsDetailed:    map[string]bool{},
 		catalogRequestKeys:   map[string]bool{},
+		catalogMemo:          map[string]any{},
 		failedQueryKeys:      map[string]bool{},
 		successfulExecutions: map[string]any{},
 	}
@@ -433,6 +437,34 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 		r.state.finishAction(action, "query_catalog", args, nil, err)
 		return nil, err
 	}
+	if requestKey != "" && r.state.catalogRequestKeys[requestKey] && (r.state.lastExecution == nil || r.state.pendingFailedQueryKey != "") {
+		if memo, ok := r.state.catalogMemo[requestKey]; ok {
+			// No query has succeeded yet, so the model is still working out what
+			// to run, and it writes each attempt as a whole program: the lookup
+			// first, then the query. Refusing the lookup the second time threw
+			// away the corrected query behind it (206 of 215 refusals in recorded
+			// runs hit a step that went on to execute), and with the first query
+			// failed and no repair run, every final() after that was refused
+			// too: runs with a refusal used all their steps 24 times in 116,
+			// runs without one once in 50. A catalog read changes nothing, so
+			// the same request gets the same cards back.
+			//
+			// The same holds after a query has succeeded while a later one that
+			// failed still awaits its repair: a look-up through a relationship
+			// reads the ticket, then fails on the account. The refusal below
+			// says "call final now", and final is refused until the repair
+			// runs, so the run could neither look up nor finish. Of 28 routine
+			// data-agent runs in 338 that used every step (2026-11-12), 19 had
+			// been told to call final now, and all 37 such refusals hit a step
+			// that went on to run a query.
+			//
+			// With a query succeeded and no repair owed, the refusal below
+			// stands: it tells the model to finish from the result it has.
+			action := r.state.startAction("memo", "query_catalog", args)
+			r.state.finishAction(action, "query_catalog", args, memo, nil)
+			return memo, nil
+		}
+	}
 	if requestKey != "" && r.state.catalogRequestKeys[requestKey] {
 		message := "duplicate query_catalog call rejected: this exact request already returned catalog evidence; reuse the prior result and follow its next guidance instead of searching again"
 		if r.state.lastExecution != nil {
@@ -518,6 +550,10 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 				), catalogIDSuggestions(detailIDs, known))
 			}
 		}
+	}
+	if err == nil && requestKey != "" {
+		// Kept as returned, recovery notes included, so a repeat reads the same.
+		r.state.catalogMemo[requestKey] = out
 	}
 	r.state.finishAction(action, "query_catalog", args, out, err)
 	return out, err
@@ -1228,6 +1264,24 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	}
 	if cached, ok := r.state.cachedExecution(queryKey); ok {
 		if requirement := strings.TrimSpace(r.state.pendingRequiredFinalization()); requirement != "" {
+			if !ContainsMutationOperation(query) && r.state.replayWhileOwed(queryKey) {
+				// Another operation is owed, and this read is not an attempt at
+				// it: it is the hop before it. A model writes each attempt as a
+				// whole program, the reads it already ran and then the repaired
+				// query or the write, so refusing the read ended the step before
+				// the owed operation in it could run, every step, until the
+				// limit. Of 47 such refusals in recorded runs (2026-11-12) 40
+				// were on a step that held another execute_graphql call, and 9
+				// of the 14 runs that met one used every step.
+				//
+				// The read is answered from this run's result, once for what is
+				// owed. Nothing is discharged by it: the requirement stands, and
+				// the result says so.
+				out := cachedExecutionResult(r.state, cached)
+				action := r.state.startAction("replay", "execute_graphql", args)
+				r.state.finishAction(action, "execute_graphql", args, out, nil)
+				return out, nil
+			}
 			err := fmt.Errorf("this call did NOT execute: the identical successful query already ran and its rows cannot satisfy the outstanding requirement. %s", requirement)
 			action := r.state.startAction("model", "execute_graphql", args)
 			r.state.finishAction(action, "execute_graphql", args, nil, err)
@@ -1392,20 +1446,18 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			return nil, thrown
 		}
 	}
-	// Rows named only by key: the author selected the columns that rank or
-	// filter, and the answer can state only what was selected, so it says
-	// "account 1". Straight-line code finals in the same block as the
-	// query, so a notice on the value arrives too late; the first such
-	// result is thrown with the exact selection that names the rows, and
-	// any later one goes through.
-	if err == nil && !r.state.namingRefused && !executionFailed(out) && !ContainsMutationOperation(query) {
-		if message := namingRefusal(query, out); message != "" {
-			r.state.namingRefused = true
-			thrown := fmt.Errorf("%s", message)
-			r.state.finishAction(action, "execute_graphql", args, out, thrown)
-			return nil, thrown
+	// Rows named only by key come back with their names: GraphJin runs the
+	// query again with the selection that names them (naming.go). The trail
+	// keeps both: what the model wrote, and what GraphJin ran for it.
+	if err == nil && !executionFailed(out) && !ContainsMutationOperation(query) {
+		if named, namedArgs, ok := r.nameRows(ctx, args, query, out); ok {
+			r.state.finishAction(action, "execute_graphql", args, out, nil)
+			added := r.state.startAction("naming", "execute_graphql", namedArgs)
+			r.state.finishAction(added, "execute_graphql", namedArgs, named, nil)
+			action, out = -1, named
 		}
 	}
+	// finishAction ignores an index it does not hold: the pair above is done.
 	r.state.finishAction(action, "execute_graphql", args, out, err)
 	if err == nil {
 		r.state.recordExecution("execute_graphql", args, out)
@@ -1973,6 +2025,46 @@ func normalizeGraphQLIdentity(query string) string {
 		out.WriteByte(ch)
 	}
 	return strings.TrimSpace(out.String())
+}
+
+// owedOperation names the one operation a run still owes before it may
+// finish, when that operation is something other than a better version of
+// the read in hand: the repair of a query that failed, or a write that was
+// refused pending evidence. It is "" when nothing is owed or when what is
+// owed is the database-side computation of an answer, which a repeat of the
+// same read is a wrong attempt at.
+func (s *discoveryState) owedOperation() string {
+	if s == nil {
+		return ""
+	}
+	if s.pendingFailedQueryKey != "" {
+		return "repair:" + s.pendingFailedQueryKey
+	}
+	if violation, ok := s.primaryRecoverableExecutionViolation(); ok {
+		return "retry:" + violation.Code + ":" + s.interceptedWriteQuery
+	}
+	return ""
+}
+
+// replayWhileOwed reports whether a read that already succeeded may be
+// answered from its result while another operation is owed, and records that
+// it was. Each read gets one such answer for each operation owed: a program
+// that repeats the read again without having run what is owed is refused, and
+// told what that is.
+func (s *discoveryState) replayWhileOwed(queryKey string) bool {
+	owed := s.owedOperation()
+	if owed == "" || queryKey == "" {
+		return false
+	}
+	key := owed + "\x00" + queryKey
+	if s.replayedWhileOwed[key] {
+		return false
+	}
+	if s.replayedWhileOwed == nil {
+		s.replayedWhileOwed = map[string]bool{}
+	}
+	s.replayedWhileOwed[key] = true
+	return true
 }
 
 func (s *discoveryState) cachedExecution(key string) (any, bool) {

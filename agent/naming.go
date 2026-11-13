@@ -1,86 +1,140 @@
 package agent
 
 import (
-	"fmt"
+	"context"
 	"sort"
 	"strings"
 )
 
-// namingRefusal returns the error for a result whose rows carry keys without
-// the names the schema has for them, or "" when the result names its rows.
-// It reads the naming notice from the result's JSON shape, so it serves the
-// in-process runtime and the server runtime alike.
+// Rows a result identifies only by key get their names from GraphJin: the
+// query is run again with the selection that names them, and that result is
+// what the caller reads.
 //
-// When every unnamed list is a root of the query, the error carries the query
-// with the names added. Told only which selection to add, the model went back
-// to the catalog, whose table card lists columns and not relationships, and
-// guessed a sibling table instead; a ready query is what the file-key and
-// unknown-column repairs hand over for the same reason.
-func namingRefusal(query string, out any) string {
+// The first such result used to be refused, with the corrected query in the
+// error, because straight-line code finals in the block that ran the query
+// and a notice on the value arrived too late. That held when the refused
+// query was the answer. A look-up through a relationship is not one query: in
+// routine runs (gpt-5.4-mini, 2026-11-12) the guard refused a query in 66 of
+// 128 data-agent runs, most often the first hop (a ticket's account_id), and
+// the run then took "execute this corrected query" for the whole task. Asked
+// whether a ticket's account was at churn risk, a run saw the account's
+// status in 6 of 24 where the guard fired and in 17 of 33 where it did not.
+// One refusal that named a nested selection in words had the model swap the
+// field it needed (status) for the one asked for (name).
+//
+// The fix was known exactly each time, so GraphJin applies it: nothing is
+// refused, no step is spent, and the rows the code asked for come back with
+// their names beside them.
+
+// namingSelection is one selection that names rows: what to select, and the
+// dotted path of response keys to the selection set it goes in.
+type namingSelection struct {
+	path      string
+	selection string
+	// table is the table the rows belong to; own says they are that table's
+	// own rows, named by a column, rather than rows reached through a key.
+	table string
+	own   bool
+}
+
+// namingSelections reads the naming notice of a result: for each list of rows
+// identified only by key, the selection that names them. It reads the
+// notice from the result's JSON shape, so it serves the in-process runtime
+// and the server runtime alike.
+func namingSelections(out any) []namingSelection {
 	naming := mapValue(mapValue(out)["naming"])
 	if naming == nil {
-		return ""
+		return nil
 	}
-	var fixes []string
 	var gaps []namingSelection
 	for _, item := range anySlice(naming["rows"]) {
 		row := mapValue(item)
 		if row == nil {
 			continue
 		}
-		path := stringFromMap(row, "path")
-		key, name := stringFromMap(row, "key_column"), stringFromMap(row, "name_column")
-		if path == "" || key == "" || name == "" {
+		path, name := stringFromMap(row, "path"), stringFromMap(row, "name_column")
+		if path == "" || name == "" || stringFromMap(row, "key_column") == "" {
 			continue
 		}
-		selection := name
+		gap := namingSelection{path: path, selection: name, table: stringFromMap(row, "table"), own: true}
 		if rel := stringFromMap(row, "relationship"); rel != "" {
-			selection = rel + " { " + name + " }"
-			fixes = append(fixes, fmt.Sprintf("select %s inside %s (it has only %s)", selection, path, key))
-		} else {
-			fixes = append(fixes, fmt.Sprintf("select %s in %s (it has only %s)", name, path, key))
+			gap.selection, gap.own = rel+" { "+name+" }", false
 		}
-		gaps = append(gaps, namingSelection{path: path, selection: selection})
+		gaps = append(gaps, gap)
 	}
-	if len(fixes) == 0 {
-		return ""
-	}
-	// The repeat goes through (one refusal per run), but the message does not
-	// offer it: offered, the shortcut was taken over the fix.
-	msg := "not answered yet: " + strings.Join(fixes, "; ")
-	if repaired, ok := addNamingSelections(query, gaps); ok {
-		msg += ". Execute this corrected query exactly as given: " + repaired
-	} else {
-		msg += ", then run the query again"
-	}
-	return msg + ". An id names nothing to the user, and the answer can state only what the query selected"
+	return withoutNamedBelow(gaps)
 }
 
-type namingSelection struct {
-	path      string
-	selection string
+// withoutNamedBelow drops a selection through a key when the query already
+// selects that table one level down and its rows there are being named: a
+// ticket's account { id } needs name inside account, not a second join.
+func withoutNamedBelow(gaps []namingSelection) []namingSelection {
+	kept := gaps[:0:0]
+	for _, gap := range gaps {
+		redundant := false
+		if !gap.own {
+			for _, other := range gaps {
+				if other.own && other.table == gap.table && strings.HasPrefix(other.path, gap.path+".") && !strings.Contains(other.path[len(gap.path)+1:], ".") {
+					redundant = true
+					break
+				}
+			}
+		}
+		if !redundant {
+			kept = append(kept, gap)
+		}
+	}
+	return kept
 }
 
-// addNamingSelections inserts each selection at the end of its root field's
-// selection set. It succeeds only when every gap is at a root the query
-// selects with a body, so a corrected query never fixes half the rows.
-func addNamingSelections(query string, gaps []namingSelection) (string, bool) {
+// nameRows returns the result of query with the names of the rows out
+// identified only by key, and the arguments it ran. It reports false, and
+// the caller keeps out, when no name can be added or the query with the
+// names does not run.
+func (r *protocolRuntime) nameRows(ctx context.Context, args map[string]any, query string, out any) (any, map[string]any, bool) {
+	named, placed := addNamingSelections(query, namingSelections(out))
+	if len(placed) == 0 {
+		return nil, nil, false
+	}
+	namedArgs := cloneAnyMap(args)
+	namedArgs["query"] = named
+	again, err := r.base.ExecuteGraphQL(ctx, namedArgs)
+	if err != nil || executionFailed(again) {
+		return nil, nil, false
+	}
+	return again, namedArgs, true
+}
+
+// addNamingSelections inserts each selection at the end of the selection set
+// its path leads to, and returns the query with the ones it could place. A
+// path the query does not select with a body is left out.
+func addNamingSelections(query string, gaps []namingSelection) (string, []namingSelection) {
 	type insertion struct {
 		at   int
 		text string
 	}
 	clean := graphQLStructure(query)
-	bodies := rootSelectionBodies(clean)
+	root, ok := operationBody(clean)
+	if !ok {
+		return query, nil
+	}
 	var inserts []insertion
+	var placed []namingSelection
 	for _, gap := range gaps {
-		if strings.Contains(gap.path, ".") {
-			return "", false
+		body, found := root, true
+		for _, key := range strings.Split(gap.path, ".") {
+			if body, found = selectionBodies(clean, body)[key]; !found {
+				break
+			}
 		}
-		closing, ok := bodies[gap.path]
-		if !ok {
-			return "", false
+		if !found {
+			continue
 		}
-		inserts = append(inserts, insertion{at: closing, text: " " + gap.selection + " "})
+		inserts = append(inserts, insertion{at: body.close, text: " " + gap.selection + " "})
+		placed = append(placed, gap)
+	}
+	if len(placed) == 0 {
+		return query, nil
 	}
 	sort.SliceStable(inserts, func(i, j int) bool { return inserts[i].at > inserts[j].at })
 	repaired := query
@@ -88,37 +142,46 @@ func addNamingSelections(query string, gaps []namingSelection) (string, bool) {
 		repaired = repaired[:ins.at] + ins.text + repaired[ins.at:]
 	}
 	if !graphQLDelimitersBalance(repaired) {
-		return "", false
+		return query, nil
 	}
-	return strings.Join(strings.Fields(repaired), " "), true
+	return strings.Join(strings.Fields(repaired), " "), placed
 }
 
-// rootSelectionBodies maps each root field's response key (its alias when it
-// has one) to the index of the closing brace of its selection set, in a query
+// selectionBody is a selection set: the indexes of its braces in a query
 // whose strings and comments graphQLStructure has blanked.
-func rootSelectionBodies(clean string) map[string]int {
-	out := map[string]int{}
+type selectionBody struct{ open, close int }
+
+// operationBody finds the operation's selection set.
+func operationBody(clean string) (selectionBody, bool) {
 	open := strings.IndexByte(clean, '{')
 	if open < 0 {
-		return out
+		return selectionBody{}, false
 	}
 	// Skip an operation's variable definitions: "query ($d: String!) {".
 	if paren := strings.IndexByte(clean, '('); paren >= 0 && paren < open {
 		end := matchingGraphQLDelimiter(clean, paren, '(', ')')
 		if end < 0 {
-			return out
+			return selectionBody{}, false
 		}
 		open = strings.IndexByte(clean[end:], '{')
 		if open < 0 {
-			return out
+			return selectionBody{}, false
 		}
 		open += end
 	}
 	end := matchingGraphQLDelimiter(clean, open, '{', '}')
 	if end < 0 {
-		return out
+		return selectionBody{}, false
 	}
-	for i := skipGraphQLSpace(clean, open+1); i < end; i = skipGraphQLSpace(clean, i) {
+	return selectionBody{open: open, close: end}, true
+}
+
+// selectionBodies maps the response key (the alias when there is one) of each
+// field in a selection set that has a selection set of its own to that set.
+func selectionBodies(clean string, in selectionBody) map[string]selectionBody {
+	out := map[string]selectionBody{}
+	end := in.close
+	for i := skipGraphQLSpace(clean, in.open+1); i < end; i = skipGraphQLSpace(clean, i) {
 		name, next := graphQLName(clean, i)
 		if name == "" {
 			i++
@@ -151,7 +214,7 @@ func rootSelectionBodies(clean string) map[string]int {
 			if closing < 0 {
 				return out
 			}
-			out[key] = closing
+			out[key] = selectionBody{open: i, close: closing}
 			i = closing + 1
 		}
 	}

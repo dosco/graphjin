@@ -310,19 +310,33 @@ func TestExecutorHandoffInstructionsRequireExplicitDiscovery(t *testing.T) {
 	}
 }
 
-func TestProtocolRejectsIdenticalCatalogRequestLoopsAndReplaysExecution(t *testing.T) {
+// A repeated catalog lookup is served from the run's earlier result until a
+// query has succeeded, and refused after that, when the model should finish
+// from the rows it already has.
+func TestProtocolServesARepeatedCatalogRequestUntilTheRunCanFinish(t *testing.T) {
 	base := &fakeRuntime{}
 	runtime := newProtocolRuntime(base, "find customers", "", 40, nil, nil, CatalogSearchFeatures{})
 	args := map[string]any{"kind": "saved_query", "search": "daily planning", "limit": 10}
 
-	if _, err := runtime.QueryCatalog(context.Background(), cloneMap(args)); err != nil {
+	first, err := runtime.QueryCatalog(context.Background(), cloneMap(args))
+	if err != nil {
 		t.Fatalf("first query_catalog call: %v", err)
 	}
-	if _, err := runtime.QueryCatalog(context.Background(), cloneMap(args)); err == nil || !strings.Contains(err.Error(), "duplicate query_catalog call rejected") {
-		t.Fatalf("duplicate error = %v", err)
+	// Before any query has succeeded a program that starts with the same
+	// lookup again gets the same cards and goes on to the query behind it;
+	// the catalog is not asked twice.
+	again, err := runtime.QueryCatalog(context.Background(), cloneMap(args))
+	if err != nil {
+		t.Fatalf("the repeated lookup before any execution was refused: %v", err)
+	}
+	if stringify(normalizeValue(again)) != stringify(normalizeValue(first)) {
+		t.Fatalf("the repeated lookup returned %v, want what the first returned: %v", again, first)
 	}
 	if got := len(base.calls); got != 1 {
 		t.Fatalf("runtime calls = %d, want one successful catalog dispatch", got)
+	}
+	if n := len(runtime.state.actions); n != 2 || runtime.state.actions[1].Source != "memo" || runtime.state.actions[1].Status != "ok" {
+		t.Fatalf("actions = %+v, want the repeat recorded as served from this run's earlier result", runtime.state.actions)
 	}
 
 	execution := map[string]any{"data": map[string]any{"production_orders": []any{map[string]any{"product_name": "Northstar"}}}}
@@ -330,7 +344,7 @@ func TestProtocolRejectsIdenticalCatalogRequestLoopsAndReplaysExecution(t *testi
 	// The post-execution duplicate throws: the needed rows already live in the
 	// run's execution state (bound into the runtime session), and the
 	// exception directs the model to finalize from them.
-	_, err := runtime.QueryCatalog(context.Background(), cloneMap(args))
+	_, err = runtime.QueryCatalog(context.Background(), cloneMap(args))
 	if err == nil {
 		t.Fatal("the post-execution duplicate must throw")
 	}
@@ -344,6 +358,26 @@ func TestProtocolRejectsIdenticalCatalogRequestLoopsAndReplaysExecution(t *testi
 	}
 	if runtime.state.lastExecution == nil {
 		t.Fatal("the earlier execution must remain available for the final")
+	}
+
+	// A later query failed and awaits its repair: final is refused until the
+	// repair runs, so "call final now" would be false. The repeat is served,
+	// and the corrected query behind it gets to run.
+	runtime.state.pendingFailedQueryKey = "query { accounts { churn_risk } }"
+	owed, err := runtime.QueryCatalog(context.Background(), cloneMap(args))
+	if err != nil {
+		t.Fatalf("the repeated lookup with a repair owed was refused: %v", err)
+	}
+	if stringify(normalizeValue(owed)) != stringify(normalizeValue(first)) || len(base.calls) != 1 {
+		t.Fatalf("the repeat with a repair owed returned %v after %d catalog dispatches, want the first result and one dispatch", owed, len(base.calls))
+	}
+	if last := runtime.state.actions[len(runtime.state.actions)-1]; last.Source != "memo" || last.Status != "ok" {
+		t.Fatalf("last action = %+v, want the repeat served from this run's earlier result", last)
+	}
+	// The repair ran: the run can finish, and is told to.
+	runtime.state.pendingFailedQueryKey = ""
+	if _, err := runtime.QueryCatalog(context.Background(), cloneMap(args)); err == nil || !strings.Contains(err.Error(), "Call final now") {
+		t.Fatalf("with nothing owed the duplicate must be told to finish: %v", err)
 	}
 }
 
