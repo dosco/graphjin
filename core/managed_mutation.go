@@ -12,6 +12,44 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
 
+// systemRootsMixedError refuses a mutation that names GraphJin system roots
+// together with tables in another database.
+//
+// The two are written by different means, a service handler and SQL, and no
+// transaction spans them. The system half used to be refused as "mutations
+// blocked: database ... is read-only", which is true of SQL and false of the
+// root: sent alone, the same write is accepted. A caller reading it took the
+// write for forbidden rather than misshapen, so this names the roots and says
+// what to do. It avoids the words the service reads as an access denial.
+func (s *gstate) systemRootsMixedError(databases []string) error {
+	var system, tables []string
+	seen := make(map[string]struct{})
+	for _, name := range databases {
+		managed := make(map[string]struct{})
+		if handler := s.gj.managedMutationHandlers[name]; handler != nil {
+			for _, table := range handler.ManagedMutationTables() {
+				managed[strings.ToLower(table)] = struct{}{}
+			}
+		}
+		for _, root := range s.dbGroups[name] {
+			if _, ok := seen[root]; ok {
+				continue
+			}
+			seen[root] = struct{}{}
+			if _, ok := managed[strings.ToLower(root)]; ok {
+				system = append(system, root)
+			} else {
+				tables = append(tables, root)
+			}
+		}
+	}
+	if len(system) == 0 || len(tables) == 0 {
+		return nil
+	}
+	return fmt.Errorf("GraphJin system roots (%s) cannot be written in the same mutation as database tables (%s); send them as separate mutations",
+		strings.Join(system, ", "), strings.Join(tables, ", "))
+}
+
 func (s *gstate) executeManagedMutation(c context.Context) (bool, error) {
 	if s.r.operation != qcode.QTMutation || s.cs == nil || s.cs.st.qc == nil {
 		return false, nil

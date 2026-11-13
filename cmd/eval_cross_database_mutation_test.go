@@ -21,9 +21,11 @@ import (
 // This is the mutation a model wrote during a benchmark run: a note in the
 // control plane and a ticket update in the application database, in one
 // request. The control plane takes no SQL writes, so the request was answered
-// "mutations blocked", and the ticket was updated anyway, because each
-// database's half ran on its own and the errors were collected afterwards. The
-// model told the user nothing had changed.
+// "mutations blocked: database ... is read-only", and the ticket was updated
+// anyway, because each database's half ran on its own and the errors were
+// collected afterwards. The model told the user the database was read-only and
+// that nothing had changed. Neither was true: either write is accepted on its
+// own.
 //
 // The engine's own tests cover the rule (core/cross_database_mutation_test.go)
 // and the lock the same request used to leave behind
@@ -73,8 +75,18 @@ func TestRefusedCrossDatabaseMutationChangesNothing(t *testing.T) {
 	refused := post(`mutation { gj_task_entry(insert: { task_id: 3, body: "sorted out" }) { id } ` +
 		`support_tickets(where: { id: { eq: 3 } }, update: { status: "resolved", resolution_note: "sorted out" }) ` +
 		`{ id status resolution_note } }`)
-	if !strings.Contains(refused, `"errors"`) || !strings.Contains(refused, "mutations blocked") {
+	if !strings.Contains(refused, `"errors"`) {
 		t.Fatalf("the cross-database mutation was not refused: %s", refused)
+	}
+	// The refusal names both roots and the way out, and does not read as the
+	// access denial the model took it for.
+	for _, want := range []string{"gj_task_entry", "support_tickets", "separate mutations"} {
+		if !strings.Contains(refused, want) {
+			t.Errorf("the refusal does not mention %q: %s", want, refused)
+		}
+	}
+	if strings.Contains(refused, "blocked") || strings.Contains(refused, "read-only") {
+		t.Errorf("the refusal reads as an access denial: %s", refused)
 	}
 	if after := post(ticket); after != before {
 		t.Fatalf("the mutation was refused, but the ticket changed:\nbefore %s\nafter  %s", before, after)

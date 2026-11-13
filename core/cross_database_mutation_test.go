@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,7 +20,7 @@ type crossDatabaseEngine struct {
 	ledger *sql.DB
 }
 
-func newCrossDatabaseEngine(t *testing.T, configure func(*Config)) crossDatabaseEngine {
+func newCrossDatabaseEngine(t *testing.T, configure func(*Config), options ...Option) crossDatabaseEngine {
 	t.Helper()
 	open := func(name, ddl string) *sql.DB {
 		db, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), name+".db"))
@@ -47,7 +48,8 @@ INSERT INTO notes VALUES (1, 'first');`)
 	if configure != nil {
 		configure(conf)
 	}
-	gj, err := NewGraphJin(conf, app, OptionSetDatabases(map[string]*sql.DB{"app": app, "ledger": ledger}))
+	options = append([]Option{OptionSetDatabases(map[string]*sql.DB{"app": app, "ledger": ledger})}, options...)
+	gj, err := NewGraphJin(conf, app, options...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,5 +180,66 @@ func TestCrossDatabaseMutationSaysWhatWasApplied(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "app") || !strings.Contains(err.Error(), "applied") {
 		t.Errorf("the error does not say the app database's write was applied: %v", err)
+	}
+}
+
+// notesControlPlane stands in for the service's control plane: it owns the
+// ledger's notes table, as the service owns gj_task_entry, and counts the
+// writes that reach it.
+type notesControlPlane struct{ writes *int }
+
+func (notesControlPlane) ManagedMutationTables() []string { return []string{"notes"} }
+
+func (h notesControlPlane) ExecuteManagedMutation(context.Context, ManagedMutationRequest) (json.RawMessage, error) {
+	*h.writes++
+	return json.RawMessage(`{"notes":[{"id":2}]}`), nil
+}
+
+// A system root and a database table cannot share a mutation, and the refusal
+// says that, naming both.
+//
+// It used to say "mutations blocked: database ... is read-only". That is true
+// of SQL and false of the table: the same write, sent alone, is accepted. A
+// model that wrote a task note and a ticket update in one mutation read the
+// refusal as a policy it could not get past, and told the user the database
+// was read-only.
+func TestCrossDatabaseMutationWithSystemRootSaysToSplit(t *testing.T) {
+	writes := 0
+	e := newCrossDatabaseEngine(t, func(c *Config) {
+		// The control plane's database takes no SQL writes.
+		c.Databases["ledger"] = DatabaseConfig{Type: "sqlite", ReadOnly: true}
+	}, OptionSetManagedMutationHandler("ledger", notesControlPlane{&writes}))
+
+	_, err := e.gj.GraphQL(context.Background(), crossDatabaseWrite, nil, nil)
+	if err == nil {
+		t.Fatal("a system root and a database table were written in one mutation")
+	}
+	for _, want := range []string{"notes", "tickets", "separate mutations"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not mention %q: %v", want, err)
+		}
+	}
+	// The service marks any error containing these as a final policy denial
+	// ("retry only after the access policy changes"), which this is not.
+	for _, misleading := range []string{"read-only", "blocked", "denied", "unauthorized"} {
+		if strings.Contains(err.Error(), misleading) {
+			t.Errorf("the refusal reads as an access denial (%q): %v", misleading, err)
+		}
+	}
+	if status := e.ticketStatus(t, 1); status != "open" || writes != 0 {
+		t.Fatalf("the mutation was refused, but ticket 1 is %q and %d system writes ran", status, writes)
+	}
+
+	// Sent separately, as the refusal says to, both are accepted.
+	if _, err := e.gj.GraphQL(context.Background(),
+		`mutation { notes(insert: { id: 2, body: "sorted out" }) { id } }`, nil, nil); err != nil || writes != 1 {
+		t.Fatalf("the system root on its own: err %v, %d writes", err, writes)
+	}
+	if _, err := e.gj.GraphQL(context.Background(),
+		`mutation { tickets(where: { id: { eq: 1 } }, update: { status: "resolved" }) { id status } }`, nil, nil); err != nil {
+		t.Fatalf("the database table on its own: %v", err)
+	}
+	if status := e.ticketStatus(t, 1); status != "resolved" {
+		t.Fatalf("ticket 1 is %q, want resolved", status)
 	}
 }

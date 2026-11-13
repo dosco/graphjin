@@ -750,6 +750,9 @@ func (s *gstate) executeParallelRoots(c context.Context) error {
 	// and reporting afterwards committed the allowed half of a mutation the
 	// caller was then told had been blocked.
 	if s.r.operation == qcode.QTMutation {
+		if err := s.systemRootsMixedError(names); err != nil {
+			return err
+		}
 		for i, name := range names {
 			plan, err := states[i].planDatabaseRoots(name, s.dbGroups[name])
 			if err != nil {
