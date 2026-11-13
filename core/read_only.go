@@ -2,6 +2,8 @@ package core
 
 import (
 	"strings"
+
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
 
 func (s *gstate) readOnlyMutationRoot() (string, bool) {
@@ -12,12 +14,16 @@ func (s *gstate) readOnlyMutationRoot() (string, bool) {
 	if dbName == "" {
 		dbName = s.gj.defaultDB
 	}
-	qc := s.cs.st.qc
+	return s.gj.readOnlyRoot(dbName, s.cs.st.qc)
+}
+
+// readOnlyRoot names the first root of qc that is a read-only table.
+func (gj *graphjinEngine) readOnlyRoot(dbName string, qc *qcode.QCode) (string, bool) {
 	for _, rootID := range qc.Roots {
 		sel := qc.Selects[rootID]
 		table := sel.Ti.Name
 		schema := sel.Ti.Schema
-		if s.gj.tableReadOnly(dbName, schema, table) {
+		if gj.tableReadOnly(dbName, schema, table) {
 			if dbName != "" {
 				return dbName + "." + table, true
 			}
