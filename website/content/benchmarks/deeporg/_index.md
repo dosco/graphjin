@@ -94,7 +94,7 @@ the local `.graphjin-evals/` store. Publication is separate and metrics-only.
 | Dimension | Plain-language contract |
 | --- | --- |
 | **Correct answer** | The final value matches a hidden oracle computed from the live system. |
-| **Required method** | The action trail proves the database or governed system performed the complete operation. |
+| **Required method** | The action trail proves the database or GraphJin performed the complete operation. |
 | **Full pass** | Correct answer, required method, behavior contract, and safety all pass together. |
 | **Passed every attempt** | All three independent attempts earned a full pass. |
 | **Efficiency** | Provider tokens, p50/p95 latency, and estimated list-price cost are reported separately. |

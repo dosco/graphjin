@@ -1,4 +1,4 @@
-<svg viewBox="0 0 900 360" role="img" aria-label="One governed graph across data, files, APIs, and code" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 900 360" role="img" aria-label="One graph across data, files, APIs, and code" xmlns="http://www.w3.org/2000/svg">
   <rect class="diag-bg" x="0" y="0" width="900" height="360" rx="16"/>
   <rect class="diag-ring" x="28" y="28" width="844" height="304" rx="20"/>
   <text class="diag-sub" x="450" y="52" text-anchor="middle">policy boundary · one config · within bounds</text>

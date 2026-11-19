@@ -24,7 +24,7 @@ print_banner() {
     echo '  \____|_|  \__,_| .__/|_| |_(_)_|_|_| |_|'
     echo '                 |_|                      '
     echo -e "${NC}"
-    echo "One governed graph for your AI agents"
+    echo "One AI agent for your whole organization"
     echo ""
 }
 

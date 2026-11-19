@@ -131,7 +131,7 @@ generalization and is not.
 ## What the model actually emits
 
 The action space is a program, not a tool call. A completion carries JavaScript
-that calls governed GraphJin functions, so one step can query, branch, and
+that calls GraphJin functions, so one step can query, branch, and
 aggregate rather than making a round trip per thought. Steps the runtime
 authored on the model's behalf are marked and dropped from exports by default —
 training on them would teach the model to imitate the harness.

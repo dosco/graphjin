@@ -1,6 +1,6 @@
 ---
 title: "The GraphJin Agent Environment"
-description: "Train and measure AI agents against a governed graph, with rewards that come from the database rather than from plausibility."
+description: "Train and measure AI agents against your own systems, with rewards that come from the database rather than from plausibility."
 nav_group: "environment"
 weight: 5
 ---

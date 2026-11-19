@@ -17,7 +17,7 @@ Those are separate jobs:
 
 ## What makes GraphJin highly reactive
 
-GraphJin does not wait for the next prompt. It keeps governed questions running, carries their state across reconnects, and treats both activity and silence as evidence.
+GraphJin does not wait for the next prompt. It keeps your questions running, carries their state across reconnects, and treats both activity and silence as evidence.
 
 | Reactive primitive | What it adds |
 | --- | --- |
@@ -89,7 +89,7 @@ Examples:
 
 Put exact conditions in the subscription's GraphQL `where` filter. A flow is appropriate when a useful predicate cannot be written exactly, or when frequent raw events need distillation.
 
-Silence is an explicit trigger: add `absence_json: { enabled: true, window: "4h", repeat: false }` for "no event in four hours." Same-watch flow noise can drain through `delivery_json.digest.window`; cross-watch correlation uses a rollup watch over `gj_watch_event` with a conjunctive non-self `watch_id eq/in` filter. Changing these governed fields can change the action hash and require re-approval.
+Silence is an explicit trigger: add `absence_json: { enabled: true, window: "4h", repeat: false }` for "no event in four hours." Same-watch flow noise can drain through `delivery_json.digest.window`; cross-watch correlation uses a rollup watch over `gj_watch_event` with a conjunctive non-self `watch_id eq/in` filter. Changing these fields can change the action hash and require re-approval.
 
 ## One interface: `gj_watch`
 

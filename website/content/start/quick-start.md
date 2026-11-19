@@ -30,7 +30,7 @@ graphjin serve
 
 ## Open the Web UI
 
-Open [http://localhost:8080/](http://localhost:8080/) after the service starts. The console opens in the **User** workspace with the built-in Agent. Use the User/Admin switcher at the top to move between governed work and runtime administration.
+Open [http://localhost:8080/](http://localhost:8080/) after the service starts. The console opens in the **User** workspace with the built-in Agent. Use the User/Admin switcher at the top to move between using the agent and administering the server.
 
 Open **Admin → Runtime** directly at [http://localhost:8080/admin/runtime](http://localhost:8080/admin/runtime). It is a quick visual check that GraphJin discovered the configured sources and is serving the built-in system roots.
 

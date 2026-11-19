@@ -237,7 +237,7 @@ const requiredRenderedContent = [
   ['agentic/watch-automation/index.html', 'Alerts fail open.'],
   ['agentic/watch-automation/index.html', 'Actions fail closed.'],
   ['agentic/watch-automation/index.html', 'graphjin://watch-events/unseen/watch%3Acoffee_roast_'],
-  ['benchmarks/index.html', 'Public, governed benchmark suites'],
+  ['benchmarks/index.html', 'Public benchmark suites'],
   ['benchmarks/index.html', 'data-benchmark-family-row=deeporg'],
   ['benchmarks/index.html', 'data-benchmark-family-row=deepcontoso'],
   ['benchmarks/deeporg/index.html', 'The Organizational Agent Benchmark'],
@@ -386,7 +386,7 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   if (/(?:>|&gt;)\s*(All|Section)\s*(?:<|&lt;)/.test(header)) {
     failures.push('Header still exposes the old All/Section search labels');
   }
-  for (const required of ['Vision', 'The agent loop', 'Use DeepORG as the agent.', 'The ledger caught it', 'Your first answer is one command away.', 'geo filters', 'Expression aggregates', 'backed by evidence', 'one governed graph', 'Run the 2-minute demo']) {
+  for (const required of ['Vision', 'The agent loop', 'Use DeepORG as the agent.', 'The ledger caught it', 'Your first answer is one command away.', 'geo filters', 'Expression aggregates', 'backed by evidence', 'as one graph', 'Run the 2-minute demo']) {
     if (!home.includes(required)) {
       failures.push(`Homepage missing required enriched copy: ${required}`);
     }

@@ -8,7 +8,7 @@ weight: 25
 
 The fastest start needs nothing but the binary: `graphjin serve --demo` with no `--path` extracts the built-in SaaS ops demo to `./graphjin-demo` and boots it on SQLite - no clone, no Docker, ready in seconds.
 
-The governed organizational-agent claim is measured on this same SaaS Ops environment in [DeepORG](/benchmarks/deeporg/).
+How well the agent handles real organizational work is measured on this same SaaS Ops environment in [DeepORG](/benchmarks/deeporg/).
 
 ```bash
 graphjin serve --demo
@@ -136,7 +136,7 @@ graphjin serve --demo --path examples/pcb-fab
 ```
 
 - **Sources (8):** `mes` (writable Postgres - designs, fab orders, panels, BOM, NCRs), `yield_warehouse` (Snowflake simulator), `test_measurements` (MongoDB), `design_files` (local Gerber/drill/stackup files), `supplier_api` (OpenAPI supplier lookup joined onto `bom_items.sku`), `dfm_code` (TypeScript CodeSQL), workflows, control plane. Port 8082 (the smoke suite also starts a supplier mock on 8093).
-- **Shows off:** declared cross-source relationships - MongoDB `test_runs.order_id` joins straight to Postgres `fab_orders.id` - plus file and remote-API sources in the same governed graph.
+- **Shows off:** declared cross-source relationships - MongoDB `test_runs.order_id` joins straight to Postgres `fab_orders.id` - plus file and remote-API sources in the same graph.
 
 **Ask it:**
 

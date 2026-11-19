@@ -1,6 +1,6 @@
 ---
 title: "Agentic"
-description: "How GraphJin works as one governed graph for AI agents."
+description: "How GraphJin works as one graph for AI agents."
 nav_group: "story"
 doc_kind: "concept"
 weight: 20

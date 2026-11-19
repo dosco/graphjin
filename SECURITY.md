@@ -88,7 +88,7 @@ mode. The full agentic surface is on and every `gj_*` root is `public` with no
 auth.
 
 **prod** is the only pre-agentic backward-compatibility mode. It serves the
-classic public REST/GraphQL API over compiled/allow-listed queries governed by
+classic public REST/GraphQL API over compiled/allow-listed queries controlled by
 roles and row-level security. In prod the entire agentic surface is hard-gated
 off and never mounts — the catalog, artifacts persistence, workflows, code
 source, the `gj_config`/`gj_security`/`gj_runtime` roots, the MCP server, and

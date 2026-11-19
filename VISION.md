@@ -39,7 +39,7 @@ attached to.
 
 The missing abstraction is not another ORM, code search index, dashboard, or
 agent framework. The missing abstraction is a common graph that connects the
-organization's data and code through one governed interface.
+organization's data and code through one interface, under the organization's own access rules.
 
 GraphJin starts from a simple idea: GraphQL can be more than an application
 API. It can be a schema-aware way to ask questions across the systems that make
@@ -156,7 +156,7 @@ the GraphQL query that reads it, and the edit that would safely change it.
 
 ## Collaborative Coding with LLMs
 
-Once code is part of the graph, editing can also become a governed workflow.
+Once code is part of the graph, editing can also become a checked, approved workflow.
 
 GraphJin's CodeSQL mutation path is designed for collaborative coding agents.
 The model does not need raw shell writes to be useful. It can read live source,
@@ -182,7 +182,7 @@ interface is governable.
 
 GraphJin makes the policy surface visible instead of scattering it through
 prompts, proxy code, custom middleware, and human reminders. A GraphJin app can
-be governed from a single config file: databases, metadata exposure, table and
+be controlled from a single config file: databases, metadata exposure, table and
 role permissions, blocklists, read-only boundaries, automatic filters, mutation
 blocks, MCP settings, and raw-query policy. The gateway becomes a file humans
 can review, diff, and audit. An LLM can audit it too, asking what an agent can
@@ -195,7 +195,7 @@ columns or tables can be blocked, mutations can be disabled, and read-only
 databases keep DDL and writes out of reach.
 
 This is the security story that makes the graph feel almost unreasonable: one
-governed gateway to the organization's data systems, APIs, metadata, files, and
+gateway to the organization's data systems, APIs, metadata, files, and
 code. Not a hundred fragile wrappers. One place to see access and tighten it,
 without handing agents the keys to everything.
 
@@ -205,7 +205,7 @@ workflows reflect what someone already knew to ask. Current models, and the
 stronger models that will follow them, become most useful when they can explore
 the organization inside rules that are explicit, enforceable, and inspectable.
 
-That is the difference between confinement and governed exploration. Humans
+That is the difference between confinement and exploration within set rules. Humans
 should define ownership, permissions, privacy boundaries, approval requirements,
 cost limits, and audit trails. The model should be free to traverse the live
 graph within those boundaries, discover relationships the human did not know to
@@ -240,7 +240,7 @@ and way to change what is true.
 That is when the organization starts to feel different. Agents can trace a
 customer problem through data, APIs, and code; propose the workflow change;
 preview the source edit; run the saved query that proves the fix; and hand the
-result back to the humans who own the decision. They are inside the governed
+result back to the humans who own the decision. They are inside the
 graph, collaborating.
 
 This is the future GraphJin is reaching for: organizations whose data and code

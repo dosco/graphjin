@@ -5,12 +5,12 @@ nav_group: "agentic"
 weight: 4
 ---
 
-Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data access and controlled operations. Use the [built-in agent](/agentic/server-agent/) or connect an AI client over [MCP](/agentic/mcp/), then choose the smallest governed path that matches the request.
+Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data access and controlled operations. Use the [built-in agent](/agentic/server-agent/) or connect an AI client over [MCP](/agentic/mcp/), then choose the smallest path that matches the request.
 
 <div class="agentic-path-grid">
   <article>
     <span>01 · Ask</span>
-    <h2>Get a governed answer now.</h2>
+    <h2>Get an answer now.</h2>
     <p>GraphJin discovers the relevant graph, checks policy, validates the request, runs it, and returns the evidence behind the answer.</p>
     <a href="/agentic/server-agent/">Use the server-side agent</a>
   </article>
@@ -35,7 +35,7 @@ Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data 
   <article>
     <span>05 · Act</span>
     <h2>Run only the action that was approved.</h2>
-    <p>Workflows can use governed GraphJin tools, but autonomous watch delivery remains paused until the exact current action hash is confirmed.</p>
+    <p>Workflows can use GraphJin tools, but autonomous watch delivery remains paused until the exact current action hash is confirmed.</p>
     <a href="/agentic/workflows/">Understand workflows</a>
   </article>
 </div>
@@ -64,4 +64,4 @@ links and task-pin actions.
   <a class="button-primary" href="/agentic/watch-automation/">Explore Watch Automation</a>
 </aside>
 
-The intended loop is catalog first, security second, validation or preview third, and then a governed answer or action. That sequence keeps agents useful without handing them raw database credentials or arbitrary shell access. The fastest way to see the full surface is the [coffee-roastery demo](/start/demos/#coffee-roastery).
+The intended loop is catalog first, security second, validation or preview third, and then an answer or action. That sequence keeps agents useful without handing them raw database credentials or arbitrary shell access. The fastest way to see the full surface is the [coffee-roastery demo](/start/demos/#coffee-roastery).

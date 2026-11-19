@@ -8,7 +8,7 @@ weight: 6
 
 GraphJin's [server-side agent](/agentic/server-agent/) is two agents. The
 **worker** answers one self-contained data question: it discovers the catalog,
-runs a governed query, and returns a database-computed, grounded answer. It
+runs a query, and returns a database-computed, grounded answer. It
 uses fixed built-in skills, keeps no state, and is meant to run on a small, fast
 model. The **lead** holds the conversation. It reads the thread's history, the
 agent profile's instructions, and the caller's memories and skills, then sends

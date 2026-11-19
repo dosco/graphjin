@@ -1,6 +1,6 @@
 # Agentic GraphJin
 
-GraphJin gives AI agents one governed graph to work through: a single surface
+GraphJin gives AI agents one graph to work through: a single surface
 over live data, source code, security posture, workflows, config, and
 source-backed external systems. This document is the deep reference for that
 deployment. It is written for two audiences: operators putting GraphJin in
@@ -30,10 +30,10 @@ There are two ways to put an agent on GraphJin, and they share one foundation:
    [Server-Side Agent](#server-side-agent).
 
 Both paths run as the caller, under the same roles and row-level security,
-against the same governed graph. The rest of this document describes that
+against the same graph. The rest of this document describes that
 graph once, for both.
 
-## Five Minutes To A Governed Answer
+## Five Minutes To An Answer
 
 The fastest way to see the story end to end is a demo vertical:
 
@@ -119,7 +119,7 @@ start with the user's instruction
   -> check gj_security and gj_runtime before risky actions
   -> join into application data, gj_code, workflows, or config
   -> validate or preview
-  -> act through the governed GraphJin surface
+  -> act through GraphJin, within the caller's access
   -> observe and refresh discovery
 ```
 
@@ -218,7 +218,7 @@ catalog has sampled a closed set for it (at most eight short values), so a
 filter is written with the stored spelling (`churn_risk`, not "churn-risk"). A simple count
 is then two model calls, one to execute and one to answer.
 Read-only posture removes all write guides; workflow,
-watch, and admin guides require their governed roots, and admin guides also
+watch, and admin guides require their roots, and admin guides also
 require the admin role.
 
 Skills guide the model but never authorize it. Access stays enforced by core
@@ -254,7 +254,7 @@ inbound HTTP `rate_limiter`; multi-replica deployments divide the provider
 allowance across replicas. Waiting uses the existing agent context and deadline.
 Token usage is charged from completed provider-reported usage, so operators
 should leave headroom for concurrent calls whose size is not known in advance.
-Semantic catalog embeddings remain governed by `catalog_search.semantic`.
+Semantic catalog embeddings remain controlled by `catalog_search.semantic`.
 
 Requests may carry a retained `task_id` for an explicitly created open
 `gj_task`. GraphJin prepends the owner-scoped declared goal and up to five recent
@@ -283,7 +283,7 @@ public MCP, configuration, direct core, and lexical-only agent prompts.
 ### Lead And Worker
 
 Two agents share this work. The **worker** is everything above: one data
-question in, a governed, database-computed, grounded answer out, with its fixed
+question in, a database-computed, grounded answer out, with its fixed
 built-in skills for discovery, querying, writes, watches and tasks. It is meant
 to run on a small, fast model and keeps no state.
 
@@ -628,7 +628,7 @@ flowchart LR
 
   ENG["GraphJin engine<br/>GraphQL compiler · roles + RLS<br/>enforced on every request"]
 
-  subgraph ROOTS["Governed graph (definition root → action root)"]
+  subgraph ROOTS["Graph (definition root → action root)"]
     APP["Application roots<br/>business data — never copied"]
     CAT["gj_catalog<br/>discovery spine"]
     ART["gj_artifacts<br/>saved queries · fragments · workflows · annotations<br/>owner/account-scoped"]
@@ -663,7 +663,7 @@ flowchart LR
 
 One picture, three boundaries: source-owned business truth, the GraphJin-owned
 `gj_*` system roots, and the caller-facing agent surfaces. Who reaches which
-root is governed by the access-mode matrix in [`SECURITY.md`](SECURITY.md) —
+root is decided by the access-mode matrix in [`SECURITY.md`](SECURITY.md) —
 that table is canonical for access; this diagram is canonical for architecture.
 
 Application roots remain the source of business truth. A Postgres table, MongoDB
@@ -869,7 +869,7 @@ The important split is:
 | Direct GraphQL | Composed queries over `gj_catalog`, application roots, `gj_security`, `gj_code`, workflows, and config. |
 | MCP bootstrap helpers | Teach a fresh model the catalog-first loop: `query_catalog`, `graphql_help`, `validate_where_clause`, and `execute_saved_query`. |
 | Catalog help rows | Durable replacement for old discovery tool descriptions: syntax, schema, relationships, workflows, config, security, code, fragments, saved queries, and errors. |
-| Control-plane GraphQL | Governed workflow/config/security/code actions through normal GraphJin roots when policy allows them. |
+| Control-plane GraphQL | Workflow/config/security/code actions through normal GraphJin roots when policy allows them. |
 
 Sources-mode MCP intentionally keeps the tool list small:
 
@@ -1128,7 +1128,7 @@ Each policy row includes:
 
 | Field | Meaning |
 | :--- | :--- |
-| `capability` | The governed surface, such as `config`, `workflow`, `schema`, `codesql`, `filesystem`, or `dynamic_graphql`. |
+| `capability` | The surface being controlled, such as `config`, `workflow`, `schema`, `codesql`, `filesystem`, or `dynamic_graphql`. |
 | `action` | The kind of operation, such as `read`, `write`, `execute`, `query`, or `reload`. |
 | `default_effective` | The secure default for the active mode: `allow`, `block`, `read_only`, or `read_write`. |
 | `effective` | The actual current behavior after config and source/table permissions are applied. |
@@ -1581,7 +1581,7 @@ automatically.
 ### Watches: Standing Questions With A Durable Inbox
 
 A watch is a standing question — "tell me when a roast batch fails QC twice in
-a week" — stored under `gj_watch` and evaluated as a governed subscription with
+a week" — stored under `gj_watch` and evaluated as a subscription with
 the **owner's** stored identity and role, never elevated ones. Fired events
 land in the `gj_watch_event` inbox.
 
@@ -2094,7 +2094,7 @@ The stable model instructions are:
 10. Prefer workflows for broad or repeatable data work after discovery.
 11. Use `gj_code` for source intelligence and preview/apply flows. Do not mutate
    raw CodeSQL internals directly.
-12. Use `gj_config`, `gj_workflow`, and `gj_workflow_execution` for governed
+12. Use `gj_config`, `gj_workflow`, and `gj_workflow_execution` for
    control-plane actions when policy allows them.
 13. Observe results and errors, then return to catalog/security/runtime/code when the
    facts needed for the next step change.
@@ -2485,7 +2485,7 @@ One graph does not mean one storage system. Databases, APIs, files, code, config
 security posture, and workflows each keep their ownership model. GraphJin makes
 the boundaries visible and traversable.
 
-### Prefer Governed Verbs
+### Prefer GraphJin's Own Verbs
 
 Use saved queries, workflows, guarded config mutations, validation tools, query
 repair, CodeSQL previews, and security checks. The point is not to make agents
@@ -2544,5 +2544,5 @@ composable surface:
 - What is the smallest safe action I can take next?
 
 That is the point of Agentic GraphJin: the model does not merely receive a
-prompt. It enters a governed graph, discovers evidence, acts through explicit
+prompt. It enters a graph of what it may see, discovers evidence, acts through explicit
 boundaries, and keeps humans and agents on the same map.

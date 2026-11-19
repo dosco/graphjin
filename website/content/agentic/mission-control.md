@@ -1,6 +1,6 @@
 ---
 title: "Mission Control"
-description: "Review declared task trails, unseen watch events, and annotation drafts from the same governed map used by GraphJin agents."
+description: "Review declared task trails, unseen watch events, and annotation drafts from the same map used by GraphJin agents."
 nav_group: "agentic"
 doc_kind: "guide"
 weight: 48

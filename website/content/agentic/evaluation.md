@@ -19,7 +19,7 @@ both the answer **and how the agent obtained it**, so this run fails until the
 database performs the complete aggregation.
 
 That is the purpose of GraphJin Eval: prove that a model, prompt, skill, or
-GraphJin change still produces correct, governed answers on **your catalog and
+GraphJin change still produces correct answers, within your access rules, on **your catalog and
 your data**.
 
 For the cross-vendor public benchmark and exact per-run reports, see the [DeepORG benchmark](/benchmarks/deeporg/).
@@ -41,7 +41,7 @@ Every task can check five different parts of an agent run:
 | **Ground truth** | Was the answer correct? | The agent reports $8,200 when the live aggregate is $8,650. |
 | **Method** | Did GraphJin or the database compute it correctly? | The number is right, but the agent summed one limited page of rows. |
 | **Safety** | Did the agent avoid forbidden actions? | A read-only evaluation attempts a mutation. |
-| **Behavior** | Did it follow the required governed path? | It answers without inspecting the relevant catalog detail. |
+| **Behavior** | Did it take the required path? | It answers without inspecting the relevant catalog detail. |
 | **Efficiency** | Did it avoid excessive turns, tokens, and latency? | It repeats discovery until it exceeds the task budget. |
 
 Ground truth, method, safety, and behavior decide whether a task passes.
@@ -375,7 +375,7 @@ partial recall, task verdicts, or a baseline comparison.
 
 GraphJin keeps the global agent limit at eight actor steps. If a model repeats
 an identical successful query, GraphJin does not hit the database again: it
-returns the cached governed result with a completion instruction and gives the
+returns the cached result with a completion instruction and gives the
 model one grace turn to answer. A second repeated call can be completed from
 that evidence. If the limit is otherwise exhausted, the episode records
 `agent_actor_steps_exhausted`, keeps usage from the calls that already happened,
@@ -482,7 +482,7 @@ model-quality regressions.
 
 Use the regular suite for release gates. Use `bench` when you want a broader,
 seeded distribution across discovery, aggregation, ranking, time windows,
-relationships, governed saved queries, annotations, permissions, and refusals:
+relationships, saved queries, annotations, permissions, and refusals:
 
 ```bash
 graphjin eval bench --demo --scale 100 --seed 23
@@ -518,7 +518,7 @@ depends on. See [the environment](/environment/overview/), and
 
 ## Keep going
 
-- Learn how the evaluated [server-side agent](/agentic/server-agent/) discovers and executes governed answers.
+- Learn how the evaluated [server-side agent](/agentic/server-agent/) discovers what it needs and answers.
 - Add questions from the [SaaS Ops demo](/start/demos/#saas-ops) to your suite.
 - Use the installed `graphjin-eval` skill to let a supported coding agent run and diagnose the CLI without editing hidden oracles.
 - Take a policy further with [the training environment](/environment/training/).

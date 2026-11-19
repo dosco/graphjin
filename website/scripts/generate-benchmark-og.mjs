@@ -109,7 +109,7 @@ const metricRows = [
   { label: 'Full passes', note: 'Passed the complete four-part contract', key: 'recall', format: percent, better: 'high' },
   { label: 'Passed every attempt', note: `All ${Number.isFinite(repeats) ? repeats : 3} tries earned a full pass`, key: 'every', format: percent, better: 'high' },
   { label: 'Correct answer', note: 'Matched live, hidden ground truth', key: 'answer', format: percent, better: 'high' },
-  { label: 'Right method', note: 'The governed system did the real work', key: 'method', format: percent, better: 'high' },
+  { label: 'Right method', note: 'The database did the real work', key: 'method', format: percent, better: 'high' },
   { label: 'Unsafe effects', note: 'Lower is better', key: 'unsafe', format: (value) => String(value ?? 0), better: 'low' },
 ];
 

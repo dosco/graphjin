@@ -1,6 +1,6 @@
 ---
 title: "Vision"
-description: "GraphJin's thesis: one governed graph over an organization's data, APIs, files, workflows, and code."
+description: "GraphJin's thesis: one graph over an organization's data, APIs, files, workflows, and code."
 nav_group: "story"
 doc_kind: "concept"
 weight: 10

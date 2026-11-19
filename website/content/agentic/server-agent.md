@@ -10,7 +10,7 @@ GraphJin's built-in agent - the server-side agent - runs the catalog-first disco
 
 With `agent.lead.enabled` on (the default in `dev` and `agentic` modes), every call runs the [lead agent](/agentic/lead-agent/), which holds the conversation, your skills, and your memories, and sends this loop self-contained questions. This page describes the data worker behind it.
 
-It is enabled by default in `dev` and `agentic` modes. Use it when you want GraphJin to orchestrate discovery in one governed, caller-scoped, auditable call; use the [MCP tools](/agentic/mcp/) directly when you want to drive the loop step by step yourself. Production mode keeps its existing opt-in behavior.
+It is enabled by default in `dev` and `agentic` modes. Use it when you want GraphJin to orchestrate discovery in one caller-scoped, auditable call; use the [MCP tools](/agentic/mcp/) directly when you want to drive the loop step by step yourself. Production mode keeps its existing opt-in behavior.
 
 ## Try it in five minutes
 
@@ -41,7 +41,7 @@ More verticals - a zero-Docker SaaS ops demo, a corrugated-box plant with JWT ro
 
 Once the agent answers a useful question, use [GraphJin Eval](/agentic/evaluation/)
 to turn that confidence into a repeatable release check. It verifies the answer,
-the database-side method, the governed behavior, and safety across repeated runs.
+the database-side method, the required behavior, and safety across repeated runs.
 The same contract is published across vendors in [DeepORG](/benchmarks/deeporg/).
 
 ## Configure it
@@ -109,7 +109,7 @@ The public MCP `execute_graphql` tool is separate from the server-side agent's i
 
 The agent is caller-aware. From the request's identity it derives a capability profile limited to fixed `gj_*` system roots—never application tables—and preloads every permitted Ax skill. The 14 flat guides cover data discovery/aggregation/write, code read/write, workflow discovery/execution/authoring, watch inbox/lifecycle, declared-task read/write, and admin inspection/configuration.
 
-There is no lexical router, embedding search, skill catalog, search callback, or skill-discovery turn. Global read-only posture removes every write guide. Workflow, watch, and admin guides are included only when their governed roots are visible; admin guides also require the admin role. Multi-domain requests can use more than one preloaded guide.
+There is no lexical router, embedding search, skill catalog, search callback, or skill-discovery turn. Global read-only posture removes every write guide. Workflow, watch, and admin guides are included only when their roots are visible; admin guides also require the admin role. Multi-domain requests can use more than one preloaded guide.
 
 Skills only shape the guidance the model sees. **They never grant access.** GraphJin core roles and row-level security remain authoritative, and protocol preflight enforces mutation shape, security/runtime evidence, and workflow detail before execution. Ax's `used(...)` primitive supplies self-reported usage telemetry; it cannot change authorization.
 
@@ -196,7 +196,7 @@ Declared tasks keep themselves visible through owner-scoped response notices.
 `task_open_unlinked` lists active tasks when a run is not task-bound,
 `task_context_loaded` confirms warm-started context, and `task_verify_failed`
 reports a declared saved-query check that left its task open. Notice IDs are
-correlation hints only; callers must still use the governed task roots, and a
+correlation hints only; callers must still use the task roots, and a
 task ID never grants access. See [Declared Tasks](/agentic/tasks/) for the full
 lifecycle. `annotations_unshared` similarly lists bounded owner-only catalog
 annotation drafts. The agent can draft one, but it cannot approve a new or
@@ -339,7 +339,7 @@ error, so recovery can reuse the actual rows without another lookup or query.
 All settings also accept `GJ_AGENT_SELECTION_` environment variables, such as
 `GJ_AGENT_SELECTION_PROVIDER` and `GJ_AGENT_SELECTION_STARTUP_BUDGET_MS`.
 Preparation is shared by REST, MCP, watch, and task runs. It performs catalog
-reads; executing a query, workflow, or write remains governed by the existing
+reads; executing a query, workflow, or write remains subject to the existing
 agent and engine checks.
 
 Responses include `preparation` timings, loaded-guide bytes, decision evidence,
@@ -390,7 +390,7 @@ cancellation. Token charges use the provider-reported usage from completed
 calls. Because the pending call size is not available through Ax's limiter
 metadata, leave headroom below the provider's hard TPM quota for concurrent
 in-flight calls. Responses without usage metadata receive no guessed charge.
-Semantic catalog embeddings remain governed by their separate
+Semantic catalog embeddings remain controlled by their separate
 `catalog_search.semantic` provider configuration.
 
 ## When to use it
