@@ -252,6 +252,33 @@ claude mcp add --transport sse private-api https://api.company.com/sse \
   --header "X-API-Key: your-key-here"
 ```
 
+### Authenticate The CLI
+
+Before `graphjin cli` can talk to a server, point it at one. There are no `--server` or `--token` flags — both come from a single saved config file (`~/.config/graphjin/client.json`, mode `0600`):
+
+```bash
+graphjin cli setup http://localhost:8080            # local dev, no auth needed
+graphjin cli setup https://graphjin.example.com     # signs in via the server's OIDC IdP
+```
+
+What `setup` does, depending on the server:
+
+- **No built-in login** (the server has `auth_login.enabled: false`): saves only the URL. CLI calls send no `Authorization` header.
+- **Built-in login enabled**: kicks off an [RFC 8628 device-code flow](https://www.rfc-editor.org/rfc/rfc8628). The CLI prints a verification URL + short code, opens your browser, you sign in with the configured identity provider (Google, Okta, Keycloak, Auth0-as-IdP, Azure AD — anything OIDC), and the server mints a 30-day JWT. Both URL and JWT are saved to `client.json`.
+
+After setup every `graphjin cli ...` command just works:
+
+```bash
+graphjin cli health
+graphjin cli query list
+graphjin cli schema tables
+graphjin cli setup show       # print the saved config (token redacted)
+graphjin cli setup logout     # delete client.json
+graphjin cli setup            # re-run sign-in against the same server (refresh token)
+```
+
+To turn on built-in login on the server, use the `auth_login` config shown in the MCP quick reference above.
+
 ---
 
 ## Sources Mode
