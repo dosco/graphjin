@@ -75,6 +75,48 @@ func installSeedHandoff(program Program, req Request) bool {
 	return true
 }
 
+// withStoredValues adds to each table of a seed digest the values its listed
+// columns hold, for every column the catalog has sampled a closed set for
+// (the sampler keeps a set of at most eight short values).
+//
+// The executor writes its first query from the digest alone. A column's name
+// and type do not say how its values are spelled: asked about "churn-risk
+// accounts", six of six runs filtered status on "churn-risk" against a column
+// that holds churn_risk, read no rows, and ended asking for clarification or
+// out of steps. The values have been on the column's card since the enum
+// sampler landed, but a run that fetches the card does it in the same program
+// that runs the query, and a note attached to the empty result is never read:
+// that program goes on to final() with the rows it has.
+func (r *protocolRuntime) withStoredValues(ctx context.Context, digest []any) []any {
+	if r == nil {
+		return digest
+	}
+	for i, entry := range digest {
+		table, ok := entry.(map[string]any)
+		if !ok || table["kind"] != "table" {
+			continue
+		}
+		columns, _ := table["columns"].([]string)
+		if len(columns) == 0 {
+			continue
+		}
+		sampled := r.observedColumnValues(ctx, stringValue(table["name"]))
+		stored := map[string]any{}
+		for _, column := range columns {
+			name, _, _ := strings.Cut(column, ":")
+			if values := sampled[strings.ToLower(name)]; len(values) != 0 {
+				stored[name] = values
+			}
+		}
+		if len(stored) != 0 {
+			withValues := cloneAnyMap(table)
+			withValues["stored_values"] = stored
+			digest[i] = withValues
+		}
+	}
+	return digest
+}
+
 const (
 	seedDigestTables  = 6
 	seedDigestColumns = 24

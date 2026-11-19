@@ -212,7 +212,10 @@ disabled by default; see the [server agent configuration](https://graphjin.com/a
 Without it, a plain question (no caller context) still skips distillation: the
 executor receives a compact `seed_digest` in `catalog_facets` — the seed's top
 tables with their real column names and types, plus seed workflows by id —
-and inspects and executes in its first step. A simple count
+and inspects and executes in its first step. A table in the digest also lists,
+under `stored_values`, the values each of its listed columns holds when the
+catalog has sampled a closed set for it (at most eight short values), so a
+filter is written with the stored spelling (`churn_risk`, not "churn-risk"). A simple count
 is then two model calls, one to execute and one to answer.
 Read-only posture removes all write guides; workflow,
 watch, and admin guides require their governed roots, and admin guides also

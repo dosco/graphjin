@@ -849,7 +849,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	} else if seedHandoff {
 		if tables := seedDigest(seed); len(tables) != 0 {
 			digest := cloneAnyMap(mapValue(facets))
-			digest["seed_digest"] = tables
+			digest["seed_digest"] = protocol.withStoredValues(ctx, tables)
 			facets = digest
 		}
 	}
