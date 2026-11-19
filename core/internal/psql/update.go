@@ -91,6 +91,12 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate, embedded bool) {
 					c.w.WriteString(` AND `)
 					c.renderExpPath(m.Ti, m.Where.Exp, false, append(m.Path, "where"))
 				}
+			} else if m.IsJSON && m.Array {
+				c.renderBulkUpdateMatch(m)
+				if sel.Where.Exp != nil {
+					c.w.WriteString(` AND `)
+					c.renderExp(m.Ti, sel.Where.Exp, false)
+				}
 			} else {
 				c.renderExp(m.Ti, sel.Where.Exp, false)
 			}
@@ -100,4 +106,23 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate, embedded bool) {
 			c.dialect.RenderReturning(c, &m)
 		}
 	})
+}
+
+// renderBulkUpdateMatch joins each row of a bulk update payload to the table
+// row with the same primary key. The compiler requires every primary key
+// column to be in the payload, so each one has a recordset column.
+func (c *compilerContext) renderBulkUpdateMatch(m qcode.Mutate) {
+	for i, pk := range m.Ti.PrimaryCols {
+		if i != 0 {
+			c.w.WriteString(` AND `)
+		}
+		c.colWithTable(m.Ti.Name, pk.Name)
+		c.w.WriteString(` = `)
+		for _, col := range m.Cols {
+			if col.Col.Name == pk.Name {
+				c.colWithTable("t", col.FieldName)
+				break
+			}
+		}
+	}
 }

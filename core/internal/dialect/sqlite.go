@@ -645,13 +645,7 @@ func (d *SQLiteDialect) RenderUpdate(ctx Context, m *qcode.Mutate, set func(), f
 	}
 	ctx.WriteString(` WHERE `)
 
-	// Add implicit join condition for JSON updates (only for Arrays where ID is in Input)
-	if m.IsJSON && m.Array {
-		renderPKJSONJoin(ctx, m)
-		ctx.WriteString(` AND `)
-	}
-
-	where()
+	renderUpdateWhere(ctx, m, where)
 	ctx.WriteString(`; `)
 
 	ctx.WriteString(`UPDATE `)
@@ -664,12 +658,20 @@ func (d *SQLiteDialect) RenderUpdate(ctx Context, m *qcode.Mutate, set func(), f
 	}
 	ctx.WriteString(` WHERE `)
 
-	// Add implicit join condition for JSON updates (only for Arrays where ID is in Input)
+	renderUpdateWhere(ctx, m, where)
+}
+
+// renderUpdateWhere renders the filter of an update. A JSON list payload
+// joins each row to its target by primary key; where is nil when the update
+// has no other filter, as in a bulk update without a where clause.
+func renderUpdateWhere(ctx Context, m *qcode.Mutate, where func()) {
 	if m.IsJSON && m.Array {
 		renderPKJSONJoin(ctx, m)
+		if where == nil {
+			return
+		}
 		ctx.WriteString(` AND `)
 	}
-
 	where()
 }
 
@@ -935,6 +937,15 @@ func (d *SQLiteDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qco
 		}
 	}
 
+	// renderWhere renders the where clause and, for child updates, the join
+	// to the parent. A bulk update without a where clause has neither and is
+	// filtered only by the primary key join RenderUpdate adds for JSON lists.
+	where := renderWhere
+	if m.IsJSON && m.Array && m.ParentID == -1 && m.Where.Exp == nil &&
+		(m.SelID < 0 || int(m.SelID) >= len(qc.Selects) || qc.Selects[m.SelID].Where.Exp == nil) {
+		where = nil
+	}
+
 	d.RenderUpdate(ctx, m, func() {
 		// Set
 		i := 0
@@ -966,16 +977,7 @@ func (d *SQLiteDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qco
 				ctx.Quote(pkCol.Name)
 			}
 		}
-	}, fromFunc, func() {
-		// Where
-		// Logic from mutate.go lines 402+
-		// c.renderExp(path...)
-
-		// Also handle join conditions.
-		// mutate.go: if m.ParentID != -1 ... AND childCol = (SELECT parentCol FROM ... WHERE ...)
-
-		renderWhere() // Renders m.Where.Exp
-	})
+	}, fromFunc, where)
 
 	d.RenderReturning(ctx, m)
 	ctx.WriteString(" -- @gj_ids=")

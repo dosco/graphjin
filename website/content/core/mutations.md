@@ -127,6 +127,30 @@ mutation {
 
 {{< verified by="Example_update" file="tests/update_test.go" line="61" >}}
 
+## Bulk updates
+
+Pass a list of rows in a variable to update many rows in one mutation. Each row names its target by primary key and carries the fields to change, so rows can receive different values:
+
+```graphql
+mutation {
+  products(update: $data) {
+    id
+    name
+  }
+}
+```
+
+```json
+{ "data": [{ "id": 91, "name": "Desk" }, { "id": 92, "name": "Lamp" }] }
+```
+
+GraphJin joins each row to the table row with the same primary key. Because the list scopes the update, the `where` clause is optional on PostgreSQL, MySQL, MariaDB, and SQLite. A `where` clause, when given, further limits which listed rows may change. Snowflake also matches rows by primary key but still requires a `where` clause.
+
+Every row must include the full primary key, and every row should carry the same fields: the columns to update come from the first row, and a field missing from a later row sets that column to `NULL` for that row. Rows whose key matches no table row are skipped. A bulk update must use a variable, not an inline list, and cannot nest writes to related tables. Other databases, including SQL Server, Oracle, and MongoDB, reject list updates.
+
+{{< verified by="TestBulkUpdateMatchesRowsByPrimaryKey" file="tests/update_test.go" line="490" >}}
+{{< verified by="TestBulkUpdateRejectsUnmatchableRows" file="core/internal/qcode/bulk_update_test.go" line="84" >}}
+
 ## Deletes
 
 Deletes require a `where` clause. Do not expose unconstrained deletes.

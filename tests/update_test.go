@@ -483,3 +483,81 @@ func TestMultiAliasDelete(t *testing.T) {
 	require.Empty(t, check["u1"])
 	require.Empty(t, check["u2"])
 }
+
+// TestBulkUpdateMatchesRowsByPrimaryKey updates a list of rows in one
+// mutation. Each row must change only the table row with its primary key; an
+// update once gave every matched row the values of an arbitrary list item.
+func TestBulkUpdateMatchesRowsByPrimaryKey(t *testing.T) {
+	switch dbType {
+	case "postgres", "mysql", "mariadb", "sqlite":
+	default:
+		t.Skipf("bulk update without a where clause is not supported for %s", dbType)
+	}
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	defer gj.Close()
+
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	t.Cleanup(func() {
+		_, _ = gj.GraphQL(ctx, `mutation {
+			p1: products(id: 91, update: $data1) { id }
+			p2: products(id: 92, update: $data2) { id }
+		}`, json.RawMessage(`{
+			"data1": { "name": "Product 91" },
+			"data2": { "name": "Product 92" }
+		}`), nil)
+	})
+
+	names := func(data json.RawMessage) map[float64]string {
+		t.Helper()
+		var result struct {
+			Products []struct {
+				ID   float64 `json:"id"`
+				Name string  `json:"name"`
+			} `json:"products"`
+		}
+		require.NoError(t, json.Unmarshal(data, &result))
+		out := make(map[float64]string, len(result.Products))
+		for _, p := range result.Products {
+			out[p.ID] = p.Name
+		}
+		return out
+	}
+	stored := func() map[float64]string {
+		t.Helper()
+		res, err := gj.GraphQL(ctx, `query {
+			products(where: { id: { in: [91, 92] } }) { id name }
+		}`, nil, nil)
+		require.NoError(t, err)
+		return names(res.Data)
+	}
+
+	res, err := gj.GraphQL(ctx, `mutation {
+		products(update: $data) { id name }
+	}`, json.RawMessage(`{ "data": [
+		{ "id": 91, "name": "Bulk Product 91" },
+		{ "id": 92, "name": "Bulk Product 92" }
+	] }`), nil)
+	require.NoError(t, err)
+	want := map[float64]string{91: "Bulk Product 91", 92: "Bulk Product 92"}
+	require.Equal(t, want, names(res.Data))
+	require.Equal(t, want, stored())
+
+	// A where clause further limits which listed rows may change.
+	_, err = gj.GraphQL(ctx, `mutation {
+		products(update: $data, where: { id: { eq: 91 } }) { id name }
+	}`, json.RawMessage(`{ "data": [
+		{ "id": 91, "name": "Filtered Product 91" },
+		{ "id": 92, "name": "Filtered Product 92" }
+	] }`), nil)
+	require.NoError(t, err)
+	require.Equal(t, map[float64]string{91: "Filtered Product 91", 92: "Bulk Product 92"}, stored())
+
+	// A row without its primary key cannot be matched and is refused.
+	_, err = gj.GraphQL(ctx, `mutation {
+		products(update: $data) { id }
+	}`, json.RawMessage(`{ "data": [{ "name": "No Key" }] }`), nil)
+	require.ErrorContains(t, err, `primary key "id"`)
+}
