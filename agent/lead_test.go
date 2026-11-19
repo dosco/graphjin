@@ -704,9 +704,11 @@ func TestLeadSkipsTheFirstStageOnlyWhenNothingIsAttached(t *testing.T) {
 
 // A step that calls a function for its effect and prints nothing used to come
 // back as "(no output)", and the model, unable to tell the call had run, ran
-// the same step again until it was out of steps. Such a step now shows what
-// the function returned. A step that printed is shown as it printed, and a
-// step that called nothing still reads "(no output)".
+// the same step again until it was out of steps. What ask_graphjin returned is
+// shown on the next model call whether or not the step printed anything
+// (lead_answers.go); a function that only confirms is noted by GraphJin
+// (TestLeadCodeGoesOnAfterAFunctionThatOnlyConfirms). A step that called
+// nothing still reads "(no output)".
 func TestLeadStepThatPrintsNothingShowsWhatItsCallReturned(t *testing.T) {
 	change := "Set support ticket 21's status to resolved."
 	lookup := "How many open tickets are there?"
@@ -715,7 +717,7 @@ func TestLeadStepThatPrintsNothingShowsWhatItsCallReturned(t *testing.T) {
 			// First stage: called for its effect, nothing printed.
 			leadCode(`await ask_graphjin({ questions: ["` + change + `"] });`),
 			leadCode(`final("report the change", {})`),
-			// Second stage: a step that prints what it needs.
+			// Second stage: a step that prints after it asks.
 			leadCode(`const r = await ask_graphjin({ questions: ["` + lookup + `"] }); console.log("printed=" + r[0].status)`),
 			// No call and nothing printed.
 			leadCode(`let quiet = 1;`),
@@ -740,13 +742,18 @@ func TestLeadStepThatPrintsNothingShowsWhatItsCallReturned(t *testing.T) {
 		t.Fatalf("%d model calls, %d scripted replies unused", len(client.requests), len(client.responses))
 	}
 	after := client.requests[1]
-	for _, want := range []string{"ask_graphjin returned (this step printed nothing)", StatusNeedsApproval, "Ticket change held for the owner."} {
+	for _, want := range []string{StatusNeedsApproval, "Ticket change held for the owner."} {
 		if !strings.Contains(after, want) {
 			t.Fatalf("the step after an unprinted call does not show %q", want)
 		}
 	}
-	if printed := client.requests[3]; !strings.Contains(printed, "printed="+StatusAnswered) || strings.Contains(printed, "Zeta answer.") {
-		t.Fatal("a step that printed was not shown as it printed")
+	if strings.Contains(after, "(no output)") {
+		t.Fatal("a step that asked and printed nothing reads (no output)")
+	}
+	// Plain code after the question still runs; another function call or
+	// final() would not.
+	if printed := client.requests[3]; !strings.Contains(printed, "printed="+StatusAnswered) || !strings.Contains(printed, "Zeta answer.") {
+		t.Fatal("a step that asked and then printed was not shown both what it printed and the answer")
 	}
 	if !strings.Contains(client.requests[4], "(no output)") {
 		t.Fatal("a step that called nothing and printed nothing no longer reads (no output)")
@@ -935,13 +942,15 @@ func unattendedReply(answer string, proposes bool, change string) ax.Value {
 // routineLookup scripts the code of a routine turn the way a model writes it:
 // the first stage hands the event on, and the second asks the data agent and
 // ends in the same step, on a conclusion it reached without reading the
-// answer.
+// answer. Asking ends that step, so the ending is held and written again by
+// the model call that was shown the answer.
 func routineLookup(conclusion string, questions ...string) ax.Value {
 	raw, _ := json.Marshal(questions)
 	said, _ := json.Marshal(conclusion)
 	return leadSteps{
 		leadCode(`final("check the ticket", {})`),
 		leadCode(`const r = await ask_graphjin({ questions: ` + string(raw) + ` }); await final(` + string(said) + `, { conditionMet: false })`),
+		leadCode(`await final(` + string(said) + `, { conditionMet: false })`),
 	}
 }
 
@@ -998,8 +1007,8 @@ func TestUnattendedReplyThatStatesAChangeHasItSent(t *testing.T) {
 			t.Fatalf("a held change was reported as not held: %+v", notice)
 		}
 	}
-	// Hand on, ask and end, reply: no second attempt.
-	if len(client.requests) != 3 || len(client.responses) != 0 {
+	// Hand on, ask, end, reply: no second attempt.
+	if len(client.requests) != 4 || len(client.responses) != 0 {
 		t.Fatalf("%d model calls, %d scripted replies unused", len(client.requests), len(client.responses))
 	}
 	// The code ended on its own conclusion. The reply stage was given the task
@@ -1075,9 +1084,18 @@ func TestEveryLeadStageIsToldTheLeadsInstructions(t *testing.T) {
 		if len(client.requests) < 3 {
 			t.Fatalf("%s: %d model calls, want code stages and a reply", name, len(client.requests))
 		}
+		if len(client.responses) != 0 {
+			t.Fatalf("%s: %d scripted replies unused", name, len(client.responses))
+		}
 		for i, request := range client.requests {
 			if !strings.Contains(request, forEveryTurn) || !strings.Contains(request, tc.has) || strings.Contains(request, tc.not) {
 				t.Fatalf("%s: model call %d of %d was not told the lead's instructions for this kind of turn", name, i+1, len(client.requests))
+			}
+			// How an answer is read is for the stages that write code, and only
+			// for them.
+			code := i < len(client.requests)-1
+			if code != strings.Contains(request, "ask_graphjin ends the code block it is called in") {
+				t.Fatalf("%s: model call %d: how an answer is read must be told to the stages that write code, and only to them", name, i+1)
 			}
 		}
 	}
@@ -1197,10 +1215,13 @@ func TestUnattendedReplyDoesNotRepeatARequestTheCodeMade(t *testing.T) {
 func TestUnattendedReplyReadsTheSkillsTheCodeLoaded(t *testing.T) {
 	store := &fakeLeadStore{skills: []SkillDoc{{ID: "skill-dup", Name: "duplicate playbook", Description: "How we close duplicate tickets", Content: "Close a duplicate with status resolved and the note merged-into-original."}}}
 	for name, code := range map[string]ax.Value{
-		// The skill is loaded in the step that ends the first stage, the way a
-		// model writes it, and in a step of its own.
-		"loaded in the step that ends the stage": leadSteps{
+		// The skill is loaded in the step written to end the first stage, the
+		// way a model writes it: loading ends that step, so the ending is
+		// written again by the model call that was shown the skill. And in a
+		// step of its own.
+		"loaded in the step written to end the stage": leadSteps{
 			leadCode(`await discover({ skills: ["duplicate playbook"] }); await final("close the duplicate ticket per the playbook", {})`),
+			leadCode(`await final("close the duplicate ticket per the playbook", {})`),
 			leadCode(`await final("Propose closing ticket 25 using the duplicate playbook.", {})`),
 		},
 		"loaded in a step of its own": leadSteps{
@@ -1216,6 +1237,9 @@ func TestUnattendedReplyReadsTheSkillsTheCodeLoaded(t *testing.T) {
 		lead.Store = store
 		if _, err := lead.Run(context.Background(), routineRequest); err != nil {
 			t.Fatal(err)
+		}
+		if len(client.responses) != 0 {
+			t.Fatalf("%s: %d scripted replies unused", name, len(client.responses))
 		}
 		reply := client.requests[len(client.requests)-1]
 		if !strings.Contains(reply, replySkillsKey) || !strings.Contains(reply, "the note merged-into-original") {

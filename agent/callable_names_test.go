@@ -18,6 +18,8 @@ func TestLeadCallablesAnswerUnderTheNameThePromptAdvertises(t *testing.T) {
 	question := "Which account has the soonest upcoming renewal after 2026-11-07?"
 	client := &scriptedLeadClient{responses: []ax.Value{
 		leadCode(`const r = await utils.ask_graphjin({ questions: ["` + question + `"] }); console.log(JSON.stringify(r)); final("answer with the account", { r })`),
+		// Asking ends the step: the ending is written again once the answer was shown.
+		leadCode(`final("answer with the account", { r })`),
 		leadReply(StatusAnswered, "Meridian Robotics renews soonest, on 2026-11-16."),
 	}}
 	var mu sync.Mutex
@@ -30,6 +32,9 @@ func TestLeadCallablesAnswerUnderTheNameThePromptAdvertises(t *testing.T) {
 	})
 	if _, err := lead.Run(context.Background(), Request{Instruction: "Which account has the soonest upcoming renewal?"}); err != nil {
 		t.Fatal(err)
+	}
+	if len(client.requests) != 3 || len(client.responses) != 0 {
+		t.Fatalf("%d model calls, %d scripted replies unused", len(client.requests), len(client.responses))
 	}
 	prompts := strings.Join(client.requests, "\n")
 	if !strings.Contains(prompts, axFlatFunctionNamespace+".ask_graphjin(") {
@@ -52,6 +57,7 @@ func TestLeadSlowDelegationReturnsItsAnswer(t *testing.T) {
 	}
 	client := &scriptedLeadClient{responses: []ax.Value{
 		leadCode(`const r = await ask_graphjin({ questions: ["Which account renews soonest?"] }); console.log(JSON.stringify(r)); final("answer", { r })`),
+		leadCode(`final("answer", { r })`),
 		leadReply(StatusAnswered, "Meridian Robotics renews soonest."),
 	}}
 	lead := newTestLead(t, Config{}, client, func(_ context.Context, d DelegateRequest) (Response, error) {
@@ -61,8 +67,11 @@ func TestLeadSlowDelegationReturnsItsAnswer(t *testing.T) {
 	if _, err := lead.Run(context.Background(), Request{Instruction: "Which account renews soonest?"}); err != nil {
 		t.Fatal(err)
 	}
+	if len(client.requests) != 3 || len(client.responses) != 0 {
+		t.Fatalf("%d model calls, %d scripted replies unused", len(client.requests), len(client.responses))
+	}
 	prompts := strings.Join(client.requests, "\n")
-	if strings.Contains(prompts, "timed out") {
+	if strings.Contains(prompts, "timed out") || !strings.Contains(client.requests[1], "Meridian Robotics renews soonest.") {
 		t.Fatal("a slow delegation was interrupted after it answered")
 	}
 }

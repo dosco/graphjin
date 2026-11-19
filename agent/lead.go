@@ -288,8 +288,19 @@ var leadUnattendedSignature = leadSignatureFor(leadUnattendedInstructions) +
 // A data agent's answer is prose and its data has whatever shape the question
 // produced: lead code that branched on field names it guessed
 // (acc.status === 'at_risk' for a value of churn_risk) decided wrongly, so the
-// instructions say to read the answer and log data before using it.
-const leadRuntimeInstructions = `Your input fields are on the inputs object under their field names: inputs.instruction, inputs.history, inputs.attached. Delegate with: const results = await ask_graphjin({ questions: ["...", "..."] }); it returns one {question, status, answer, data, errors} per question, in order; status is one of ` + leadResultStatuses + `. Read answer first: the fields of data differ from question to question, so log a result and read it before using any field of data in code. Log what you need to read with console.log. Never compute aggregates over rows in code; ask the data agent instead. When the reply needs a figure derived from answers already in hand (a sum, difference or ratio), compute it in code and pass the result in the evidence object of final() or respond(), next to the figures it came from.`
+// instructions say to use a field of data only after it has been seen.
+//
+// ask_graphjin ends the block of code it is called in, and the answers are in
+// front of the model on its next call (lead_answers.go), so the instructions
+// say what that call is for: asking again for a fact an answer did not give.
+// Told only that the answers would be in front of it, the model asked a second
+// time in 1 of 96 turns (gpt-5.4-mini, 2026-11-18).
+const (
+	leadRuntimeDelegation   = `Your input fields are on the inputs object under their field names: inputs.instruction, inputs.history, inputs.attached. Delegate with: const results = await ask_graphjin({ questions: ["...", "..."] }); it returns one {question, status, answer, data, errors} per question, in order; status is one of ` + leadResultStatuses + `.`
+	leadRuntimeReading      = ` ask_graphjin ends the code block it is called in: nothing written after it runs, and what it returned is shown to you on your next turn, where results still holds it. So put every question you can already write into that one call and write nothing after it. On the next turn read each result's status and answer. When one is not answered, or its answer does not state the fact you asked for, ask for that fact again in a new call: on its own, in plainer words, naming what the other answers named (the account's id or name). Do that once for a fact. When the answers state what the request needs, finish with final(). The fields of data differ from question to question, so use a field of data in code only after you have seen it.`
+	leadRuntimeFigures      = ` Never compute aggregates over rows in code; ask the data agent instead. When the reply needs a figure derived from answers already in hand (a sum, difference or ratio), compute it in code and pass the result in the evidence object of final() or respond(), next to the figures it came from.`
+	leadRuntimeInstructions = leadRuntimeDelegation + leadRuntimeReading + leadRuntimeFigures
+)
 
 // leadCodeInstructions is what the stages that write the lead's code are told:
 // how its runtime works, then the lead's own instructions for this kind of
@@ -398,7 +409,7 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 	}
 	gojaRuntime := axgoja.NewRuntime(codeBlockPolicy(lc.TimeoutSeconds))
 	returned := &unprintedCalls{}
-	runtime := leadNamesRuntime{CodeRuntime: figureRecordingRuntime{CodeRuntime: gojaRuntime, record: run.figures.recordCodeResult}, returned: returned}
+	runtime := leadNamesRuntime{CodeRuntime: figureRecordingRuntime{CodeRuntime: gojaRuntime, record: run.figures.recordCodeResult}, base: gojaRuntime, returned: returned}
 	// A turn nobody is watching that may propose a change decides it in its
 	// reply, so the reply stage is handed what the data agent answered.
 	proposes := l.config.HeldWritesOnly && !req.ChangeAlreadyMade
@@ -407,24 +418,16 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 		instructions, signature = leadUnattendedInstructions, leadUnattendedSignature
 		runtime.record = run.turnRecord
 	}
-	for _, tool := range tools {
-		t := tool
-		registerAdvertisedCallable(gojaRuntime.RegisterCallable, t.Name, func(params ax.Value) (ax.Value, error) {
-			out, err := t.Handler(asMap(params))
-			if err == nil {
-				returned.record(t.Name, out)
-			}
-			return out, err
-		})
-	}
+	runtime.usage = leadCodeInstructions(instructions)
 	usedSkills := &skillUsageCollector{}
 	usedMemories := &memoryUsageCollector{}
 	options := map[string]ax.Value{
-		"functions":         toolArray(tools),
+		// Plain records, which Ax registers itself: it ends a block after an
+		// answer that has to be read (lead_answers.go).
+		"functions":         leadFunctionRecords(tools, returned),
 		"functionDiscovery": false,
 		"onUsedSkills":      ax.AxAgentObserverFn(usedSkills.observe),
 		"onUsedMemories":    ax.AxAgentObserverFn(usedMemories.observe),
-		"runtime":           map[string]ax.Value{"language": "JavaScript", "usageInstructions": leadCodeInstructions(instructions)},
 		"max_actor_steps":   lc.MaxSteps,
 	}
 	input := map[string]ax.Value{
@@ -445,6 +448,10 @@ func (l *Lead) Run(ctx context.Context, req Request) (Response, error) {
 			runtime.loadSkills = skills.load
 		}
 	}
+	// Ax decides whether a block can be ended early from the runtime it is
+	// built with, so that is the runtime itself, complete, and not a
+	// {language, usageInstructions} record.
+	options["runtime"] = runtime
 	program := newLeadProgram(signature, options, req)
 	forwardOptions := modelForwardOptions(modelCfg, rateLimiter)
 	forwardOptions["runtime"] = runtime
@@ -588,6 +595,11 @@ type leadNamesRuntime struct {
 	// discover() in the step that ends a stage is dropped (handOff). Set on
 	// the turns that have a record.
 	loadSkills func([]ax.Value) []ax.Value
+	// base is the goja runtime Ax's registrations of the lead's functions go
+	// to, and usage the instructions for the stages that write code, which Ax
+	// asks the runtime it is built with for (lead_answers.go).
+	base  *axgoja.Runtime
+	usage string
 }
 
 func (r leadNamesRuntime) CreateSession(globals map[string]ax.Value, options map[string]ax.Value) (ax.CodeSession, error) {
@@ -598,10 +610,10 @@ func (r leadNamesRuntime) CreateSession(globals map[string]ax.Value, options map
 	return &leadNamesSession{CodeSession: session, inputs: mapValue(normalizeValue(globals["inputs"])), returned: r.returned, record: r.record, loadSkills: r.loadSkills}, nil
 }
 
-// RegisterHostCallable keeps Ax's llmQuery registration (see
-// figureRecordingRuntime.RegisterHostCallable).
+// RegisterHostCallable keeps every registration Ax makes: Ax's own wrapper of
+// a function is what ends a block after an answer that has to be read.
 func (r leadNamesRuntime) RegisterHostCallable(name string, handler func(ax.Value) (ax.Value, error)) {
-	registerAxPrimitive(r.CodeRuntime, name, handler)
+	registerAxCallable(r.base, name, handler)
 }
 
 type leadNamesSession struct {

@@ -316,6 +316,16 @@ usage instructions. A delegated result's `status` is one of `answered`,
 `needs_clarification`, `needs_approval`, `blocked` or `error`, and the code is
 told so.
 
+A lead turn reads an answer before it acts on it. A block of the lead's code
+ends at `ask_graphjin`: no further function call or `final()` in that block
+runs, the answers are shown to the lead on its next model call, and only then
+does it ask a follow-up question or finish. A follow-up question can therefore
+name what the first answer found, and a question whose answer failed or did
+not state the fact is asked again, once, in plainer words. `remember` and
+`follow_up` return a confirmation and do not end a block. A turn that asks
+makes one more lead model call than it would if it asked and finished in a
+single block.
+
 The lead is an Ax agent with Ax's own memory and skill callbacks, both served
 from the graph as the caller:
 
