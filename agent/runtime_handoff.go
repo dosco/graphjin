@@ -32,6 +32,26 @@ type graphJinCodeRuntime struct {
 	pendingContinuation    func() string
 	completionContinuation func() string
 	clarificationNudge     func() string
+	// feedback is set when the run reads its functions' results on a fresh
+	// turn; usage is then GraphJin's instruction text for the code stages,
+	// which Ax asks the runtime for when the runtime is what it is built with.
+	feedback bool
+	usage    string
+}
+
+// WithResultFeedback makes this the runtime Ax is constructed with, so Ax can
+// see that it supports ending a block after a function whose result has to be
+// read. usage is the instruction text for the stages that write code.
+func (r *graphJinCodeRuntime) WithResultFeedback(usage string) *graphJinCodeRuntime {
+	r.feedback = true
+	r.usage = usage
+	return r
+}
+
+// SupportsObservationBoundaries is how Ax asks a runtime whether a block can
+// be ended after a function result that has to be read.
+func (r *graphJinCodeRuntime) SupportsObservationBoundaries() bool {
+	return r.feedback
 }
 
 // WithHandoffFallback supplies runtime-only evidence gathered by GraphJin
@@ -77,6 +97,9 @@ func (r *graphJinCodeRuntime) Language() string {
 }
 
 func (r *graphJinCodeRuntime) UsageInstructions() string {
+	if r.usage != "" {
+		return r.usage
+	}
 	return r.base.UsageInstructions()
 }
 
@@ -97,8 +120,29 @@ func (r *graphJinCodeRuntime) RegisterCallable(name string, handler axgoja.HostC
 // instead, whenever the model had called the function the way the prompt
 // shows it. Called by the bare name, the same error reached the model and the
 // run went on.
+//
+// With result feedback on, Ax's registrations are the ones that run. Reading a
+// result on a fresh turn is done by Ax's own wrapper around each function: it
+// records what the function returned and holds back the next call. The agent
+// then hands Ax its functions as plain records (resultFeedback.functions),
+// whose errors that wrapper returns to the model's code. Each function is
+// also bound under its bare name, the spelling GraphJin's instructions use.
 func (r *graphJinCodeRuntime) RegisterHostCallable(name string, handler func(ax.Value) (ax.Value, error)) {
-	registerAxPrimitive(r.base, name, handler)
+	if !r.feedback {
+		registerAxPrimitive(r.base, name, handler)
+		return
+	}
+	registerAxCallable(r.base, name, handler)
+}
+
+// registerAxCallable keeps a registration Ax makes, and binds a function Ax
+// registers under its qualified name (utils.ask_graphjin) under its bare name
+// as well, the spelling GraphJin's instructions use.
+func registerAxCallable(base *axgoja.Runtime, name string, handler func(ax.Value) (ax.Value, error)) {
+	base.RegisterHostCallable(name, handler)
+	if bare, qualified := strings.CutPrefix(name, axFlatFunctionNamespace+"."); qualified && bare != "" {
+		base.RegisterHostCallable(bare, handler)
+	}
 }
 
 func (r *graphJinCodeRuntime) CreateSession(globals map[string]ax.Value, options map[string]ax.Value) (ax.CodeSession, error) {

@@ -407,6 +407,7 @@ type Agent struct {
 	rateLimiter   *ProviderRateLimiter
 	customClient  bool
 	newSelector   ProgramFactory
+	feedback      resultFeedback
 }
 
 func New(gj *core.GraphJin, config Config, options ...Option) (*Agent, error) {
@@ -749,7 +750,13 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	runtime.WithCodeBlockBudget(cfg.TimeoutSeconds)
 	runtime.WithHandoffFallback(protocol.state.runtimeHandoffEvidence)
 	runtime.WithClarificationNudge(protocol.state.clarificationNudge)
+	feedback := a.feedback
+	// With result feedback on, Ax registers the functions itself, through the
+	// wrapper that reads a result back to the model (RegisterHostCallable).
 	for _, tool := range tools {
+		if feedback != feedbackOff {
+			break
+		}
 		t := tool
 		registerAdvertisedCallable(runtime.RegisterCallable, t.Name, func(params ax.Value) (ax.Value, error) {
 			return t.Handler(asMap(params))
@@ -765,8 +772,13 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		})
 	}
 
+	functions := toolArray(tools)
+	if feedback != feedbackOff {
+		functions = feedback.functions(tools)
+	}
+	usage := runtimeInstructionText(a.catalogSearch) + "\n\n" + runtimeResultRecoveryInstructions
 	options := map[string]ax.Value{
-		"functions":         toolArray(tools),
+		"functions":         functions,
 		"functionDiscovery": false,
 		// Every GraphJin answer requires model-driven discovery, either a
 		// runtime distillation or a catalog/help call. Ax's automatic respond()
@@ -790,7 +802,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 			// filtered domain guides and capability-denial guidance are rendered
 			// only for the executor, where Ax also renders the authoritative skill
 			// documents. The distiller intentionally has no skill documents.
-			"usageInstructions": runtimeInstructionText(a.catalogSearch) + "\n\n" + runtimeResultRecoveryInstructions,
+			"usageInstructions": usage,
 		},
 		"max_actor_steps": maxSteps,
 	}
@@ -811,8 +823,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 			}
 			return values
 		})
-		options["instructionAddenda"] = []ax.Value{executorHandoffInstructions, capabilityInstructions, preparedDiscoveryInstructions}
-		runtimeOptions := options["runtime"].(map[string]ax.Value)
+		options["instructionAddenda"] = []ax.Value{executorHandoffInstructions, capabilityInstructions, feedback.rewrite(preparedDiscoveryInstructions)}
 		var selectedGuides strings.Builder
 		for _, guide := range skills {
 			if prepared.unselected {
@@ -828,9 +839,20 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		// skills option loads guides into the executor only; put the selected
 		// guides in the shared runtime instructions so early execution follows
 		// the same computation, syntax, and governance contracts.
-		runtimeOptions["usageInstructions"] = runtimeInstructionText(a.catalogSearch) + "\n\n" + runtimeResultRecoveryInstructions + "\n\n" + preparedDiscoveryInstructions + selectedGuides.String()
+		usage += "\n\n" + preparedDiscoveryInstructions + selectedGuides.String()
 	}
-	program = a.newProgram(agentSignature, options)
+	signature := agentSignature
+	if feedback == feedbackOff {
+		options["runtime"].(map[string]ax.Value)["usageInstructions"] = usage
+	} else {
+		// Ax decides whether a block can end after a function's result when
+		// the agent is built, from the runtime it is built with: a
+		// {language, usageInstructions} record there, with the runtime passed
+		// per call, leaves it off.
+		options["runtime"] = runtime.WithResultFeedback(feedback.rewrite(usage))
+		signature = feedback.rewrite(agentSignature)
+	}
+	program = a.newProgram(signature, options)
 	if prepared != nil {
 		installPreparedHandoff(ctx, program, prepared, a.runtime, req)
 	}
