@@ -1,3 +1,16 @@
+WITH row_type_routines AS (
+	-- Functions whose result is a row type: RETURNS [SETOF] tbl, RETURNS [SETOF]
+	-- composite_type and RETURNS TABLE (LIKE tbl).
+	SELECT r.specific_name,
+		t.typrelid
+	FROM information_schema.routines r
+		JOIN pg_catalog.pg_namespace n ON n.nspname = r.type_udt_schema
+		JOIN pg_catalog.pg_type t ON t.typnamespace = n.oid
+		AND t.typname = r.type_udt_name
+	WHERE r.routine_type = 'FUNCTION'
+		AND r.data_type = 'USER-DEFINED'
+		AND t.typrelid != 0
+)
 SELECT r.specific_name as func_id,
 	r.routine_schema as func_schema,
 	r.routine_name as func_name,
@@ -18,6 +31,15 @@ FROM information_schema.routines r
 	)
 WHERE r.routine_type = 'FUNCTION'
 	AND r.data_type != 'void'
+	-- The single OUT parameter of a row type function holds the whole row.
+	-- Postgres expands it into the row's columns, returned by the SELECT below.
+	AND NOT (
+		p.parameter_mode = 'OUT'
+		AND r.specific_name IN (
+			SELECT specific_name
+			FROM row_type_routines
+		)
+	)
 	AND r.specific_schema NOT IN (
 		'_graphjin',
 		'information_schema',
@@ -31,20 +53,15 @@ SELECT r.specific_name as func_id,
 	r.routine_schema as func_schema,
 	r.routine_name as func_name,
 	'record' as data_type,
-	a.ordinal_position as param_id,
-	COALESCE(
-		a.attribute_name,
-		CAST(a.ordinal_position as CHAR(3))
-	) as param_name,
-	a.data_type as param_type,
+	f.attnum as param_id,
+	f.attname as param_name,
+	pg_catalog.format_type(f.atttypid, f.atttypmod) as param_type,
 	'OUT' as param_kind
 FROM information_schema.routines r
-	RIGHT JOIN information_schema.attributes a ON (
-		r.data_type = 'USER-DEFINED'
-		AND a.udt_schema = r.type_udt_schema
-		AND a.udt_name = r.type_udt_name
-	)
-WHERE r.routine_type = 'FUNCTION'
+	JOIN row_type_routines rt ON rt.specific_name = r.specific_name
+	JOIN pg_catalog.pg_attribute f ON f.attrelid = rt.typrelid
+WHERE f.attnum > 0
+	AND f.attisdropped = false
 	AND r.specific_schema NOT IN (
 		'_graphjin',
 		'information_schema',

@@ -125,9 +125,11 @@ func NewDBInfo(
 		var cols []DBColumn
 		for _, v := range f.Outputs {
 			cols = append(cols, DBColumn{
-				ID:   int32(v.ID),
-				Name: v.Name,
-				Type: v.Type,
+				ID:      int32(v.ID),
+				Name:    v.Name,
+				Type:    v.Type,
+				Array:   v.Array,
+				Blocked: isInList(v.Name, blockList),
 			})
 		}
 		t := NewDBTable(f.Schema, f.Name, "function", cols)

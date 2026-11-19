@@ -329,6 +329,124 @@ func Example_queryWithFunctionReturingUserDefinedTypes() {
 	// Output: {"get_product":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}]}
 }
 
+func Example_queryWithFunctionReturningTableLike() {
+	// `RETURNS TABLE (LIKE users)` is Postgres syntax
+	if dbType != "postgres" {
+		fmt.Println(`{"get_users_up_to":[{"email":"user1@test.com","full_name":"User 1","id":1},{"email":"user2@test.com","full_name":"User 2","id":2}]}`)
+		return
+	}
+
+	gql := `query {
+		get_users_up_to(order_by: { id: asc }, args: { max_id: 2 }) {
+			id
+			full_name
+			email
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"get_users_up_to":[{"email":"user1@test.com","full_name":"User 1","id":1},{"email":"user2@test.com","full_name":"User 2","id":2}]}
+}
+
+func Example_queryWithFunctionReturningSetofTable() {
+	// `RETURNS SETOF products` is Postgres syntax
+	if dbType != "postgres" {
+		fmt.Println(`{"get_products_up_to":[{"id":1,"name":"Product 1","tags":["Tag 1","Tag 2","Tag 3","Tag 4","Tag 5"]}]}`)
+		return
+	}
+
+	gql := `query {
+		get_products_up_to(where: { tags: { contains: ["Tag 1"] } }, order_by: { id: asc }, limit: 1, args: { max_id: 2 }) {
+			id
+			name
+			tags
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"get_products_up_to":[{"id":1,"name":"Product 1","tags":["Tag 1","Tag 2","Tag 3","Tag 4","Tag 5"]}]}
+}
+
+func Example_queryWithFunctionReturningTableRow() {
+	// `RETURNS users` is Postgres syntax
+	if dbType != "postgres" {
+		fmt.Println(`{"get_user_row":[{"full_name":"User 3","id":3}]}`)
+		return
+	}
+
+	gql := `query {
+		get_user_row(args: { user_id: 3 }) {
+			id
+			full_name
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"get_user_row":[{"full_name":"User 3","id":3}]}
+}
+
+func Example_queryWithFunctionReturningTableBlockedColumn() {
+	// `RETURNS TABLE (LIKE users)` is Postgres syntax
+	if dbType != "postgres" {
+		fmt.Println(`column: 'public.get_users_up_to.email' blocked`)
+		return
+	}
+
+	gql := `query {
+		get_users_up_to(args: { max_id: 2 }) {
+			id
+			email
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, Blocklist: []string{"email"}})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	_, err = gj.GraphQL(context.Background(), gql, nil, nil)
+	fmt.Println(err)
+	// Output: column: 'public.get_users_up_to.email' blocked
+}
+
 func Example_queryWithFunctionAndDirectives() {
 	// Skip for MongoDB/Snowflake emulator: custom database functions not supported
 	if dbType == "mongodb" || dbType == "snowflake" {

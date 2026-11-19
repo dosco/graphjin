@@ -124,8 +124,8 @@ const schemaTemplate = `# dbinfo:{{if .Type}}{{ .Type }}{{else}}postgres{{end}},
 {{- if ne .Name "" }}{{ .Name }}{{ else }}_arg{{ .ID }}{{ end }}:
 {{- "\t"}}
 {{- $var := .Type|dbtype }}
-{{- (index $var 0)|pascal }}
-{{- if .Array}}[]{{end}}
+{{- $type := (index $var 0)|pascal }}
+{{- if .Array}}[{{ $type }}]{{else}}{{ $type }}{{end}}
 {{- "\t"}}
 {{- if ne (index $var 1) ""}} @type_args(args: {{ (index $var 1) | printf "%q" }}){{end}}
 {{- end -}}
