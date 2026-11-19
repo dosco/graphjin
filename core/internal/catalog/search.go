@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"regexp"
@@ -28,6 +29,9 @@ type searchIndex struct {
 	cards    map[string]Card
 	postings map[string]map[string]struct{}
 	trigrams map[string]map[string]struct{}
+	// rarest is the rarity of a word found on one card only: what a search
+	// word's own rarity is measured against.
+	rarest float64
 }
 
 type searchDoc struct {
@@ -132,6 +136,7 @@ func newSearchIndex(s *Snapshot) *searchIndex {
 		cards:    make(map[string]Card, len(s.Cards)),
 		postings: make(map[string]map[string]struct{}),
 		trigrams: make(map[string]map[string]struct{}),
+		rarest:   rarity(1, len(s.Cards)),
 	}
 	details := detailsByCard(s.Details)
 	for _, card := range s.Cards {
@@ -143,6 +148,7 @@ func newSearchIndex(s *Snapshot) *searchIndex {
 			for _, token := range tokenizeCatalogText(field.text) {
 				docTokens = append(docTokens, token)
 				docTokenSet[token] = struct{}{}
+				docTokenSet[singular(token)] = struct{}{}
 			}
 		}
 		idx.docs[card.ID] = searchDoc{
@@ -158,6 +164,34 @@ func newSearchIndex(s *Snapshot) *searchIndex {
 		}
 	}
 	return idx
+}
+
+// rarity is how much a word found on df of n cards tells them apart: the
+// inverse document frequency BM25 uses, which stays above zero for a word on
+// every card.
+func rarity(df, n int) float64 {
+	return math.Log(1 + (float64(n-df)+0.5)/(float64(df)+0.5))
+}
+
+// termWeight scales what a search word adds to a card's score by how rare the
+// word is in this catalog, from 1 for a word on a single card down towards 0
+// for a word on all of them.
+//
+// A question is mostly ordinary words, and identifiers are made of ordinary
+// words too: "at" is a token of every *_at column, "is" and "for" of help
+// text. Counted the same as the one word that names what was asked about, they
+// decided the ranking. Asked whether an account "is at churn risk", a demo
+// catalog put four timestamp columns ahead of the status column whose values
+// include churn_risk, which came 36th of the 40 table and column cards.
+//
+// A word no card holds as a whole token is left at 1: it can still match
+// inside a longer token ("ticket" in "tickets"), and nothing says it is common.
+func (idx *searchIndex) termWeight(term string) float64 {
+	df := len(idx.postings[term])
+	if df == 0 || idx.rarest <= 0 {
+		return 1
+	}
+	return rarity(df, len(idx.cards)) / idx.rarest
 }
 
 func addPosting(index map[string]map[string]struct{}, term, id string) {
@@ -198,11 +232,15 @@ func (idx *searchIndex) candidateIDs(search string) (map[string]struct{}, bool) 
 	out := make(map[string]struct{})
 	usable := false
 	for _, term := range terms {
-		if ids := idx.postings[term]; len(ids) != 0 {
-			usable = true
-			for id := range ids {
+		found := false
+		for _, form := range uniqueTokens([]string{term, singular(term)}) {
+			for id := range idx.postings[form] {
+				found = true
 				out[id] = struct{}{}
 			}
+		}
+		if found {
+			usable = true
 			continue
 		}
 		grams := catalogTrigrams(term)
@@ -941,6 +979,14 @@ func (idx *searchIndex) scoreCard(card Card, search string) (Match, bool) {
 		return Match{}, false
 	}
 
+	// Words are matched in the singular: a question says "invoice" and
+	// "ticket", the tables are invoices and support_tickets.
+	words := singulars(terms)
+	weights := make([]float64, len(words))
+	for i, word := range words {
+		weights[i] = idx.termWeight(word)
+	}
+
 	doc := idx.docs[card.ID]
 	queryPhrase := normalizePhrase(search)
 	matchedFields := make(map[string]struct{})
@@ -955,7 +1001,7 @@ func (idx *searchIndex) scoreCard(card Card, search string) (Match, bool) {
 		fieldText := strings.ToLower(field.text)
 		fieldPhrase := normalizePhrase(field.text)
 		fieldTokens := tokenizeCatalogText(field.text)
-		fieldTokenSet := tokenSet(fieldTokens)
+		fieldTokenSet := tokenSet(append(fieldTokens, singulars(fieldTokens)...))
 
 		if queryPhrase != "" && strings.Contains(fieldPhrase, queryPhrase) {
 			score += 12 * field.weight
@@ -973,22 +1019,22 @@ func (idx *searchIndex) scoreCard(card Card, search string) (Match, bool) {
 			signals["substring"] = struct{}{}
 		}
 
-		for _, term := range terms {
+		for i, term := range words {
 			if _, ok := fieldTokenSet[term]; ok {
-				score += 3 * field.weight
+				score += 3 * field.weight * weights[i]
 				matchedFields[field.field] = struct{}{}
 				matchedTerms[term] = struct{}{}
 				continue
 			}
 			if len(term) >= 3 && strings.Contains(fieldPhrase, term) {
-				score += field.weight
+				score += field.weight * weights[i]
 				matchedFields[field.field] = struct{}{}
 				matchedTerms[term] = struct{}{}
 			}
 		}
 	}
 
-	if boost, signal := exactIdentifierBoost(card, terms, search); boost != 0 {
+	if boost, signal := exactIdentifierBoost(card, words, search); boost != 0 {
 		score += boost
 		signals[signal] = struct{}{}
 		matchedFields["title"] = struct{}{}
@@ -1002,7 +1048,7 @@ func (idx *searchIndex) scoreCard(card Card, search string) (Match, bool) {
 		signals[signal] = struct{}{}
 		matchedFields["generated_tags"] = struct{}{}
 	}
-	if boost := fuzzyBoost(terms, doc.docTokenSet, matchedTerms); boost != 0 {
+	if boost := fuzzyBoost(words, doc.docTokenSet, matchedTerms); boost != 0 {
 		score += boost
 		signals["fuzzy typo recovery"] = struct{}{}
 		matchedFields["generated_tags"] = struct{}{}
@@ -1028,6 +1074,7 @@ func cardSearchFields(card Card, detailText string) []weightedText {
 		{field: "names", text: names, weight: 8},
 		{field: "kind", text: card.Kind, weight: 5},
 		{field: "summary", text: card.Summary, weight: 5},
+		{field: "values", text: observedValuesText(card), weight: 8},
 		{field: "examples", text: card.ExamplesJSON, weight: 3},
 		{field: "details", text: detailText, weight: 2},
 		{field: "source", text: card.Source, weight: 2},
@@ -1040,6 +1087,24 @@ func cardSearchFields(card Card, detailText string) []weightedText {
 	}
 }
 
+// observedValuesText is a column's sampled value set as search text. People
+// name the value far more often than the column: "failed invoices", "open
+// tickets", "at churn risk". The values are therefore weighed like the
+// column's own name. As one string among a card's examples they counted for
+// less than half of a single name match.
+func observedValuesText(card Card) string {
+	if card.Kind != "column" || !strings.Contains(card.EvidenceJSON, `"observed_values"`) {
+		return ""
+	}
+	var evidence struct {
+		ObservedValues []string `json:"observed_values"`
+	}
+	if err := json.Unmarshal([]byte(card.EvidenceJSON), &evidence); err != nil {
+		return ""
+	}
+	return strings.Join(evidence.ObservedValues, " ")
+}
+
 func exactIdentifierBoost(card Card, terms []string, search string) (float64, string) {
 	search = strings.ToLower(strings.TrimSpace(search))
 	if search == "" {
@@ -1048,7 +1113,7 @@ func exactIdentifierBoost(card Card, terms []string, search string) (float64, st
 	switch {
 	case strings.EqualFold(card.Title, search), strings.EqualFold(card.ID, search):
 		return 120, "exact identifier"
-	case containsTerm(terms, strings.ToLower(card.TableName)), containsTerm(terms, strings.ToLower(card.ColumnName)):
+	case containsTerm(terms, singular(strings.ToLower(card.TableName))), containsTerm(terms, singular(strings.ToLower(card.ColumnName))):
 		return 30, "identifier"
 	default:
 		return 0, ""
@@ -1267,6 +1332,37 @@ func tokenizeCatalogText(text string) []string {
 		}
 	}
 	return tokens
+}
+
+// singular strips a plain English plural ending, so a search word and a
+// catalog token that differ only in number compare equal. It is applied to
+// both sides, which is what matters: where it gets a word wrong it gets it
+// wrong the same way twice.
+func singular(token string) string {
+	n := len(token)
+	switch {
+	case n <= 3:
+		return token
+	case strings.HasSuffix(token, "ies") && n > 4:
+		return token[:n-3] + "y"
+	case strings.HasSuffix(token, "sses"), strings.HasSuffix(token, "shes"), strings.HasSuffix(token, "ches"),
+		strings.HasSuffix(token, "xes"), strings.HasSuffix(token, "zes"):
+		return token[:n-2]
+	case strings.HasSuffix(token, "ss"), strings.HasSuffix(token, "us"), strings.HasSuffix(token, "is"):
+		return token
+	case strings.HasSuffix(token, "s"):
+		return token[:n-1]
+	}
+	return token
+}
+
+// singulars returns the distinct singular forms of tokens, in order.
+func singulars(tokens []string) []string {
+	out := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		out = append(out, singular(token))
+	}
+	return uniqueTokens(out)
 }
 
 func splitCamelCase(text string) string {

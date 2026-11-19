@@ -807,6 +807,13 @@ query {
 Use `search` for ranked intent matching and `where` for exact constraints.
 Use `kind` to keep the result shape predictable.
 
+`search` takes a question as written. A word counts for more the fewer cards
+hold it, so the ordinary words of a sentence ("is", "for", the "at" that every
+`*_at` column also carries) do not outrank the one word that names what was
+asked about. A column's sampled values are searched like its name: "at churn
+risk" finds the status column whose values include `churn_risk`. Words are
+compared in the singular, so "invoice" finds the `invoices` table.
+
 Core catalog kinds include:
 
 | Kind | Meaning |

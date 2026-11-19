@@ -17,8 +17,8 @@ import (
 )
 
 // TestDemoCatalogServesJoinAndValueEvidence pins, against a fully booted demo
-// service and with zero provider tokens, the two catalog payloads a week of agent
-// fixes turned out to depend on:
+// service and with zero provider tokens, the catalog payloads a week of agent
+// fixes turned out to depend on, and the search that has to reach them:
 //
 //   - The status column card carries its sampled values. A startup race once made
 //     this vanish at random for a whole process lifetime, and nothing noticed for
@@ -55,11 +55,9 @@ func TestDemoCatalogServesJoinAndValueEvidence(t *testing.T) {
 	for _, suffix := range []string{"/api/v1/agent/status", "/api/v1/agent", "/api/v1/graphql"} {
 		baseURL = strings.TrimSuffix(baseURL, suffix)
 	}
-	catalogCard := func(id string, fields string) map[string]any {
+	catalogRows := func(query string) []map[string]any {
 		t.Helper()
-		body, _ := json.Marshal(map[string]any{
-			"query": fmt.Sprintf(`query { gj_catalog(where: {id: {eq: %q}}) { %s } }`, id, fields),
-		})
+		body, _ := json.Marshal(map[string]any{"query": query})
 		request, err := http.NewRequest(http.MethodPost, baseURL+"/api/v1/graphql", bytes.NewReader(body))
 		if err != nil {
 			t.Fatal(err)
@@ -83,9 +81,13 @@ func TestDemoCatalogServesJoinAndValueEvidence(t *testing.T) {
 			t.Fatal(err)
 		}
 		if len(decoded.Data.Cards) == 0 {
-			t.Fatalf("no card for %s (errors=%v)", id, decoded.Errors)
+			t.Fatalf("no cards for %s (errors=%v)", query, decoded.Errors)
 		}
-		return decoded.Data.Cards[0]
+		return decoded.Data.Cards
+	}
+	catalogCard := func(id string, fields string) map[string]any {
+		t.Helper()
+		return catalogRows(fmt.Sprintf(`query { gj_catalog(where: {id: {eq: %q}}) { %s } }`, id, fields))[0]
 	}
 
 	status := catalogCard("column:app:main.support_tickets.status", "id evidence_json examples_json")
@@ -134,6 +136,25 @@ func TestDemoCatalogServesJoinAndValueEvidence(t *testing.T) {
 	}
 	if next, _ := policies["suggested_next_json"].(string); !strings.Contains(next, "execute_graphql") {
 		t.Fatalf("a card that teaches a query must offer the tool that runs it: %s", next)
+	}
+
+	// A question names a value in ordinary words, and the search a run starts
+	// from has to reach the column that holds it. "At churn risk" is
+	// accounts.status = churn_risk; with every word counted alike, "at" put the
+	// *_at timestamp columns first and the status column 36th of the 40 table
+	// and column cards, outside what a run is shown.
+	const churnQuestion = "For support ticket 31, identify its associated account and whether that account is at churn risk."
+	schemaRank := map[string]int{}
+	for _, card := range catalogRows(fmt.Sprintf(`query { gj_catalog(search: %q, where: {kind: {in: ["table", "column"]}}, limit: 40) { id } }`, churnQuestion)) {
+		id, _ := card["id"].(string)
+		schemaRank[id] = len(schemaRank) + 1
+	}
+	statusRank := schemaRank["column:app:main.accounts.status"]
+	if statusRank == 0 || statusRank > 12 {
+		t.Fatalf("the accounts status column ranks %d among table and column cards for %q, want it in the first 12", statusRank, churnQuestion)
+	}
+	if lastActive := schemaRank["column:app:main.accounts.last_active_at"]; lastActive != 0 && lastActive < statusRank {
+		t.Fatalf("accounts.last_active_at (rank %d) is ahead of accounts.status (rank %d): a common word outweighs the value the question names", lastActive, statusRank)
 	}
 }
 
