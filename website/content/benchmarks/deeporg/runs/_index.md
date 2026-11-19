@@ -1,6 +1,6 @@
 ---
 title: "Published DeepORG Runs"
-description: "The public archive of shareable DeepORG reports, built and published by GraphJin."
+description: "The public archive of shareable DeepORG benchmark reports."
 aliases:
   - /benchmark/runs/
   - /benchmarks/organizational-agent/runs/

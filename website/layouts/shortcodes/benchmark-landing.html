@@ -36,12 +36,12 @@
       {{- $cost := 0.0 -}}
       {{- if gt $reliable 0 -}}{{- $cost = div (float (.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}
       <section class="benchmark-landing-hero" aria-labelledby="benchmark-landing-title">
-        <div class="benchmark-landing-meta"><p class="benchmark-landing-eyebrow">Benchmarks · by GraphJin</p>{{ range first 1 $latestRuns }}<p>Last updated: {{ time.Format "2006-01-02" .generated_at }}</p>{{ end }}</div>
+        <div class="benchmark-landing-meta"><p class="benchmark-landing-eyebrow">Benchmarks · by DeepORG</p>{{ range first 1 $latestRuns }}<p>Last updated: {{ time.Format "2006-01-02" .generated_at }}</p>{{ end }}</div>
         <h1 id="benchmark-landing-title">DeepORG</h1>
         <p class="benchmark-landing-subtitle">The Organizational Agent Benchmark</p>
         <div class="benchmark-landing-intro">
           <h2>We grade our own AI agent in public.</h2>
-          <p>GraphJin connects one AI agent to every database, API, and file system you run — governed, so it can only do what policy allows. DeepORG is the public exam it has to pass: {{ int .task_count }} real organizational tasks — questions to answer, operations to carry out, and requests it should refuse — {{ int .repeats }} attempts each, scored against live data.</p>
+          <p>DeepORG connects one AI agent to every database, API, and file system you run — governed, so it can only do what policy allows. DeepORG is the public exam it has to pass: {{ int .task_count }} real organizational tasks — questions to answer, operations to carry out, and requests it should refuse — {{ int .repeats }} attempts each, scored against live data.</p>
           <p class="benchmark-board-note">The board keeps the best trustworthy result for every model we've tested. Publishing a newer exam never makes a paid result disappear.</p>
         </div>
         <div class="benchmark-landing-proof" data-benchmark-leader="{{ .run_id }}" data-recall="{{ printf "%.17g" (float .recall) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}" data-latency-p50-ms="{{ printf "%.17g" (float (.latency_p50_ms | default 0)) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $cost }}" data-task-count="{{ int .task_count }}" data-repeats="{{ int .repeats }}">
@@ -81,10 +81,10 @@
     <section class="benchmark-landing-section benchmark-why-section" aria-labelledby="benchmark-why-title" data-bench-reveal>
       <div class="benchmark-why-grid">
         <div class="benchmark-landing-section-heading">
-          <p class="benchmark-landing-eyebrow">What GraphJin is</p>
+          <p class="benchmark-landing-eyebrow">What DeepORG is</p>
           <h2 id="benchmark-why-title">Most AI agents guess. Ours can't.</h2>
           <p>Point a language model at raw credentials and it invents what it cannot see — tables, joins, numbers. It sounds confident. It is guessing.</p>
-          <p>GraphJin gives the agent a governed map of everything you run. The model plans the question; the GraphJin engine does the work inside the database. The agent never writes its own SQL against production and never sees your credentials — so a wrong guess cannot become a wrong action.</p>
+          <p>DeepORG gives the agent a governed map of everything you run. The model plans the question; the GraphJin engine does the work inside the database. The agent never writes its own SQL against production and never sees your credentials — so a wrong guess cannot become a wrong action.</p>
         </div>
         <figure class="diagram-wrap benchmark-why-figure" aria-label="An AI agent guessing at disconnected systems">{{ readFile "static/svg/problem-blind-agent.svg" | safeHTML }}</figure>
       </div>
@@ -96,7 +96,7 @@
       <div class="benchmark-landing-section-heading">
         <p class="benchmark-landing-eyebrow">The demo</p>
         <h2 id="benchmark-watch-title">Watch it answer a real question.</h2>
-        <p>This is GraphJin's built-in SaaS Ops demo — the same environment DeepORG measures. One command runs it on your laptop.</p>
+        <p>This is DeepORG's built-in SaaS Ops demo — the same environment DeepORG measures. One command runs it on your laptop.</p>
       </div>
       <div class="benchmark-watch-grid">
         <div class="benchmark-watch-demo">
@@ -190,7 +190,7 @@
         {{ range first 1 $bestRuns }}<p data-benchmark-safety-story data-benchmark-episode-count="{{ int (.episode_count | default 0) }}" data-benchmark-unsafe-effects="{{ int (.unsafe_effects | default 0) }}">Every operation is compiled, policy-checked, and logged by GraphJin before it runs. That is how {{ int (.unsafe_effects | default 0) }} unsafe effects across {{ int (.episode_count | default 0) }} attempts is possible — and why part of the exam is refusing work that policy forbids.</p>{{ end }}
       </div>
       <div class="benchmark-safety-grid">
-        <article><i class="ti ti-shield-check" aria-hidden="true"></i><h3>Policy decides, not the prompt.</h3><p>Access rules live in GraphJin's configuration, outside the model. No clever wording can talk the agent past them.</p></article>
+        <article><i class="ti ti-shield-check" aria-hidden="true"></i><h3>Policy decides, not the prompt.</h3><p>Access rules live in DeepORG's configuration, outside the model. No clever wording can talk the agent past them.</p></article>
         <article><i class="ti ti-circle-check" aria-hidden="true"></i><h3>Every answer carries evidence.</h3><p>Each result links back to the exact governed operations that produced it, so you can check the work instead of trusting the prose.</p></article>
         <article><i class="ti ti-book-2" aria-hidden="true"></i><h3>Refusing is part of the exam.</h3><p>DeepORG includes questions the agent must decline. Doing the forbidden thing fails the test — politely refusing passes it.</p></article>
       </div>

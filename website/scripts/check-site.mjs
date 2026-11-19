@@ -27,6 +27,7 @@ const requiredRoutes = [
   'favicon.svg',
   'favicon.ico',
   'og/graphjin-og.png',
+  'og/deeporg-site-og.png',
   'og/deeporg-og.png',
   'og/index.html',
   'start/install/index.html',
@@ -239,12 +240,12 @@ const requiredRenderedContent = [
   ['benchmarks/index.html', 'Public, governed benchmark suites'],
   ['benchmarks/index.html', 'data-benchmark-family-row=deeporg'],
   ['benchmarks/index.html', 'data-benchmark-family-row=deepcontoso'],
-  ['benchmarks/deeporg/index.html', 'The Organizational Agent Benchmark · by GraphJin'],
+  ['benchmarks/deeporg/index.html', 'The Organizational Agent Benchmark'],
   ['benchmarks/deeporg/index.html', 'Model comparison'],
   ['benchmarks/deeporg/index.html', 'Run DeepORG on your organization'],
   ['benchmarks/deeporg/methodology/index.html', 'Frozen suite, live verification'],
   ['benchmarks/deeporg/runs/index.html', 'Published DeepORG Runs'],
-  ['benchmarks/deepcontoso/index.html', 'The Retail & Supply Chain Benchmark · by GraphJin'],
+  ['benchmarks/deepcontoso/index.html', 'The Retail & Supply Chain Benchmark · by DeepORG'],
   ['benchmarks/deepcontoso/index.html', 'Model comparison'],
   ['benchmarks/deepcontoso/index.html', 'Run DeepContoso on your organization'],
   ['benchmarks/deepcontoso/methodology/index.html', 'DeepContoso, The Retail & Supply Chain Benchmark'],
@@ -385,7 +386,7 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   if (/(?:>|&gt;)\s*(All|Section)\s*(?:<|&lt;)/.test(header)) {
     failures.push('Header still exposes the old All/Section search labels');
   }
-  for (const required of ['Vision', 'The agent loop', 'Use GraphJin as the agent.', 'The ledger caught it', 'Your first answer is one command away.', 'geo filters', 'Expression aggregates', 'backed by evidence', 'one governed graph', 'Run the 2-minute demo']) {
+  for (const required of ['Vision', 'The agent loop', 'Use DeepORG as the agent.', 'The ledger caught it', 'Your first answer is one command away.', 'geo filters', 'Expression aggregates', 'backed by evidence', 'one governed graph', 'Run the 2-minute demo']) {
     if (!home.includes(required)) {
       failures.push(`Homepage missing required enriched copy: ${required}`);
     }
@@ -405,7 +406,7 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     }
   }
   for (const required of [
-    'DeepORG · by GraphJin',
+    'The DeepORG benchmark',
     'Can an AI agent actually do what your organization needs?',
     'Ours can — and we publish the proof.',
     'We publish the exam. Every result, including the failures.',

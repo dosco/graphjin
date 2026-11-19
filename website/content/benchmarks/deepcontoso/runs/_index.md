@@ -1,6 +1,6 @@
 ---
 title: "Published DeepContoso Runs"
-description: "The public archive of shareable DeepContoso reports, built and published by GraphJin."
+description: "The public archive of shareable DeepContoso reports, built and published by DeepORG."
 ---
 
 Each page is generated from the same shareable projection as its local eval

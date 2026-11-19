@@ -6,7 +6,7 @@ nav_group: "benchmarks"
 weight: 2
 ---
 
-DeepContoso, The Retail & Supply Chain Benchmark built and published by GraphJin,
+DeepContoso, The Retail & Supply Chain Benchmark built and published by DeepORG,
 evaluates how AI models perform against a complex enterprise retail data warehouse
 modeled on Microsoft's Contoso schema. It measures the final answer, database query
 pushdown, safety governance, and operational efficiency across 100 distinct tasks

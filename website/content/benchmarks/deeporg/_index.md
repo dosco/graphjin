@@ -5,7 +5,7 @@ aliases:
   - /benchmarks/organizational-agent/
 ---
 
-<div class="benchmark-wordmark"><strong>DeepORG</strong><span>The Organizational Agent Benchmark · by GraphJin</span></div>
+<div class="benchmark-wordmark"><strong>DeepORG</strong><span>The Organizational Agent Benchmark</span></div>
 
 # Can an AI agent handle the questions an organization actually asks?
 
@@ -60,7 +60,7 @@ linked report.
 
 ## Run it yourself
 
-The public suite is frozen and committed. GraphJin resolves its hidden oracles
+The public suite is frozen and committed. DeepORG resolves its hidden oracles
 against the live demo before provider traffic, then performs three independent
 attempts per task. Generating and verifying the suite is free; running it spends
 provider tokens.
@@ -78,7 +78,7 @@ published provider and model identity.
 ## Run DeepORG on your organization
 
 The public board uses the bundled SaaS Ops reference environment. The same
-generator can build a private evaluation from your own GraphJin catalog and
+generator can build a private evaluation from your own DeepORG catalog and
 check live hidden oracles before a model sees its first prompt.
 
 {{< code-card filename="terminal" language="bash" >}}

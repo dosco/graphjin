@@ -3,7 +3,7 @@ title: "DeepContoso — The Retail & Supply Chain Benchmark"
 description: "A public comparison of AI agents solving enterprise retail and supply chain analytics, with correctness, database pushdown, governance, cost, latency, and GraphJin build provenance."
 ---
 
-<div class="benchmark-wordmark"><strong>DeepContoso</strong><span>The Retail & Supply Chain Benchmark · by GraphJin</span></div>
+<div class="benchmark-wordmark"><strong>DeepContoso</strong><span>The Retail & Supply Chain Benchmark · by DeepORG</span></div>
 
 # Can an AI agent handle enterprise retail data without breaking governance?
 
@@ -56,7 +56,7 @@ sliding windows, and security refusals.
 
 ## Run it yourself
 
-The DeepContoso suite is frozen and committed. GraphJin resolves its hidden oracles
+The DeepContoso suite is frozen and committed. DeepORG resolves its hidden oracles
 against the live reference environment before provider traffic, then performs
 three independent attempts per task.
 
@@ -73,7 +73,7 @@ published provider and model identity.
 ## Run DeepContoso on your organization
 
 The public board uses the bundled Contoso retail reference environment. The same
-evaluation framework can grade your own GraphJin catalog and check live hidden
+evaluation framework can grade your own DeepORG catalog and check live hidden
 oracles before a model sees its first prompt.
 
 {{< code-card filename="terminal" language="bash" >}}

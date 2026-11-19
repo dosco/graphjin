@@ -1,4 +1,4 @@
-# GraphJin — One Governed Graph for Your AI Agents
+# DeepORG — One Governed AI Agent for Your Whole Organization
 
 [![Apache 2.0](https://img.shields.io/github/license/dosco/graphjin.svg?style=for-the-badge)](https://github.com/dosco/graphjin/blob/master/LICENSE)
 [![NPM Package](https://img.shields.io/npm/v/graphjin?style=for-the-badge)](https://www.npmjs.com/package/graphjin)
@@ -7,20 +7,22 @@
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=go)](https://pkg.go.dev/github.com/dosco/graphjin/core/v3)
 [![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=for-the-badge)](https://goreportcard.com/report/github.com/dosco/graphjin/core/v3)
 
-GraphJin is a compiler and runtime that gives AI agents one governed graph over the systems a real company already has: databases, warehouses, files, source code, workflows, metadata, and security policy. Instead of handing an agent raw credentials and hoping it guesses correctly, GraphJin exposes that graph through GraphQL + MCP: the agent discovers before acting, validates queries, runs approved work, observes runtime status — and every answer is checked against an execution ledger before it leaves the server.
+> **DeepORG was formerly GraphJin.** The CLI (`graphjin`), the Go module (`github.com/dosco/graphjin/v3`), the npm package, and the Docker images keep the `graphjin` name for now.
 
-It is not only for agents. GraphJin is still a high-performance GraphQL-to-database compiler, Go library, standalone API service, REST/OpenAPI gateway, and real-time subscription server. The agent use case is where everything comes together: the same compiler that serves your apps can also give AI a smart, auditable way to work across data, code, and operations.
+DeepORG is one governed AI agent for your whole organization. It answers questions and carries out operations across the systems a real company already has: databases, warehouses, files, source code, workflows, metadata, and security policy. Instead of handing an agent raw credentials and hoping it guesses correctly, DeepORG gives it one governed graph over GraphQL + MCP: the agent discovers before acting, validates queries, runs approved work, observes runtime status — and every answer is checked against an execution ledger before it leaves the server.
+
+Underneath is GraphJin, the open-source engine DeepORG is built on. It is still a high-performance GraphQL-to-database compiler, Go library, standalone API service, REST/OpenAPI gateway, and real-time subscription server. The same compiler that serves your apps gives the agent a smart, auditable way to work across data, code, and operations.
 
 Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL, Snowflake, Redshift, BigQuery, Apache Cassandra / Amazon Keyspaces, S3/GCS/local files, CodeSQL source indexes - and models from Claude/GPT-4 to local 7B models.
 
-## Why GraphJin For Agents
+## Why DeepORG
 
-- **A built-in agent, one call away** - POST one instruction to `/api/v1/agent` (or call the `ask_graphjin_agent` MCP tool) and GraphJin runs the discovery loop itself - as the caller, under the caller's permissions - and returns a typed, evidence-backed answer. See [Server-Side Agent](#server-side-agent).
-- **One governed surface for many systems** - Query operational databases, warehouses, MongoDB, object stores, local files, CodeSQL source indexes, workflows, and GraphJin system roots through GraphQL and MCP.
+- **A built-in agent, one call away** - POST one instruction to `/api/v1/agent` (or call the `ask_graphjin_agent` MCP tool) and DeepORG runs the discovery loop itself - as the caller, under the caller's permissions - and returns a typed, evidence-backed answer. See [Server-Side Agent](#server-side-agent).
+- **One governed surface for many systems** - Query operational databases, warehouses, MongoDB, object stores, local files, CodeSQL source indexes, workflows, and the built-in `gj_*` system roots through GraphQL and MCP.
 - **Smart discovery before action** - Agents start with `query_catalog(search: "<user instruction>")`, `graphql_help`, relationship evidence, examples, config recipes, and safety notes before writing or running queries.
 - **Guarded action, not raw access** - Source-mode access, query allow-lists, read-only boundaries, policy-aware MCP tools, local encrypted secrets, and `gj_config` preview/apply keep changes auditable.
 - **Operational awareness** - `gj_security`, `gj_runtime`, and the built-in console expose policy and bounded runtime status so agents can check what is safe before they act.
-- **Standing questions, not just answers** - Hand a cursor-paginated subscription to `gj_watch` and GraphJin keeps answering it under the owner's permissions, resumes from persisted cursors across restarts, treats absence as a first-class event, and files what it finds in a durable inbox (`gj_watch_event`), a webhook, or a workflow. Evaluation runs on database polls, not model calls - a model writes the watch once, and nothing calls one again unless you turn on optional per-watch triage. See [Watches](#watches-and-standing-questions).
+- **Standing questions, not just answers** - Hand a cursor-paginated subscription to `gj_watch` and DeepORG keeps answering it under the owner's permissions, resumes from persisted cursors across restarts, treats absence as a first-class event, and files what it finds in a durable inbox (`gj_watch_event`), a webhook, or a workflow. Evaluation runs on database polls, not model calls - a model writes the watch once, and nothing calls one again unless you turn on optional per-watch triage. See [Watches](#watches-and-standing-questions).
 - **Durable memory** - Saved queries, fragments, and workflows live in the owner-scoped `gj_artifacts` store. Normal watches are durable by default; explicit ephemeral watches use TTL leases.
 
 ## Installation

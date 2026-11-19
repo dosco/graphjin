@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     {{ $metaTitle := printf "%s | %s" .Title .Site.Title }}
+    {{ if strings.Contains .Title .Site.Title }}{{ $metaTitle = .Title }}{{ end }}
     {{ if .IsHome }}{{ $metaTitle = .Site.Params.home_seo_title | default .Site.Title }}{{ end }}
     <title>{{ $metaTitle }}</title>
     {{ $description := .Description | default .Site.Params.description }}
@@ -13,7 +14,7 @@
     <meta property="og:url" content="{{ .Permalink }}">
     <meta property="og:title" content="{{ $metaTitle }}">
     <meta property="og:description" content="{{ $description }}">
-    {{ $ogImage := .Params.og_image | default "og/graphjin-og.png" }}
+    {{ $ogImage := .Params.og_image | default "og/deeporg-site-og.png" }}
     <meta property="og:image" content="{{ $ogImage | absURL }}">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
@@ -68,8 +69,8 @@
 
     <header class="site-header" data-pagefind-ignore>
       <div class="header-main">
-        <a class="brand" href="{{ "/" | relURL }}" aria-label="GraphJin home">
-          <span class="brand-name">GraphJin</span>
+        <a class="brand" href="{{ "/" | relURL }}" aria-label="DeepORG home">
+          <span class="brand-name">DeepORG</span>
         </a>
 
         <div class="site-search" data-site-search>

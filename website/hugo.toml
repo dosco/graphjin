@@ -1,6 +1,6 @@
 baseURL = "https://graphjin.com/"
 locale = "en-us"
-title = "GraphJin"
+title = "DeepORG"
 disableKinds = ["taxonomy", "term"]
 enableGitInfo = false
 relativeURLs = false
@@ -19,8 +19,8 @@ canonifyURLs = false
     ordered = false
 
 [params]
-  description = "GraphJin gives AI agents one governed graph — compiling GraphQL into optimized, policy-enforced access to databases, APIs, files, and code."
-  home_seo_title = "GraphJin — One Governed Graph for AI Agents: GraphQL + MCP over your databases, files, APIs, and code"
+  description = "DeepORG is one governed AI agent for your whole organization — answering questions and carrying out operations across your databases, APIs, files, and code, built on the open-source GraphJin engine."
+  home_seo_title = "DeepORG — One Governed AI Agent for Your Whole Organization: databases, APIs, files, and code"
   github = "https://github.com/dosco/graphjin"
   install = "curl -fsSL https://graphjin.com/install.sh | bash"
 
