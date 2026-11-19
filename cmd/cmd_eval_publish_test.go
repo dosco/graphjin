@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -683,4 +684,64 @@ func publishTestBenchmark(t *testing.T) benchmarkIdentity {
 
 func publishTestDataPath(site string) string {
 	return filepath.Join(site, "data", "benchmarks", "deeporg.yaml")
+}
+
+// Stored test-version labels are written once, so a change of their wording
+// reaches the published pages when the next publish rewords them. Wording that
+// is not retired, and versions this build does not know, are kept.
+func TestEvalPublishRewordsRetiredScopeLabels(t *testing.T) {
+	project, site := t.TempDir(), t.TempDir()
+	first := publishTestReport("20260803T101112.000000000Z-first")
+	writePublishTestReport(t, project, first)
+	if err := publishTestRun(t, project, site, first.RunID, &evalPublishOptions{Site: site}); err != nil {
+		t.Fatal(err)
+	}
+	dataPath := publishTestDataPath(site)
+	data, err := loadBenchmarkData(dataPath, publishTestBenchmark(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data.Suite.ScopeLabel = "2026.1/2026.2 — governed read-only Q&A · 2028.4 — tasks state what they grade"
+	data.Suite.GenerationScopes = map[string]string{
+		"2026.1": "governed read-only Q&A",
+		"2027.1": "adds writes, alerts, follow-ups, multi-source",
+		"2028.4": "tasks state what they grade",
+	}
+	raw, err := marshalBenchmarkData(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	second := publishTestReport("20260804T101112.000000000Z-second")
+	writePublishTestReport(t, project, second)
+	if err := publishTestRun(t, project, site, second.RunID, &evalPublishOptions{Site: site}); err != nil {
+		t.Fatal(err)
+	}
+	data, err = loadBenchmarkData(dataPath, publishTestBenchmark(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "2026.1/2026.2 — read-only Q&A · 2028.4 — tasks state what they grade"; data.Suite.ScopeLabel != want {
+		t.Fatalf("scope label = %q, want %q", data.Suite.ScopeLabel, want)
+	}
+	want := map[string]string{"2026.1": "read-only Q&A", "2027.1": "adds writes, alerts, follow-ups, multi-source", "2028.4": "tasks state what they grade"}
+	if !reflect.DeepEqual(data.Suite.GenerationScopes, want) {
+		t.Fatalf("generation scopes = %v, want %v", data.Suite.GenerationScopes, want)
+	}
+	for _, s := range append([]string{defaultBenchmarkScope, deepcontosoBenchmarkScope}, mapValues(defaultBenchmarkGenerationScopes())...) {
+		if strings.Contains(strings.ToLower(s), "governed") {
+			t.Fatalf("a label this build writes still says governed: %q", s)
+		}
+	}
+}
+
+func mapValues(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for _, v := range m {
+		out = append(out, v)
+	}
+	return out
 }

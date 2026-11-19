@@ -19,9 +19,9 @@ const (
 	benchmarkDataVersion  = "graphjin.benchmark.data/v3"
 	defaultBenchmarkSlug  = "deeporg"
 	defaultBenchmarkName  = "DeepORG — The Organizational Agent Benchmark"
-	defaultBenchmarkScope = "2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds writes, alerts, follow-ups, multi-source · 2028.1 — intent-phrased tasks with execution twins · 2028.2 — cross-source ruler fix (v11)"
+	defaultBenchmarkScope = "2026.1/2026.2 — read-only Q&A · 2027.1 — adds writes, alerts, follow-ups, multi-source · 2028.1 — intent-phrased tasks with execution twins · 2028.2 — cross-source ruler fix (v11)"
 
-	deepcontosoBenchmarkScope = "2026.1 — governed retail Q&A (aggregations, time windows, schema discovery, governance)"
+	deepcontosoBenchmarkScope = "2026.1 — " + deepcontosoFirstScope
 )
 
 type benchmarkIdentity struct {
@@ -378,10 +378,9 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	if benchmark.Slug == defaultBenchmarkSlug && len(data.Suite.GenerationScopes) == 0 {
 		data.Suite.GenerationScopes = defaultBenchmarkGenerationScopes()
 	} else if benchmark.Slug == DeepContosoBenchmarkSlug && len(data.Suite.GenerationScopes) == 0 {
-		data.Suite.GenerationScopes = map[string]string{
-			"2026.1": "governed retail Q&A (aggregations, time windows, schema discovery, governance)",
-		}
+		data.Suite.GenerationScopes = map[string]string{"2026.1": deepcontosoFirstScope}
 	}
+	rewordRetiredScopes(&data.Suite)
 	if existing >= 0 {
 		data.Runs[existing] = entry
 	} else {
@@ -556,10 +555,36 @@ func benchmarkSuiteFromReport(report gjeval.Report) benchmarkSuite {
 	}
 }
 
+// deepcontosoFirstScope describes DeepContoso's first test version.
+const deepcontosoFirstScope = "retail Q&A (aggregations, time windows, schema discovery, refusals)"
+
+// retiredScopeWording is wording the published test-version labels used
+// before, and what each says now. The labels are written once, when a
+// benchmark's data has none, so a change of wording reaches the published
+// pages only by rewording the stored labels on the next publish.
+//
+// "Governed" was dropped from the site on 2026-11-19: few readers knew what
+// it meant.
+var retiredScopeWording = []struct{ old, new string }{
+	{"governed retail Q&A (aggregations, time windows, schema discovery, governance)", deepcontosoFirstScope},
+	{"governed read-only Q&A", "read-only Q&A"},
+}
+
+// rewordRetiredScopes rewrites retired wording in a suite's test-version
+// labels, keeping everything else in them.
+func rewordRetiredScopes(suite *benchmarkSuite) {
+	for _, w := range retiredScopeWording {
+		suite.ScopeLabel = strings.ReplaceAll(suite.ScopeLabel, w.old, w.new)
+		for generation, scope := range suite.GenerationScopes {
+			suite.GenerationScopes[generation] = strings.ReplaceAll(scope, w.old, w.new)
+		}
+	}
+}
+
 func defaultBenchmarkGenerationScopes() map[string]string {
 	return map[string]string{
-		"2026.1": "governed read-only Q&A",
-		"2026.2": "governed read-only Q&A",
+		"2026.1": "read-only Q&A",
+		"2026.2": "read-only Q&A",
 		"2027.1": "adds writes, alerts, follow-ups, multi-source",
 		"2028.1": "intent-phrased tasks with execution twins, v10 ruler",
 		"2028.2": "cross-source ruler fix (v11): argument-free file reads count",
