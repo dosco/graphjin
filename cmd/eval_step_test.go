@@ -143,16 +143,34 @@ func TestStepBridgeReclaimsWorldsFromAbandonedEpisodes(t *testing.T) {
 	}
 	server, _, stop := startStepTestServer(t)
 	defer stop()
-	// Long enough for the agent to ask its first question, short enough that
-	// idling past it is quick to observe.
-	steps := newStepServer(server, time.Second)
+	// The reset waits for the agent's first question. How long that takes
+	// depends on the machine and on the race detector, and it has nothing to do
+	// with reclaiming idle worlds, so it gets a generous window. (A one-second
+	// window here failed every run once the agent's start took longer.)
+	steps := newStepServer(server, time.Minute)
 
+	asked := time.Now()
 	code, response := postStepJSON(t, steps.handleReset, "/step/reset",
 		stepResetRequest{Slug: "count-accounts"})
 	if code != http.StatusOK || response.Observation == nil {
 		t.Fatalf("reset status = %d: %+v", code, response)
 	}
-	time.Sleep(1200 * time.Millisecond)
+	t.Logf("the agent asked its first question after %s", time.Since(asked).Round(time.Millisecond))
+
+	// Handing over the first question must arm the idle deadline. Then bring it
+	// forward, so idling past it is quick to observe.
+	episode, ok := steps.lookup(response.EpisodeID)
+	if !ok {
+		t.Fatal("the episode is not registered after its reset")
+	}
+	episode.mu.Lock()
+	armed := episode.deadline.After(time.Now())
+	episode.deadline = time.Now().Add(200 * time.Millisecond)
+	episode.mu.Unlock()
+	if !armed {
+		t.Fatal("the first question did not arm the episode's idle deadline")
+	}
+	time.Sleep(300 * time.Millisecond)
 
 	// Never answer. The reaper should end it and give the world back.
 	deadline := time.Now().Add(10 * time.Second)
