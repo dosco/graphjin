@@ -2826,8 +2826,13 @@ func TestResultNamingGaps(t *testing.T) {
 		t.Fatalf("key back to a named parent reported: %+v", got)
 	}
 	// A sibling root returning the products' key and name maps the ids.
-	if got := gaps(`query { products(limit: 2, order_by: { id: asc }) { id name } purchases(limit: 2, order_by: { id: asc }) { quantity product_id } }`); len(got) != 0 {
-		t.Fatalf("key mapped by a sibling root reported: %+v", got)
+	// ClickHouse compiles one root selection per query ("only a single root
+	// selection is supported per query"), so there is no sibling root to map
+	// them there; every other case in this test still runs on it.
+	if dbType != "clickhouse" {
+		if got := gaps(`query { products(limit: 2, order_by: { id: asc }) { id name } purchases(limit: 2, order_by: { id: asc }) { quantity product_id } }`); len(got) != 0 {
+			t.Fatalf("key mapped by a sibling root reported: %+v", got)
+		}
 	}
 	// The parent unnamed, the same key still hides which product it is.
 	got = gaps(`query { products(limit: 2, order_by: { id: asc }) { price purchases(limit: 2, order_by: { id: asc }) { quantity product_id } } }`)
