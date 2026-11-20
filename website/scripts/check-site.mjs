@@ -195,6 +195,10 @@ const failures = [];
 // topic instead.
 const requiredRenderedContent = [
   ['index.html', 'Turn your own systems into the test and the training ground.'],
+  // Moved off the homepage with its link grid.
+  ['core/filters/index.html', 'geo filters'],
+  ['core/aggregations-functions/index.html', 'Expression aggregates'],
+  ['story/index.html', 'as one graph'],
   ['index.html', 'a fluent, confident, wrong answer earns nothing'],
   ['index.html', 'never your rows'],
   ['environment/overview/index.html', 'It is entirely distinguishable to a database.'],
@@ -455,7 +459,10 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   if (/(?:>|&gt;)\s*(All|Section)\s*(?:<|&lt;)/.test(header)) {
     failures.push('Header still exposes the old All/Section search labels');
   }
-  for (const required of ['Vision', 'The ledger caught it', 'Your first answer is one command away.', 'geo filters', 'Expression aggregates', 'backed by evidence', 'as one graph', 'Run it in two minutes.']) {
+  // The homepage no longer ends in a grid of docs links (the footer and the docs
+  // sidebar carry those). The phrases that grid held are pinned on the pages
+  // that own them, in requiredRenderedContent.
+  for (const required of ['The ledger caught it', 'Your first answer is one command away.', 'backed by evidence', 'Run it in two minutes.']) {
     if (!home.includes(required)) {
       failures.push(`Homepage missing required enriched copy: ${required}`);
     }

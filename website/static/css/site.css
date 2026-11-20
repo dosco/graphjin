@@ -832,8 +832,7 @@ svg {
 
 .doc-card-grid,
 .home-card-grid,
-.integration-grid,
-.home-paths {
+.integration-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.8rem;
@@ -841,7 +840,6 @@ svg {
 
 .doc-card,
 .home-card,
-.home-paths a,
 .feature-card,
 .verified-by,
 .callout {
@@ -850,29 +848,25 @@ svg {
   background: var(--panel);
 }
 
-.doc-card,
-.home-paths a {
+.doc-card {
   color: var(--ink);
   padding: 1rem;
   text-decoration: none;
 }
 
-.doc-card strong,
-.home-paths strong {
+.doc-card strong {
   display: block;
   color: var(--heading);
 }
 
-.doc-card span,
-.home-paths span {
+.doc-card span {
   display: block;
   margin-top: 0.35rem;
   color: var(--muted);
   font-size: 0.92rem;
 }
 
-.doc-card:hover,
-.home-paths a:hover {
+.doc-card:hover {
   border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
   box-shadow: var(--shadow);
 }
@@ -1808,12 +1802,6 @@ pre code {
   color: var(--accent);
 }
 
-.home-paths {
-  max-width: 76rem;
-  margin: -1rem auto 0;
-  padding: 0 1.25rem 2.5rem;
-}
-
 .diagram-wrap {
   overflow: hidden;
   margin: 1rem 0;
@@ -2652,7 +2640,6 @@ pre code {
   .doc-card-grid,
   .home-card-grid,
   .integration-grid,
-  .home-paths,
   .terminal-strip {
     grid-template-columns: 1fr;
   }
@@ -5583,6 +5570,12 @@ h3 {
   border-top: 1px solid var(--line);
 }
 
+/* The homepage ends in the tinted quick start band, which is its own edge. */
+.is-home .site-footer {
+  margin-top: 0;
+  border-top: 0;
+}
+
 .site-footer-inner {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -5741,15 +5734,8 @@ h3 {
   margin: 0;
 }
 
-.home > .home-paths {
-  max-width: 80rem;
-  margin: 0 auto;
-  padding: clamp(2.5rem, 6vw, 4.5rem) 1.25rem clamp(3rem, 7vw, 5rem);
-}
-
 /* Homepage cards sit on the open canvas: one rule above, no box. */
 .home .home-card,
-.home .home-paths a,
 .why-page .home-card {
   border: 0;
   border-top: 1px solid var(--line-strong);
@@ -5759,15 +5745,13 @@ h3 {
   padding: 1rem 0 0;
 }
 
-.home .home-paths a:hover,
 .home .home-card:hover {
   border-top-color: var(--accent-readable);
   box-shadow: none;
 }
 
 .home .home-card-grid,
-.home .demo-grid,
-.home .home-paths {
+.home .demo-grid {
   gap: 1.75rem clamp(1.5rem, 3vw, 2.75rem);
 }
 
