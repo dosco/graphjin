@@ -4691,6 +4691,8 @@ h3 {
 
 .dx-more::after {
   content: "->";
+  flex: 0 0 auto;
+  white-space: nowrap;
   color: var(--accent-readable);
   font-family: var(--font-mono);
   font-size: 0.86em;
@@ -5733,10 +5735,6 @@ h3 {
   max-width: 80rem;
   margin: 0 auto;
   padding: 0 1.25rem clamp(3rem, 7vw, 5.5rem);
-}
-
-.dx-value:has(+ .dx-below) {
-  padding-bottom: clamp(2rem, 4vw, 3rem);
 }
 
 .dx-below .database-strip {

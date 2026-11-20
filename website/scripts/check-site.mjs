@@ -194,7 +194,7 @@ const failures = [];
 // signal it is load-bearing and should be a link to the page that owns the
 // topic instead.
 const requiredRenderedContent = [
-  ['index.html', 'The same machinery is a training environment.'],
+  ['index.html', 'Turn your own systems into the test and the training ground.'],
   ['index.html', 'a fluent, confident, wrong answer earns nothing'],
   ['index.html', 'never your rows'],
   ['environment/overview/index.html', 'It is entirely distinguishable to a database.'],
