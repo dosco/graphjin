@@ -34,6 +34,9 @@
 - name: Snowflake
   logo: snowflake.svg
   type: snowflake
+- name: BigQuery
+  label: BQ
+  type: bigquery
 - name: Cassandra / Keyspaces
   label: C*
   type: cassandra

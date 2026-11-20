@@ -625,8 +625,8 @@
   // --- sources: many systems, one map, one agent ----------------------------
 
   const SOURCE_LANES = [
-    ['postgres', 'mysql'], ['snowflake', 'redshift'], ['mongodb', 'cassandra'], ['oracle', 'sql server'],
-    ['openapi specs', 'bigquery'], ['s3 / gcs', 'local files'], ['source code', 'sqlite'],
+    ['postgres', 'mysql'], ['snowflake', 'bigquery'], ['mongodb', 'cassandra'], ['oracle', 'sql server'],
+    ['openapi specs', 'mariadb'], ['s3 / gcs', 'local files'], ['source code', 'sqlite'],
   ];
 
   scenes.sources = {

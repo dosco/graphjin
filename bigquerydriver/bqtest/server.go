@@ -1,8 +1,8 @@
-package bigquerydriver
+// Package bqtest is an HTTP stand-in for the BigQuery REST API, for tests of
+// the BigQuery driver and of the SQL GraphJin sends through it.
+package bqtest
 
 import (
-	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,24 +16,26 @@ import (
 	"time"
 
 	bq "google.golang.org/api/bigquery/v2"
-	"google.golang.org/api/option"
 )
 
-// fakeBigQuery is an HTTP stand-in for the BigQuery REST API. It does not run
-// SQL; a test scripts what a statement returns. What it does enforce are the
-// request rules the real service enforces, each from BigQuery's documentation,
-// so a driver request the real service would refuse is refused here too:
+// Server is the stand-in. It does not run SQL; a test scripts what a statement
+// returns. What it does enforce are the request rules the real service
+// enforces, each from BigQuery's documentation, so a request the real service
+// would refuse is refused here too:
 //
 //   - GoogleSQL only: useLegacySql must be sent, and be false.
 //   - Every `?` needs a parameter and parameterMode POSITIONAL.
 //   - INFORMATION_SCHEMA views must carry a dataset or region qualifier.
 //   - A job lives in one location; asking another location for it is "not found".
 //   - Scalars travel as text; TIMESTAMP is float seconds unless int64 is asked for.
-type fakeBigQuery struct {
-	t        *testing.T
-	project  string
-	dataset  string
-	location string
+type Server struct {
+	// Project, Dataset and Location are the one dataset the server knows.
+	Project  string
+	Dataset  string
+	Location string
+
+	t   testing.TB
+	url string
 
 	mu        sync.Mutex
 	scripts   []script
@@ -41,103 +43,132 @@ type fakeBigQuery struct {
 	queries   []map[string]any // decoded jobs.query bodies, in order
 	pageCalls []url.Values     // getQueryResults query strings, in order
 	cancelled []string
+	refused   []Refusal
 	seq       int
+}
+
+// Refusal is a request the server turned down, as BigQuery would have.
+type Refusal struct {
+	SQL     string
+	Message string
 }
 
 type script struct {
 	match func(sql string) bool
-	reply reply
+	reply Reply
 }
 
-// reply is what a scripted statement returns. Row cells are Go values (int64,
+// Reply is what a scripted statement returns. Row cells are Go values (int64,
 // float64, bool, string, time.Time, []any for arrays and structs, nil); the
-// fake encodes them the way the REST API does.
-type reply struct {
-	fields       []*bq.TableFieldSchema
-	rows         [][]any
-	pageSize     int   // rows per page; 0 means one page
-	pendingPolls int   // times the job reports "still running" before finishing
-	block        bool  // the job never finishes; results wait for the client to give up
-	dmlRows      int64 // numDmlAffectedRows
-	fail         *apiFailure
+// server encodes them the way the REST API does.
+type Reply struct {
+	Fields       []*bq.TableFieldSchema
+	Rows         [][]any
+	PageSize     int   // rows per page; 0 means one page
+	PendingPolls int   // times the job reports "still running" before finishing
+	Block        bool  // the job never finishes; results wait for the client to give up
+	DMLRows      int64 // numDmlAffectedRows
+	Fail         *Failure
 }
 
-type apiFailure struct {
-	code    int
-	reason  string
-	message string
+// Failure is an API error a scripted statement returns.
+type Failure struct {
+	Code    int
+	Reason  string
+	Message string
+}
+
+// Field describes a nullable scalar column.
+func Field(name, typ string) *bq.TableFieldSchema {
+	return &bq.TableFieldSchema{Name: name, Type: typ, Mode: "NULLABLE"}
 }
 
 type fakeJob struct {
 	id    string
-	reply reply
+	reply Reply
 	polls int
 }
 
-func newFakeBigQuery(t *testing.T) (*fakeBigQuery, *httptest.Server) {
+// New starts a server holding the dataset acme-prod.analytics in
+// europe-west2, and stops it when the test ends.
+func New(t testing.TB) *Server {
 	t.Helper()
-	f := &fakeBigQuery{
+	f := &Server{
+		Project:  "acme-prod",
+		Dataset:  "analytics",
+		Location: "europe-west2",
 		t:        t,
-		project:  "acme-prod",
-		dataset:  "analytics",
-		location: "europe-west2",
 		jobs:     map[string]*fakeJob{},
 	}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
-	return f, srv
+	f.url = srv.URL
+	return f
 }
 
-// open returns a *sql.DB on the driver, pointed at the fake.
-func (f *fakeBigQuery) open(t *testing.T, srv *httptest.Server, conf Config) *sql.DB {
-	t.Helper()
-	if conf.ProjectID == "" {
-		conf.ProjectID = f.project
-	}
-	if conf.DatasetID == "" {
-		conf.DatasetID = f.dataset
-	}
-	conf.ClientOptions = []option.ClientOption{
-		option.WithEndpoint(srv.URL + "/bigquery/v2/"),
-		option.WithoutAuthentication(),
-	}
-	c, err := NewConnector(context.Background(), conf)
-	if err != nil {
-		t.Fatalf("NewConnector: %v", err)
-	}
-	db := sql.OpenDB(c)
-	t.Cleanup(func() { db.Close() }) //nolint:errcheck
-	return db
-}
+// Endpoint is the base URL to give the BigQuery client.
+func (f *Server) Endpoint() string { return f.url + "/bigquery/v2/" }
 
-func (f *fakeBigQuery) on(match func(sql string) bool, r reply) {
+// On scripts the reply to the first statement match accepts. Scripts are tried
+// in the order they were added.
+func (f *Server) On(match func(sql string) bool, r Reply) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.scripts = append(f.scripts, script{match: match, reply: r})
 }
 
-func (f *fakeBigQuery) onContains(substr string, r reply) {
-	f.on(func(sql string) bool { return strings.Contains(sql, substr) }, r)
+// OnContains scripts the reply to a statement containing substr.
+func (f *Server) OnContains(substr string, r Reply) {
+	f.On(func(sql string) bool { return strings.Contains(sql, substr) }, r)
 }
 
-func (f *fakeBigQuery) lastQuery(t *testing.T) map[string]any {
-	t.Helper()
+// Queries returns the decoded body of every statement received, in order.
+func (f *Server) Queries() []map[string]any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if len(f.queries) == 0 {
-		t.Fatal("no query reached the fake")
-	}
-	return f.queries[len(f.queries)-1]
+	return append([]map[string]any(nil), f.queries...)
 }
 
-func (f *fakeBigQuery) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// LastQuery returns the decoded body of the latest statement received.
+func (f *Server) LastQuery(t testing.TB) map[string]any {
+	t.Helper()
+	q := f.Queries()
+	if len(q) == 0 {
+		t.Fatal("no query reached the BigQuery stand-in")
+	}
+	return q[len(q)-1]
+}
+
+// ResultCalls is how many times a client asked for a job's results.
+func (f *Server) ResultCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.pageCalls)
+}
+
+// Cancelled returns the ids of the jobs a client cancelled.
+func (f *Server) Cancelled() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.cancelled...)
+}
+
+// Refused returns every statement the server turned down, including ones
+// whose error the caller chose to ignore.
+func (f *Server) Refused() []Refusal {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]Refusal(nil), f.refused...)
+}
+
+func (f *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rest, ok := strings.CutPrefix(r.URL.Path, "/bigquery/v2/projects/")
 	if !ok {
 		f.fail(w, 404, "notFound", "Not found: "+r.URL.Path)
 		return
 	}
 	parts := strings.Split(rest, "/")
-	if parts[0] != f.project {
+	if parts[0] != f.Project {
 		f.fail(w, 404, "notFound", "Not found: Project "+parts[0])
 		return
 	}
@@ -158,16 +189,16 @@ func (f *fakeBigQuery) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (f *fakeBigQuery) serveDataset(w http.ResponseWriter, dataset string) {
-	if dataset != f.dataset {
-		f.fail(w, 404, "notFound", fmt.Sprintf("Not found: Dataset %s:%s", f.project, dataset))
+func (f *Server) serveDataset(w http.ResponseWriter, dataset string) {
+	if dataset != f.Dataset {
+		f.fail(w, 404, "notFound", fmt.Sprintf("Not found: Dataset %s:%s", f.Project, dataset))
 		return
 	}
 	f.json(w, map[string]any{
 		"kind":             "bigquery#dataset",
-		"id":               f.project + ":" + f.dataset,
-		"datasetReference": map[string]any{"projectId": f.project, "datasetId": f.dataset},
-		"location":         f.location,
+		"id":               f.Project + ":" + f.Dataset,
+		"datasetReference": map[string]any{"projectId": f.Project, "datasetId": f.Dataset},
+		"location":         f.Location,
 	})
 }
 
@@ -177,7 +208,7 @@ var (
 	bareInfoSchema = regexp.MustCompile(`(?i)(^|[^.])\binformation_schema\.`)
 )
 
-func (f *fakeBigQuery) serveQuery(w http.ResponseWriter, r *http.Request) {
+func (f *Server) serveQuery(w http.ResponseWriter, r *http.Request) {
 	var raw map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		f.fail(w, 400, "parseError", "Could not parse request body: "+err.Error())
@@ -189,39 +220,39 @@ func (f *fakeBigQuery) serveQuery(w http.ResponseWriter, r *http.Request) {
 
 	sqlText, _ := raw["query"].(string)
 	if legacy, sent := raw["useLegacySql"].(bool); !sent || legacy {
-		f.fail(w, 400, "invalidQuery", "this query is GoogleSQL; legacy SQL is the API default and was not turned off")
+		f.refuse(w, sqlText, 400, "invalidQuery", "this query is GoogleSQL; legacy SQL is the API default and was not turned off")
 		return
 	}
-	if loc, _ := raw["location"].(string); loc != "" && !strings.EqualFold(loc, f.location) {
-		f.fail(w, 404, "notFound", fmt.Sprintf("Not found: Dataset %s:%s was not found in location %s", f.project, f.dataset, loc))
+	if loc, _ := raw["location"].(string); loc != "" && !strings.EqualFold(loc, f.Location) {
+		f.refuse(w, sqlText, 404, "notFound", fmt.Sprintf("Not found: Dataset %s:%s was not found in location %s", f.Project, f.Dataset, loc))
 		return
 	}
 
 	code := stringLiteral.ReplaceAllString(sqlText, "''")
 	if bareInfoSchema.MatchString(code) {
-		f.fail(w, 400, "invalidQuery", "INFORMATION_SCHEMA view needs to be qualified with a dataset or region")
+		f.refuse(w, sqlText, 400, "invalidQuery", "INFORMATION_SCHEMA view needs to be qualified with a dataset or region")
 		return
 	}
 	params, _ := raw["queryParameters"].([]any)
 	placeholders := strings.Count(quotedIdent.ReplaceAllString(code, ""), "?")
 	if placeholders != len(params) {
-		f.fail(w, 400, "invalidQuery", fmt.Sprintf("Query has %d positional parameter(s) but %d value(s) were supplied", placeholders, len(params)))
+		f.refuse(w, sqlText, 400, "invalidQuery", fmt.Sprintf("Query has %d positional parameter(s) but %d value(s) were supplied", placeholders, len(params)))
 		return
 	}
 	if placeholders > 0 && raw["parameterMode"] != "POSITIONAL" {
-		f.fail(w, 400, "invalidQuery", "Positional parameters require parameterMode POSITIONAL")
+		f.refuse(w, sqlText, 400, "invalidQuery", "Positional parameters require parameterMode POSITIONAL")
 		return
 	}
 	for i, p := range params {
 		typ, _ := p.(map[string]any)["parameterType"].(map[string]any)
 		if name, _ := typ["type"].(string); name == "" {
-			f.fail(w, 400, "invalid", fmt.Sprintf("Parameter %d has no type", i+1))
+			f.refuse(w, sqlText, 400, "invalid", fmt.Sprintf("Parameter %d has no type", i+1))
 			return
 		}
 	}
 
 	f.mu.Lock()
-	var found *reply
+	var found *Reply
 	for i := range f.scripts {
 		if f.scripts[i].match(sqlText) {
 			found = &f.scripts[i].reply
@@ -230,12 +261,12 @@ func (f *fakeBigQuery) serveQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	if found == nil {
 		f.mu.Unlock()
-		f.fail(w, 400, "invalidQuery", "fake has no script for: "+sqlText)
+		f.refuse(w, sqlText, 400, "invalidQuery", "no reply is scripted for: "+sqlText)
 		return
 	}
-	if found.fail != nil {
+	if found.Fail != nil {
 		f.mu.Unlock()
-		f.fail(w, found.fail.code, found.fail.reason, found.fail.message)
+		f.fail(w, found.Fail.Code, found.Fail.Reason, found.Fail.Message)
 		return
 	}
 	f.seq++
@@ -247,7 +278,7 @@ func (f *fakeBigQuery) serveQuery(w http.ResponseWriter, r *http.Request) {
 	if opts, ok := raw["formatOptions"].(map[string]any); ok {
 		int64Timestamps, _ = opts["useInt64Timestamp"].(bool)
 	}
-	if job.reply.block || job.reply.pendingPolls > 0 {
+	if job.reply.Block || job.reply.PendingPolls > 0 {
 		f.json(w, map[string]any{
 			"kind":         "bigquery#queryResponse",
 			"jobReference": f.jobRef(job),
@@ -258,7 +289,7 @@ func (f *fakeBigQuery) serveQuery(w http.ResponseWriter, r *http.Request) {
 	f.json(w, f.resultPage(job, 0, int64Timestamps, "bigquery#queryResponse"))
 }
 
-func (f *fakeBigQuery) serveResults(w http.ResponseWriter, r *http.Request, jobID string) {
+func (f *Server) serveResults(w http.ResponseWriter, r *http.Request, jobID string) {
 	q := r.URL.Query()
 	f.mu.Lock()
 	f.pageCalls = append(f.pageCalls, q)
@@ -266,16 +297,16 @@ func (f *fakeBigQuery) serveResults(w http.ResponseWriter, r *http.Request, jobI
 	f.mu.Unlock()
 
 	// A job outside the US and EU multi-regions is only found in its own location.
-	if job == nil || !strings.EqualFold(q.Get("location"), f.location) {
-		f.fail(w, 404, "notFound", fmt.Sprintf("Not found: Job %s:%s", f.project, jobID))
+	if job == nil || !strings.EqualFold(q.Get("location"), f.Location) {
+		f.fail(w, 404, "notFound", fmt.Sprintf("Not found: Job %s:%s", f.Project, jobID))
 		return
 	}
-	if job.reply.block {
+	if job.reply.Block {
 		<-r.Context().Done()
 		return
 	}
 	f.mu.Lock()
-	pending := job.polls < job.reply.pendingPolls
+	pending := job.polls < job.reply.PendingPolls
 	job.polls++
 	f.mu.Unlock()
 	if pending {
@@ -299,20 +330,20 @@ func (f *fakeBigQuery) serveResults(w http.ResponseWriter, r *http.Request, jobI
 	f.json(w, f.resultPage(job, offset, int64Timestamps, "bigquery#getQueryResultsResponse"))
 }
 
-func (f *fakeBigQuery) jobRef(job *fakeJob) map[string]any {
-	return map[string]any{"projectId": f.project, "jobId": job.id, "location": f.location}
+func (f *Server) jobRef(job *fakeJob) map[string]any {
+	return map[string]any{"projectId": f.Project, "jobId": job.id, "location": f.Location}
 }
 
-func (f *fakeBigQuery) resultPage(job *fakeJob, offset int, int64Timestamps bool, kind string) map[string]any {
+func (f *Server) resultPage(job *fakeJob, offset int, int64Timestamps bool, kind string) map[string]any {
 	rep := job.reply
-	end := len(rep.rows)
-	if rep.pageSize > 0 && offset+rep.pageSize < end {
-		end = offset + rep.pageSize
+	end := len(rep.Rows)
+	if rep.PageSize > 0 && offset+rep.PageSize < end {
+		end = offset + rep.PageSize
 	}
 	rows := make([]any, 0, end-offset)
-	for _, row := range rep.rows[offset:end] {
-		cells := make([]any, len(rep.fields))
-		for i, field := range rep.fields {
+	for _, row := range rep.Rows[offset:end] {
+		cells := make([]any, len(rep.Fields))
+		for i, field := range rep.Fields {
 			cells[i] = map[string]any{"v": wireValue(field, row[i], int64Timestamps, false)}
 		}
 		rows = append(rows, map[string]any{"f": cells})
@@ -321,15 +352,15 @@ func (f *fakeBigQuery) resultPage(job *fakeJob, offset int, int64Timestamps bool
 		"kind":         kind,
 		"jobReference": f.jobRef(job),
 		"jobComplete":  true,
-		"totalRows":    strconv.Itoa(len(rep.rows)),
-		"schema":       map[string]any{"fields": rep.fields},
+		"totalRows":    strconv.Itoa(len(rep.Rows)),
+		"schema":       map[string]any{"fields": rep.Fields},
 		"rows":         rows,
 	}
-	if end < len(rep.rows) {
+	if end < len(rep.Rows) {
 		out["pageToken"] = strconv.Itoa(end)
 	}
-	if rep.dmlRows != 0 {
-		out["numDmlAffectedRows"] = strconv.FormatInt(rep.dmlRows, 10)
+	if rep.DMLRows != 0 {
+		out["numDmlAffectedRows"] = strconv.FormatInt(rep.DMLRows, 10)
 	}
 	return out
 }
@@ -371,19 +402,28 @@ func wireValue(f *bq.TableFieldSchema, v any, int64Timestamps, element bool) any
 	case string:
 		return t
 	default:
-		panic(fmt.Sprintf("fake: unsupported cell %T", v))
+		panic(fmt.Sprintf("bqtest: unsupported cell %T", v))
 	}
 }
 
-func (f *fakeBigQuery) json(w http.ResponseWriter, body any) {
+func (f *Server) json(w http.ResponseWriter, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(body); err != nil {
-		f.t.Errorf("fake: encode response: %v", err)
+		f.t.Errorf("bqtest: encode response: %v", err)
 	}
+}
+
+// refuse records a statement the server turns down by its own rules, then
+// fails the request.
+func (f *Server) refuse(w http.ResponseWriter, sqlText string, code int, reason, message string) {
+	f.mu.Lock()
+	f.refused = append(f.refused, Refusal{SQL: sqlText, Message: message})
+	f.mu.Unlock()
+	f.fail(w, code, reason, message)
 }
 
 // fail writes an error in the shape the Google API client parses.
-func (f *fakeBigQuery) fail(w http.ResponseWriter, code int, reason, message string) {
+func (f *Server) fail(w http.ResponseWriter, code int, reason, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(map[string]any{
