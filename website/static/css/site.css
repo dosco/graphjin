@@ -5857,6 +5857,11 @@ h3 {
   display: block;
 }
 
+/* A two-sentence heading breaks between its sentences, not inside one. */
+.dx-line {
+  display: block;
+}
+
 .home-benchmark {
   margin-top: clamp(2rem, 4.5vw, 3.2rem);
 }

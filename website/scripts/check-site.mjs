@@ -469,8 +469,11 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   }
   // The homepage carries the watch teaser; the full story lives on /watch/,
   // which is asserted separately below so the copy cannot be lost in the move.
+  // The homepage heading says what the section is; "Nothing happened. That was
+  // the problem." is the /watch/ page's own headline and is pinned there.
   for (const required of [
-    'Nothing happened. That was the problem.',
+    'Leave a question running.',
+    'It tells you when something changes.',
     'It speaks up when the answer changes',
     'database polls, not model calls',
   ]) {
