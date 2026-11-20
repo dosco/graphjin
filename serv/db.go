@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dosco/graphjin/bigquerydriver"
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/mongodriver"
 	"github.com/jackc/pgx/v5"
@@ -80,6 +81,9 @@ func detectDBType(conf *Config) {
 		if strings.HasPrefix(cs, "clickhouse://") {
 			conf.DBType = "clickhouse"
 		}
+		if strings.HasPrefix(cs, bigquerydriver.Scheme) {
+			conf.DBType = "bigquery"
+		}
 	}
 }
 
@@ -114,8 +118,10 @@ func initDBDriver(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf,
 		dc, err = initCassandra(conf, openDB, useTelemetry, fs)
 	case "clickhouse":
 		dc, err = initClickhouse(conf, openDB, useTelemetry, fs)
+	case "bigquery":
+		dc, err = initBigQuery(conf, openDB, useTelemetry, fs)
 	default:
-		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, mssql, sqlite, oracle, mongodb, snowflake, cassandra, clickhouse", conf.DBType)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, mssql, sqlite, oracle, mongodb, snowflake, cassandra, clickhouse, bigquery", conf.DBType)
 	}
 
 	if err != nil {

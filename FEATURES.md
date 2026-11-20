@@ -1943,11 +1943,10 @@ GraphJin supports operational databases, warehouses, and CQL/NoSQL systems throu
 | MongoDB | Yes | Yes | Yes | Yes | Yes | Yes | No |
 | Cassandra / Keyspaces | CQL-native | Single-table PK | Partition-bound polling | Limited CQL | No | No | No |
 | Snowflake | Yes | Yes | No | No | No | No | Yes |
-| Redshift | Experimental queries | Experimental PK writes | Experimental batched polling | No | Limited search | Limited | Experimental basic DDL |
 | BigQuery | Experimental queries | No | No | Limited | No | No | No |
 | CockroachDB | Yes | Yes | Yes | Yes | Yes | No | No |
 
-Also works with: **AWS Aurora/RDS**, **Google Cloud SQL**, **YugabyteDB**. Snowflake supports key pair (JWT) authentication and SHOW-based catalog discovery/paging. Redshift support is experimental: queries/discovery, single-table primary-key writes, batched polling subscriptions, limited `ILIKE` search over configured `full_text` columns, limited spatial filters, and basic generated DDL. Redshift subscriptions are polling-based warehouse queries, not native change streams. BigQuery support is experimental and query-focused. Cassandra / Keyspaces support CQL-native queries, partition-bound polling subscriptions, and single-table primary-key writes; aggregates, full scans, OR-style cross-partition filters, full-text, and GIS remain outside the generic surface.
+Also works with: **AWS Aurora/RDS**, **Google Cloud SQL**, **YugabyteDB**. Snowflake supports key pair (JWT) authentication and SHOW-based catalog discovery/paging. BigQuery support is experimental and read-only: schema discovery and queries over a `bigquery://project/dataset` connection string, with no mutations, subscriptions or transactions; the demo runs BigQuery sources on a local simulator. Redshift is not in this table: it has an experimental dialect in the tree, but `graphjin serve` has no driver for it yet. Cassandra / Keyspaces support CQL-native queries, partition-bound polling subscriptions, and single-table primary-key writes; aggregates, full scans, OR-style cross-partition filters, full-text, and GIS remain outside the generic surface.
 
 ### Cross-Database Joins
 

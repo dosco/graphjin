@@ -10,6 +10,7 @@ require (
 	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59
 	github.com/dosco/graphjin/agent/v3 v3.21.20
 	github.com/dosco/graphjin/auth/v3 v3.21.20
+	github.com/dosco/graphjin/bigquerydriver v0.0.0
 	github.com/dosco/graphjin/cassandradriver v0.0.0
 	github.com/dosco/graphjin/clickhousedriver v0.0.0
 	github.com/dosco/graphjin/codesql v0.0.0
@@ -55,6 +56,7 @@ require (
 replace (
 	github.com/dosco/graphjin/agent/v3 => ../agent
 	github.com/dosco/graphjin/auth/v3 => ../auth
+	github.com/dosco/graphjin/bigquerydriver => ../bigquerydriver
 	github.com/dosco/graphjin/cassandradriver => ../cassandradriver
 	github.com/dosco/graphjin/clickhousedriver => ../clickhousedriver
 	github.com/dosco/graphjin/codesql => ../codesql

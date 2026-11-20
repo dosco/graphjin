@@ -706,19 +706,53 @@ database:
    ALTER USER my_user SET RSA_PUBLIC_KEY='MIIBIjANBg...';
    ```
 
-#### Redshift
+#### BigQuery
 
 ```yaml
 database:
-  type: redshift
-  # Redshift uses the PostgreSQL wire protocol. Use the standard connection
-  # string form accepted by the configured SQL driver.
-  connection_string: postgres://user:password@cluster.example.us-east-1.redshift.amazonaws.com:5439/dev?sslmode=require
+  type: bigquery
+  # BigQuery has no host, port or password. Name the project and the dataset.
+  connection_string: bigquery://my-project/my_dataset
 ```
 
-Redshift support is experimental and Redshift-owned, not plain PostgreSQL compatibility. GraphJin uses Redshift-native catalog discovery, preferring `SHOW TABLES` and `SHOW COLUMNS` compatible metadata.
+BigQuery support is experimental and read-only: schema discovery and queries. Mutations and subscriptions are not supported.
 
-Supported Redshift v1 surfaces:
+Credentials come from [Application Default Credentials](https://cloud.google.com/docs/authentication/provide-credentials-adc): the `GOOGLE_APPLICATION_CREDENTIALS` environment variable, the attached service account on Google Cloud, or `gcloud auth application-default login` on a workstation. The account needs to run query jobs in the project and read the dataset (for example the BigQuery Job User and BigQuery Data Viewer roles).
+
+Connection string options:
+
+| Option | Meaning |
+| --- | --- |
+| `location` | The dataset's location, such as `EU` or `us-central1`. Left out, it is read from the dataset. |
+| `credentials_file` | A service-account key file to use instead of Application Default Credentials. A relative path is read from the config folder. |
+| `max_bytes_billed` | Fail any query that would bill more than this many bytes. |
+
+```yaml
+database:
+  type: bigquery
+  connection_string: bigquery://my-project/my_dataset?location=EU&max_bytes_billed=10000000000
+```
+
+BigQuery limits:
+- BigQuery bills by the bytes a query scans. Table profiling (sample rows, value ranges, common values) scans the columns it profiles, so set `max_bytes_billed` on large datasets.
+- There are no transactions. A write preview, which depends on rolling a transaction back, fails on a BigQuery source instead of running the write.
+- Discovery covers the one dataset in the connection string.
+- Table row counts come from `INFORMATION_SCHEMA.TABLE_STORAGE`. Where the project does not let the account read that view, row counts are left out.
+- `graphjin serve --demo` does not connect to BigQuery: a `type: bigquery` source there runs on a local simulator.
+
+#### Redshift
+
+Redshift is not available in `graphjin serve` yet. The server has no Redshift driver: a
+`type: redshift` source stops at startup with `unsupported database type`, and one given a
+`postgres://` connection string is opened with the PostgreSQL driver rather than a Redshift
+one. Do not point a production config at a Redshift cluster.
+
+The Redshift dialect in the tree is experimental. It has been run only against the test
+simulator (`GRAPHJIN_REDSHIFT_MOCK=1 ./scripts/test-redshift.sh`), not against a live
+cluster. What follows describes that dialect, so it is a statement of intent rather than
+of something you can configure today.
+
+Surfaces the experimental dialect covers:
 - Queries and schema discovery.
 - Experimental single-table primary-key writes: insert, update, and delete.
 - Experimental batched polling subscriptions.

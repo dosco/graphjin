@@ -5,6 +5,7 @@ go 1.25.5
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.46.0
 	github.com/antlr4-go/antlr/v4 v4.13.1
+	github.com/dosco/graphjin/bigquerydriver v0.0.0
 	github.com/dosco/graphjin/cassandradriver v0.0.0
 	github.com/dosco/graphjin/clickhousedriver v0.0.0
 	github.com/dosco/graphjin/conf/v3 v3.21.20
@@ -31,6 +32,7 @@ require (
 )
 
 replace (
+	github.com/dosco/graphjin/bigquerydriver => ../bigquerydriver
 	github.com/dosco/graphjin/cassandradriver => ../cassandradriver
 	github.com/dosco/graphjin/clickhousedriver => ../clickhousedriver
 	github.com/dosco/graphjin/conf/v3 => ../conf
@@ -238,7 +240,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.1 // indirect
+	go.uber.org/zap v1.27.1
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect

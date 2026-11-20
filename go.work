@@ -3,6 +3,7 @@ go 1.25.5
 use (
 	./agent
 	./auth
+	./bigquerydriver
 	./cassandradriver
 	./clickhousedriver
 	./cmd

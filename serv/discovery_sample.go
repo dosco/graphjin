@@ -345,6 +345,10 @@ func quoteIdent(dbtype, ident string) string {
 	switch strings.ToLower(dbtype) {
 	case "mysql", "mariadb":
 		return "`" + strings.ReplaceAll(ident, "`", "``") + "`"
+	case "bigquery":
+		// GoogleSQL reads "name" as a string, so a double-quoted identifier
+		// selects a constant and a double-quoted table is a syntax error.
+		return "`" + strings.ReplaceAll(ident, "`", "\\`") + "`"
 	case "mssql":
 		return "[" + strings.ReplaceAll(ident, "]", "]]") + "]"
 	case "snowflake", "oracle":

@@ -95,7 +95,7 @@ Other clients: [MCP](https://graphjin.com/agentic/mcp/). Hosted servers with sig
 | Measure agents | [Benchmark](https://graphjin.com/benchmarks/deeporg/) · [Agent environment](https://graphjin.com/environment/) |
 
 Works with PostgreSQL, MySQL, SQLite, MongoDB, Oracle, SQL Server, Snowflake,
-Redshift, BigQuery, Cassandra, S3, GCS and local files.
+BigQuery, Cassandra, S3, GCS and local files.
 
 ## Community
 
