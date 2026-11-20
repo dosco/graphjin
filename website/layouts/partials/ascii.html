@@ -1,0 +1,21 @@
+{{- /*
+  One animated ASCII figure. `scene` names a scene in static/js/ascii.js.
+  `narrow` optionally names a second scene that replaces it on small screens,
+  for a figure too wide to shrink (the homepage hero). Each <pre> starts as the
+  scene's still frame from data/ascii.json, so the figure reads without
+  JavaScript.
+*/ -}}
+{{- $scene := .scene -}}
+{{- $size := index hugo.Data.ascii $scene -}}
+{{- $narrow := .narrow -}}
+{{- $data := .data -}}
+{{- .page.Store.Set "hasAscii" true -}}
+<figure class="ascii-figure" data-ascii-frame>
+  <div class="ascii-stage" role="img" aria-label="{{ .label }}">
+    <pre class="ascii{{ with $narrow }} ascii--wide{{ end }}" data-ascii="{{ $scene }}"{{ with $data }} data-ascii-data="{{ . }}"{{ end }} style="--ascii-cols: {{ $size.cols }}; --ascii-rows: {{ $size.rows }}" aria-hidden="true">{{ $size.still }}</pre>
+    {{- with $narrow }}{{ $small := index hugo.Data.ascii . }}
+    <pre class="ascii ascii--narrow" data-ascii="{{ . }}"{{ with $data }} data-ascii-data="{{ . }}"{{ end }} style="--ascii-cols: {{ $small.cols }}; --ascii-rows: {{ $small.rows }}" aria-hidden="true">{{ $small.still }}</pre>
+    {{- end }}
+  </div>
+  <figcaption><span>{{ .caption }}</span><button class="ascii-toggle" type="button" data-ascii-toggle aria-pressed="false" hidden>pause</button></figcaption>
+</figure>

@@ -2,4 +2,4 @@
 {{- if eq $href "docs/SOURCE-MODE-MIGRATION.md" -}}
   {{- $href = "https://github.com/dosco/graphjin/blob/master/docs/SOURCE-MODE-MIGRATION.md" -}}
 {{- end -}}
-<a href="{{ $href | safeURL }}"{{ with .Title }} title="{{ . }}"{{ end }}>{{ .Text | safeHTML }}</a>
+<a href="{{ $href | safeURL }}"{{ with .Title }} title="{{ . }}"{{ end }}>{{ .Text | safeHTML }}</a>{{- /* no trailing whitespace: a link can be followed by punctuation */ -}}

@@ -1,0 +1,15 @@
+<svg viewBox="0 0 860 300" role="img" aria-label="A question a person asked becomes a test whose answer key is the query that answered it; the test is asked again on any day to measure or train a model" xmlns="http://www.w3.org/2000/svg">
+  <defs><marker id="exp-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 10 5 0 10Z" fill="var(--accent-readable)"/></marker></defs>
+  <rect class="diag-bg" width="860" height="300" rx="16"/>
+  <rect class="diag-node" x="30" y="40" width="190" height="72" rx="10"/><text class="diag-text" x="125" y="72" text-anchor="middle">A person asks</text><text class="diag-sub" x="125" y="94" text-anchor="middle">in chat or a routine</text>
+  <rect class="diag-node" x="300" y="40" width="210" height="72" rx="10"/><text class="diag-text" x="405" y="72" text-anchor="middle">The agent answers</text><text class="diag-sub" x="405" y="94" text-anchor="middle">with one database query</text>
+  <rect class="diag-node-accent" x="590" y="40" width="240" height="72" rx="12"/><text class="diag-text" x="710" y="72" text-anchor="middle">It becomes a test</text><text class="diag-sub" x="710" y="94" text-anchor="middle">the query is the answer key</text>
+  <rect class="diag-node" x="300" y="188" width="210" height="72" rx="10"/><text class="diag-text" x="405" y="220" text-anchor="middle">Asked again</text><text class="diag-sub" x="405" y="242" text-anchor="middle">the key re-runs that day</text>
+  <rect class="diag-node" x="590" y="168" width="240" height="48" rx="10"/><text class="diag-text" x="710" y="198" text-anchor="middle">Measure a model</text>
+  <rect class="diag-node" x="590" y="232" width="240" height="48" rx="10"/><text class="diag-text" x="710" y="262" text-anchor="middle">Train a model</text>
+  <path class="diag-line" marker-end="url(#exp-arrow)" d="M220 76H298"/>
+  <path class="diag-line" marker-end="url(#exp-arrow)" d="M510 76H588"/>
+  <path class="diag-line" marker-end="url(#exp-arrow)" d="M710 112V150H405V186"/>
+  <path class="diag-line" marker-end="url(#exp-arrow)" d="M510 214H550V192H588"/>
+  <path class="diag-line" marker-end="url(#exp-arrow)" d="M550 214V256H588"/>
+</svg>

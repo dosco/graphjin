@@ -1,0 +1,29 @@
+{{ define "main" }}
+{{- $values := hugo.Data.values.values -}}
+{{- $self := .RelPermalink -}}
+{{- $at := -1 -}}
+{{- range $i, $v := $values }}{{ if eq $v.href $self }}{{ $at = $i }}{{ end }}{{ end -}}
+{{- $n := len $values -}}
+<article class="why-page">
+  <header class="why-hero">
+    <div class="why-hero-inner">
+      <div>
+        <p class="dx-kicker"><a href="{{ "/why/" | relURL }}">Why DeepORG</a><i></i>{{ if ge $at 0 }}<b>{{ (index $values $at).index }}</b>{{ end }}<span>{{ .Title }}</span></p>
+        <h1>{{ .Params.headline | default .Title }}</h1>
+        {{ with .Params.lede }}<p class="why-lede">{{ . | markdownify }}</p>{{ end }}
+        {{ with .Params.actions }}<div class="home-actions">{{ range $i, $a := . }}<a class="{{ if eq $i 0 }}button-primary{{ else }}button-secondary{{ end }}" href="{{ $a.href }}">{{ $a.label }}</a>{{ end }}</div>{{ end }}
+      </div>
+      {{ with .Params.scene }}{{ partial "ascii.html" (dict "page" $ "scene" . "label" $.Params.scene_label "caption" $.Params.scene_caption) }}{{ end }}
+    </div>
+  </header>
+  {{ .Content }}
+  {{ if ge $at 0 }}
+    {{- $prev := index $values (mod (add $at (sub $n 1)) $n) -}}
+    {{- $next := index $values (mod (add $at 1) $n) -}}
+    <nav class="why-pager" aria-label="More reasons">
+      <a href="{{ $prev.href | relURL }}"><span>{{ $prev.index }} / previous</span><strong>{{ $prev.title }}</strong></a>
+      <a href="{{ $next.href | relURL }}"><span>next / {{ $next.index }}</span><strong>{{ $next.title }}</strong></a>
+    </nav>
+  {{ end }}
+</article>
+{{ end }}

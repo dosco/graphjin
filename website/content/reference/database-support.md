@@ -19,6 +19,7 @@ weight: 10
 | Snowflake | Supported | Warehouse dialect surface |
 | Redshift | Supported | Analytics-oriented SQL |
 | ClickHouse | Configured source | Use with feature-specific validation |
+| Cassandra / Amazon Keyspaces | Supported | CQL dialect; Keyspaces connects through the same driver |
 | Filesystems | Supported | Local/S3/GCS virtual tables |
 | OpenAPI | Supported for selected GETs | Remote fields and joins |
 | CodeSQL | Supported | Source-code index tables |

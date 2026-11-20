@@ -1,3 +1,4 @@
 {{- $css := readFile "static/css/site.css" -}}
 {{- $js := readFile "static/js/site.js" -}}
-{{- substr (md5 (print $css $js)) 0 10 -}}
+{{- $ascii := readFile "static/js/ascii.js" -}}
+{{- substr (md5 (print $css $js $ascii)) 0 10 -}}

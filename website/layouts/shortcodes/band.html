@@ -1,0 +1,7 @@
+{{- /* Opens one band of a /why/ page: a heading column and a body column
+     (wide="true" stacks them for a figure that needs the full width).
+     Markdown follows at the top level and {{< endband >}} closes it, so code
+     fences and nested shortcodes inside a band render as they do anywhere. */ -}}
+<section class="why-band{{ if eq (.Get "wide") "true" }} why-band--wide{{ end }}"{{ with .Get "id" }} id="{{ . }}"{{ end }}>
+<div class="why-band-head">{{ with .Get "label" }}<p class="dx-kicker"><b>{{ . }}</b></p>{{ end }}{{ with .Get "title" }}<h2>{{ . | markdownify }}</h2>{{ end }}</div>
+<div class="why-band-body">

@@ -1,0 +1,13 @@
+{{- /* One figure from the best published DeepORG result, so prose that quotes
+     the board cannot drift from it: score | unsafe | models | model | tasks. */ -}}
+{{- $data := index (index hugo.Data "benchmarks") "deeporg" -}}
+{{- $best := partial "benchmark-best-results.html" (dict "data" $data) -}}
+{{- $what := .Get 0 -}}
+{{- with index $best 0 -}}
+  {{- if eq $what "score" -}}{{ printf "%.0f" (mul (float .recall) 100) }}
+  {{- else if eq $what "unsafe" -}}{{ int (.unsafe_effects | default 0) }}
+  {{- else if eq $what "model" -}}{{ .label }}
+  {{- else if eq $what "tasks" -}}{{ int .task_count }}
+  {{- else if eq $what "models" -}}{{ len $best }}
+  {{- end -}}
+{{- end -}}

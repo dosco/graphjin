@@ -1,0 +1,52 @@
+{
+  "org": {
+    "cols": 62,
+    "rows": 18,
+    "still": "                                                          ....\n  ask > Which account is most at risk of churn - and why?\n\n  postgres    o--- accounts + invoices ---+\n  snowflake   o--- product usage ---------+\n  mysql       o---------------------------+   +------------+\n  crm api     o--- opportunities ---------+-->|  DeepORG   |\n  ticket api  o---------------------------+   +-+----------+\n  files       o---------------------------+     | rules ok\n  code        o---------------------------+     | 3 queries\n            ....::::::::::::::::::::......      | evidence\n  -- answer ------------------------------------+-----------\n  Meridian Robotics - renewal in 9 days, usage down 38%, two\n  failed payments, and an unresolved escalation.\n\n\n  [ok] evidence checked / 3 systems / 3 operations\n                 ..::::::::::...                             ."
+  },
+  "orgwide": {
+    "cols": 124,
+    "rows": 16,
+    "still": "...                         ..                       ...::::--::::...                                       .........\n.                                                     ...:::::::...\nask > Which account is most at risk of churn - and why?\n\npostgres    o--- accounts + invoices ---------+                                           -- answer ------------------------\nsnowflake   o--- product usage ---------------+            +----------------+             Meridian Robotics - renewal in 9\nmysql       o---------------------------------+            |                |             days, usage down 38%, two failed\ncrm api     o--- opportunities ---------------+----------> |    DeepORG     | --------->  payments, and an unresolved\nticket api  o---------------------------------+            |                |             escalation.\nfiles       o---------------------------------+            +--+-------------+\ncode        o---------------------------------+               | rules ok                  [ok] evidence checked\n.                 ..::-==++++++++=--::..             ....     | 3 queries                      3 systems / 3 operations\n.                 ..::-==++++++++=-::..                ..     | evidence\n                   ..::-==+++++==-::..                   ...::::::::....                    ..........\n                   ...::--=====--::..                     ....::::::.....\n                    ...::::---::::..                        ....::::......"
+  },
+  "map": {
+    "cols": 62,
+    "rows": 14,
+    "still": "\n  a tool for each thing     |  a map of everything\n                            |\n  x list_invoices  stale    |  accounts ------ invoices\n  [get_ticket_by_id]        |     |   \\           |\n  [search_orders]           |     |    \\          |\n  x update_ticket  stale    |  tickets  usage  payments\n  [list_renewals]           |     |       |\n  [get_usage_by_day]        |  sla.md   crm api\n  [find_account]            |\n                            |  agent wrote:\n  to maintain: 8            |  accounts > invoices > payments\n  gone stale: 2             |  to maintain: 0\n"
+  },
+  "ledger": {
+    "cols": 56,
+    "rows": 14,
+    "still": "  run ledger            checked before an answer leaves\n  ----------------------------------------------------\n  claim    \"Hold roast batches 14 and 15.\"\n  queries  0 ran\n  rows     none\n  verdict  BLOCKED - nothing behind the claim\n\n  claim    \"Meridian Robotics is most at risk.\"\n  queries  3 ran\n  rows     accounts 1 / invoices 2 / tickets 1\n  verdict  ANSWERED - evidence attached\n  ----------------------------------------------------\n  only real tool results count\n"
+  },
+  "gate": {
+    "cols": 56,
+    "rows": 12,
+    "still": "  agent proposes  update 3 rows in support_tickets\n      |\n  [ rules   ] your role may change these rows     ok\n      |\n  [ dry run ] tried in a transaction, rolled back ok\n      |\n  [ held    ] you looked at what it would change  yes\n      |\n  [ run     ] that exact query, once, as you      done\n\n  nothing changed until you said yes\n"
+  },
+  "env": {
+    "cols": 58,
+    "rows": 15,
+    "still": "  episode 0412     world 1 of 2   marked by the database\n  ------------------------------------------------------\n\n  reset --> task --> agent works --> answer --> oracle\n    ^                                             |\n    +------------------ reward -------------------+\n\n  task    \"How many support tickets are open?\"\n  work    1 query, computed by the database\n  answer  \"There are 4 open support tickets.\"      = 4\n  oracle  a hidden read-only query, same world     = 4\n  reward  1.00  matches / method ok / nothing else moved\n\n  last episodes  + + - + - + + - + - + + - + - + + -\n"
+  },
+  "watch": {
+    "cols": 56,
+    "rows": 12,
+    "still": "  standing question  \"any shipment scans?\"\n  ----------------------------------------------------\n  00:14  poll  3 rows  quiet\n  01:14  poll  2 rows  quiet\n  02:14  poll  4 rows  quiet\n  03:14  poll  0 rows  still nothing\n  04:14  poll  0 rows  still nothing\n  05:14  poll  0 rows  still nothing\n  06:14  poll  0 rows  ! nothing in 4 hours\n\n  -> it tells you. nobody had to ask.\n  kept alive by database polls, not model calls"
+  },
+  "sources": {
+    "cols": 56,
+    "rows": 11,
+    "still": "\n  postgres      ---->------\\\n  snowflake     >------>----\\\n  mongodb       --->------>--\\\n  oracle        ------>------>+==> one map ==> one agent\n  openapi specs -->------>---/\n  s3 / gcs      ----->------/\n  sqlite        ->------>--/\n\n  a few lines of config for each, not a new set of tools\n"
+  },
+  "engine": {
+    "cols": 60,
+    "rows": 14,
+    "still": "  graphql in              |  one statement out\n                          |\n  query {                 |  SELECT json_agg(row) FROM (\n    customers(limit: 5) { |    SELECT c.full_name, p.items\n      full_name           |    FROM customers c\n      purchases {         |    LEFT JOIN LATERAL (\n        quantity          |      SELECT json_agg(...) items\n        product { price } |      FROM purchases p\n      }                   |      JOIN products pr ON ...\n    }                     |      WHERE p.customer_id = c.id\n  }                       |    ) p ON true LIMIT 5\n                          |  ) q;\n\n  1 statement / 0 resolvers / no N+1"
+  },
+  "how": {
+    "cols": 60,
+    "rows": 15,
+    "still": "\n  o  ask      \"who are our top customers by spend?\"\n  |\n  o  find     in the map: customers, purchases, products\n  |\n  o  write    query { customers(limit: 5) { ... } }\n  |\n  o  check    your access rules, before anything runs    ok\n  |\n  o  compile  one SQL statement, joins included\n  |\n  o  run      your database does the joins and sums\n  |\n  o  answer   5 rows, and what was run to get them\n"
+  }
+}

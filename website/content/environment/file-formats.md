@@ -57,6 +57,24 @@ part of its record.
 Authored tasks are injected as candidates and go through the identical
 verification bar as generated ones. They are not exempt.
 
+## eval/mined.yml
+
+Written by `eval mine`. Run with `eval run --suite eval/mined.yml`.
+
+Questions people asked the agent on a running server, each with the query that
+answered it as its oracle. The same task schema as `suite.yml`. A mined task's
+`provenance.source` is `mined-confirmed` (a person marked the answer right) or
+`mined-incumbent` (never rated), and its `provenance.source_id` is the run id
+and question index it came from. A literal date the question did not name
+becomes an oracle variable such as `{{today-30}}`. Reports score the two
+sources apart under `metrics.by_family`.
+
+`GET /api/v1/agent/experience` returns the same cases as JSON, with the tier,
+the value the oracle gave when mined, the turn they came from
+(`source.run_id`, `source.user_prompt`, `source.asked_at`), a `summary` of
+counts, and `drops`: each question that was not kept, with its reason. `eval
+mine --from` reads a saved copy. See [your own questions](/environment/your-own-work/).
+
 ## world-pack.json
 
 Written by `env new-world --describe`. Read by `env new-world --pack`.

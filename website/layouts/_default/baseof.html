@@ -33,6 +33,9 @@
     {{ $assetVersion := partialCached "asset-version.html" . | strings.TrimSpace }}
     <link rel="stylesheet" href="{{ "css/site.css" | relURL }}?v={{ $assetVersion }}">
     <script src="{{ "js/site.js" | relURL }}?v={{ $assetVersion }}" defer></script>
+    <link rel="icon" href="{{ "favicon.svg" | relURL }}?v={{ $assetVersion }}" type="image/svg+xml">
+    <link rel="icon" href="{{ "favicon.ico" | relURL }}?v={{ $assetVersion }}" sizes="16x16 32x32 48x48">
+    <link rel="apple-touch-icon" href="{{ "apple-touch-icon.png" | relURL }}?v={{ $assetVersion }}">
   </head>
   {{ $bodyClass := "site-body" }}
   {{ if .IsHome }}{{ $bodyClass = printf "%s is-home" $bodyClass }}{{ end }}
@@ -56,15 +59,15 @@
       <span data-pagefind-meta="source" data-pagefind-filter="source">{{ $source }}</span>
     </div>
 
+    {{- /* Four destinations for a visitor. The docs sections (Start, Core,
+           Integrations, Agentic, Configure, Reference) are one click further,
+           in the sidebar of every docs page. */ -}}
+    {{ $docsSections := slice "start" "story" "core" "integrations" "agentic" "configure" "reference" }}
     {{ $sectionLinks := slice
-      (dict "label" "Start" "href" "/start/install/" "active" (eq $section "start"))
-      (dict "label" "Core" "href" "/core/compiler/" "active" (eq $section "core"))
-      (dict "label" "Integrations" "href" "/integrations/multi-database/" "active" (eq $section "integrations"))
-      (dict "label" "Agentic" "href" "/agentic/mcp/" "active" (eq $section "agentic"))
+      (dict "label" "Why DeepORG" "href" "/why/" "active" (eq $section "why"))
+      (dict "label" "Benchmark" "href" "/benchmark/" "active" (in (slice "benchmark" "benchmarks") $section))
       (dict "label" "Environment" "href" "/environment/overview/" "active" (eq $section "environment"))
-      (dict "label" "Configure" "href" "/configure/sources-mode/" "active" (eq $section "configure"))
-      (dict "label" "Reference" "href" "/reference/database-support/" "active" (eq $section "reference"))
-      (dict "label" "Benchmarks" "href" "/benchmark/" "active" (eq $section "benchmarks"))
+      (dict "label" "Docs" "href" "/start/install/" "active" (in $docsSections $section))
     }}
 
     <header class="site-header" data-pagefind-ignore>
@@ -115,6 +118,11 @@
       <main id="main-content" class="content content-home" data-pagefind-body>
         {{ block "main" . }}{{ end }}
       </main>
+    {{ else if eq .Kind "404" }}
+      {{- /* No data-pagefind-body: the not-found page stays out of search. */ -}}
+      <main id="main-content" class="content content-landing">
+        {{ block "main" . }}{{ end }}
+      </main>
     {{ else if or .Params.benchmark_landing .Params.landing }}
       <main id="main-content" class="content content-landing{{ if .Params.benchmark_landing }} content-benchmark-landing{{ end }}" data-pagefind-body>
         {{ block "main" . }}{{ end }}
@@ -160,6 +168,23 @@
           </aside>
         {{ end }}
       </div>
+    {{ end }}
+    <footer class="site-footer" data-pagefind-ignore>
+      <div class="site-footer-inner">
+        <div class="site-footer-brand">
+          <a class="brand" href="{{ "/" | relURL }}" aria-label="DeepORG home"><span class="brand-name">DeepORG</span></a>
+          <p>One AI agent for your whole organization. Open source under Apache 2.0.</p>
+        </div>
+        <nav class="site-footer-links" aria-label="Footer">
+          {{ range $sectionLinks }}<a href="{{ .href | relURL }}">{{ .label }}</a>{{ end }}
+          <a href="{{ "/start/demos/" | relURL }}">Demos</a>
+          <a href="{{ site.Params.github }}" rel="external">GitHub</a>
+        </nav>
+        <p class="site-footer-note">DeepORG was formerly GraphJin. The command line tool, Go module, npm package and Docker images keep the <code>graphjin</code> name for now.</p>
+      </div>
+    </footer>
+    {{ if .Store.Get "hasAscii" }}
+      <script src="{{ "js/ascii.js" | relURL }}?v={{ $assetVersion }}"></script>
     {{ end }}
     {{ if .Store.Get "hasMermaid" }}
       <script type="module">

@@ -1,0 +1,95 @@
+<section class="home-section watch-automation-section">
+  <div class="home-section-heading">
+    <p class="home-section-label">Learning from real work</p>
+    <h1>Your company is the environment.</h1>
+    <p>Every question your people ask is answered by a database query. DeepORG keeps the question and the query, and turns them into a test it can run again: on a cheaper model, on a new prompt, on next month's data. The database marks every attempt.</p>
+  </div>
+  <div class="watch-scene">
+    <div class="ai-window watch-window">
+      <div class="window-chrome"><span></span><span></span><span></span><i aria-hidden="true">✣</i><strong>DeepORG · saas-ops demo</strong></div>
+      <div class="ai-conversation">
+        <p class="watch-unprompted">1 · someone asked</p>
+        <div class="chat-user">How many support tickets are open right now?</div>
+        <div class="assistant-row">
+          <div class="assistant-avatar" aria-hidden="true">✣</div>
+          <div class="chat-assistant">
+            <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>execute_graphql</span></div><code>query { support_tickets(where: { status: { eq: "open" } }) { count_id } }</code></div>
+            <p class="assistant-copy">There are 4 open support tickets right now.</p>
+          </div>
+        </div>
+        <p class="watch-unprompted">2 · it became a test</p>
+        <div class="assistant-row">
+          <div class="assistant-avatar" aria-hidden="true">✣</div>
+          <div class="chat-assistant">
+            <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>graphjin eval mine</span></div><code>prompt: How many support tickets are currently open right now?</code><code>answer key: the query above · tier: incumbent · value then: 4</code></div>
+          </div>
+        </div>
+        <p class="watch-unprompted">3 · it was asked again</p>
+        <div class="assistant-row">
+          <div class="assistant-avatar" aria-hidden="true">✣</div>
+          <div class="chat-assistant">
+            <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>graphjin eval run --suite eval/mined.yml</span></div><code>one ticket resolved since · answer key re-run: 3</code></div>
+            <p class="assistant-copy">There are 3 open support tickets.</p>
+            <p class="done-line"><span aria-hidden="true">✓</span><span class="done-text"> pass · marked by the database, not by a model</span></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="watch-answer-grid">
+    <article><span>How does it know the right answer?</span><strong>The answer key is a query, not a number</strong><p>It is re-run every time the test runs, so a test written in March still marks correctly in June. The ticket count above went from 4 to 3 and the test followed it.</p></article>
+    <article><span>What if the agent was wrong the first time?</span><strong>Agreement is not correctness</strong><p>A test nobody rated measures agreement with the agent that first answered. One a person marked right measures correctness. Reports score the two apart and never add them up. An answer marked wrong never becomes a test.</p></article>
+    <article><span>Where does my data go?</span><strong>Nowhere</strong><p>Tests are built inside your deployment. A test keeps the question, its query and the one value the query gave. No result rows are copied, the agent's answers stay on the server, each query re-runs as the person who asked it, and only an admin can read the tests.</p></article>
+  </div>
+</section>
+
+<section class="home-section">
+  <div class="home-section-heading">
+    <p class="home-section-label">What you do with it</p>
+    <h2>A benchmark nobody else has: yours.</h2>
+    <p>Public benchmarks tell you how a model does on someone else's schema. These tests are the questions your organization actually asks, answered from your data.</p>
+  </div>
+  <div class="home-card-grid">
+    <article class="home-card"><h3>Measure</h3><p>Is the cheaper model good enough here? Run the current one and a candidate over your own questions and compare them test by test, with confirmed and incumbent results kept apart.</p><code class="demo-cmd">graphjin eval run --suite eval/mined.yml</code></article>
+    <article class="home-card"><h3>Train</h3><p>The same tests run in the <a href="/environment/">agent environment</a>: as many attempts as you like, each marked by the database, exported as trajectories a training loop can use.</p><code class="demo-cmd">graphjin eval export &lt;run-id&gt;</code></article>
+    <article class="home-card"><h3>Trust</h3><p>Changes are checked too. A change the agent proposes is held for approval unless you let it act alone within limits, a routine's change must say what it should achieve, and DeepORG checks later whether it did.</p><code class="demo-cmd">GET /api/v1/agent/reliability</code></article>
+  </div>
+</section>
+
+<section class="home-section watch-automation-section">
+  <div class="home-section-heading">
+    <p class="home-section-label">What it costs</p>
+    <h2>Building the tests calls no model.</h2>
+    <p>Mining re-runs queries, which is database work. The engine's own parser decides which questions qualify and reads the answer out of the result the query returned. A model is called only when you run the tests.</p>
+  </div>
+  <figure class="diagram-wrap" aria-label="A question becomes a test whose answer key is the query that answered it">{{ readFile "static/svg/experience-loop.svg" | safeHTML }}</figure>
+</section>
+
+<section class="home-section watch-automation-section">
+  <div class="home-section-heading">
+    <p class="home-section-label">What is not a test yet</p>
+    <h2>Every question it skips is counted, with the reason.</h2>
+    <p>A question becomes a test when its answer is one figure or one top row that the database computed. In our demo run, ten turns asked the data agent 14 questions. Four became tests: one a person had marked right, three nobody had rated. All four passed on gpt-6-luna. The other ten, by reason:</p>
+  </div>
+  <div class="watch-capability-grid" aria-label="Why questions were not turned into tests">
+    <article><span>2</span><strong>Lists</strong><p>"Which accounts are on the enterprise plan?" has no single figure to check.</p></article>
+    <article><span>2</span><strong>Several figures</strong><p>An average and a count from one query: which one the question meant is not the engine's guess to make.</p></article>
+    <article><span>2</span><strong>Marked wrong</strong><p>A person said the answer was wrong. It goes to the corrections list instead, with the queries the agent ran.</p></article>
+    <article><span>2</span><strong>Not answered</strong><p>The agent stopped before it answered, so there is nothing to check against.</p></article>
+    <article><span>1</span><strong>No query</strong><p>The answer came without a query that returned data.</p></article>
+    <article><span>1</span><strong>Nested</strong><p>A count read through a relationship, not one row of one table.</p></article>
+  </div>
+</section>
+
+<section class="home-section watch-automation-section">
+  <div class="home-section-heading">
+    <p class="home-section-label">Try it</p>
+    <h2>Ask the demo a few questions, then mine them.</h2>
+    <p>Ask the agent a handful of questions in the console, mark one or two answers right, then turn them into tests and run them. The <a href="/environment/your-own-work/">guide</a> walks through it, including dates, ratings and what each skip reason means.</p>
+  </div>
+  <div class="home-card-grid">
+    <article class="home-card"><h3>Mine</h3><p>Reads the questions already asked on a running server. Admin only.</p><code class="demo-cmd">graphjin eval mine --demo --url http://localhost:8083 --token $ADMIN_TOKEN</code></article>
+    <article class="home-card"><h3>Run</h3><p>Runs the mined tests on the model the server is configured with.</p><code class="demo-cmd">graphjin eval run --demo --suite eval/mined.yml --yes</code></article>
+  </div>
+  <div class="home-actions"><a class="button-primary" href="/environment/your-own-work/">Read the guide</a><a class="button-secondary" href="/start/demos/">Run the demo</a><a class="button-secondary" href="/environment/">The agent environment</a></div>
+</section>

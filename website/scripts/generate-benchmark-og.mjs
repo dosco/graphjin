@@ -158,25 +158,25 @@ const card = `<!doctype html>
   @font-face { font-family: Inter; font-style: normal; font-weight: 600; src: url(data:font/woff2;base64,${semiboldFont}) format('woff2'); }
   * { box-sizing: border-box; }
   html, body { width: ${width}px; height: ${height}px; margin: 0; overflow: hidden; }
-  body { background: #f7f8fc; color: #0b0b0e; font-family: Inter, sans-serif; padding: 38px 44px 0; }
+  body { background: #eef3f2; color: #0a1a20; font-family: Inter, sans-serif; padding: 38px 44px 0; }
   header { display: flex; align-items: baseline; justify-content: space-between; }
   header h1 { margin: 0; font-size: 33px; font-weight: 600; line-height: 1; letter-spacing: -0.01em; }
-  header strong { color: #555963; font-size: 15px; font-weight: 600; }
-  .question { margin: 13px 0 0; color: #555963; font-size: 19px; line-height: 1.35; max-width: 1000px; }
+  header strong { color: #4b6067; font-size: 15px; font-weight: 600; }
+  .question { margin: 13px 0 0; color: #4b6067; font-size: 19px; line-height: 1.35; max-width: 1000px; }
   table { width: 100%; margin-top: 20px; border-collapse: collapse; table-layout: fixed; }
   th, td { text-align: left; vertical-align: middle; }
-  thead th { padding: 0 12px 12px 0; border-bottom: 1px solid #c9cedb; }
+  thead th { padding: 0 12px 12px 0; border-bottom: 1px solid #b9c8c6; }
   thead th strong { display: block; font-size: 17px; font-weight: 600; line-height: 1.2; }
-  thead th span { display: block; margin-top: 4px; color: #676b75; font-size: 12px; font-weight: 400; }
+  thead th span { display: block; margin-top: 4px; color: #5c7077; font-size: 12px; font-weight: 400; }
   .metric-name { width: 300px; padding-right: 20px; }
   tbody .metric-name strong { display: block; font-size: 17px; font-weight: 600; line-height: 1.2; }
-  tbody .metric-name span { display: block; margin-top: 3px; color: #676b75; font-size: 12px; font-weight: 400; }
-  tbody tr { border-bottom: 1px solid #e2e6ee; }
+  tbody .metric-name span { display: block; margin-top: 3px; color: #5c7077; font-size: 12px; font-weight: 400; }
+  tbody tr { border-bottom: 1px solid #d6e0de; }
   tbody th, tbody td { height: 71px; }
   tbody td { font-size: 26px; font-weight: 600; padding-right: 12px; }
-  tbody td.is-best { color: #2f6b1f; }
+  tbody td.is-best { color: #0b6b64; }
   .empty { margin-top: 120px; font-size: 26px; font-weight: 600; }
-  footer { position: absolute; left: 44px; right: 44px; bottom: 26px; display: flex; justify-content: space-between; color: #676b75; font-size: 13px; }
+  footer { position: absolute; left: 44px; right: 44px; bottom: 26px; display: flex; justify-content: space-between; color: #5c7077; font-size: 13px; }
 </style>
 </head>
 <body>

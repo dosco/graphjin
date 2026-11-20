@@ -16,6 +16,8 @@ const requiredRoutes = [
   'environment/quickstart/index.html',
   'environment/drive-modes/index.html',
   'environment/your-own-graph/index.html',
+  'environment/your-own-work/index.html',
+  'experience/index.html',
   'environment/worlds/index.html',
   'environment/training/index.html',
   'environment/cli-reference/index.html',
@@ -23,9 +25,19 @@ const requiredRoutes = [
   'environment/file-formats/index.html',
   'environment/reward/index.html',
   'index.html',
+  'why/index.html',
+  'why/complete-agent/index.html',
+  'why/no-hand-built-tools/index.html',
+  'why/answers-with-evidence/index.html',
+  'why/your-rules/index.html',
+  'why/training-environment/index.html',
+  'why/every-system/index.html',
+  'why/open-engine/index.html',
   'install.sh',
+  '404.html',
   'favicon.svg',
   'favicon.ico',
+  'apple-touch-icon.png',
   'og/graphjin-og.png',
   'og/deeporg-site-og.png',
   'og/deeporg-og.png',
@@ -73,24 +85,28 @@ const requiredRoutes = [
   'pagefind/pagefind-entry.json',
 ];
 
+// One anchor per homepage section or card, in page order, then the closing
+// ones. The three values that define DeepORG come first; four more are cards
+// in #reasons. The detail that used to live under #problem, #mcp,
+// #security-model, #codesql, #capabilities and #how moved to the /why/ pages
+// and is asserted there.
 const requiredAnchors = [
-  'problem',
-  'what',
-  'ai-queries',
+  'pillars',
   'agent',
-  'watch-automation',
+  'ai-queries',
   'proof',
   'benchmark',
-  'demos',
-  'databases',
-  'how',
-  'agentic',
-  'security-model',
-  'mcp',
-  'codesql',
-  'capabilities',
   'environment',
+  'watch-automation',
+  'reasons',
+  'no-tools',
+  'evidence',
+  'rules',
+  'systems',
+  'databases',
+  'engine',
   'quickstart',
+  'demos',
 ];
 
 const requiredContent = [
@@ -161,6 +177,14 @@ const requiredContent = [
   'environment/file-formats.md',
   'environment/reward.md',
   'environment/_index.md',
+  'why/_index.md',
+  'why/complete-agent.md',
+  'why/no-hand-built-tools.md',
+  'why/answers-with-evidence.md',
+  'why/your-rules.md',
+  'why/training-environment.md',
+  'why/every-system.md',
+  'why/open-engine.md',
 ];
 
 const failures = [];
@@ -179,6 +203,11 @@ const requiredRenderedContent = [
   ['environment/quickstart/index.html', 'is a startup error'],
   ['environment/drive-modes/index.html', 'never reaches the server'],
   ['environment/your-own-graph/index.html', 'No rows are read.'],
+  ['experience/index.html', 'Your company is the environment.'],
+  ['experience/index.html', 'The answer key is a query, not a number'],
+  ['experience/index.html', 'No result rows are copied'],
+  ['environment/your-own-work/index.html', 'The answer they were given must pass it.'],
+  ['index.html', 'Or your own questions, as the tests'],
   ['environment/worlds/index.html', 'stays relative to the'],
   ['environment/training/index.html', 'GRPO has no gradient to follow.'],
   ['environment/training/index.html', 'you get n identical answers'],
@@ -258,6 +287,43 @@ const requiredRenderedContent = [
   ['benchmark/index.html', 'The agent never holds the keys.'],
   ['benchmark/index.html', 'graphjin serve --demo'],
   ['benchmark/index.html', 'not a published test item'],
+  // The /why/ pages own the detail the homepage used to carry inline. Pin the
+  // claims that moved, so shortening the homepage cannot quietly lose them.
+  ['index.html', 'One AI agent for your whole organization.'],
+  ['index.html', 'Three things set it apart.'],
+  ['index.html', 'Four more reasons it holds up in a real company.'],
+  ['index.html', 'How a question becomes one database query.'],
+  ['index.html', 'formerly GraphJin'],
+  ['index.html', 'A change waits for your yes.'],
+  ['index.html', 'a searchable map of everything you connect'],
+  ['why/index.html', 'Nine reasons, one page each.'],
+  ['why/complete-agent/index.html', 'Use DeepORG as the agent.'],
+  ['why/complete-agent/index.html', 'needs_approval'],
+  ['why/complete-agent/index.html', 'Set it up by talking to it.'],
+  ['why/complete-agent/index.html', 'graphjin mcp --demo'],
+  ['why/complete-agent/index.html', 'no Docker, no config file'],
+  ['why/complete-agent/index.html', 'It tries the change before making it'],
+  ['why/complete-agent/index.html', 'It cannot touch your secrets'],
+  ['why/complete-agent/index.html', 'Only while you are building'],
+  ['why/complete-agent/index.html', 'tried it first'],
+  ['why/complete-agent/index.html', 'Run the 2-minute demo'],
+  ['why/no-hand-built-tools/index.html', 'The agent loop'],
+  ['why/no-hand-built-tools/index.html', 'Discover, check, validate, act.'],
+  ['why/no-hand-built-tools/index.html', 'One catalog of everything you connect.'],
+  ['why/answers-with-evidence/index.html', 'ungrounded_answer_fields'],
+  ['why/answers-with-evidence/index.html', 'The database computes.'],
+  ['why/your-rules/index.html', 'Applied to every query the agent writes.'],
+  ['why/your-rules/index.html', 'expected_hash'],
+  ['why/your-rules/index.html', 'Autonomy is a rule you write'],
+  ['why/your-rules/index.html', 'policy-before-action.graphql'],
+  ['why/training-environment/index.html', 'The database marks the answer.'],
+  ['why/training-environment/index.html', 'No rows are read.'],
+  ['why/training-environment/index.html', 'Mining spends no model tokens.'],
+  ['why/training-environment/index.html', 'GRPO has no gradient to follow'],
+  ['why/every-system/index.html', 'CodeSQL: query your code as well.'],
+  ['why/every-system/index.html', 'A bucket is a table.'],
+  ['why/open-engine/index.html', 'One compiler. Any system. Any client.'],
+  ['why/open-engine/index.html', 'DeepORG was formerly GraphJin.'],
 ];
 
 async function exists(file) {
@@ -386,7 +452,7 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   if (/(?:>|&gt;)\s*(All|Section)\s*(?:<|&lt;)/.test(header)) {
     failures.push('Header still exposes the old All/Section search labels');
   }
-  for (const required of ['Vision', 'The agent loop', 'Use DeepORG as the agent.', 'The ledger caught it', 'Your first answer is one command away.', 'geo filters', 'Expression aggregates', 'backed by evidence', 'as one graph', 'Run the 2-minute demo']) {
+  for (const required of ['Vision', 'The ledger caught it', 'Your first answer is one command away.', 'geo filters', 'Expression aggregates', 'backed by evidence', 'as one graph', 'Run it in two minutes.']) {
     if (!home.includes(required)) {
       failures.push(`Homepage missing required enriched copy: ${required}`);
     }
@@ -395,10 +461,7 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   // which is asserted separately below so the copy cannot be lost in the move.
   for (const required of [
     'Nothing happened. That was the problem.',
-    'No shipment scan in four hours',
-    'absence window elapsed',
-    '2 watches correlated',
-    'approval pending',
+    'It speaks up when the answer changes',
     'database polls, not model calls',
   ]) {
     if (!home.includes(required)) {
@@ -420,23 +483,17 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
       failures.push(`Homepage missing benchmark copy: ${required}`);
     }
   }
-  for (const required of [
-    'Set it up by talking to it.',
-    'graphjin mcp --demo',
-    'no Docker, no config file',
-    'It tries the change before making it',
-    'It cannot touch your secrets',
-    'Only while you are building',
-    'tried it first',
-  ]) {
+  // The full MCP setup story moved to /why/complete-agent/ (asserted above);
+  // the homepage keeps the one-line way in.
+  for (const required of ['graphjin mcp --demo', 'graphjin mcp add claude']) {
     if (!home.includes(required)) {
       failures.push(`Homepage missing MCP setup copy: ${required}`);
     }
   }
   for (const href of [
     '/watch/',
+    '/why/',
     '/agentic/mcp/',
-    '/configure/how-it-works/',
     '/benchmarks/deeporg/',
     '/benchmarks/deeporg/methodology/',
     '/benchmark/',
@@ -458,6 +515,128 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   }
 }
 
+// Every value in data/values.yaml has a section on the homepage that links to
+// its deeper page, a row on the /why/ index, and (for /why/ pages) a pager to
+// its neighbours. Read the list rather than restating it, so adding a value
+// without wiring it in fails here.
+{
+  const valuesYAML = await readFile(path.join(siteRoot, 'data', 'values.yaml'), 'utf8');
+  const valueHrefs = [...valuesYAML.matchAll(/^\s+href:\s*(\S+)\s*$/gm)].map((match) => match[1]);
+  if (valueHrefs.length < 3) {
+    failures.push('data/values.yaml lists fewer than three values; the check could not read it');
+  }
+  const linksTo = (html, href) => {
+    const escaped = href.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`href=(?:"${escaped}"|'${escaped}'|${escaped})(?=\\s|>)`).test(html);
+  };
+  const homePath = path.join(publicRoot, 'index.html');
+  const whyIndexPath = path.join(publicRoot, 'why', 'index.html');
+  const homeHTML = (await exists(homePath)) ? await readFile(homePath, 'utf8') : '';
+  const whyIndexHTML = (await exists(whyIndexPath)) ? await readFile(whyIndexPath, 'utf8') : '';
+  for (const href of valueHrefs) {
+    if (homeHTML && !linksTo(homeHTML, href)) {
+      failures.push(`Homepage has no link to the deeper page for ${href}`);
+    }
+    if (whyIndexHTML && !linksTo(whyIndexHTML, href)) {
+      failures.push(`/why/ index does not list ${href}`);
+    }
+    if (href.startsWith('/why/')) {
+      const page = path.join(publicRoot, href, 'index.html');
+      if (await exists(page)) {
+        const html = await readFile(page, 'utf8');
+        if (!/\bwhy-pager\b/.test(html)) failures.push(`${href} has no pager to the other values`);
+        if (!/<h1[\s>]/.test(html)) failures.push(`${href} does not lead with its own h1`);
+      } else {
+        failures.push(`data/values.yaml names ${href}, which was not built`);
+      }
+    }
+  }
+}
+
+// The homepage explains how DeepORG works without a second product name: that
+// section says "the engine", and the engine's own name stays on its page.
+// Every page carries the short nav, the footer and the DeepORG tab icon, and a
+// dead link lands on our own not-found page.
+{
+  const read = async (...parts) => {
+    const file = path.join(publicRoot, ...parts);
+    return (await exists(file)) ? readFile(file, 'utf8') : '';
+  };
+  const homeHTML = await read('index.html');
+  const engineStart = homeHTML.search(/id=["']?engine\b/);
+  const engineEnd = homeHTML.search(/id=["']?quickstart\b/);
+  const engine = engineStart >= 0 && engineEnd > engineStart ? homeHTML.slice(engineStart, engineEnd) : '';
+  if (!engine) {
+    failures.push('Homepage #engine section not found ahead of #quickstart');
+  } else {
+    if (/GraphJin/.test(engine)) failures.push('Homepage #engine section names GraphJin; it should say how DeepORG works');
+    for (const required of ['How a question becomes one database query.', 'compiles it into a single database query', 'open source under Apache 2.0']) {
+      if (!engine.includes(required)) failures.push(`Homepage #engine section missing: ${required}`);
+    }
+    if (!/data-ascii=["']?how\b/.test(engine)) failures.push('Homepage #engine section lost its step-by-step figure');
+  }
+
+  const navTargets = ['/why/', '/benchmark/', '/environment/overview/', '/start/install/'];
+  for (const page of [['index.html'], ['start', 'install', 'index.html'], ['why', 'complete-agent', 'index.html'], ['404.html']]) {
+    const html = await read(...page);
+    const name = page.join('/');
+    if (!html) {
+      failures.push(`${name} was not built`);
+      continue;
+    }
+    const nav = html.match(/<nav class=["']?section-nav[\s\S]*?<\/nav>/)?.[0] ?? '';
+    const navLinks = [...nav.matchAll(/href=["']?([^"'\s>]+)/g)].map((match) => match[1]);
+    if (navLinks.join(' ') !== navTargets.join(' ')) {
+      failures.push(`${name} top nav is ${navLinks.join(' ') || 'missing'}; expected ${navTargets.join(' ')}`);
+    }
+    const footer = html.match(/<footer class=["']?site-footer[\s\S]*?<\/footer>/)?.[0] ?? '';
+    if (!footer) failures.push(`${name} has no footer`);
+    else if (!footer.includes('formerly GraphJin') || !footer.includes('github.com/')) {
+      failures.push(`${name} footer lost the former name or the GitHub link`);
+    }
+    for (const icon of ['favicon.svg', 'favicon.ico', 'apple-touch-icon.png']) {
+      if (!new RegExp(`<link[^>]+href=["']?/${icon.replace('.', '\\.')}`).test(html)) failures.push(`${name} does not link ${icon}`);
+    }
+  }
+  const notFound = await read('404.html');
+  if (notFound && !/<h1[^>]*>That page is not here\./.test(notFound)) failures.push('404.html lost its heading');
+  if (notFound && /data-pagefind-body/.test(notFound)) failures.push('404.html is marked for the search index');
+  const icon = await readFile(path.join(siteRoot, 'static', 'favicon.svg'), 'utf8');
+  if (!icon.includes('DeepORG mark')) failures.push('static/favicon.svg is not the DeepORG mark');
+}
+
+// ASCII figures: each one on a built page must name a scene that exists, and
+// the still frame Hugo inlines must be what static/js/ascii.js draws today.
+// `npm run build` re-renders the stills; this catches a raw `hugo` run.
+{
+  await import(path.join(siteRoot, 'static', 'js', 'ascii.js'));
+  const { scenes, render } = globalThis.DeepOrgAscii;
+  const stills = JSON.parse(await readFile(path.join(siteRoot, 'data', 'ascii.json'), 'utf8'));
+  for (const [name, scene] of Object.entries(scenes)) {
+    const still = stills[name];
+    if (!still) {
+      failures.push(`ASCII scene ${name} has no still frame; run npm run ascii`);
+      continue;
+    }
+    if (still.still !== render(name).toText() || still.cols !== scene.cols || still.rows !== scene.rows) {
+      failures.push(`ASCII still for ${name} is stale; run npm run ascii`);
+    }
+    for (let t = 0; t < 30; t += 0.25) {
+      const frame = render(name, t).toText();
+      if (/[^\x20-\x7e\n]/.test(frame)) {
+        failures.push(`ASCII scene ${name} draws a non-ASCII character at t=${t}`);
+        break;
+      }
+    }
+  }
+  const asciiJS = await readFile(path.join(siteRoot, 'static', 'js', 'ascii.js'), 'utf8');
+  for (const required of ["'IntersectionObserver' in window", 'prefers-reduced-motion: no-preference', 'data-ascii-toggle']) {
+    if (!asciiJS.includes(required)) {
+      failures.push(`ASCII animation is missing a progressive enhancement guard: ${required}`);
+    }
+  }
+}
+
 // The /watch/ landing page now owns the full standing-questions story that the
 // homepage used to carry inline. Assert the copy and the deep links here so
 // moving it off the homepage cannot quietly lose it.
@@ -466,6 +645,11 @@ if (await exists(watchLandingPath)) {
   const watchLanding = await readFile(watchLandingPath, 'utf8');
   for (const required of [
     'Nothing happened. That was the problem.',
+    // The window story the homepage used to show in full.
+    'No shipment scan in four hours',
+    'absence window elapsed',
+    '2 watches correlated',
+    'approval pending',
     'Absence is a first-class event',
     'Noise drains before you see it',
     'Alerts fail open.',
@@ -488,6 +672,11 @@ if (await exists(watchLandingPath)) {
   }
   if (!/<h1[^>]*>Nothing happened\./.test(watchLanding)) {
     failures.push('Watch landing does not lead with its own h1');
+  }
+  // One product name on the pages that sell it. The engine's own name belongs
+  // to /why/open-engine/ and the docs.
+  if (/GraphJin/.test(watchLanding.replace(/<footer[\s\S]*?<\/footer>/, ''))) {
+    failures.push('Watch landing names GraphJin; the product there is DeepORG');
   }
 }
 
@@ -1025,31 +1214,30 @@ if (await exists(benchmarkDataPath)) {
       }
     }
 
-    const heroMarker = /<[^>]*data-benchmark-hero[^>]*>/.exec(home);
-    if (!heroMarker) {
-      failures.push('Homepage hero is missing the data-driven benchmark module');
+    // The hero quotes no benchmark counts (the board in #proof carries them and
+    // is checked above). Its figure is one wide scene with a stacked one for
+    // small screens; losing the second leaves a phone with an unreadable strip.
+    const heroEnd = home.search(/id=["']?pillars\b/);
+    const hero = heroEnd >= 0 ? home.slice(home.indexOf('dx-hero'), heroEnd) : '';
+    if (!hero) {
+      failures.push('Homepage hero not found ahead of #pillars');
     } else {
-      const heroTag = heroMarker[0];
-      const heroAttempts = bestRuns.reduce((total, run) => total + Number(run.episode_count ?? 0), 0);
-      const heroUnsafe = bestRuns.reduce((total, run) => total + Number(run.unsafe_effects ?? 0), 0);
-      const heroExpected = [
-        ['data-hero-models', bestRuns.length],
-        ['data-hero-attempts', heroAttempts],
-        ['data-hero-unsafe', heroUnsafe],
-        ['data-hero-published-runs', parsed.runs.length],
-      ];
-      for (const [field, value] of heroExpected) {
-        const rendered = Number(renderedDataAttribute(heroTag, field));
-        if (!Number.isFinite(rendered) || rendered !== value) {
-          failures.push(`Homepage hero ${field} does not match deeporg.yaml`);
+      for (const [scene, variant] of [['orgwide', 'ascii--wide'], ['org', 'ascii--narrow']]) {
+        const pre = new RegExp(`<pre[^>]*data-ascii=["']?${scene}["']?[\\s>][^>]*>|<pre[^>]*data-ascii=["']?${scene}["']?>`).exec(hero)?.[0] ?? '';
+        if (!pre.includes(variant)) {
+          failures.push(`Homepage hero is missing its ${variant.replace('ascii--', '')} figure (${scene})`);
         }
       }
-      if (heroUnsafe !== 0 && /\b0 unsafe effects\b/.test(home)) {
-        failures.push(`Homepage claims 0 unsafe effects but its displayed best results report ${heroUnsafe}`);
+      for (const cta of ['href=#quickstart', '/benchmark/']) {
+        if (!hero.replaceAll('"', '').includes(cta)) failures.push(`Homepage hero is missing its link to ${cta}`);
       }
-      if (/every (ranked )?model[^.]*small|frontier models have not|haven't (even )?run the big/i.test(home)) {
-        failures.push('Homepage still contains stale model-size claims');
-      }
+    }
+    const homeUnsafe = bestRuns.reduce((total, run) => total + Number(run.unsafe_effects ?? 0), 0);
+    if (homeUnsafe !== 0 && /\b0 unsafe effects\b/.test(home)) {
+      failures.push(`Homepage claims 0 unsafe effects but its displayed best results report ${homeUnsafe}`);
+    }
+    if (/every (ranked )?model[^.]*small|frontier models have not|haven't (even )?run the big/i.test(home)) {
+      failures.push('Homepage still contains stale model-size claims');
     }
 
     const storyMarker = renderedDataAttribute(benchmarkPage, 'data-current-recall');
@@ -1120,7 +1308,7 @@ if (await exists(path.join(publicRoot, 'agentic', 'evaluation', 'index.html'))) 
     path.join(publicRoot, 'agentic', 'evaluation', 'index.html'),
     'utf8'
   );
-  if (!evaluationGuide.includes('<h1>Evaluate the GraphJin Agent</h1>')) {
+  if (!evaluationGuide.includes('<h1>Evaluate the DeepORG Agent</h1>')) {
     failures.push('Agent evaluation guide lost its full page heading');
   }
   if (!evaluationGuide.includes('>Agent Evaluation</a>')) {
@@ -1228,6 +1416,15 @@ for (const file of htmlFiles) {
   const rel = path.relative(publicRoot, file);
   if (html.includes('GraphJin Agent Benchmark')) {
     failures.push(`${rel} contains the retired benchmark name`);
+  }
+  for (const match of html.matchAll(/\sdata-ascii=(?:"([^"]+)"|'([^']+)'|([^"' >]+))/g)) {
+    const scene = match[1] || match[2] || match[3];
+    if (!globalThis.DeepOrgAscii?.scenes[scene]) {
+      failures.push(`${rel} uses unknown ASCII scene ${scene}`);
+    }
+    if (!html.includes('/js/ascii.js?v=')) {
+      failures.push(`${rel} has an ASCII figure but does not load ascii.js`);
+    }
   }
   const isBenchmarkAlias = rel === 'benchmark/index.html' || rel.startsWith(`benchmark${path.sep}`) ||
     rel === path.join('benchmarks', 'organizational-agent', 'index.html') ||

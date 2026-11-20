@@ -1,5 +1,5 @@
 ---
-title: "Evaluate the GraphJin Agent"
+title: "Evaluate the DeepORG Agent"
 nav_title: "Agent Evaluation"
 description: "Build a verified suite from your catalog, catch wrong answers and unsafe methods, and gate agent changes against a trusted baseline."
 nav_group: "agentic"
@@ -292,6 +292,22 @@ graphjin eval rm <task-id> --demo
 GraphJin shows the task and asks for confirmation. Non-interactive use requires
 `--yes`. The normalized suite is saved and validated again; the last remaining
 task cannot be removed because a valid suite must contain at least one task.
+
+## Use the questions your people already asked
+
+`eval add` writes one question at a time. A running server already has many:
+every question people asked the agent, with the query that answered it.
+
+```bash
+graphjin eval mine --remote
+graphjin eval run --suite eval/mined.yml --yes
+```
+
+Each question whose answer was one figure the database computed becomes a
+test, with that query as its answer key. Tests a person marked right are
+reported apart from tests nobody rated. See
+[your own questions](/environment/your-own-work/) and
+[learning from real work](/experience/).
 
 ## Use the baseline as a release decision
 

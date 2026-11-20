@@ -82,6 +82,7 @@ worlds and generates them.
 | `rescore` | Recompute a completed run from stored episodes, with no provider traffic |
 | `export` | Export a run's episodes as CodeAct trajectories |
 | `author` | Author watch, confirmation, follow-up and scenario tasks with a capable model |
+| `mine` | Turn questions people asked the agent into tests, in `eval/mined.yml` ([guide](/environment/your-own-work/)) |
 | `publish` | Publish one shareable report to the benchmark website |
 
 Persistent flags: `--demo`, `--remote`, `--path`, `--yes`, `--json`, `--debug`,
@@ -91,6 +92,10 @@ Persistent flags: `--demo`, `--remote`, `--path`, `--yes`, `--json`, `--debug`,
 `export` adds `--stage` (default `executor`), `--reward-profile`,
 `--include-environment-steps`, `--split`, `--side`, `--allow-eval-side`, `--out`.
 `run`, `baseline` and `bench` share `--resume`, `--restart`, `--concurrency`.
+`run` adds `--suite` to run another suite file, such as `eval/mined.yml`; that
+run is compared with no baseline and promotes none.
+`mine` adds `--url` or `--from`, `--token`, `--header`, `--since`, `--origin`,
+`--max-runs`, `--verify-concurrency` and `--out`.
 
 ## Environment variables
 

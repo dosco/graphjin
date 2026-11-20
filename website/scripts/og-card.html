@@ -1,5 +1,6 @@
 <!doctype html>
-<!-- Source for static/og/deeporg-site-og.png (1200x630). Regenerate with:
+<!-- Source for static/og/deeporg-site-og.png (1200x630), the card a shared link
+     shows. It says what the homepage hero says. Regenerate with:
      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
        --screenshot="$PWD/static/og/deeporg-site-og.png" --window-size=1200,630 \
        --hide-scrollbars "file://$PWD/scripts/og-card.html" -->
@@ -10,66 +11,67 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 1200px; height: 630px; overflow: hidden; }
   body {
+    position: relative;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 64px 72px 56px;
-    background: linear-gradient(135deg, #312e81 0%, #1e1b4b 62%, #14122f 100%);
-    color: #fff;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    padding: 58px 72px 54px;
+    background:
+      radial-gradient(620px 420px at 86% 4%, rgba(111, 227, 209, 0.6), transparent 70%),
+      radial-gradient(560px 400px at 104% 96%, rgba(150, 164, 255, 0.42), transparent 70%),
+      radial-gradient(520px 340px at -4% 104%, rgba(222, 240, 150, 0.4), transparent 70%),
+      #eef3f2;
+    color: #0a1a20;
+    font-family: "Helvetica Neue", Helvetica, "Segoe UI", Inter, Roboto, Arial, sans-serif;
   }
   .brand {
     display: flex;
     align-items: center;
-    gap: 14px;
-    font-size: 30px;
-    font-weight: 800;
-    letter-spacing: -0.02em;
+    gap: 16px;
+    font-size: 31px;
+    font-weight: 700;
+    letter-spacing: -0.035em;
   }
   .brand .dot {
-    width: 14px;
-    height: 14px;
+    width: 17px;
+    height: 17px;
     border-radius: 50%;
-    background: #b6fc34;
-  }
-  .brand small {
-    color: rgba(255, 255, 255, 0.55);
-    font-size: 19px;
-    font-weight: 500;
-    letter-spacing: 0.04em;
+    background: radial-gradient(circle at 34% 30%, #fff 0, #6fe3d1 46%, #0b6b64 100%);
+    box-shadow: 0 0 0 7px rgba(111, 227, 209, 0.3);
   }
   h1 {
-    max-width: 30ch;
-    font-size: 64px;
-    line-height: 1.08;
-    letter-spacing: -0.035em;
-    font-weight: 800;
+    max-width: 17ch;
+    font-size: 84px;
+    font-weight: 500;
+    line-height: 0.98;
+    letter-spacing: -0.055em;
   }
-  h1 .accent { color: #b6fc34; }
   .sub {
-    margin-top: 26px;
-    color: rgba(255, 255, 255, 0.78);
+    margin-top: 24px;
+    color: #2c4148;
     font-size: 27px;
     line-height: 1.35;
-    max-width: 44ch;
   }
-  .foot {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    color: rgba(255, 255, 255, 0.6);
+  pre {
+    color: #4b6067;
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 20px;
+    font-size: 18.5px;
+    line-height: 1.38;
   }
-  .foot .site { color: #b6fc34; }
+  pre b { color: #0a1a20; font-weight: 400; }
+  pre i { color: #0b6b64; font-style: normal; }
 </style>
 </head>
 <body>
-  <div class="brand"><span class="dot"></span>DeepORG <small>built on GraphJin · Apache 2.0</small></div>
+  <div class="brand"><span class="dot"></span>DeepORG</div>
   <div>
-    <h1>Connect your AI agents to every database you run. <span class="accent">Get answers backed by evidence.</span></h1>
-    <p class="sub">One AI agent for your whole organization — databases, files, APIs, and source code. It plans; the database does the work, within your access rules.</p>
+    <h1>One AI agent for your whole organization.</h1>
+    <p class="sub">It answers questions and makes changes across your databases, APIs, files and code.</p>
   </div>
-  <div class="foot"><span class="site">graphjin.com</span><span>Single Go binary · 12+ engines · in production since 2019</span></div>
+<pre><i>ask &gt;</i> <b>Which account is most at risk of churn, and why?</b>
+
+<b>postgres </b>  <i>o--- accounts + invoices ---+</i>        <i>+-----------+</i>
+<b>snowflake</b>  <i>o--- product usage ---------+------&gt; |</i>  <b>DeepORG</b>  <i>| ---&gt;</i> <b>one answer, with its evidence</b>
+<b>crm api  </b>  <i>o--- opportunities ---------+</i>        <i>+-----------+</i></pre>
 </body>
 </html>

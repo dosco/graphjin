@@ -1,0 +1,50 @@
+# The reasons to choose DeepORG, in the order the homepage tells them, with the
+# three that define it first. Each has a section or a card on the homepage and
+# one deeper page. Read by the /why/ index, the pager on every /why/ page and
+# the site check, so they cannot drift.
+values:
+  - id: complete-agent
+    index: "01"
+    title: "A complete agent"
+    line: "Ask it, let it act, leave it watching. One agent across every system you connect, with nothing to assemble."
+    href: /why/complete-agent/
+  - id: benchmark
+    index: "02"
+    title: "Proven in public"
+    line: "Graded on a public benchmark of real organizational work. Every result is published, including the failures."
+    href: /benchmark/
+  - id: training-environment
+    index: "03"
+    title: "Your organization as a training environment"
+    line: "The same machinery turns your own systems into graded episodes, to measure an agent or to train one."
+    href: /why/training-environment/
+  - id: watch
+    index: "04"
+    title: "It speaks first"
+    line: "Leave a question running. It tells you when the answer changes, or when something expected never arrives."
+    href: /watch/
+  - id: no-hand-built-tools
+    index: "05"
+    title: "No hand-built tools"
+    line: "The agent reads a map of everything you connect and writes its own queries. Nobody maintains a tool for each question."
+    href: /why/no-hand-built-tools/
+  - id: answers-with-evidence
+    index: "06"
+    title: "Answers with the data behind them"
+    line: "An answer arrives with the rows it rests on and a record of what ran. A claim with nothing behind it is blocked."
+    href: /why/answers-with-evidence/
+  - id: your-rules
+    index: "07"
+    title: "Your rules, your approval"
+    line: "It sees and changes only what your access rules allow, and by default a change waits for your yes."
+    href: /why/your-rules/
+  - id: every-system
+    index: "08"
+    title: "Every system you run"
+    line: "Databases, warehouses, APIs, files and source code behind one agent. Adding one is a few lines of config."
+    href: /why/every-system/
+  - id: open-engine
+    index: "09"
+    title: "An open engine underneath"
+    line: "How a question becomes one database query, in an Apache 2.0 engine you can also use without the agent."
+    href: /why/open-engine/

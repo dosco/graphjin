@@ -33,8 +33,8 @@ Defaults are client `codex`, server `http://localhost:8080`, and project scope; 
 This path is HTTP-only and **requires GraphJin to already be running** — the command sends a real MCP `initialize` probe and stops if nothing answers. Start the server first:
 
 ```bash
-graphjin serve --demo     # terminal 1
-graphjin mcp add codex    # terminal 2
+graphjin serve --demo                           # terminal 1: the demo listens on 8083
+graphjin mcp add codex http://localhost:8083    # terminal 2
 ```
 
 For hosted GraphJin:

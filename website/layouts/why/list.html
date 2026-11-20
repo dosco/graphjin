@@ -1,0 +1,21 @@
+{{ define "main" }}
+<article class="why-page">
+  <header class="why-hero">
+    <div class="why-hero-inner">
+      <div>
+        <p class="dx-kicker"><b>Why DeepORG</b></p>
+        <h1>{{ .Params.headline | default .Title }}</h1>
+        {{ with .Params.lede }}<p class="why-lede">{{ . | markdownify }}</p>{{ end }}
+        {{ with .Params.actions }}<div class="home-actions">{{ range $i, $a := . }}<a class="{{ if eq $i 0 }}button-primary{{ else }}button-secondary{{ end }}" href="{{ $a.href }}">{{ $a.label }}</a>{{ end }}</div>{{ end }}
+      </div>
+      {{ with .Params.scene }}{{ partial "ascii.html" (dict "page" $ "scene" . "label" $.Params.scene_label "caption" $.Params.scene_caption) }}{{ end }}
+    </div>
+  </header>
+  <nav class="why-index" aria-label="Reasons to choose DeepORG">
+    {{ range hugo.Data.values.values }}
+      <a href="{{ .href | relURL }}"><span>{{ .index }}</span><strong>{{ .title }}</strong><p>{{ .line }}</p><em aria-hidden="true">-&gt;</em></a>
+    {{ end }}
+  </nav>
+  {{ .Content }}
+</article>
+{{ end }}
