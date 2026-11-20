@@ -635,6 +635,44 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   }
 }
 
+// The homepage's agent window answers a question about the default demo, so a
+// visitor who runs `graphjin serve --demo` can ask it and get the same figures.
+// Check the rows and the share it quotes against the demo's seed.
+{
+  const seed = await readFile(path.join(repoRoot, 'examples', 'saas-ops', 'seed', 'app.js'), 'utf8');
+  const accounts = [];
+  for (const match of seed.matchAll(/name:\s*"([^"]+)"/g)) {
+    const mrr = /mrr_cents:\s*(\d+)/.exec(seed.slice(match.index, match.index + 220));
+    if (mrr) accounts.push({ name: match[1], dollars: Number(mrr[1]) / 100 });
+  }
+  accounts.sort((a, b) => b.dollars - a.dollars);
+  const homeHTML = await readFile(path.join(publicRoot, 'index.html'), 'utf8');
+  const tableStart = homeHTML.indexOf('data-demo-accounts');
+  const table = tableStart >= 0 ? homeHTML.slice(tableStart, homeHTML.indexOf('assistant-summary', tableStart) + 400) : '';
+  const cell = '<(?:strong|span)>([^<]+)</(?:strong|span)>';
+  const rows = [...table.matchAll(new RegExp(`${cell}${cell}${cell}`, 'g'))]
+    .filter((match) => /^0\d$/.test(match[1]))
+    .map((match) => ({ name: match[2], dollars: Number(match[3].replace(/[$,]/g, '')) }));
+  if (accounts.length < 3) {
+    failures.push('Could not read the accounts in examples/saas-ops/seed/app.js');
+  } else if (rows.length !== 3) {
+    failures.push(`Homepage agent window should rank three demo accounts; found ${rows.length}`);
+  } else {
+    rows.forEach((row, index) => {
+      const expected = accounts[index];
+      if (row.name !== expected.name || row.dollars !== expected.dollars) {
+        failures.push(`Homepage agent window row ${index + 1} is ${row.name} $${row.dollars}; the demo seed says ${expected.name} $${expected.dollars}`);
+      }
+    });
+    const quoted = /bring in (\d+)% of monthly revenue/.exec(table)?.[1];
+    const total = accounts.reduce((sum, account) => sum + account.dollars, 0);
+    const share = Math.round((accounts.slice(0, 3).reduce((sum, account) => sum + account.dollars, 0) / total) * 100);
+    if (Number(quoted) !== share) {
+      failures.push(`Homepage agent window says the top three bring in ${quoted}% of revenue; the demo seed says ${share}%`);
+    }
+  }
+}
+
 // Provider marks are inlined into the homepage as raw HTML, so each file may
 // hold nothing but one <svg> of <path> elements, and the provider line must
 // show a mark for every provider that has one.

@@ -5773,6 +5773,91 @@ h3 {
   gap: 1.75rem clamp(1.5rem, 3vw, 2.75rem);
 }
 
+/* --- homepage: the agent window, kept to the answer ----------------------- */
+
+/* What the agent did, as one line; the calls themselves are one click away. */
+.tool-trail {
+  margin: 0 0 1.2rem;
+}
+
+.tool-trail > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.8rem;
+  color: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  list-style: none;
+  text-transform: uppercase;
+}
+
+.tool-trail > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-trail > summary span:not(:last-child)::after {
+  content: "/";
+  margin-left: 0.8rem;
+  opacity: 0.5;
+}
+
+.tool-trail > summary::after {
+  content: "+";
+  margin-left: auto;
+  color: #fff;
+}
+
+.tool-trail[open] > summary::after {
+  content: "-";
+}
+
+.tool-trail[open] > summary {
+  margin-bottom: 0.85rem;
+}
+
+.tool-trail .tool-call code {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.tool-trail-note {
+  margin: 0.75rem 0 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.88rem;
+}
+
+.result-table--compact {
+  overflow: visible;
+  margin-top: 0;
+}
+
+.result-table--compact [role="row"] {
+  grid-template-columns: 3.2rem minmax(0, 1fr) auto;
+  min-width: 0;
+}
+
+/* Let a long name wrap instead of cutting it; the figure stays on one line. */
+.result-table--compact [role="row"] > * {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.result-table--compact [role="row"] > :last-child {
+  padding-right: 0;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.result-table--compact [role="row"]:first-child > :last-child {
+  color: inherit;
+  font-family: inherit;
+}
+
 /* --- homepage: the benchmark at a glance ---------------------------------- */
 
 .dx-proof {
