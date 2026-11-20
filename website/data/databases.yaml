@@ -1,36 +1,54 @@
+# The systems shown on the homepage and on /why/every-system/.
+#
+# A database entry names the server database `type` that opens it, and
+# `npm run check` fails unless serv/db.go has a driver case for that type. An
+# entry that is not a database names its `source` kind instead. Add a database
+# here only once `graphjin serve` can connect to it.
 - name: PostgreSQL
   logo: postgresql.svg
+  type: postgres
 - name: MySQL
   logo: mysql.svg
+  type: mysql
 - name: MariaDB
   logo: mariadb.svg
+  type: mariadb
 - name: MongoDB
   logo: mongodb.svg
+  type: mongodb
 - name: SQLite
   logo: sqlite.svg
+  type: sqlite
 - name: SQL Server
   logo: mssql.svg
+  type: mssql
 - name: Oracle
   logo: oracle.svg
+  type: oracle
 - name: CockroachDB
   logo: cockroachdb.svg
+  type: postgres
 - name: YugabyteDB
   logo: yugabytedb.svg
+  type: postgres
 - name: Snowflake
   logo: snowflake.svg
-- name: Redshift
-  logo: redshift.svg
-- name: BigQuery
-  label: BQ
+  type: snowflake
 - name: Cassandra / Keyspaces
   label: C*
+  type: cassandra
 - name: AWS Aurora
   logo: aws-aurora.svg
+  type: postgres
 - name: Cloud SQL
   logo: google-cloud-sql.svg
+  type: postgres
 - name: HTTP APIs
   label: API
+  source: openapi
 - name: S3 / GCS / Files
   label: OBJ
+  source: filesystem
 - name: Code
   label: "{ }"
+  source: code

@@ -17,12 +17,13 @@ weight: 10
 | Oracle | Supported | Boolean/function return types need care |
 | MongoDB | Supported | JSON DSL to aggregation pipeline |
 | Snowflake | Supported | Warehouse dialect surface |
-| Redshift | Supported | Analytics-oriented SQL |
 | ClickHouse | Configured source | Use with feature-specific validation |
 | Cassandra / Amazon Keyspaces | Supported | CQL dialect; Keyspaces connects through the same driver |
 | Filesystems | Supported | Local/S3/GCS virtual tables |
 | OpenAPI | Supported for selected GETs | Remote fields and joins |
 | CodeSQL | Supported | Source-code index tables |
+
+Redshift and BigQuery are not available in `graphjin serve` yet. Both have experimental dialects in the tree, but the server has no driver for either. BigQuery appears in the [demos](/start/demos/) as a simulator.
 
 ## Dialect rule
 

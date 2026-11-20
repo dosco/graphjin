@@ -1,0 +1,36 @@
+# Who serves the models on the homepage board. `ids` are the `provider` values
+# in the benchmark data. `mark` is a file in static/logos/, drawn in one colour
+# so it takes the text colour in both themes; the page inlines it, so it holds
+# nothing but an <svg> of <path> elements (npm run check enforces that).
+# `wordmark: true` means the mark already spells the name, so the name is read
+# out but not printed beside it. `height` is the mark's height in rem: the marks
+# differ in how much of their box the letters fill.
+#
+# Sources, 2026-11-19: Google and DeepSeek from Simple Icons 16.38.0; OpenAI,
+# Cerebras and Together AI from the logo on each company's own site. They are
+# their owners' trademarks, shown to say whose models were tested.
+- ids: [gemini, google-gemini]
+  name: Google
+  mark: provider-google.svg
+  height: 1.3
+- ids: [openai]
+  name: OpenAI
+  mark: provider-openai.svg
+  wordmark: true
+  height: 1.05
+- ids: [deepseek]
+  name: DeepSeek
+  mark: provider-deepseek.svg
+  height: 1.5
+- ids: [together]
+  name: Together AI
+  mark: provider-together.svg
+  wordmark: true
+  height: 1.35
+- ids: [cerebras]
+  name: Cerebras
+  mark: provider-cerebras.svg
+  wordmark: true
+  height: 2.2
+- ids: [anthropic]
+  name: Anthropic

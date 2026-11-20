@@ -287,6 +287,9 @@ const requiredRenderedContent = [
   ['benchmark/index.html', 'The agent never holds the keys.'],
   ['benchmark/index.html', 'graphjin serve --demo'],
   ['benchmark/index.html', 'not a published test item'],
+  // What a pass requires; the homepage no longer spells out the four parts.
+  ['benchmark/index.html', 'Correct answer'],
+  ['benchmark/index.html', 'Expected behavior'],
   // The /why/ pages own the detail the homepage used to carry inline. Pin the
   // claims that moved, so shortening the homepage cannot quietly lose them.
   ['index.html', 'One AI agent for your whole organization.'],
@@ -468,15 +471,15 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
       failures.push(`Homepage missing watch automation copy: ${required}`);
     }
   }
+  // The homepage shows the benchmark at a glance: the top score, what it costs,
+  // the board and who served the models. What a pass means is on /benchmark/.
   for (const required of [
-    'The DeepORG benchmark',
-    'Can an AI agent actually do what your organization needs?',
-    'Ours can — and we publish the proof.',
-    'We publish the exam. Every result, including the failures.',
-    "Best published score for every model we've tested.",
-    'Right way of getting it',
+    'the DeepORG benchmark',
+    'out of 100',
+    'You do not need the biggest model, because DeepORG does the hard part.',
+    'including the ones that did badly',
+    'Tested with models served by',
     'Try it in 2 minutes',
-    'Boot the exact demo it was graded on',
     'See the full exam',
   ]) {
     if (!home.includes(required)) {
@@ -603,6 +606,62 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   if (notFound && /data-pagefind-body/.test(notFound)) failures.push('404.html is marked for the search index');
   const icon = await readFile(path.join(siteRoot, 'static', 'favicon.svg'), 'utf8');
   if (!icon.includes('DeepORG mark')) failures.push('static/favicon.svg is not the DeepORG mark');
+}
+
+// The logo strip may only show a database the server can open. Each database
+// entry in data/databases.yaml names its server `type`; that type must have a
+// driver case in serv/db.go. (Redshift and BigQuery were listed for months
+// while `graphjin serve` rejected both as an unsupported database type.)
+{
+  const strip = await readFile(path.join(siteRoot, 'data', 'databases.yaml'), 'utf8');
+  const driverSource = await readFile(path.join(repoRoot, 'serv', 'db.go'), 'utf8');
+  const driverTypes = new Set(
+    [...driverSource.matchAll(/^\s*case\s+(.+):\s*$/gm)].flatMap((match) =>
+      [...match[1].matchAll(/"([a-z0-9_]+)"/g)].map((quoted) => quoted[1])
+    )
+  );
+  const entries = strip.split(/^- /m).slice(1);
+  if (driverTypes.size < 5) failures.push('Could not read the driver switch in serv/db.go');
+  if (entries.length < 5) failures.push('Could not read data/databases.yaml');
+  for (const entry of entries) {
+    const name = entry.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? '(unnamed)';
+    const type = entry.match(/^\s+type:\s*(\S+)\s*$/m)?.[1];
+    const source = entry.match(/^\s+source:\s*(\S+)\s*$/m)?.[1];
+    if (!type && !source) {
+      failures.push(`data/databases.yaml: ${name} names neither a server database type nor a source kind`);
+    } else if (type && !driverTypes.has(type)) {
+      failures.push(`data/databases.yaml lists ${name} (type ${type}), but serv/db.go has no driver case for it`);
+    }
+  }
+}
+
+// Provider marks are inlined into the homepage as raw HTML, so each file may
+// hold nothing but one <svg> of <path> elements, and the provider line must
+// show a mark for every provider that has one.
+{
+  const providers = await readFile(path.join(siteRoot, 'data', 'providers.yaml'), 'utf8');
+  const marks = [...providers.matchAll(/^\s+mark:\s*(\S+)\s*$/gm)].map((match) => match[1]);
+  if (marks.length === 0) failures.push('data/providers.yaml names no provider marks');
+  for (const mark of marks) {
+    const file = path.join(siteRoot, 'static', 'logos', mark);
+    if (!(await exists(file))) {
+      failures.push(`data/providers.yaml names ${mark}, which is not in static/logos/`);
+      continue;
+    }
+    const svg = (await readFile(file, 'utf8')).trim();
+    if (!/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="[0-9. ]+" fill="currentColor" aria-hidden="true" focusable="false">(<path [^<>]*\/>)+<\/svg>$/.test(svg) ||
+        /\b(on[a-z]+|href|style)=/i.test(svg)) {
+      failures.push(`static/logos/${mark} must be a single-colour <svg> of <path> elements and nothing else`);
+    }
+  }
+  const homeHTML = await readFile(path.join(publicRoot, 'index.html'), 'utf8');
+  const line = homeHTML.match(/<p class=["']?dx-board-providers[\s\S]*?<\/p>/)?.[0] ?? '';
+  const shownProviders = (line.match(/class=["']?dx-provider\b/g) || []).length;
+  const shownMarks = (line.match(/<svg\b/g) || []).length;
+  if (shownProviders === 0) failures.push('Homepage provider line shows no providers');
+  else if (shownMarks !== shownProviders) {
+    failures.push(`Homepage provider line shows ${shownMarks} marks for ${shownProviders} providers`);
+  }
 }
 
 // ASCII figures: each one on a built page must name a scene that exists, and
@@ -1180,6 +1239,37 @@ if (await exists(benchmarkDataPath)) {
     }
     if (/\bcohort\b/i.test(home)) {
       failures.push('Homepage exposes internal cohort jargon');
+    }
+    // The headline is the top run's own score and cost, and it calls that
+    // model small and fast. Check all three against the data, so the claim
+    // cannot outlive the result it was written about.
+    const proofStart = home.search(/<section[^>]*id=["']?proof\b/);
+    const proof = proofStart >= 0 ? home.slice(proofStart, home.indexOf('</section>', proofStart)) : '';
+    if (!proof) {
+      failures.push('Homepage #proof section not found');
+    } else {
+      if (renderedDataAttribute(proof, 'data-proof-run') !== String(topBest.run_id)) {
+        failures.push('Homepage benchmark headline is not built from the highest trusted result');
+      }
+      const text = proof.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+      const headline = /(\d+) out of 100(?: , for (\S+) a task)?/.exec(text.replace(/,\s+/g, ' , '));
+      const firstRow = /<div class=["']?home-benchmark-row[\s\S]*?<\/div>/.exec(proof)?.[0] ?? '';
+      const rowScore = /<strong>(\d+)<\/strong>/.exec(firstRow)?.[1];
+      const rowCost = /home-benchmark-row-cost["']?>([^<]*)</.exec(firstRow)?.[1]?.trim();
+      if (!headline || headline[1] !== rowScore) {
+        failures.push(`Homepage benchmark headline score does not match the top row (${rowScore})`);
+      } else if (headline[2] && headline[2] !== rowCost) {
+        failures.push(`Homepage benchmark headline cost ${headline[2]} does not match the top row (${rowCost})`);
+      }
+      // Whole words only: "gemini" contains "mini".
+      const smallName = /(^|[^a-z])(flash|lite|mini|nano|haiku|small)([^a-z]|$)/i;
+      if (/small, fast model/.test(text) && !smallName.test(`${topBest.model} ${topBest.label}`)) {
+        failures.push(`Homepage calls the top model small and fast, but the top result is ${topBest.label}`);
+      }
+      const shown = (proof.split(/<details/)[0].match(/data-benchmark-chart-run=/g) || []).length;
+      if (shown !== Math.min(5, bestRuns.length)) {
+        failures.push(`Homepage benchmark shows ${shown} models before the fold of the board; expected ${Math.min(5, bestRuns.length)}`);
+      }
     }
     for (const run of bestRuns) {
       const escapedRunID = String(run.run_id).replaceAll(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');

@@ -1,42 +1,77 @@
+{{- /* The homepage's benchmark section, for someone who has never seen the
+       board: the top score and what it costs, the first few models, and the
+       rest one click away. Every number is read from the published runs. */ -}}
 {{- $key := .Get "benchmark" | default "deeporg" -}}
 {{- $data := index (index hugo.Data "benchmarks") $key -}}
 {{- $bestRuns := partial "benchmark-best-results.html" (dict "data" $data) -}}
-<section id="proof" class="home-section home-benchmark-section dx-proof" aria-labelledby="home-benchmark-title">
-  <div class="home-section-heading">
-    <p class="dx-kicker"><b>02</b><i></i><span>Proven in public</span><i></i><span>The DeepORG benchmark</span></p>
-    <h2 id="home-benchmark-title">Can an AI agent actually do what your organization needs? <span class="dx-answer">Ours can — and we publish the proof.</span></h2>
-    <p>DeepORG, the Organizational Agent Benchmark, grades models on live organizational work: questions to answer, changes to make, alerts to raise and requests to refuse. A result counts only when the answer, the way it was produced, the expected behavior, and safety all pass together. We publish the exam. Every result, including the failures.</p>
+{{- $shown := 5 -}}
+{{- $attempts := 0 -}}
+{{- $unsafe := 0 -}}
+{{- $served := slice -}}
+{{- $servedNames := slice -}}
+{{- $compatible := false -}}
+{{- $top := false -}}
+{{- range first 1 $bestRuns -}}{{- $top = . -}}{{- end -}}
+{{- range $bestRuns -}}
+  {{- $attempts = add $attempts (int (.episode_count | default 0)) -}}
+  {{- $unsafe = add $unsafe (int (.unsafe_effects | default 0)) -}}
+  {{- if eq (string .provider) "openai-compatible" -}}{{- $compatible = true -}}{{- end -}}
+  {{- $provider := string .provider -}}
+  {{- range hugo.Data.providers -}}
+    {{- if and (in .ids $provider) (not (in $servedNames .name)) -}}
+      {{- $servedNames = $servedNames | append .name -}}
+      {{- $served = $served | append . -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+<section id="proof" class="dx-proof" aria-labelledby="home-benchmark-title"{{ with $top }} data-proof-run="{{ .run_id }}"{{ end }}>
+  <div class="dx-pillars-head">
+    <div>
+      <p class="dx-kicker"><b>02</b><i></i><span>Proven in public</span></p>
+      {{- with $top }}
+      {{- $cents := partial "benchmark-cents.html" (partial "benchmark-pass-cost.html" .) }}
+      <h2 id="home-benchmark-title">{{ printf "%.0f" (mul (float .recall) 100) }} out of 100{{ with $cents }}, <span class="dx-answer">for {{ . }} a task.</span>{{ else }}.{{ end }}</h2>
+      {{- else }}
+      <h2 id="home-benchmark-title">Graded in public.</h2>
+      {{- end }}
+    </div>
+    {{- with $top }}
+    <p>That is a small, fast model on the DeepORG benchmark, a public test of {{ int .task_count }} real company tasks: questions to answer, changes to make, requests to refuse. You do not need the biggest model, because DeepORG does the hard part.</p>
+    {{- else }}
+    <p>The DeepORG benchmark is a public test of real company tasks: questions to answer, changes to make, requests to refuse.</p>
+    {{- end }}
   </div>
   <div id="benchmark" class="home-benchmark" data-benchmark-proof data-benchmark-selection="best-trusted">
     {{ if eq (len $bestRuns) 0 }}
       <div class="benchmark-empty" data-benchmark-empty><strong>No public run yet.</strong><span>The first completed run will appear here.</span></div>
     {{ else }}
-      <div class="home-benchmark-board" role="list" aria-label="Best trusted DeepORG result for every tested model">
-        {{ range $bestRuns }}
-          {{- $reliable := mul (float .task_count) (float .recall) -}}
-          {{- $cost := 0.0 -}}
-          {{- if gt $reliable 0 -}}{{- $cost = div (float (.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}
-          <div class="home-benchmark-row" role="listitem" data-benchmark-chart-run="{{ .run_id }}" data-recall="{{ printf "%.17g" (float .recall) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $cost }}" data-latency-p50-ms="{{ printf "%.17g" (float (.latency_p50_ms | default 0)) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}" data-task-count="{{ int .task_count }}" data-repeats="{{ int .repeats }}">
-            <a class="home-benchmark-row-label" href="{{ printf "/benchmarks/deeporg/runs/%s/" .slug | relURL }}">{{ .label }}</a>
-            <span class="home-benchmark-row-bar" aria-hidden="true"><i style="width: {{ printf "%.1f" (mul (float .recall) 100) }}%"></i></span>
-            <span class="home-benchmark-row-score"><strong>{{ printf "%.0f" (mul (float .recall) 100) }}</strong><small>/100</small></span>
-            <span class="home-benchmark-row-safety">Best published · {{ time.Format "Jan 2, 2006" .generated_at }} · {{ int (.unsafe_effects | default 0) }} unsafe</span>
-          </div>
-        {{ end }}
+      <div class="dx-board-head" aria-hidden="true"><span>Model</span><span></span><span>Score</span><span>Cost per pass</span></div>
+      <div class="home-benchmark-board" role="list" aria-label="The {{ len (first $shown $bestRuns) }} highest scoring models">
+        {{ range first $shown $bestRuns }}{{ partial "benchmark-home-row.html" . }}{{ end }}
       </div>
-      <p class="home-benchmark-kicker">Best published score for every model we've tested. Older results stay until that model posts a better trustworthy score.</p>
-      <div class="home-benchmark-meaning">
-        <div><span>1</span><strong>Correct answer</strong></div>
-        <div><span>2</span><strong>Right way of getting it</strong></div>
-        <div><span>3</span><strong>Expected behavior</strong></div>
-        <div><span>4</span><strong>No unsafe effects</strong></div>
-      </div>
+      {{ with after $shown $bestRuns }}
+      <details class="dx-board-more">
+        <summary>Show the other {{ len . }} models</summary>
+        <div class="home-benchmark-board" role="list" aria-label="The other models tested">
+          {{ range . }}{{ partial "benchmark-home-row.html" . }}{{ end }}
+        </div>
+      </details>
+      {{ end }}
+      <p class="dx-board-note">The best published result for each of the {{ len $bestRuns }} models we have tested, including the ones that did badly. {{ if eq $unsafe 0 }}No model took an unsafe action in {{ lang.FormatNumberCustom 0 $attempts }} graded attempts.{{ else }}{{ $unsafe }} unsafe actions in {{ lang.FormatNumberCustom 0 $attempts }} graded attempts.{{ end }} Cost is the provider's list price for each task passed.</p>
+      {{ with $served }}
+      <p class="dx-board-providers"><span>Tested with models served by</span>
+        {{- range . }}
+        <span class="dx-provider"{{ with .height }} style="--mark-h: {{ . }}rem"{{ end }}>
+          {{- with .mark }}{{ readFile (printf "static/logos/%s" .) | safeHTML }}{{ end -}}
+          {{- if and .wordmark .mark }}<span class="sr-only">{{ .name }}</span>{{ else }}<b>{{ .name }}</b>{{ end -}}
+        </span>
+        {{- end }}
+        {{- if $compatible }}<span>and an OpenAI-compatible endpoint</span>{{ end }}</p>
+      {{ end }}
     {{ end }}
   </div>
-  <div class="home-actions">
-    <a class="button-primary" href="#quickstart">Boot the exact demo it was graded on</a>
-    <a class="button-secondary" href="/benchmark/">See the full exam <i class="ti ti-arrow-right" aria-hidden="true"></i></a>
-    <a class="benchmark-text-link" href="/benchmarks/deeporg/methodology/">Technical methodology <i class="ti ti-arrow-right" aria-hidden="true"></i></a>
+  <div class="dx-links">
+    <a class="dx-more" href="{{ "/benchmark/" | relURL }}">See the full exam</a>
+    <a href="{{ "/benchmarks/deeporg/" | relURL }}">Every run and its report</a>
   </div>
-  <p class="home-benchmark-loop"><code>graphjin serve --demo</code> starts the same pinned dataset the exam runs against — ask it the same questions yourself.</p>
 </section>

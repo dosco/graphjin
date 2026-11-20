@@ -25,7 +25,7 @@ Who is at renewal risk is partly in the accounts table, partly in product usage 
 
 {{< band id="databases" label="Databases and warehouses" title="Name it, and it is on the map." >}}
 
-DeepORG works with PostgreSQL, MySQL, SQLite, MongoDB, Oracle, SQL Server, Snowflake, Redshift, BigQuery and Cassandra. The [support matrix](/reference/database-support/) says how far each one goes.
+DeepORG works with PostgreSQL, MySQL, SQLite, MongoDB, Oracle, SQL Server, Snowflake and Cassandra. The [support matrix](/reference/database-support/) says how far each one goes.
 
 {{< database-logos >}}
 

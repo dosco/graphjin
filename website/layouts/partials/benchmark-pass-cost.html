@@ -1,0 +1,6 @@
+{{- /* List-price dollars a run spent for each task it passed: the run's whole
+       cost divided by the tasks it passed. 0 when the provider lists no price. */ -}}
+{{- $reliable := mul (float .task_count) (float .recall) -}}
+{{- $cost := 0.0 -}}
+{{- if gt $reliable 0 -}}{{- $cost = div (float (.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}
+{{- return $cost -}}

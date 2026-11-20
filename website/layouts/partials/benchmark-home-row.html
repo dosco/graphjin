@@ -1,0 +1,11 @@
+{{- /* One model on the homepage board: name, bar, score out of 100, cost per
+       task passed. The data attributes are what scripts/check-site.mjs compares
+       with deeporg.yaml. */ -}}
+{{- $cost := partial "benchmark-pass-cost.html" . -}}
+{{- $cents := partial "benchmark-cents.html" $cost -}}
+<div class="home-benchmark-row" role="listitem" data-benchmark-chart-run="{{ .run_id }}" data-recall="{{ printf "%.17g" (float .recall) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $cost }}" data-latency-p50-ms="{{ printf "%.17g" (float (.latency_p50_ms | default 0)) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}" data-task-count="{{ int .task_count }}" data-repeats="{{ int .repeats }}">
+  <a class="home-benchmark-row-label" href="{{ printf "/benchmarks/deeporg/runs/%s/" .slug | relURL }}">{{ .label }}</a>
+  <span class="home-benchmark-row-bar" aria-hidden="true"><i style="width: {{ printf "%.1f" (mul (float .recall) 100) }}%"></i></span>
+  <span class="home-benchmark-row-score"><strong>{{ printf "%.0f" (mul (float .recall) 100) }}</strong><span class="sr-only"> out of 100</span></span>
+  <span class="home-benchmark-row-cost">{{ with $cents }}{{ . }}<span class="sr-only"> per task passed</span>{{ else }}<span title="The provider lists no price for this model" aria-label="no list price">—</span>{{ end }}</span>
+</div>

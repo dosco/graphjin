@@ -34,6 +34,11 @@ own name is explained on `/why/open-engine/`.
 The top nav has four destinations (Why DeepORG, Benchmark, Environment, Docs);
 the docs sections are in the sidebar of every docs page.
 
+The provider marks beside the benchmark board are listed in
+`data/providers.yaml`, with where each came from. The page inlines them, so each
+file in `static/logos/provider-*.svg` is a single-colour `<svg>` of `<path>`
+elements and nothing else; `npm run check` refuses anything more.
+
 The link preview card is `static/og/deeporg-site-og.png`, rendered from
 `scripts/og-card.html` (the command is in that file). The tab icons
 `static/favicon.ico` and `static/apple-touch-icon.png` are rendered from

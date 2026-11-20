@@ -1,0 +1,14 @@
+{{- /* A dollar amount the way a visitor reads it: "9¢", "under 1¢" or "$1.20".
+       Empty when the amount is unknown (zero). */ -}}
+{{- $amount := float . -}}
+{{- $out := "" -}}
+{{- if gt $amount 0.0 -}}
+  {{- if lt $amount 0.005 -}}
+    {{- $out = "under 1¢" -}}
+  {{- else if lt $amount 0.995 -}}
+    {{- $out = printf "%.0f¢" (mul $amount 100) -}}
+  {{- else -}}
+    {{- $out = printf "$%.2f" $amount -}}
+  {{- end -}}
+{{- end -}}
+{{- return $out -}}
