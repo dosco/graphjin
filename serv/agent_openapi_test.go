@@ -48,11 +48,14 @@ type agentRequestDoc struct {
 
 // Each schema name a reflected Go type gets in components.schemas.
 var agentOpenAPITypeNames = map[reflect.Type]string{
-	reflect.TypeOf(agentRequestDoc{}):     "AgentRequest",
-	reflect.TypeOf(gjagent.Response{}):    "AgentResponse",
-	reflect.TypeOf(threadAgentResponse{}): "AgentThreadResponse",
-	reflect.TypeOf(agentStatusResponse{}): "AgentStatus",
-	reflect.TypeOf(gjagent.ActionEvent{}): "AgentActionEvent",
+	reflect.TypeOf(agentRequestDoc{}):           "AgentRequest",
+	reflect.TypeOf(gjagent.Response{}):          "AgentResponse",
+	reflect.TypeOf(threadAgentResponse{}):       "AgentThreadResponse",
+	reflect.TypeOf(agentStatusResponse{}):       "AgentStatus",
+	reflect.TypeOf(gjagent.ActionEvent{}):       "AgentActionEvent",
+	reflect.TypeOf(experienceResponse{}):        "AgentExperience",
+	reflect.TypeOf(experienceSummaryResponse{}): "AgentExperienceSummary",
+	reflect.TypeOf(experiencePage{}):            "AgentExperiencePage",
 }
 
 func generateAgentOpenAPI(t *testing.T) []byte {
@@ -367,6 +370,30 @@ func agentOpenAPIPaths() map[string]any {
 				},
 			},
 		},
+		routeAgentExperience: map[string]any{
+			"x-graphjin-feature": "threads",
+			"get": map[string]any{
+				"operationId": "listAgentExperience",
+				"tags":        agentTag,
+				"summary":     "Past questions as tests",
+				"description": "Admin only. Reads finished thread turns, newest first, and turns each question the lead asked the data agent into a test when the query that answered it computes one figure in the database. The query is re-run as the person who asked, and the answer they were given must pass it. confirmed tests had a thumbs-up on a one-question turn; incumbent tests were never rated and measure agreement, not correctness. Nothing is stored. Save the cases and run graphjin eval mine to turn them into a suite.",
+				"parameters": []any{
+					map[string]any{"name": "since", "in": "query", "description": "Only runs created at or after this RFC 3339 time.", "schema": map[string]any{"type": "string"}},
+					map[string]any{"name": "until", "in": "query", "description": "Only runs created at or before this RFC 3339 time.", "schema": map[string]any{"type": "string"}},
+					map[string]any{"name": "origin", "in": "query", "description": "Only turns of this kind.", "schema": map[string]any{"type": "string", "enum": []any{"chat", "routine", "continuation", "outcome"}}},
+					map[string]any{"name": "limit", "in": "query", "description": "Runs to read (default 50, at most 200).", "schema": map[string]any{"type": "integer"}},
+					map[string]any{"name": "offset", "in": "query", "description": "Runs to skip, from page.next_offset.", "schema": map[string]any{"type": "integer"}},
+					map[string]any{"name": "format", "in": "query", "schema": map[string]any{"type": "string", "enum": []any{"summary"}}},
+				},
+				"responses": map[string]any{
+					"200": jsonResponse("Mined tests, or the counts alone with ?format=summary.", map[string]any{"oneOf": []any{
+						ref("AgentExperience"), ref("AgentExperienceSummary"),
+					}}),
+					"401": jsonResponse("Experience needs a signed-in admin.", errorBody()),
+					"403": jsonResponse("The caller is not an admin.", errorBody()),
+				},
+			},
+		},
 		routeAgentFeedback: map[string]any{
 			"x-graphjin-feature": "threads",
 			"get": map[string]any{
@@ -481,6 +508,7 @@ func agentOpenAPIRowSchemas() map[string]any {
 			"answer_status": str("The answer's reply status."),
 			"trace_id":      str("The run's trace id."),
 			"history":       arrayOf(objectOf(map[string]any{"role": str("user or assistant"), "content": str("The turn.")})),
+			"queries":       arrayOf(str("A query the data agent ran for this answer, in order.")),
 			"rating":        map[string]any{"type": "string", "enum": []any{feedbackRatingUp, feedbackRatingDown}},
 			"correction":    str("What the answer should have said, in the person's words."),
 			"updated_at":    str("RFC 3339."),
@@ -491,7 +519,7 @@ func agentOpenAPIRowSchemas() map[string]any {
 			"prompt":   str("The question."),
 			"turns":    arrayOf(str("An earlier user turn to replay.")),
 			"draft":    prop("boolean", "Always true: a draft has no oracle yet."),
-			"observed": objectOf(map[string]any{"answer": str("What the agent said."), "status": str("Its reply status."), "trace_id": str("Its trace.")}),
+			"observed": objectOf(map[string]any{"answer": str("What the agent said."), "status": str("Its reply status."), "trace_id": str("Its trace."), "queries": arrayOf(str("A query the data agent ran, in order: where an oracle starts."))}),
 			"expected": str("The person's correction."),
 			"todo":     str("What to add before the case joins the corpus."),
 		}, "id", "prompt", "draft"),
@@ -536,7 +564,7 @@ func TestAgentOpenAPICoversEveryAgentRoute(t *testing.T) {
 	if err := json.Unmarshal(agentOpenAPISpec, &doc); err != nil {
 		t.Fatal(err)
 	}
-	for _, route := range []string{routeAgent, routeAgentStatus, routeAgentRuns, routeAgentProfiles, routeAgentApprovals, routeAgentFeedback, routeNotifications, routeAgentReliability} {
+	for _, route := range []string{routeAgent, routeAgentStatus, routeAgentRuns, routeAgentProfiles, routeAgentApprovals, routeAgentFeedback, routeAgentExperience, routeNotifications, routeAgentReliability} {
 		found := false
 		for path := range doc.Paths {
 			if path == route || strings.HasPrefix(path, strings.TrimSuffix(route, "/")+"/") {

@@ -215,24 +215,29 @@ type Metrics struct {
 	// failed: the agent can perform the operation but did not work out that it was
 	// required. ExecutionGap is the inverse and usually means the twin is
 	// under-specified rather than that the agent improvised well.
-	PlanningGap        int                        `json:"planning_gap"`
-	ExecutionGap       int                        `json:"execution_gap"`
-	RecallCI           ConfidenceInterval         `json:"recall_ci"`
-	ByTier             map[Difficulty]TierMetrics `json:"by_tier,omitempty"`
-	ByCategory         map[Category]TierMetrics   `json:"by_category,omitempty"`
-	ByRollup           map[string]TierMetrics     `json:"by_rollup,omitempty"`
-	FailureCategories  map[string]int             `json:"failure_categories,omitempty"`
-	EnvironmentErrors  int                        `json:"environment_errors,omitempty"`
-	GuardInterventions int                        `json:"guard_interventions,omitempty"`
-	ForbiddenAttempts  int                        `json:"forbidden_attempts,omitempty"`
-	UnsafeEffects      int                        `json:"unsafe_effects"`
-	PromptTokens       int64                      `json:"prompt_tokens"`
-	CompletionTokens   int64                      `json:"completion_tokens"`
-	TotalTokens        int64                      `json:"total_tokens"`
-	LLMCalls           int64                      `json:"llm_calls"`
-	MedianActorTurns   float64                    `json:"median_actor_turns"`
-	LatencyP50MS       float64                    `json:"latency_p50_ms"`
-	LatencyP95MS       float64                    `json:"latency_p95_ms"`
+	PlanningGap  int                        `json:"planning_gap"`
+	ExecutionGap int                        `json:"execution_gap"`
+	RecallCI     ConfidenceInterval         `json:"recall_ci"`
+	ByTier       map[Difficulty]TierMetrics `json:"by_tier,omitempty"`
+	ByCategory   map[Category]TierMetrics   `json:"by_category,omitempty"`
+	// ByFamily groups tasks by where they came from (Provenance.Source). Tests
+	// mined from real questions are kept apart here: a confirmed test measures
+	// correctness, an incumbent one only agreement with the agent that first
+	// answered, and the two are never summed into one number.
+	ByFamily           map[string]TierMetrics `json:"by_family,omitempty"`
+	ByRollup           map[string]TierMetrics `json:"by_rollup,omitempty"`
+	FailureCategories  map[string]int         `json:"failure_categories,omitempty"`
+	EnvironmentErrors  int                    `json:"environment_errors,omitempty"`
+	GuardInterventions int                    `json:"guard_interventions,omitempty"`
+	ForbiddenAttempts  int                    `json:"forbidden_attempts,omitempty"`
+	UnsafeEffects      int                    `json:"unsafe_effects"`
+	PromptTokens       int64                  `json:"prompt_tokens"`
+	CompletionTokens   int64                  `json:"completion_tokens"`
+	TotalTokens        int64                  `json:"total_tokens"`
+	LLMCalls           int64                  `json:"llm_calls"`
+	MedianActorTurns   float64                `json:"median_actor_turns"`
+	LatencyP50MS       float64                `json:"latency_p50_ms"`
+	LatencyP95MS       float64                `json:"latency_p95_ms"`
 }
 
 type Acceptance struct {

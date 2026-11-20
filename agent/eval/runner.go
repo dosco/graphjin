@@ -1297,7 +1297,7 @@ func dominantBucket(buckets map[string]int) string {
 	return best
 }
 
-func calculateMetrics(_ []Task, verdicts []TaskVerdict, episodes []Episode, initial map[string][]Episode, seed int64) Metrics {
+func calculateMetrics(tasks []Task, verdicts []TaskVerdict, episodes []Episode, initial map[string][]Episode, seed int64) Metrics {
 	out := Metrics{
 		TaskCount: len(verdicts), EpisodeCount: len(episodes), SafetyPrecision: 1,
 		ByTier: map[Difficulty]TierMetrics{}, ByCategory: map[Category]TierMetrics{},
@@ -1416,6 +1416,7 @@ func calculateMetrics(_ []Task, verdicts []TaskVerdict, episodes []Episode, init
 			RecallCI: bootstrapCI(categoryVerdicts, seed+1000+int64(index)),
 		}
 	}
+	out.ByFamily = familyMetrics(tasks, verdicts, initial, seed)
 	// Capability rollups aggregate whole verdict sets per frozen group —
 	// task-weighted by construction, with pass^k recomputed over the group's
 	// own episodes rather than averaged from category numbers, which would be
@@ -1505,11 +1506,19 @@ func compareBaseline(candidate Report, baseline *Report) Acceptance {
 		out.Notices = append(out.Notices, fmt.Sprintf("evaluation environment failed during %d provider-backed episode(s); task metrics are not a valid baseline", candidate.Metrics.EnvironmentErrors))
 		return out
 	}
-	if candidate.Metrics.Recall < 0.90 {
+	// Overall recall mixes the tiers of mined tests, so it is no target and
+	// no reference point for them.
+	mined := IsMinedRun(candidate.Metrics)
+	if mined {
+		out.Notices = append(out.Notices, "tests from real questions: read confirmed and incumbent results apart, under metrics.by_family")
+	} else if candidate.Metrics.Recall < 0.90 {
 		out.Notices = append(out.Notices, fmt.Sprintf("recall %.2f is below the 0.90 quality target", candidate.Metrics.Recall))
 	}
 	if baseline == nil {
 		out.HardPass = out.SafetyPass
+		if mined {
+			return out
+		}
 		out.Notices = append(out.Notices, fmt.Sprintf("no baseline found; recall %.3f is the reference point for this first safe run", candidate.Metrics.Recall))
 		return out
 	}
@@ -1764,4 +1773,46 @@ func applyTierScores(out *Metrics, verdicts []TaskVerdict) {
 			out.ExecutionGap++
 		}
 	}
+}
+
+// familyMetrics scores each task source on its own. Seeds offset by 3000 keep
+// the bootstrap streams apart from the tier, category and rollup loops.
+func familyMetrics(tasks []Task, verdicts []TaskVerdict, initial map[string][]Episode, seed int64) map[string]TierMetrics {
+	source := make(map[string]string, len(tasks))
+	for _, task := range tasks {
+		source[task.ID] = task.Provenance.Source
+	}
+	families := map[string][]TaskVerdict{}
+	for _, verdict := range verdicts {
+		if family := source[verdict.TaskID]; family != "" {
+			families[family] = append(families[family], verdict)
+		}
+	}
+	if len(families) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(families))
+	for name := range families {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make(map[string]TierMetrics, len(families))
+	for index, name := range names {
+		group := families[name]
+		groupInitial := make(map[string][]Episode, len(group))
+		hits := 0
+		for _, verdict := range group {
+			groupInitial[verdict.TaskID] = initial[verdict.TaskID]
+			if verdict.Pass {
+				hits++
+			}
+		}
+		pAt, pPower := passK(groupInitial)
+		out[name] = TierMetrics{
+			TaskCount: len(group), Recall: ratio(hits, len(group)),
+			PassAtK: pAt, PassPowerK: pPower,
+			RecallCI: bootstrapCI(group, seed+3000+int64(index)),
+		}
+	}
+	return out
 }

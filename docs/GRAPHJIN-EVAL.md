@@ -133,6 +133,36 @@ longer be asked about.
 `import-corpus` is likewise hidden and converts the frozen skill-eval corpora
 into tasks.
 
+## Mined tests
+
+`graphjin eval mine` writes `eval/mined.yml`: questions people asked the agent
+on a running server, each with the query that answered it as its oracle. The
+server half is `GET /api/v1/agent/experience` (admin only, `serv/experience.go`);
+the rules are in `agent/eval/mine.go`.
+
+- **The engine decides what is a test, not a model.** A question qualifies when
+  the data agent's last successful read is one aggregate figure, or one row
+  (`limit: 1`, a ranking when it also orders), with no variables. A literal date
+  in the query becomes an offset from the day it was asked (`{{today-N}}`),
+  unless the question itself names a date, which drops it as `dated`. A date
+  more than 400 days from that day is a fixed bound and stays as written. The query is parsed by the engine's parser (`core/queryshape`), and the
+  answer path is read from the result the query actually returned.
+- **The query re-runs as the person who asked**, never as the admin reading
+  experience, so the oracle sees the rows they saw. The answer they were given
+  must pass it, or the candidate is dropped (`answer_mismatch`).
+- **Two tiers, never summed.** `mined-confirmed` (a thumbs-up on a
+  one-question turn) measures correctness; `mined-incumbent` (never rated)
+  measures agreement with the agent that first answered. A run of mined tests
+  prints one line per tier, and its friendly and technical reports have no
+  combined headline. In the JSON, read `metrics.by_family`: the overall
+  `metrics.recall` still counts every test together.
+- **Mined tests are a suite of their own.** They are not candidates for
+  `eval create`, whose sampling could drop a question somebody really asked.
+  `eval run --suite eval/mined.yml` runs them; that run is compared with no
+  baseline and promotes none.
+- Every drop is counted by reason in the summary. The counts say which kinds of
+  real questions cannot be tested yet.
+
 ## Publishing
 
 `graphjin eval publish <run-id>` is the **only** sanctioned writer of

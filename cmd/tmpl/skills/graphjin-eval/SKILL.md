@@ -158,7 +158,22 @@ candidate, or understand an evaluation failure.
     graphjin eval author --kinds watch,confirmation,file --yes --json
     ```
 
-12. Run the frozen public cohort only after the user approves provider traffic:
+12. Turn the questions people already asked the agent into tests. This reads a
+    running server's stored turns (admin only) and spends no model tokens:
+
+    ```sh
+    graphjin eval mine --remote --json
+    graphjin eval run --suite eval/mined.yml --yes --json
+    ```
+
+    Report confirmed and incumbent results apart, never summed: read
+    `metrics.by_family` in the JSON, not the overall `metrics.recall`. Confirmed tests
+    were marked right by a person; incumbent tests were never rated, so their
+    recall measures agreement with the agent that first answered, and a better
+    model can score lower on them. Report the server summary's `dropped` counts
+    too: they say which kinds of real questions cannot be tested yet.
+
+13. Run the frozen public cohort only after the user approves provider traffic:
 
    ```sh
    graphjin eval bench --public --yes --json
@@ -173,7 +188,7 @@ candidate, or understand an evaluation failure.
 
    Do not add `--allow-off-suite` without a separate explicit ask.
 
-13. In CI, restore the deliberately promoted sanitized baseline, require it to
+14. In CI, restore the deliberately promoted sanitized baseline, require it to
    exist, and use `graphjin eval run --restart --yes --json`. Upload reports
    (`.json`, friendly `.md`, and `.technical.md`) only; never upload episodes
    or attempts.

@@ -118,6 +118,7 @@ func evalCmd() *cobra.Command {
 	cmd.AddCommand(evalRescoreCmd(opts))
 	cmd.AddCommand(evalExportCmd(opts))
 	cmd.AddCommand(evalAuthorCmd(opts))
+	cmd.AddCommand(evalMineCmd(opts))
 	cmd.AddCommand(evalPublishCmd(opts))
 	cmd.AddCommand(evalFreezeSuiteCmd(opts))
 	cmd.AddCommand(evalImportCmd())
@@ -672,6 +673,7 @@ func evalAddCmd(opts *evalCLIOptions) *cobra.Command {
 }
 
 func evalRunCmd(opts *evalCLIOptions, promote bool) *cobra.Command {
+	var suitePath string
 	use, short := "run", "Run the current evaluation suite"
 	if promote {
 		use, short = "baseline", "Run and deliberately promote a passing baseline"
@@ -685,11 +687,26 @@ func evalRunCmd(opts *evalCLIOptions, promote bool) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			suite, err := gjeval.LoadSuite(evalSuitePath(projectPath))
+			path := evalSuitePath(projectPath)
+			otherSuite := strings.TrimSpace(suitePath) != ""
+			if otherSuite {
+				// The project keeps one baseline, for its main suite. Another
+				// suite (mined tests, say) is compared with nothing and promoted
+				// to nothing.
+				if promote {
+					return &evalExitError{Code: 2, Err: errors.New("a baseline is promoted from the main suite only; drop --suite")}
+				}
+				path = suitePath
+				// eval mine prints eval/mined.yml: a path inside the project.
+				if _, statErr := os.Stat(path); statErr != nil && !filepath.IsAbs(path) {
+					path = filepath.Join(projectPath, path)
+				}
+			}
+			suite, err := gjeval.LoadSuite(path)
 			if err != nil {
 				return &evalExitError{Code: 2, Err: err}
 			}
-			report, _, err := executeEvalSuite(cmd.Context(), cmd, opts, projectPath, target, *suite, gjeval.RunModeRun, 23, !promote, promote, 0)
+			report, _, err := executeEvalSuite(cmd.Context(), cmd, opts, projectPath, target, *suite, gjeval.RunModeRun, 23, !promote && !otherSuite, promote, otherSuite, 0)
 			if err != nil {
 				return err
 			}
@@ -705,6 +722,7 @@ func evalRunCmd(opts *evalCLIOptions, promote bool) *cobra.Command {
 		},
 	}
 	addEvalResumeFlags(cmd, opts)
+	cmd.Flags().StringVar(&suitePath, "suite", "", "run this suite file instead of eval/suite.yml (for example eval/mined.yml)")
 	return cmd
 }
 
@@ -1039,7 +1057,7 @@ func evalImportCmd() *cobra.Command {
 	return cmd
 }
 
-func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOptions, projectPath string, target gjeval.Target, suite gjeval.Suite, mode gjeval.RunMode, seed int64, autoBaseline, deliberatePromotion bool, scale int) (*gjeval.Report, *gjeval.Store, error) {
+func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOptions, projectPath string, target gjeval.Target, suite gjeval.Suite, mode gjeval.RunMode, seed int64, autoBaseline, deliberatePromotion, otherSuite bool, scale int) (*gjeval.Report, *gjeval.Store, error) {
 	policy, err := evalResumePolicy(opts)
 	if err != nil {
 		return nil, nil, err
@@ -1082,9 +1100,13 @@ func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOpti
 		return nil, nil, evalEnvironmentError(err)
 	}
 	store := evalStore(projectPath, status)
-	baseline, err := store.LoadBaseline()
-	if err != nil {
-		return nil, nil, err
+	// The project's baseline belongs to its main suite; another suite is
+	// compared with nothing.
+	var baseline *gjeval.Report
+	if !otherSuite {
+		if baseline, err = store.LoadBaseline(); err != nil {
+			return nil, nil, err
+		}
 	}
 	intent := gjeval.RunIntentRun
 	if deliberatePromotion {
@@ -1282,21 +1304,30 @@ func printEvalReport(cmd *cobra.Command, opts *evalCLIOptions, report *gjeval.Re
 		fmt.Fprintf(cmd.OutOrStdout(), "SCORING INTEGRITY WARNING: correct-answer recall exceeds required-method recall by %.1f percentage points. Investigate the scoring contract before publishing.\n",
 			100*gjeval.ScoringDivergence(report.Metrics))
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s\n%s\n", summary.Title, summary.Message)
-	fmt.Fprintf(cmd.OutOrStdout(), "Correct answer: %d of %d data questions. Required database method: %d of %d. Full pass: %d of %d. Safety: %d of %d. Passed every attempt: %d of %d.\n",
-		summary.CorrectAnswerQuestions, summary.DataQuestionCount,
-		summary.RequiredMethodQuestions, summary.MethodQuestionCount,
-		summary.FullPassQuestions, summary.QuestionCount,
-		summary.SafetyRulesFollowed, summary.QuestionCount,
-		summary.PassedEveryAttempt, summary.QuestionCount)
+	// A run of mined tests prints one line per tier and no combined score.
+	tiers := gjeval.MinedTierLines(report.Metrics)
+	if len(tiers) != 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s\n%s\n", summary.Title, strings.Join(tiers, "\n"))
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s\n%s\n", summary.Title, summary.Message)
+		fmt.Fprintf(cmd.OutOrStdout(), "Correct answer: %d of %d data questions. Required database method: %d of %d. Full pass: %d of %d. Safety: %d of %d. Passed every attempt: %d of %d.\n",
+			summary.CorrectAnswerQuestions, summary.DataQuestionCount,
+			summary.RequiredMethodQuestions, summary.MethodQuestionCount,
+			summary.FullPassQuestions, summary.QuestionCount,
+			summary.SafetyRulesFollowed, summary.QuestionCount,
+			summary.PassedEveryAttempt, summary.QuestionCount)
+	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Governance interventions: %d. Forbidden attempts: %d (all refused). Unsafe effects: %d.\n", summary.GuardInterventions, summary.ForbiddenAttempts, summary.UnsafeEffects)
 	// Per-family publication gates, printed for every complete run. These decide
 	// whether a public row may be published and were previously remembered rather
 	// than recorded, which cost one run's verdict to a noise-level window swing.
-	if gatesMet, unmet := gjeval.PublicationGatesMet(*report); gatesMet {
-		fmt.Fprintf(cmd.OutOrStdout(), "Publication gates: all met.\n%s", gjeval.FormatPublicationGates(*report))
-	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "Publication gates: NOT met (%s).\n%s", strings.Join(unmet, ", "), gjeval.FormatPublicationGates(*report))
+	// A run of mined tests is never a public row, so it has none.
+	if len(tiers) == 0 {
+		if gatesMet, unmet := gjeval.PublicationGatesMet(*report); gatesMet {
+			fmt.Fprintf(cmd.OutOrStdout(), "Publication gates: all met.\n%s", gjeval.FormatPublicationGates(*report))
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "Publication gates: NOT met (%s).\n%s", strings.Join(unmet, ", "), gjeval.FormatPublicationGates(*report))
+		}
 	}
 	if opts.Debug {
 		fmt.Fprintf(cmd.OutOrStdout(), "Technical: recall %.3f, ground truth %.3f, method %.3f, safety %.3f.\n", report.Metrics.Recall, report.Metrics.GroundTruthRecall, report.Metrics.MethodRecall, report.Metrics.SafetyPrecision)

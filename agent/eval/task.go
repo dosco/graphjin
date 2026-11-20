@@ -307,7 +307,8 @@ func (t *Task) Normalize() error {
 	if t.Budget.MaxTotalTokens == 0 {
 		t.Budget.MaxTotalTokens = defaultMaxTotalTokens
 	}
-	if t.Provenance.GeneratorVersion == "" && t.Provenance.Source != "user-added" && t.Provenance.Source != "imported" {
+	if t.Provenance.GeneratorVersion == "" && t.Provenance.Source != "user-added" && t.Provenance.Source != "imported" &&
+		!strings.HasPrefix(t.Provenance.Source, MinedSourcePrefix) {
 		t.Provenance.GeneratorVersion = GeneratorVersion
 	}
 	t.CapabilityProfile.AvailableSystemRoots = sortedUnique(t.CapabilityProfile.AvailableSystemRoots)

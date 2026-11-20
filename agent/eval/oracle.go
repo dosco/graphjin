@@ -78,6 +78,15 @@ func (v Verifier) Resolve(ctx context.Context, oracle OracleSpec) (OracleResult,
 	if err != nil {
 		return OracleResult{}, err
 	}
+	return extractOracleResult(oracle, data, variables)
+}
+
+// extractOracleResult reads an oracle's answer out of the data its query
+// returned. It is the half of Resolve that does not talk to a server, so a
+// caller that already ran the query (the miner runs it as the person who
+// asked) reads the answer exactly as a verified task would.
+func extractOracleResult(oracle OracleSpec, data any, variables map[string]any) (OracleResult, error) {
+	var err error
 	result := OracleResult{Data: data, Variables: variables, Dimension: oracle.DimensionLiteral}
 	if oracle.PickMax != nil {
 		result.Value, result.Dimension, err = pickMaxRow(data, oracle.PickMax)

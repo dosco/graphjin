@@ -14,6 +14,7 @@ const (
 	routeAgentProfiles     = "/api/v1/agent/profiles"
 	routeAgentApprovals    = "/api/v1/agent/approvals"
 	routeAgentFeedback     = "/api/v1/agent/feedback"
+	routeAgentExperience   = "/api/v1/agent/experience"
 	routeNotifications     = "/api/v1/notifications"
 	routeAgentReliability  = "/api/v1/agent/reliability"
 	routeConsoleBootstrap  = "/api/v1/console/bootstrap"
@@ -89,6 +90,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 				mux.Handle(routeAgent, s1.Agent(ah))
 				if s.threadsEnabled() {
 					mux.Handle(routeAgentFeedback, s1.AgentFeedback(ah, nil))
+					mux.Handle(routeAgentExperience, s1.AgentExperience(ah, nil))
 					mux.Handle(routeAgentRuns, s1.AgentRuns(ah))
 					mux.Handle(routeAgentProfiles+"/", s1.AgentProfiles(ah))
 				}
@@ -126,6 +128,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 				mux.Handle(routeAgent, s1.AgentWithNS(ah, *ns))
 				if s.threadsEnabled() {
 					mux.Handle(routeAgentFeedback, s1.AgentFeedback(ah, ns))
+					mux.Handle(routeAgentExperience, s1.AgentExperience(ah, ns))
 					mux.Handle(routeAgentRuns, s1.AgentRunsWithNS(ah, *ns))
 					mux.Handle(routeAgentProfiles+"/", s1.AgentProfilesWithNS(ah, *ns))
 				}

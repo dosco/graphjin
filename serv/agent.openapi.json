@@ -40,6 +40,36 @@
         },
         "type": "object"
       },
+      "AgentAnswerRule": {
+        "additionalProperties": false,
+        "properties": {
+          "accept_scales": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "extract_regex": {
+            "type": "string"
+          },
+          "forbidden_phrases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "from_data": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "tolerance_pct": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
       "AgentApproval": {
         "additionalProperties": false,
         "description": "Approval is a held write as the caller sees it.",
@@ -276,6 +306,63 @@
         },
         "type": "object"
       },
+      "AgentExperience": {
+        "additionalProperties": false,
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/AgentMinedCase"
+            },
+            "type": "array"
+          },
+          "drops": {
+            "items": {
+              "$ref": "#/components/schemas/AgentMineDrop"
+            },
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/AgentExperiencePage"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/AgentMineSummary"
+          }
+        },
+        "type": "object"
+      },
+      "AgentExperiencePage": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "type": "integer"
+          },
+          "next_offset": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "runs_read": {
+            "type": "integer"
+          },
+          "until": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AgentExperienceSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/AgentExperiencePage"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/AgentMineSummary"
+          }
+        },
+        "type": "object"
+      },
       "AgentFeedbackCorpusCase": {
         "properties": {
           "draft": {
@@ -299,6 +386,13 @@
               "answer": {
                 "description": "What the agent said.",
                 "type": "string"
+              },
+              "queries": {
+                "items": {
+                  "description": "A query the data agent ran, in order: where an oracle starts.",
+                  "type": "string"
+                },
+                "type": "array"
               },
               "status": {
                 "description": "Its reply status.",
@@ -372,6 +466,13 @@
             "description": "The rated answer.",
             "type": "string"
           },
+          "queries": {
+            "items": {
+              "description": "A query the data agent ran for this answer, in order.",
+              "type": "string"
+            },
+            "type": "array"
+          },
           "question": {
             "description": "The question it answered, from the thread.",
             "type": "string"
@@ -428,6 +529,163 @@
             "type": "string"
           },
           "reason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AgentMethodRule": {
+        "additionalProperties": false,
+        "properties": {
+          "forbid_finalize_from_list_only": {
+            "type": "boolean"
+          },
+          "forbid_query_match": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "forbid_tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "require_query_match": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "require_tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "AgentMineDrop": {
+        "additionalProperties": false,
+        "description": "MineDrop is one question that did not become a test, and why.",
+        "properties": {
+          "detail": {
+            "description": "Detail is the specific cause: the literal date, the guard code, what the\nanswer key gave against what was said.",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "Reason is one of the summary's dropped keys.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AgentMineSummary": {
+        "additionalProperties": false,
+        "description": "MineSummary counts what happened to every candidate.",
+        "properties": {
+          "by_tier": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "ByTier counts tests per tier.",
+            "type": "object"
+          },
+          "candidates": {
+            "description": "Candidates is how many questions to the data agent were read.",
+            "type": "integer"
+          },
+          "dropped": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Dropped counts the rest per reason: not_answered, rated_wrong, unsafe,\nwrite, no_query, uses_variables, dated, list, several_figures, shape,\nprose, query_failed, empty_result, answer_mismatch, duplicate.",
+            "type": "object"
+          },
+          "tests": {
+            "description": "Tests is how many became tests.",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AgentMinedCase": {
+        "additionalProperties": false,
+        "description": "MinedCase is a test made from a real question.",
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/AgentAnswerRule",
+            "description": "Answer says how an answer is compared with the key's value."
+          },
+          "category": {
+            "description": "Category is aggregate, ranking or discovery (a single looked-up value).",
+            "type": "string"
+          },
+          "dimension": {
+            "type": "string"
+          },
+          "expected_status": {
+            "type": "string"
+          },
+          "id": {
+            "description": "ID is the run id and the question's index in its turn.",
+            "type": "string"
+          },
+          "method": {
+            "$ref": "#/components/schemas/AgentMethodRule",
+            "description": "Method says what the database must have computed."
+          },
+          "oracle": {
+            "$ref": "#/components/schemas/AgentOracleSpec",
+            "description": "Oracle is the answer key: the query the data agent ran and where in its\nresult the answer is. It is re-run whenever the test runs."
+          },
+          "prompt": {
+            "description": "Prompt is the question the lead put to the data agent.",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/AgentMinedSource"
+          },
+          "tier": {
+            "description": "Tier is confirmed (a person marked the answer right) or incumbent (never\nrated: it measures agreement with the agent that answered, not\ncorrectness).",
+            "type": "string"
+          },
+          "value": {
+            "description": "Value is what the answer key gave when the case was mined.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AgentMinedSource": {
+        "additionalProperties": false,
+        "description": "MinedSource says which stored turn a test came from.",
+        "properties": {
+          "asked_at": {
+            "description": "AskedAt is when the turn ran, RFC 3339.",
+            "type": "string"
+          },
+          "delegate": {
+            "description": "Delegate is the question's 1-based index in its turn.",
+            "type": "integer"
+          },
+          "origin": {
+            "description": "Origin is chat, routine, continuation or outcome.",
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "user_prompt": {
+            "description": "UserPrompt is what the person typed; the lead's question came from it.",
             "type": "string"
           }
         },
@@ -507,6 +765,61 @@
           "seen",
           "created_at"
         ],
+        "type": "object"
+      },
+      "AgentOracleSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_missing": {
+            "type": "boolean"
+          },
+          "anchor_extract": {
+            "type": "string"
+          },
+          "anchor_query": {
+            "type": "string"
+          },
+          "dimension_alternate_extracts": {
+            "description": "DimensionAlternateExtracts name the same row by another field the query\nselects — typically its primary key. Any one of them satisfies the\ndimension check, because \"which record\" has more than one right answer.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "dimension_extract": {
+            "type": "string"
+          },
+          "dimension_literal": {
+            "type": "string"
+          },
+          "extract": {
+            "type": "string"
+          },
+          "pick_max": {
+            "$ref": "#/components/schemas/AgentPickMaxRule"
+          },
+          "query": {
+            "type": "string"
+          },
+          "variables": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "AgentPickMaxRule": {
+        "additionalProperties": false,
+        "properties": {
+          "dimension": {
+            "type": "string"
+          },
+          "list": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "AgentPreparationStats": {
@@ -1500,6 +1813,132 @@
         ]
       },
       "x-graphjin-feature": "approvals"
+    },
+    "/api/v1/agent/experience": {
+      "get": {
+        "description": "Admin only. Reads finished thread turns, newest first, and turns each question the lead asked the data agent into a test when the query that answered it computes one figure in the database. The query is re-run as the person who asked, and the answer they were given must pass it. confirmed tests had a thumbs-up on a one-question turn; incumbent tests were never rated and measure agreement, not correctness. Nothing is stored. Save the cases and run graphjin eval mine to turn them into a suite.",
+        "operationId": "listAgentExperience",
+        "parameters": [
+          {
+            "description": "Only runs created at or after this RFC 3339 time.",
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only runs created at or before this RFC 3339 time.",
+            "in": "query",
+            "name": "until",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only turns of this kind.",
+            "in": "query",
+            "name": "origin",
+            "schema": {
+              "enum": [
+                "chat",
+                "routine",
+                "continuation",
+                "outcome"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Runs to read (default 50, at most 200).",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Runs to skip, from page.next_offset.",
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "enum": [
+                "summary"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/AgentExperience"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AgentExperienceSummary"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Mined tests, or the counts alone with ?format=summary."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "description": "What went wrong.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Experience needs a signed-in admin."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "description": "What went wrong.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The caller is not an admin."
+          }
+        },
+        "summary": "Past questions as tests",
+        "tags": [
+          "agent"
+        ]
+      },
+      "x-graphjin-feature": "threads"
     },
     "/api/v1/agent/feedback": {
       "get": {

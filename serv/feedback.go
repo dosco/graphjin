@@ -163,8 +163,24 @@ func (s *graphjinService) feedbackReport(ctx context.Context, ownerID, messageID
 		"message_id": messageID, "thread_id": threadID, "run_id": stringMapValue(answer, "run_id"),
 		"question": question, "answer": stringMapValue(answer, "content"),
 		"answer_status": stringMapValue(answer, "status"), "trace_id": stringFromAny(response["trace_id"]),
-		"history": turns,
+		"history": turns, "queries": feedbackQueries(response),
 	}, nil
+}
+
+// feedbackQueries are the queries the data agent ran for a rated answer, in
+// order. Whoever writes the draft's oracle starts from what was really run.
+func feedbackQueries(response map[string]any) []string {
+	queries := []string{}
+	for _, raw := range anySliceFrom(response["actions"]) {
+		action := mapFromAny(raw)
+		if stringFromAny(action["tool"]) != "execute_graphql" {
+			continue
+		}
+		if query := strings.TrimSpace(stringFromAny(mapFromAny(action["args"])["query"])); query != "" {
+			queries = append(queries, query)
+		}
+	}
+	return queries
 }
 
 // listFeedback is the caller's reports; an admin reads everyone's, since
@@ -222,9 +238,9 @@ func feedbackCorpusDrafts(reports []map[string]any) []map[string]any {
 			"group":    "field",
 			"prompt":   report["question"],
 			"draft":    true,
-			"observed": map[string]any{"answer": report["answer"], "status": report["answer_status"], "trace_id": report["trace_id"]},
+			"observed": map[string]any{"answer": report["answer"], "status": report["answer_status"], "trace_id": report["trace_id"], "queries": report["queries"]},
 			"expected": report["correction"],
-			"todo":     "Add an oracle (a database-computed GraphQL query) and an answer rule, then move the case into agent/testdata/lead_eval_cases.json.",
+			"todo":     "Add an oracle (a database-computed GraphQL query; observed.queries are what the agent ran) and an answer rule, then move the case into agent/testdata/lead_eval_cases.json.",
 		}
 		if len(turns) != 0 {
 			draft["turns"] = turns
