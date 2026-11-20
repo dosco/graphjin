@@ -28,8 +28,8 @@ The list lives in `data/values.yaml`; the `/why/` index and the pager on every
 homepage link.
 
 The homepage uses one product name. "GraphJin" appears in the hero's "formerly"
-line, in the customer quote and in the footer, and nowhere else; the engine's
-own name is explained on `/why/open-engine/`.
+line and in the footer, and nowhere else (`npm run check` enforces it); the
+engine's own name is explained on `/why/open-engine/`.
 
 The top nav has four destinations (Why DeepORG, Benchmark, Environment, Docs);
 the docs sections are in the sidebar of every docs page.

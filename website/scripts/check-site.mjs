@@ -566,6 +566,13 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     return (await exists(file)) ? readFile(file, 'utf8') : '';
   };
   const homeHTML = await read('index.html');
+  // One product name on the homepage. Its body may say GraphJin in one place
+  // only, the hero's "formerly GraphJin" line; the footer carries the note.
+  const homeMain = homeHTML.match(/<main\b[\s\S]*?<\/main>/)?.[0] ?? '';
+  const oldNameCount = (homeMain.match(/GraphJin/g) || []).length;
+  if (oldNameCount !== 1 || !homeMain.includes('formerly GraphJin')) {
+    failures.push(`Homepage body names GraphJin ${oldNameCount} times; only the hero's "formerly GraphJin" line may`);
+  }
   const engineStart = homeHTML.search(/id=["']?engine\b/);
   const engineEnd = homeHTML.search(/id=["']?quickstart\b/);
   const engine = engineStart >= 0 && engineEnd > engineStart ? homeHTML.slice(engineStart, engineEnd) : '';
