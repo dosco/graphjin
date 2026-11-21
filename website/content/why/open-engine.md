@@ -10,7 +10,7 @@ actions:
   - label: "Read the compiler docs"
     href: "/core/compiler/"
   - label: "GitHub"
-    href: "https://github.com/dosco/graphjin"
+    href: "https://github.com/dosco/deeporg"
 landing: true
 toc: false
 ---
@@ -84,6 +84,6 @@ It is Apache 2.0. Read it, fork it, run it without the agent.
 - [Subscriptions](/core/subscriptions/) and [caching](/configure/caching-redis/).
 - [Saved queries](/start/saved-queries/) and [production](/configure/environment-production/).
 - [Federation](/integrations/federation/).
-- [Go examples](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples) and [the source](https://github.com/dosco/graphjin).
+- [Go examples](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples) and [the source](https://github.com/dosco/deeporg).
 
 {{< endband >}}

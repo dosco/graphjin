@@ -17,7 +17,7 @@ graphjin serve --demo
 The other verticals live in the repo. Clone it and point `--demo` at one with `--path`:
 
 ```bash
-git clone https://github.com/dosco/graphjin && cd graphjin
+git clone https://github.com/dosco/deeporg && cd deeporg
 graphjin serve --demo --path examples/<name>
 ```
 
@@ -80,7 +80,7 @@ GRAPHJIN_SEMANTIC_AGENT_SMOKE=false examples/coffee-roastery/scripts/semantic-sm
 
 This verifies flow review, final event dispositions, autonomous-action approval, and per-watch routing without sending demo data to an external model. See [Choosing Watches, Flows, and Workflows](/agentic/watch-automation/) for the plain-language model and GraphQL examples.
 
-More prompts: [coffee-roastery/PROMPTS.md](https://github.com/dosco/graphjin/blob/master/examples/coffee-roastery/PROMPTS.md)
+More prompts: [coffee-roastery/PROMPTS.md](https://github.com/dosco/deeporg/blob/master/examples/coffee-roastery/PROMPTS.md)
 
 ## SaaS ops {#saas-ops}
 
@@ -106,7 +106,7 @@ builds a verified suite from this catalog before any evaluated-agent traffic,
 then `graphjin eval run --demo` checks answers, methods, behavior, and safety
 across repeated runs.
 
-More prompts: [saas-ops/PROMPTS.md](https://github.com/dosco/graphjin/blob/master/examples/saas-ops/PROMPTS.md)
+More prompts: [saas-ops/PROMPTS.md](https://github.com/dosco/deeporg/blob/master/examples/saas-ops/PROMPTS.md)
 
 ## Corrugated plant {#corrugated-plant}
 
@@ -125,7 +125,7 @@ graphjin serve --demo --path examples/corrugated-plant
 - "Which paper rolls are below reorder point, and what should purchasing do?"
 - "Review recent downtime and quality holds. Which line needs attention first?"
 
-More prompts: [corrugated-plant/PROMPTS.md](https://github.com/dosco/graphjin/blob/master/examples/corrugated-plant/PROMPTS.md)
+More prompts: [corrugated-plant/PROMPTS.md](https://github.com/dosco/deeporg/blob/master/examples/corrugated-plant/PROMPTS.md)
 
 ## PCB fab {#pcb-fab}
 
@@ -144,7 +144,7 @@ graphjin serve --demo --path examples/pcb-fab
 - "Review FO-260701-ALPHA for DFM, supplier, and yield risks before CAM release."
 - "Which layer count is dragging yield this week?"
 
-More prompts: [pcb-fab/PROMPTS.md](https://github.com/dosco/graphjin/blob/master/examples/pcb-fab/PROMPTS.md)
+More prompts: [pcb-fab/PROMPTS.md](https://github.com/dosco/deeporg/blob/master/examples/pcb-fab/PROMPTS.md)
 
 ## Webshop {#webshop}
 

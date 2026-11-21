@@ -1,6 +1,6 @@
 # DeepORG — One AI Agent for Your Whole Organization
 
-[![Apache 2.0](https://img.shields.io/github/license/dosco/graphjin.svg?style=for-the-badge)](https://github.com/dosco/graphjin/blob/master/LICENSE)
+[![Apache 2.0](https://img.shields.io/github/license/dosco/deeporg.svg?style=for-the-badge)](https://github.com/dosco/deeporg/blob/master/LICENSE)
 [![NPM Package](https://img.shields.io/npm/v/graphjin?style=for-the-badge)](https://www.npmjs.com/package/graphjin)
 [![Docker Pulls](https://img.shields.io/docker/pulls/dosco/graphjin?style=for-the-badge)](https://hub.docker.com/r/dosco/graphjin/tags)
 [![Discord Chat](https://img.shields.io/discord/628796009539043348.svg?style=for-the-badge&logo=discord)](https://discord.gg/6pSWCTZ)
@@ -51,7 +51,7 @@ brew install dosco/graphjin/graphjin                 # macOS
 ```
 
 Windows: use `npm install -g graphjin`, or download the Windows archive from
-the [releases page](https://github.com/dosco/graphjin/releases). Linux packages
+the [releases page](https://github.com/dosco/deeporg/releases). Linux packages
 are on the same page, and Docker is `docker pull dosco/graphjin`.
 
 ## Try it

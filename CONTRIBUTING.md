@@ -36,8 +36,8 @@ The entire build flow uses `Makefile` there is a whole list of sub-commands you
 can use to build, test, install, lint, etc.
 
 ```bash
-git clone https://github.com/dosco/graphjin
-cd ./graphjin
+git clone https://github.com/dosco/deeporg
+cd ./deeporg
 make help
 ```
 

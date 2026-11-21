@@ -21,7 +21,7 @@ canonifyURLs = false
 [params]
   description = "DeepORG is one AI agent for your whole organization — answering questions and carrying out operations across your databases, APIs, files, and code, built on the open-source GraphJin engine."
   home_seo_title = "DeepORG — One AI Agent for Your Whole Organization: databases, APIs, files, and code"
-  github = "https://github.com/dosco/graphjin"
+  github = "https://github.com/dosco/deeporg"
   install = "curl -fsSL https://deeporg.io/install.sh | bash"
 
 [[module.mounts]]
