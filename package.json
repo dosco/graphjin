@@ -1,6 +1,6 @@
 {
   "name": "graphjin",
-  "version": "3.21.21",
+  "version": "3.21.22",
   "description": "GraphJin — one governed graph for AI agents: GraphQL + MCP over your databases, files, APIs, and code",
   "bin": {
     "deeporg": "bin/deeporg.js",
