@@ -9,7 +9,7 @@ assignees: ''
 
 <!-- If you suspect this could be a bug, follow the template. -->
 
-### What version of GraphJin are you using? `graphjin version`
+### What version of GraphJin are you using? `deeporg version`
 
 
 ### Have you tried reproducing the issue with the latest release?

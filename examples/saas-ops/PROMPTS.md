@@ -3,7 +3,7 @@
 Use these prompts after starting the demo with:
 
 ```bash
-graphjin serve --demo --path examples/saas-ops
+deeporg serve --demo --path examples/saas-ops
 ```
 
 To verify the same surfaces from the command line, run:

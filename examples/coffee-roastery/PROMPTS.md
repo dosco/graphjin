@@ -3,7 +3,7 @@
 Use these prompts after starting the demo with:
 
 ```bash
-graphjin serve --demo --path examples/coffee-roastery
+deeporg serve --demo --path examples/coffee-roastery
 ```
 
 To verify the same surfaces from the command line, run:
@@ -21,7 +21,7 @@ job, not the reader's. The server-side agent does not see saved queries; the
 require a capable model. Set one explicitly:
 
 ```bash
-GJ_AGENT_MODEL=gpt-4.1 graphjin serve --demo --path examples/coffee-roastery
+GJ_AGENT_MODEL=gpt-4.1 deeporg serve --demo --path examples/coffee-roastery
 ```
 
 With no `agent.model` configured the provider default applies, which for OpenAI

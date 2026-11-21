@@ -7,13 +7,13 @@ This demo models a coffee roasting business that wants agents to work across ope
 Requirements:
 
 - Docker running locally.
-- A built `graphjin` binary on your `PATH`, or Go installed so you can run the repo command below.
+- A built `deeporg` binary on your `PATH`, or Go installed so you can run the repo command below.
 - Port `8080` available, unless you change `host_port` in `dev.yml`.
 
 From an installed binary:
 
 ```bash
-graphjin serve --demo --path examples/coffee-roastery
+deeporg serve --demo --path examples/coffee-roastery
 ```
 
 From this repository checkout:
@@ -97,7 +97,7 @@ curl -sS http://localhost:8080/api/v1/graphql \
 (Sending both the bearer token and the dev headers makes the same request work
 against either mode.)
 
-The web console needs no token: under `graphjin serve --demo` its sign-in sheet
+The web console needs no token: under `deeporg serve --demo` its sign-in sheet
 offers **Sign in as the demo operator**, which mints a session from the same
 demo secret.
 
@@ -233,7 +233,7 @@ env file and add your provider key:
 ```bash
 cp examples/coffee-roastery/.env.example examples/coffee-roastery/.env
 # edit examples/coffee-roastery/.env and set a provider key
-graphjin serve --demo --path examples/coffee-roastery
+deeporg serve --demo --path examples/coffee-roastery
 # or, from this checkout:
 make demo
 ```
@@ -254,7 +254,7 @@ artifact kind, and inherits the batteries-included agentic runtime defaults.
 You can also run the agentic config directly:
 
 ```bash
-GO_ENV=agentic graphjin serve --demo --path examples/coffee-roastery
+GO_ENV=agentic deeporg serve --demo --path examples/coffee-roastery
 ```
 
 Then run:

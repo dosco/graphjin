@@ -19,7 +19,7 @@ GraphJin's agentic surfaces end to end:
 Run the demo from an installed binary:
 
 ```bash
-graphjin serve --demo --path examples/pcb-fab
+deeporg serve --demo --path examples/pcb-fab
 ```
 
 Or from this repository checkout:

@@ -10,11 +10,11 @@ This file is the exhaustive field reference. If you want the mental model first 
 - **Layered overrides** (later wins): built-in defaults → inherited parent (`inherits:`) → your file → `GJ_*`/`SJ_*` environment variables → dev-mode auto-enables.
 - **Many ways to change it**, not just editing YAML:
   - Editor autocomplete via a `# yaml-language-server: $schema=./config.schema.json` modeline (scaffolded automatically).
-  - The `graphjin config` CLI — `get`, `set`, `unset`, `explain`, `validate`, `schema`, `docs` — offline and comment-preserving.
+  - The `deeporg config` CLI — `get`, `set`, `unset`, `explain`, `validate`, `schema`, `docs` — offline and comment-preserving.
   - The built-in agent (natural-language config recipes) and, in dev, the `get_current_config` / `validate_config` / `update_current_config` MCP tools.
   - The `gj_config` GraphQL control plane (reflects both halves, secrets redacted).
 
-Run `graphjin config docs` (or `graphjin serve new`) for the annotated example templates that document every option inline.
+Run `deeporg config docs` (or `deeporg serve new`) for the annotated example templates that document every option inline.
 
 ## Table of Contents
 
@@ -196,8 +196,8 @@ Codex or Claude. It normalizes the URL to `/api/v1/mcp`, probes the server, and
 uses the right native URL or local proxy config:
 
 ```bash
-graphjin mcp add codex
-graphjin mcp add claude
+deeporg mcp add codex
+deeporg mcp add claude
 ```
 
 Native MCP clients can also connect directly to GraphJin's Streamable HTTP
@@ -254,11 +254,11 @@ claude mcp add --transport sse private-api https://api.company.com/sse \
 
 ### Authenticate The CLI
 
-Before `graphjin cli` can talk to a server, point it at one. There are no `--server` or `--token` flags — both come from a single saved config file (`~/.config/graphjin/client.json`, mode `0600`):
+Before `deeporg cli` can talk to a server, point it at one. There are no `--server` or `--token` flags — both come from a single saved config file (`~/.config/graphjin/client.json`, mode `0600`):
 
 ```bash
-graphjin cli setup http://localhost:8080            # local dev, no auth needed
-graphjin cli setup https://graphjin.example.com     # signs in via the server's OIDC IdP
+deeporg cli setup http://localhost:8080            # local dev, no auth needed
+deeporg cli setup https://graphjin.example.com     # signs in via the server's OIDC IdP
 ```
 
 What `setup` does, depending on the server:
@@ -266,15 +266,15 @@ What `setup` does, depending on the server:
 - **No built-in login** (the server has `auth_login.enabled: false`): saves only the URL. CLI calls send no `Authorization` header.
 - **Built-in login enabled**: kicks off an [RFC 8628 device-code flow](https://www.rfc-editor.org/rfc/rfc8628). The CLI prints a verification URL + short code, opens your browser, you sign in with the configured identity provider (Google, Okta, Keycloak, Auth0-as-IdP, Azure AD — anything OIDC), and the server mints a 30-day JWT. Both URL and JWT are saved to `client.json`.
 
-After setup every `graphjin cli ...` command just works:
+After setup every `deeporg cli ...` command just works:
 
 ```bash
-graphjin cli health
-graphjin cli query list
-graphjin cli schema tables
-graphjin cli setup show       # print the saved config (token redacted)
-graphjin cli setup logout     # delete client.json
-graphjin cli setup            # re-run sign-in against the same server (refresh token)
+deeporg cli health
+deeporg cli query list
+deeporg cli schema tables
+deeporg cli setup show       # print the saved config (token redacted)
+deeporg cli setup logout     # delete client.json
+deeporg cli setup            # re-run sign-in against the same server (refresh token)
 ```
 
 To turn on built-in login on the server, use the `auth_login` config shown in the MCP quick reference above.
@@ -738,11 +738,11 @@ BigQuery limits:
 - There are no transactions. A write preview, which depends on rolling a transaction back, fails on a BigQuery source instead of running the write.
 - Discovery covers the one dataset in the connection string.
 - Table row counts come from `INFORMATION_SCHEMA.TABLE_STORAGE`. Where the project does not let the account read that view, row counts are left out.
-- `graphjin serve --demo` does not connect to BigQuery: a `type: bigquery` source there runs on a local simulator.
+- `deeporg serve --demo` does not connect to BigQuery: a `type: bigquery` source there runs on a local simulator.
 
 #### Redshift
 
-Redshift is not available in `graphjin serve` yet. The server has no Redshift driver: a
+Redshift is not available in `deeporg serve` yet. The server has no Redshift driver: a
 `type: redshift` source stops at startup with `unsupported database type`, and one given a
 `postgres://` connection string is opened with the PostgreSQL driver rather than a Redshift
 one. Do not point a production config at a Redshift cluster.
@@ -1350,7 +1350,7 @@ mutation evidence guard.
 
 ## Agent Environment Configuration
 
-`graphjin env serve` is configured by flags and environment variables only,
+`deeporg env serve` is configured by flags and environment variables only,
 never by the config file — it serves a project rather than being part of one,
 so there is no YAML key table here.
 
@@ -1498,10 +1498,10 @@ marked `failed` by the lease sweep on any replica and is never re-executed,
 because it may already have written data. With the managed sqlite artifact
 store every replica has its own copy of these tables, so set
 `artifacts.source` to a shared Postgres or MySQL source before running more
-than one replica. `graphjin serve db store init` creates or migrates every
+than one replica. `deeporg serve db store init` creates or migrates every
 control-plane table (artifacts, watches, tasks, threads) without starting the
 server, so production can run with `artifacts.auto_init: false`;
-`graphjin serve db store status` reports which tables exist.
+`deeporg serve db store status` reports which tables exist.
 
 Memories are `memory` artifacts. A new memory is personal (`tier: observed`);
 publishing it (`tier: approved`) shares it with the owner's account, and

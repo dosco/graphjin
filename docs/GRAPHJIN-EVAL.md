@@ -6,7 +6,7 @@
 > not that. It is the contract a contributor must not break.
 
 `agent/eval` generates verified tasks, runs graded episodes, and scores them.
-`graphjin eval` measures; `graphjin env` serves. Both are the same engine, and
+`deeporg eval` measures; `deeporg env` serves. Both are the same engine, and
 the invariants below are what let a number produced by one be compared with a
 number produced by the other.
 
@@ -112,9 +112,9 @@ shows up in a diff.
 
 ## The frozen public suite
 
-`graphjin eval bench --public` loads the embedded suite, starts the bundled
+`deeporg eval bench --public` loads the embedded suite, starts the bundled
 demo, and **re-verifies every hidden oracle against the live instance** before
-any evaluated-agent traffic. `graphjin env serve --suite public` serves the same
+any evaluated-agent traffic. `deeporg env serve --suite public` serves the same
 artifact.
 
 Changing it is the hidden `freeze-suite` command plus a
@@ -135,7 +135,7 @@ into tasks.
 
 ## Mined tests
 
-`graphjin eval mine` writes `eval/mined.yml`: questions people asked the agent
+`deeporg eval mine` writes `eval/mined.yml`: questions people asked the agent
 on a running server, each with the query that answered it as its oracle. The
 server half is `GET /api/v1/agent/experience` (admin only, `serv/experience.go`);
 the rules are in `agent/eval/mine.go`.
@@ -165,7 +165,7 @@ the rules are in `agent/eval/mine.go`.
 
 ## Publishing
 
-`graphjin eval publish <run-id>` is the **only** sanctioned writer of
+`deeporg eval publish <run-id>` is the **only** sanctioned writer of
 `website/data/benchmarks/<slug>.yaml` and
 `website/content/benchmarks/<slug>/runs/`. The slug defaults to `deeporg`; the
 flag selects publication metadata and paths, never engine behaviour.
@@ -237,4 +237,4 @@ fetches a current definition to stand in for historical evidence.
 correctness fixes use the shared method checker and record its version; the
 command gains no new suite-generation surface. Its corpora
 migrate through the hidden `import-corpus` command. New suites use
-`graphjin eval`.
+`deeporg eval`.

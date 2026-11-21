@@ -13,10 +13,10 @@ For working **on** GraphJin. Someone using a published environment wants the
 
 | Goal | Entry point |
 |---|---|
-| Measure: does the agent still work | `graphjin eval create` → `eval run` / `eval baseline` |
-| Collect: build a training corpus | `graphjin eval sample` → `eval export` |
-| Serve: give a training loop an environment | `graphjin env serve` |
-| Mint: get a world that is not the demo | `graphjin env new-world` / `env clone` |
+| Measure: does the agent still work | `deeporg eval create` → `eval run` / `eval baseline` |
+| Collect: build a training corpus | `deeporg eval sample` → `eval export` |
+| Serve: give a training loop an environment | `deeporg env serve` |
+| Mint: get a world that is not the demo | `deeporg env new-world` / `env clone` |
 
 They share one engine. A change to scoring, task semantics or provenance
 affects all four.
@@ -42,7 +42,7 @@ so a docs change can fail on a code file and vice versa.
   `eval add` / `eval rm`, which go through the validated writer. Task ids are
   content hashes; editing a prompt detaches the task from every stored episode.
 - `website/data/benchmarks/<slug>.yaml` and
-  `website/content/benchmarks/<slug>/runs/` — `graphjin eval publish` is the
+  `website/content/benchmarks/<slug>/runs/` — `deeporg eval publish` is the
   only sanctioned writer.
 - Anything under `.graphjin-evals/`.
 
@@ -80,7 +80,7 @@ writing the family (bump `GeneratorVersion`), bump `PublicBenchmarkGeneration`,
 then from an empty scratch directory run:
 
 ```sh
-graphjin eval freeze-suite --demo --retire <category> --out <repo>/cmd/benchmark/public-suite.json
+deeporg eval freeze-suite --demo --retire <category> --out <repo>/cmd/benchmark/public-suite.json
 ```
 
 It keeps every other task byte-identical, refills the freed slots from a fresh

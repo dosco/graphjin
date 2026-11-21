@@ -10,7 +10,7 @@ Boot the demo directly with GraphJin:
 
 ```bash
 # Run from repository root
-graphjin serve --demo --path examples/contoso
+deeporg serve --demo --path examples/contoso
 ```
 
 Once running:

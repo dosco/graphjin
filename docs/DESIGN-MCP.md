@@ -14,12 +14,12 @@ Current public connection paths:
 codex mcp add graphjin --url https://graphjin.example.com/api/v1/mcp
 
 # Local/dev or legacy auth_login helper
-graphjin mcp add codex http://localhost:8080
-graphjin mcp add claude http://localhost:8080
+deeporg mcp add codex http://localhost:8080
+deeporg mcp add claude http://localhost:8080
 ```
 
-`graphjin mcp setup` remains for CLI token refresh and older automation. New
-onboarding should use `graphjin mcp add`.
+`deeporg mcp setup` remains for CLI token refresh and older automation. New
+onboarding should use `deeporg mcp add`.
 
 ## Architecture
 
@@ -47,14 +47,14 @@ workflow policy, and audit/runtime events stay consistent with the HTTP API.
 
 ### Stdio
 
-`graphjin mcp` runs a local stdio MCP server when no saved client config exists.
+`deeporg mcp` runs a local stdio MCP server when no saved client config exists.
 This is used for local projects and demos. Identity can come from:
 
 - `--user-id` / `--user-role`
 - `GRAPHJIN_USER_ID` / `GRAPHJIN_USER_ROLE`
 - `mcp.stdio_user_id` / `mcp.stdio_user_role`
 
-When `~/.config/graphjin/client.json` exists, `graphjin mcp` switches to proxy
+When `~/.config/graphjin/client.json` exists, `deeporg mcp` switches to proxy
 mode and forwards stdio JSON-RPC to the saved remote GraphJin server with the
 saved bearer token.
 
@@ -72,7 +72,7 @@ older clients, but public docs should point clients at `/api/v1/mcp`.
 
 ## CLI Add Flow
 
-`graphjin mcp add [client] [server-url]` defaults to:
+`deeporg mcp add [client] [server-url]` defaults to:
 
 - `client=codex`
 - `server=http://localhost:8080`

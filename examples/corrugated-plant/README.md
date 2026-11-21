@@ -17,7 +17,7 @@ Sources:
 Run it from an installed binary:
 
 ```bash
-graphjin serve --demo --path examples/corrugated-plant
+deeporg serve --demo --path examples/corrugated-plant
 ```
 
 Or from this repository checkout:

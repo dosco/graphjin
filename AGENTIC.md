@@ -40,7 +40,7 @@ The fastest way to see the story end to end is a demo vertical:
 ```bash
 # with OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_APIKEY in ./.env the demo
 # switches into agentic mode and enables the built-in agent automatically
-graphjin serve --demo --path examples/coffee-roastery
+deeporg serve --demo --path examples/coffee-roastery
 ```
 
 Then hand the built-in agent a question:
@@ -78,7 +78,7 @@ becomes a sign-in sheet that opens on its own when you have no session:
 
 - **Single sign-on**, when `auth_login` is enabled: the browser goes through
   your OIDC provider and comes back to the page it started on.
-- **Demo operator**, only under `graphjin serve --demo`: one click signs in as
+- **Demo operator**, only under `deeporg serve --demo`: one click signs in as
   the demo's seeded operator (or a local admin when the demo seeds none).
 - **Access token**: paste any JWT the API already accepts.
 

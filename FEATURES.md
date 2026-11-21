@@ -1683,8 +1683,8 @@ workflow policy, and audit/runtime context as GraphQL and REST.
 For local development, use GraphJin's helper:
 
 ```bash
-graphjin mcp add codex
-graphjin mcp add claude
+deeporg mcp add codex
+deeporg mcp add claude
 ```
 
 The helper normalizes the server to `http://localhost:8080/api/v1/mcp`, probes
@@ -1946,7 +1946,7 @@ GraphJin supports operational databases, warehouses, and CQL/NoSQL systems throu
 | BigQuery | Experimental queries | No | No | Limited | No | No | No |
 | CockroachDB | Yes | Yes | Yes | Yes | Yes | No | No |
 
-Also works with: **AWS Aurora/RDS**, **Google Cloud SQL**, **YugabyteDB**. Snowflake supports key pair (JWT) authentication and SHOW-based catalog discovery/paging. BigQuery support is experimental and read-only: schema discovery and queries over a `bigquery://project/dataset` connection string, with no mutations, subscriptions or transactions; the demo runs BigQuery sources on a local simulator. Redshift is not in this table: it has an experimental dialect in the tree, but `graphjin serve` has no driver for it yet. Cassandra / Keyspaces support CQL-native queries, partition-bound polling subscriptions, and single-table primary-key writes; aggregates, full scans, OR-style cross-partition filters, full-text, and GIS remain outside the generic surface.
+Also works with: **AWS Aurora/RDS**, **Google Cloud SQL**, **YugabyteDB**. Snowflake supports key pair (JWT) authentication and SHOW-based catalog discovery/paging. BigQuery support is experimental and read-only: schema discovery and queries over a `bigquery://project/dataset` connection string, with no mutations, subscriptions or transactions; the demo runs BigQuery sources on a local simulator. Redshift is not in this table: it has an experimental dialect in the tree, but `deeporg serve` has no driver for it yet. Cassandra / Keyspaces support CQL-native queries, partition-bound polling subscriptions, and single-table primary-key writes; aggregates, full scans, OR-style cross-partition filters, full-text, and GIS remain outside the generic surface.
 
 ### Cross-Database Joins
 

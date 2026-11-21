@@ -6,7 +6,7 @@
 [![Discord Chat](https://img.shields.io/discord/628796009539043348.svg?style=for-the-badge&logo=discord)](https://discord.gg/6pSWCTZ)
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=go)](https://pkg.go.dev/github.com/dosco/graphjin/core/v3)
 
-> **DeepORG was formerly GraphJin.** The CLI (`graphjin`), the Go module, the npm package and the Docker images keep the `graphjin` name for now.
+> **DeepORG was formerly GraphJin.** The Go module, the npm package and the Docker images keep the `graphjin` name for now.
 
 DeepORG is an AI agent that answers questions and makes changes across the
 systems your company already runs: databases, warehouses, APIs, files and
@@ -46,9 +46,11 @@ own right.
 
 ```bash
 curl -fsSL https://deeporg.io/install.sh | bash   # macOS and Linux
-npm install -g graphjin                              # any platform
-brew install dosco/graphjin/graphjin                 # macOS
+npm install -g graphjin                           # any platform
+brew install dosco/graphjin/deeporg               # macOS
 ```
+
+The command is `deeporg`. The old name, `graphjin`, still works as an alias.
 
 Windows: use `npm install -g graphjin`, or download the Windows archive from
 the [releases page](https://github.com/dosco/deeporg/releases). Linux packages
@@ -57,7 +59,7 @@ are on the same page, and Docker is `docker pull dosco/graphjin`.
 ## Try it
 
 ```bash
-graphjin serve --demo
+deeporg serve --demo
 ```
 
 This starts a demo SaaS company (accounts, subscriptions, invoices, support
@@ -76,7 +78,7 @@ Or chat with it at <http://localhost:8083/agent>. More demos:
 ## Use it from Claude, Codex or any MCP client
 
 ```bash
-graphjin mcp add claude http://localhost:8083
+deeporg mcp add claude http://localhost:8083
 ```
 
 Other clients: [MCP](https://deeporg.io/agentic/mcp/). Hosted servers with sign-in:

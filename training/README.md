@@ -27,7 +27,7 @@ everything else without negotiating with any of them.
 | `rollout_smoke.py` | One pass over `/tasks`, printing rewards. The shape a loop takes |
 | `grpo_smoke.py` | A GPU-free GRPO-shaped group rollout, asserting a full group of rewards comes back |
 | `measure.py` | Held-out measurement: pass rate, confidence interval, and the resolution floor |
-| `sft_from_export.py` | Turns `graphjin eval export` output into SFT records, refusing trajectories with no recorded prompt or unresolved authorship |
+| `sft_from_export.py` | Turns `deeporg eval export` output into SFT records, refusing trajectories with no recorded prompt or unresolved authorship |
 
 ## The shortest thing that works
 
