@@ -1050,7 +1050,7 @@ if (await exists(benchmarkDataPath)) {
     } else if (renderedConfidenceLow !== undefined || renderedConfidenceHigh !== undefined) {
       failures.push('Friendly DeepORG renders an invalid or unavailable confidence range');
     }
-    if (!landingHTML.includes('https://graphjin.com/og/deeporg-og.png')) {
+    if (!landingHTML.includes('https://deeporg.io/og/deeporg-og.png')) {
       failures.push('Friendly DeepORG page does not reference its dedicated social card');
     }
 
@@ -1576,6 +1576,11 @@ for (const file of htmlFiles) {
   const rel = path.relative(publicRoot, file);
   if (html.includes('GraphJin Agent Benchmark')) {
     failures.push(`${rel} contains the retired benchmark name`);
+  }
+  // The site moved to deeporg.io on 20 Nov 2026 and graphjin.com stopped
+  // serving it: an install command or link on the old domain is a dead one.
+  if (/graphjin\.com/i.test(html)) {
+    failures.push(`${rel} names graphjin.com, which no longer serves the site; use deeporg.io`);
   }
   for (const match of html.matchAll(/\sdata-ascii=(?:"([^"]+)"|'([^']+)'|([^"' >]+))/g)) {
     const scene = match[1] || match[2] || match[3];

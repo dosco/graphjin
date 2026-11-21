@@ -68,7 +68,7 @@ The same binary and config that serve the agent also run your realtime, files, r
 The project grew from an engine into an agent built on that engine, and the name followed. The engine keeps its name, and so does everything you install: the `graphjin` CLI, the Go module, the npm package and the Docker images, for now.
 
 ```bash
-curl -fsSL https://graphjin.com/install.sh | bash   # macOS and Linux
+curl -fsSL https://deeporg.io/install.sh | bash   # macOS and Linux
 npm install -g graphjin                              # any platform
 brew install dosco/graphjin/graphjin                 # macOS
 docker pull dosco/graphjin

@@ -20,7 +20,7 @@ toc: false
 Install DeepORG, add a model key and start the demo company. The CLI is still named `graphjin`.
 
 ```bash
-curl -fsSL https://graphjin.com/install.sh | bash
+curl -fsSL https://deeporg.io/install.sh | bash
 echo 'OPENAI_API_KEY=your-key' >> .env
 graphjin serve --demo
 ```

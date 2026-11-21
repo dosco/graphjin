@@ -180,7 +180,7 @@ const card = `<!doctype html>
 </style>
 </head>
 <body>
-  <header><h1>DeepORG Benchmark</h1><strong>graphjin.com/benchmark</strong></header>
+  <header><h1>DeepORG Benchmark</h1><strong>deeporg.io/benchmark</strong></header>
   <p class="question">Can an AI agent actually do what your organization needs — answer the question, carry out the operation, refuse what it should — against a live database, with no unsafe writes?</p>
   ${bestRuns}
   <footer><span>Best trustworthy published result for every tested model</span><span>Current exam: ${escapeHTML(scope)} tasks · exact reports online</span></footer>

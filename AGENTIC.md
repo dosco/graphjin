@@ -58,7 +58,7 @@ conversation is available in the built-in web console at `localhost:8080/agent`,
 and external MCP clients can drive the discovery tools directly against the
 same demo. More demo verticals — a zero-Docker SaaS ops demo, a
 corrugated-box plant, a PCB fab — are listed at
-<https://graphjin.com/start/demos/>.
+<https://deeporg.io/start/demos/>.
 
 The console's `/mission` route is the human view over durable agentic state.
 It shows declared tasks and their provenance trails, the unseen watch-event
@@ -208,7 +208,7 @@ caller-visible catalog, prefetch exact schema and contracts, and load relevant
 permitted guides. Fresh requests with a scope-matched prepared root enter core-model execution
 through a local request handoff; follow-ups and caller context retain model
 distillation. Missing guides remain discoverable during execution. Selection is
-disabled by default; see the [server agent configuration](https://graphjin.com/agentic/server-agent/).
+disabled by default; see the [server agent configuration](https://deeporg.io/agentic/server-agent/).
 Without it, a plain question (no caller context) still skips distillation: the
 executor receives a compact `seed_digest` in `catalog_facets` — the seed's top
 tables with their real column names and types, plus seed workflows by id —
@@ -1529,7 +1529,7 @@ Lexical discovery uses the normal artifact projection. Semantic discovery
 embeds each approved note as a separate account-filtered document that lifts its
 target without changing the entity document. Demotion or deletion removes it
 from the next semantic generation. The full website guide is
-[Catalog Annotations](https://graphjin.com/agentic/annotations/).
+[Catalog Annotations](https://deeporg.io/agentic/annotations/).
 
 ### Tasks: Explicit Durable Intent With A Trail
 

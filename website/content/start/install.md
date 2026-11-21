@@ -11,7 +11,7 @@ weight: 10
 Use the install script when you want the native CLI binary:
 
 ```bash
-curl -fsSL https://graphjin.com/install.sh | bash
+curl -fsSL https://deeporg.io/install.sh | bash
 graphjin version
 ```
 

@@ -31,7 +31,7 @@ description: "DeepORG is one AI agent for your whole organization. It answers qu
 <section id="quickstart" class="dx-band"><div class="dx-start"><div class="dx-start-grid"><div><p class="dx-kicker"><b>Get started</b></p><h2>Run it in two minutes.</h2><p>Install DeepORG, add a model key and start the demo: a SaaS company with accounts, subscriptions, invoices and support tickets, seeded and ready to question. The command is still called <code>graphjin</code>.</p><div class="home-actions"><a class="button-primary" href="/start/quick-start/">Read the quick start</a><a class="button-secondary" href="/agentic/mcp/">Connect Claude or Codex</a></div></div><div class="quickstart-simple">
 {{< code-card filename="terminal" language="bash" >}}
 # Install DeepORG (the CLI is still named graphjin)
-curl -fsSL https://graphjin.com/install.sh | bash
+curl -fsSL https://deeporg.io/install.sh | bash
 
 # Add a model key: OPENAI_API_KEY, ANTHROPIC_API_KEY or GOOGLE_API_KEY
 echo 'OPENAI_API_KEY=your-key' >> .env

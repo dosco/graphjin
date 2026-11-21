@@ -1,4 +1,4 @@
-baseURL = "https://graphjin.com/"
+baseURL = "https://deeporg.io/"
 locale = "en-us"
 title = "DeepORG"
 disableKinds = ["taxonomy", "term"]
@@ -22,7 +22,7 @@ canonifyURLs = false
   description = "DeepORG is one AI agent for your whole organization — answering questions and carrying out operations across your databases, APIs, files, and code, built on the open-source GraphJin engine."
   home_seo_title = "DeepORG — One AI Agent for Your Whole Organization: databases, APIs, files, and code"
   github = "https://github.com/dosco/graphjin"
-  install = "curl -fsSL https://graphjin.com/install.sh | bash"
+  install = "curl -fsSL https://deeporg.io/install.sh | bash"
 
 [[module.mounts]]
   source = "content"
