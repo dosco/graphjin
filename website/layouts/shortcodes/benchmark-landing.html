@@ -89,7 +89,7 @@
         <figure class="diagram-wrap benchmark-why-figure" aria-label="An AI agent guessing at disconnected systems">{{ readFile "static/svg/problem-blind-agent.svg" | safeHTML }}</figure>
       </div>
       <p class="benchmark-why-kicker">One agent across the stack you already run</p>
-      {{ partial "database-strip.html" . }}
+      {{ partial "database-strip.html" (dict "compact" false) }}
     </section>
 
     <section id="watch-it-work" class="benchmark-landing-section benchmark-watch-section" aria-labelledby="benchmark-watch-title">

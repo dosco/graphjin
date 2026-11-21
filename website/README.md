@@ -39,6 +39,12 @@ The provider marks beside the benchmark board are listed in
 file in `static/logos/provider-*.svg` is a single-colour `<svg>` of `<path>`
 elements and nothing else; `npm run check` refuses anything more.
 
+The systems DeepORG connects to are listed in `data/databases.yaml` and drawn by
+`{{</* database-logos */>}}`. The homepage passes `compact="true"`, which draws
+a short strip of small marks with the name beside each; the deeper pages keep
+the full grid. A logo drawn in a dark colour sets `on_dark: lighten` so it stays
+visible on the dark theme.
+
 The link preview card is `static/og/deeporg-site-og.png`, rendered from
 `scripts/og-card.html` (the command is in that file). The tab icons
 `static/favicon.ico` and `static/apple-touch-icon.png` are rendered from

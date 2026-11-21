@@ -4,14 +4,19 @@
 # `npm run check` fails unless serv/db.go has a driver case for that type. An
 # entry that is not a database names its `source` kind instead. Add a database
 # here only once `graphjin serve` can connect to it.
+#
+# `on_dark: lighten` marks a logo drawn in a dark colour, which would vanish on
+# the dark theme; the stylesheet flips its lightness there.
 - name: PostgreSQL
   logo: postgresql.svg
   type: postgres
 - name: MySQL
   logo: mysql.svg
+  on_dark: lighten
   type: mysql
 - name: MariaDB
   logo: mariadb.svg
+  on_dark: lighten
   type: mariadb
 - name: MongoDB
   logo: mongodb.svg

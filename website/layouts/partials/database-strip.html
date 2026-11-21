@@ -1,9 +1,11 @@
-<div class="database-strip" aria-label="Supported databases and sources">
+{{- /* Called with a dict. compact: one or two short rows of small marks with
+       the name beside each, for the homepage; without it, the full grid. */ -}}
+<div class="database-strip{{ if .compact }} database-strip--compact{{ end }}" aria-label="Supported databases and sources">
   {{ range index hugo.Data "databases" }}
     <span class="database-logo-item">
       <span class="database-logo-mark">
         {{ if .logo }}
-          <img src="{{ printf "/logos/%s" .logo | relURL }}" alt="" loading="lazy">
+          <img src="{{ printf "/logos/%s" .logo | relURL }}" alt="" loading="lazy"{{ if eq .on_dark "lighten" }} class="database-logo--lighten"{{ end }}>
         {{ else }}
           <em aria-hidden="true">{{ .label }}</em>
         {{ end }}

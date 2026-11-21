@@ -5734,6 +5734,79 @@ h3 {
   margin: 0;
 }
 
+/* The homepage strip: a line of small marks with the name beside each, so the
+   whole list reads at a glance. The full grid stays on the deeper pages. */
+.database-strip.database-strip--compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem 2.1rem;
+  padding: 1.15rem 0 0;
+}
+
+.database-strip--compact > .database-logo-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  text-align: left;
+}
+
+.database-strip--compact .database-logo-mark {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 1.5rem;
+  height: 1.5rem;
+}
+
+.database-strip--compact img {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+
+.database-strip--compact strong {
+  overflow-wrap: normal;
+  font-size: 0.84rem;
+  white-space: nowrap;
+}
+
+.database-strip--compact .database-logo-mark em {
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-size: 0.72rem;
+}
+
+/* Inside a /why/ band the grid has a narrow column to itself. Six fixed
+   columns ran off the right edge there and hid the sixth of each row, so the
+   band fits as many columns as it has room for. */
+.why-band-body .database-strip {
+  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  column-gap: 2rem;
+}
+
+/* A logo drawn in a dark colour (data/databases.yaml: on_dark: lighten) would
+   vanish on the dark theme, so its lightness is flipped there and its hue kept. */
+html[data-theme="dark"] .database-strip img.database-logo--lighten {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .database-strip img.database-logo--lighten {
+    filter: invert(1) hue-rotate(180deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .database-strip.database-strip--compact {
+    gap: 0.7rem 1.5rem;
+  }
+
+  .database-strip--compact strong {
+    font-size: 0.8rem;
+  }
+}
+
 /* Homepage cards sit on the open canvas: one rule above, no box. */
 .home .home-card,
 .why-page .home-card {

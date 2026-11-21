@@ -1,1 +1,1 @@
-{{ partial "database-strip.html" . }}
+{{ partial "database-strip.html" (dict "compact" (eq (.Get "compact") "true")) }}

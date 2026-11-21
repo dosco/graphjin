@@ -583,6 +583,21 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   if (oldNameCount !== 1 || !homeMain.includes('formerly GraphJin')) {
     failures.push(`Homepage body names GraphJin ${oldNameCount} times; only the hero's "formerly GraphJin" line may`);
   }
+  // The homepage lists the systems as a short labelled strip. The full logo
+  // grid took most of a screen there; it stays on the deeper pages.
+  const stripStart = homeHTML.search(/id=["']?databases\b/);
+  const stripEnd = homeHTML.search(/id=["']?engine\b/);
+  const homeStrip = stripStart >= 0 && stripEnd > stripStart ? homeHTML.slice(stripStart, stripEnd) : '';
+  if (!homeStrip) {
+    failures.push('Homepage #databases strip not found ahead of #engine');
+  } else {
+    if (!/database-strip--compact/.test(homeStrip)) {
+      failures.push('Homepage #databases shows the full logo grid; it should be the compact strip');
+    }
+    if (!homeStrip.includes('Works with what you already run')) {
+      failures.push('Homepage #databases strip lost its label');
+    }
+  }
   const engineStart = homeHTML.search(/id=["']?engine\b/);
   const engineEnd = homeHTML.search(/id=["']?quickstart\b/);
   const engine = engineStart >= 0 && engineEnd > engineStart ? homeHTML.slice(engineStart, engineEnd) : '';
