@@ -370,8 +370,9 @@ func (c *compilerContext) compileLinearMutation() {
 					} else if c.dialect.Name() == "mysql" || c.dialect.Name() == "mariadb" {
 						// For child updates (m.ParentID != -1), the JSON input doesn't contain the child's PK.
 						// The row to update is determined by the parent's FK, not by JSON table join.
-						// Only add JSON table join for root updates that need it.
-						if m.ParentID == -1 && (len(c.qc.Selects) == 0 || c.qc.Selects[m.SelID].Where.Exp == nil) {
+						// Only add JSON table join for root updates that need it: bulk updates, whose
+						// rows each name their target, and updates without a where clause.
+						if m.ParentID == -1 && (m.Array || len(c.qc.Selects) == 0 || c.qc.Selects[m.SelID].Where.Exp == nil) {
 							for i, pkCol := range m.Ti.PrimaryCols {
 								if i > 0 {
 									c.w.WriteString(" AND ")
@@ -387,14 +388,12 @@ func (c *compilerContext) compileLinearMutation() {
 					}
 				}
 
-				if m.ParentID == -1 {
+				if m.ParentID == -1 && len(c.qc.Selects) > 0 && c.qc.Selects[m.SelID].Where.Exp != nil {
 					if hasWhere {
 						c.w.WriteString(" AND ")
 					}
-					if len(c.qc.Selects) > 0 && c.qc.Selects[m.SelID].Where.Exp != nil {
-						c.renderExp(m.Ti, c.qc.Selects[m.SelID].Where.Exp, false)
-						hasWhere = true
-					}
+					c.renderExp(m.Ti, c.qc.Selects[m.SelID].Where.Exp, false)
+					hasWhere = true
 				}
 
 				if m.Where.Exp != nil {

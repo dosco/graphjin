@@ -134,10 +134,6 @@ func (co *Compiler) compileMutation(qc *QCode,
 	for _, rootID := range qc.Roots {
 		sel := &qc.Selects[rootID]
 
-		if whereReq && sel.Where.Exp == nil {
-			return errors.New("where clause required")
-		}
-
 		m := Mutate{
 			Field:    Field{Type: FieldTypeTable},
 			ID:       nextID,
@@ -160,6 +156,9 @@ func (co *Compiler) compileMutation(qc *QCode,
 		}
 
 		if m.Type == MTDelete {
+			if sel.Where.Exp == nil {
+				return errors.New("where clause required")
+			}
 			m.render = true
 			st.Push(m)
 			continue
@@ -168,6 +167,20 @@ func (co *Compiler) compileMutation(qc *QCode,
 		m.mData, err = parseMutationDataFromArg(qc, sel.FieldName, vmap)
 		if err != nil {
 			return err
+		}
+
+		// A bulk update matches every row of the list to its target row by
+		// primary key. Where the database supports it the list itself scopes
+		// the update, so no where clause is needed.
+		var bulkWithoutWhere bool
+		if m.Type == MTUpdate && m.Data.Type == graph.NodeList {
+			if bulkWithoutWhere, err = co.checkBulkUpdateData(m); err != nil {
+				return err
+			}
+		}
+
+		if whereReq && sel.Where.Exp == nil && !bulkWithoutWhere {
+			return errors.New("where clause required")
 		}
 
 		if m.Data.Type == graph.NodeList {
@@ -261,7 +274,62 @@ func (co *Compiler) compileMutation(qc *QCode,
 		}
 	}
 	qc.Mutates = mutates
+	if err := checkBulkUpdateMutates(qc); err != nil {
+		return err
+	}
 	return co.configureInsertConflict(qc)
+}
+
+// checkBulkUpdateData rejects list update payloads that the database cannot
+// apply row by row; otherwise every row matched by the where clause would
+// receive the values of an arbitrary list item. It reports whether the update
+// may run without a where clause.
+func (co *Compiler) checkBulkUpdateData(m Mutate) (withoutWhere bool, err error) {
+	switch dbType := co.s.DBType(); dbType {
+	case "", "postgres", "mysql", "mariadb", "sqlite":
+		// An empty type is the default Postgres dialect.
+		withoutWhere = true
+	case "snowflake":
+		// Snowflake joins rows by primary key but keeps the where clause.
+	default:
+		return false, fmt.Errorf("bulk update: updating a list of rows is not supported for %s", dbType)
+	}
+	if !m.IsJSON {
+		return false, errors.New("bulk update: pass the list of rows as a variable to a single root mutation")
+	}
+	if len(m.Data.Children) == 0 {
+		return false, errors.New("bulk update: the list of rows is empty")
+	}
+	if len(m.Ti.PrimaryCols) == 0 {
+		return false, fmt.Errorf("bulk update: table %q has no primary key to match rows on", m.Ti.Name)
+	}
+	return withoutWhere, nil
+}
+
+// checkBulkUpdateMutates verifies that each root bulk update carries the
+// primary key it is matched on and does not nest mutations of related tables.
+func checkBulkUpdateMutates(qc *QCode) error {
+	for _, m := range qc.Mutates {
+		if m.Type != MTUpdate || m.ParentID != -1 || !m.Array {
+			continue
+		}
+		for _, pk := range m.Ti.PrimaryCols {
+			found := false
+			for _, col := range m.Cols {
+				if col.Col.Name == pk.Name && !col.Set {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("bulk update: every row must include the primary key %q of table %q", pk.Name, m.Ti.Name)
+			}
+		}
+		if len(m.children) != 0 || len(m.RCols) != 0 {
+			return fmt.Errorf("bulk update: nested mutations are not supported when updating a list of %q rows", m.Ti.Name)
+		}
+	}
+	return nil
 }
 
 // compileOpenAPIMutation retains the call JSON object without treating its

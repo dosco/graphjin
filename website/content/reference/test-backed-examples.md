@@ -38,6 +38,7 @@ Beyond unit-level examples, the repo ships four runnable demo verticals (coffee-
 | Nested insert | `Example_insertIntoMultipleRelatedTables` |
 | Connect related rows | `Example_insertIntoTableAndConnectToRelatedTables` |
 | Update | `Example_update` |
+| Bulk update | `TestBulkUpdateMatchesRowsByPrimaryKey` |
 | Delete | `TestMultiAliasDelete` |
 | Read-only enforcement | `TestReadOnlyDB_WithRolesAndTables` |
 

@@ -1344,24 +1344,7 @@ func (d *MySQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 			}
 		}
 
-	}, fromFunc, func() {
-		// Where
-		if m.IsJSON {
-			// Root-level update: may need JSON table join for WHERE
-			if m.SelID < 0 || int(m.SelID) >= len(qc.Selects) || qc.Selects[m.SelID].Where.Exp == nil {
-				for j, pkCol := range m.Ti.PrimaryCols {
-					if j > 0 {
-						ctx.WriteString(" AND ")
-					}
-					ctx.ColWithTable(m.Ti.Name, pkCol.Name)
-					ctx.WriteString(" = ")
-					ctx.ColWithTable("t", pkCol.Name)
-				}
-				ctx.WriteString(" AND ")
-			}
-		}
-		renderWhere()
-	})
+	}, fromFunc, renderWhere) // renderWhere also joins JSON rows to their target by primary key
 	ctx.WriteString("; ")
 }
 
