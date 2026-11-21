@@ -14,7 +14,7 @@ query a database it has never seen.
 ## Generate an organization
 
 ```bash
-graphjin env new-world --domain logistics --seed 7 --out ./world-logistics
+deeporg env new-world --domain logistics --seed 7 --out ./world-logistics
 ```
 
 Three vocabularies ship — `logistics`, `clinic`, `retail`. The same domain and
@@ -37,7 +37,7 @@ makes real schemas hard.
 ## Describe one instead
 
 ```bash
-graphjin env new-world --describe "genome sequencing lab" --seed 7 --yes
+deeporg env new-world --describe "genome sequencing lab" --seed 7 --yes
 ```
 
 A model names the records and the vocabulary; the engine validates every
@@ -46,7 +46,7 @@ deterministically. The pack it produced is written to `world-pack.json`, and
 that artifact — not the model — is the source of truth from then on:
 
 ```bash
-graphjin env new-world --pack world-pack.json --seed 7 --out ./rebuild
+deeporg env new-world --pack world-pack.json --seed 7 --out ./rebuild
 ```
 
 Rebuilding from the pack spends nothing and produces identical bytes. The model
@@ -101,7 +101,7 @@ A world is only useful if a suite generated from it is verified against it. Boot
 it and generate:
 
 ```bash
-graphjin eval create --demo --path ./world-logistics --writable --split 0.8
+deeporg eval create --demo --path ./world-logistics --writable --split 0.8
 ```
 
 If `catalog_match` on `/health` is `false` when you later serve them together,

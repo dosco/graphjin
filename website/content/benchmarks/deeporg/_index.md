@@ -66,8 +66,8 @@ attempts per task. Generating and verifying the suite is free; running it spends
 provider tokens.
 
 {{< code-card filename="terminal" language="bash" >}}
-graphjin eval bench --public --yes
-graphjin eval publish <run-id> --benchmark deeporg --yes
+deeporg eval bench --public --yes
+deeporg eval publish <run-id> --benchmark deeporg --yes
 {{< /code-card >}}
 
 Publishing writes one deterministic YAML row and one Markdown report page for
@@ -82,8 +82,8 @@ generator can build a private evaluation from your own DeepORG catalog and
 check live hidden oracles before a model sees its first prompt.
 
 {{< code-card filename="terminal" language="bash" >}}
-graphjin eval create --yes
-graphjin eval run --yes
+deeporg eval create --yes
+deeporg eval run --yes
 {{< /code-card >}}
 
 Private prompts, answers, rows, queries, credentials, and local paths stay in

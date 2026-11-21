@@ -17,7 +17,7 @@ The default. Your policy sits behind an OpenAI-compatible endpoint and GraphJin
 runs the whole episode: discovery, the agent loop, the answer, the grading.
 
 ```bash
-graphjin env serve --suite public --pool 4
+deeporg env serve --suite public --pool 4
 ```
 
 ```
@@ -36,7 +36,7 @@ conversation, the available functions and the response format. You post the
 completion back and the episode resumes.
 
 ```bash
-graphjin env serve --suite public --pool 4 --step
+deeporg env serve --suite public --pool 4 --step
 ```
 
 ```
@@ -68,7 +68,7 @@ rewards = group_rollout("http://127.0.0.1:8090", task, n=8, complete_fn=my_model
 own scaffold do the work.
 
 ```bash
-graphjin env serve --suite public --pool 4 --external
+deeporg env serve --suite public --pool 4 --external
 ```
 
 ```

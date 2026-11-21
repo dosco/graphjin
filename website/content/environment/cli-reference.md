@@ -1,5 +1,5 @@
 ---
-title: "graphjin env And graphjin eval Reference"
+title: "deeporg env And deeporg eval Reference"
 nav_title: "CLI Reference"
 description: "Every subcommand and flag of both namespaces, plus the GJ_ENV_, GJ_SUPPORT_ and GJ_GENERATOR_ variable families."
 nav_group: "environment"
@@ -7,10 +7,10 @@ doc_kind: "reference"
 weight: 70
 ---
 
-Two namespaces. `graphjin eval` builds and runs suites; `graphjin env` serves
+Two namespaces. `deeporg eval` builds and runs suites; `deeporg env` serves
 worlds and generates them.
 
-## graphjin env
+## deeporg env
 
 | Command | Purpose |
 |---|---|
@@ -45,7 +45,7 @@ worlds and generates them.
 
 | Flag | Default |
 |---|---|
-| `--url` | the server from `graphjin cli setup` |
+| `--url` | the server from `deeporg cli setup` |
 | `--out` | `./clone` |
 | `--rows` | `12` synthetic rows per table |
 | `--seed` | `1` |
@@ -68,7 +68,7 @@ worlds and generates them.
 `--url` (defaults to the port `GJ_ENV_LISTEN` names), `--timeout` (`5s`),
 `--json`. Exits zero only on a `200` whose status is `ready`.
 
-## graphjin eval
+## deeporg eval
 
 | Command | Purpose |
 |---|---|

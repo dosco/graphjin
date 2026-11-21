@@ -50,7 +50,7 @@ The same binary and config that serve the agent also run your realtime, files, r
 
 {{< grid >}}
 
-- **A GraphQL API server.** `graphjin serve` in front of your database, with no resolvers to write.
+- **A GraphQL API server.** `deeporg serve` in front of your database, with no resolvers to write.
 - **A Go library.** Embed the compiler in your own service. The examples in the package docs are tests.
 - **Realtime.** Subscribe with the same GraphQL over WebSocket or SSE. Streams resume after a drop.
 - **Saved queries.** In production, run reviewed queries by name and refuse anything else.
@@ -65,12 +65,12 @@ The same binary and config that serve the agent also run your realtime, files, r
 
 {{< band label="The name" title="DeepORG was formerly GraphJin." >}}
 
-The project grew from an engine into an agent built on that engine, and the name followed. The engine keeps its name, and so does everything you install: the `graphjin` CLI, the Go module, the npm package and the Docker images, for now.
+The project grew from an engine into an agent built on that engine, and the name followed. The engine keeps its name, and so do the Go module, the npm package and the Docker images, for now. The command is `deeporg`, and `graphjin` still works as an alias.
 
 ```bash
 curl -fsSL https://deeporg.io/install.sh | bash   # macOS and Linux
-npm install -g graphjin                              # any platform
-brew install dosco/graphjin/graphjin                 # macOS
+npm install -g graphjin                           # any platform
+brew install dosco/graphjin/deeporg               # macOS
 docker pull dosco/graphjin
 ```
 

@@ -17,7 +17,7 @@ benchmark built on somebody else's schema tells you very little about yours.
 ## Clone the shape, not the data
 
 ```bash
-graphjin env clone --url https://graphjin.internal --out ./clone-acme --seed 7
+deeporg env clone --url https://graphjin.internal --out ./clone-acme --seed 7
 ```
 
 This reads the **catalog** of a running server and writes a local SQLite project
@@ -39,7 +39,7 @@ that could not be mapped exactly.
 ## Generate a suite from it
 
 ```bash
-graphjin eval create --demo --path ./clone-acme --writable \
+deeporg eval create --demo --path ./clone-acme --writable \
   --scale 300 --composition coverage --split 0.8
 ```
 
@@ -60,7 +60,7 @@ assembled and verified by the engine:
 
 ```bash
 export GJ_GENERATOR_MODEL=<a-capable-model>
-graphjin eval author --demo --path ./clone-acme --kinds watch,scenario,file --yes
+deeporg eval author --demo --path ./clone-acme --kinds watch,scenario,file --yes
 ```
 
 The authoring model chooses and phrases; the engine constructs, gates
@@ -81,7 +81,7 @@ skips both and says so. They are written only against a server whose
 ## Serve it
 
 ```bash
-graphjin env serve --path ./clone-acme --suite eval/suite.yml \
+deeporg env serve --path ./clone-acme --suite eval/suite.yml \
   --split eval/suite.split.json --side train --pool 4 \
   --freeze-time 2026-08-01T12:00:00Z
 ```

@@ -19,7 +19,7 @@ The coffee-roastery demo ships with data, workflows, source code, and the agent 
 ```bash
 # with OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY in ./.env the demo
 # switches into agentic mode and enables the built-in agent automatically
-graphjin serve --demo --path examples/coffee-roastery
+deeporg serve --demo --path examples/coffee-roastery
 ```
 
 Then hand it a question:
@@ -49,7 +49,7 @@ The same contract is published across vendors in [DeepORG](/benchmarks/deeporg/)
 `agentic.yml` loads when the environment is agentic. The agent itself needs no feature toggle:
 
 ```bash
-GO_ENV=agentic graphjin serve --path ./config
+GO_ENV=agentic deeporg serve --path ./config
 ```
 
 ```yaml

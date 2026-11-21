@@ -22,7 +22,7 @@ workflows:
 ```
 
 ```bash
-graphjin workflow run nightly-report --vars report-vars.json
+deeporg workflow run nightly-report --vars report-vars.json
 ```
 
 Workflows can call GraphJin tools and GraphQL when allowed by configuration. They respect declared variables, timeouts, context cancellation, and workflow execution policy.

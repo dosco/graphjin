@@ -35,10 +35,10 @@ Run a capable model over the training side and keep what passed.
 ```bash
 export GJ_AGENT_PROVIDER=... GJ_AGENT_MODEL=<a-capable-model> GJ_AGENT_API_KEY_ENV=...
 
-graphjin eval sample --demo --repeats 2 \
+deeporg eval sample --demo --repeats 2 \
   --split eval/suite.split.json --side train --yes
 
-graphjin eval export <run-id> --split eval/suite.split.json --side train \
+deeporg eval export <run-id> --split eval/suite.split.json --side train \
   --stage executor --out teacher.jsonl
 
 python3 training/sft_from_export.py teacher.jsonl --out sft.jsonl --min-reward 1.0
@@ -61,7 +61,7 @@ at a temperature above zero.
 ```bash
 export GJ_AGENT_BASE_URL=http://your-inference-server:8000 GJ_AGENT_MODEL=<checkpoint>
 
-graphjin eval sample --demo --repeats 8 --temperature 0.8 \
+deeporg eval sample --demo --repeats 8 --temperature 0.8 \
   --split eval/suite.split.json --side train --yes
 ```
 
@@ -77,7 +77,7 @@ group of identical rewards is the symptom to check first.
 Serve the training side with `--step` and let your loop supply completions.
 
 ```bash
-graphjin env serve --suite public --split auto:0.8 --side train --pool 8 \
+deeporg env serve --suite public --split auto:0.8 --side train --pool 8 \
   --step --support-model <a-small-fast-model>
 ```
 
@@ -112,7 +112,7 @@ the thing the flag exists to prevent.
 Serve the held-out side separately and measure:
 
 ```bash
-graphjin env serve --suite public --split auto:0.8 --side eval --pool 4 --listen :8091
+deeporg env serve --suite public --split auto:0.8 --side eval --pool 4 --listen :8091
 python3 training/measure.py --env http://127.0.0.1:8091 --repeats 2
 ```
 

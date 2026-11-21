@@ -25,7 +25,7 @@ sources:
 Then start the service:
 
 ```bash
-graphjin serve
+deeporg serve
 ```
 
 ## Open the Web UI

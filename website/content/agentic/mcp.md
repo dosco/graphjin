@@ -11,21 +11,21 @@ weight: 10
 Nothing to start, no Docker, no config file, no model key:
 
 ```bash
-claude mcp add graphjin -- graphjin mcp --demo
-codex mcp add graphjin -- graphjin mcp --demo
+claude mcp add graphjin -- deeporg mcp --demo
+codex mcp add graphjin -- deeporg mcp --demo
 ```
 
-`graphjin mcp --demo` extracts the built-in SaaS ops demo to `./graphjin-demo` — SQLite, in-process, no containers — and serves MCP over stdio. Your IDE's own model does the reasoning, so no provider key is needed. Delete `./graphjin-demo` to reset. Point at another [demo vertical](/start/demos/) from a repo clone with `--path examples/<name>`.
+`deeporg mcp --demo` extracts the built-in SaaS ops demo to `./graphjin-demo` — SQLite, in-process, no containers — and serves MCP over stdio. Your IDE's own model does the reasoning, so no provider key is needed. Delete `./graphjin-demo` to reset. Point at another [demo vertical](/start/demos/) from a repo clone with `--path examples/<name>`.
 
 The catalog-first path is measured across models in [DeepORG](/benchmarks/deeporg/).
 
-The demo deliberately keeps its own configuration out of reach. It sets `mcp.allow_config_updates: false` and puts the `gj_config` root behind `admin`, so a stdio caller gets `validate_config` — enough to dry-run a change — but neither `get_current_config` nor `update_current_config`. To configure GraphJin from your IDE, scaffold your own project with `graphjin serve new my-api`; the generated `dev.yml` enables all three.
+The demo deliberately keeps its own configuration out of reach. It sets `mcp.allow_config_updates: false` and puts the `gj_config` root behind `admin`, so a stdio caller gets `validate_config` — enough to dry-run a change — but neither `get_current_config` nor `update_current_config`. To configure GraphJin from your IDE, scaffold your own project with `deeporg serve new my-api`; the generated `dev.yml` enables all three.
 
 ## Connect to a running server
 
 ```bash
-graphjin mcp add codex
-graphjin mcp add claude
+deeporg mcp add codex
+deeporg mcp add claude
 ```
 
 Defaults are client `codex`, server `http://localhost:8080`, and project scope; the URL is normalized to `/api/v1/mcp`. Use `--global` to make the connection available outside the current project.
@@ -33,8 +33,8 @@ Defaults are client `codex`, server `http://localhost:8080`, and project scope; 
 This path is HTTP-only and **requires GraphJin to already be running** — the command sends a real MCP `initialize` probe and stops if nothing answers. Start the server first:
 
 ```bash
-graphjin serve --demo                           # terminal 1: the demo listens on 8083
-graphjin mcp add codex http://localhost:8083    # terminal 2
+deeporg serve --demo                           # terminal 1: the demo listens on 8083
+deeporg mcp add codex http://localhost:8083    # terminal 2
 ```
 
 For hosted GraphJin:
@@ -158,7 +158,7 @@ Note that the source-mode `preview` → `apply` handshake is a consistency guard
 
 The catalog ships 15 `config_recipe` rows, each with preflight checks, the apply mutation, verification, and stop conditions. An agent finds them through `query_catalog` — adding a role, setting source access defaults, classifying tables, enabling artifacts, tasks or watches, rate limiting, agent tuning, JWT auth, Redis caching, uploads, and production hardening.
 
-See [How Configuration Works](/configure/how-it-works/) for every config interface, including the `graphjin config` CLI and `GJ_*` environment variables.
+See [How Configuration Works](/configure/how-it-works/) for every config interface, including the `deeporg config` CLI and `GJ_*` environment variables.
 
 ## Tool inventory
 

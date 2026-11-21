@@ -13,7 +13,7 @@ each area.
 
 | Page | What it covers |
 | --- | --- |
-| [How Configuration Works](/configure/how-it-works/) | The mental model plus every interface: editor autocomplete, the `graphjin config` CLI, the agent, MCP tools, and `gj_config`. |
+| [How Configuration Works](/configure/how-it-works/) | The mental model plus every interface: editor autocomplete, the `deeporg config` CLI, the agent, MCP tools, and `gj_config`. |
 | [Sources Mode](/configure/sources-mode/) | Named providers for databases, files, APIs, CodeSQL, workflows, and GraphJin system roots. |
 | [Database Config](/configure/database/) | Single and multi-database connection settings, pools, TLS, table mapping, and relationships. |
 | [Auth And RBAC](/configure/auth-rbac/) | JWT/OIDC auth, identity claims, role queries, source access, table rules, and column controls. |

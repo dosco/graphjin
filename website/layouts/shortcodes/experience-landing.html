@@ -21,14 +21,14 @@
         <div class="assistant-row">
           <div class="assistant-avatar" aria-hidden="true">✣</div>
           <div class="chat-assistant">
-            <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>graphjin eval mine</span></div><code>prompt: How many support tickets are currently open right now?</code><code>answer key: the query above · tier: incumbent · value then: 4</code></div>
+            <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>deeporg eval mine</span></div><code>prompt: How many support tickets are currently open right now?</code><code>answer key: the query above · tier: incumbent · value then: 4</code></div>
           </div>
         </div>
         <p class="watch-unprompted">3 · it was asked again</p>
         <div class="assistant-row">
           <div class="assistant-avatar" aria-hidden="true">✣</div>
           <div class="chat-assistant">
-            <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>graphjin eval run --suite eval/mined.yml</span></div><code>one ticket resolved since · answer key re-run: 3</code></div>
+            <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>deeporg eval run --suite eval/mined.yml</span></div><code>one ticket resolved since · answer key re-run: 3</code></div>
             <p class="assistant-copy">There are 3 open support tickets.</p>
             <p class="done-line"><span aria-hidden="true">✓</span><span class="done-text"> pass · marked by the database, not by a model</span></p>
           </div>
@@ -50,8 +50,8 @@
     <p>Public benchmarks tell you how a model does on someone else's schema. These tests are the questions your organization actually asks, answered from your data.</p>
   </div>
   <div class="home-card-grid">
-    <article class="home-card"><h3>Measure</h3><p>Is the cheaper model good enough here? Run the current one and a candidate over your own questions and compare them test by test, with confirmed and incumbent results kept apart.</p><code class="demo-cmd">graphjin eval run --suite eval/mined.yml</code></article>
-    <article class="home-card"><h3>Train</h3><p>The same tests run in the <a href="/environment/">agent environment</a>: as many attempts as you like, each marked by the database, exported as trajectories a training loop can use.</p><code class="demo-cmd">graphjin eval export &lt;run-id&gt;</code></article>
+    <article class="home-card"><h3>Measure</h3><p>Is the cheaper model good enough here? Run the current one and a candidate over your own questions and compare them test by test, with confirmed and incumbent results kept apart.</p><code class="demo-cmd">deeporg eval run --suite eval/mined.yml</code></article>
+    <article class="home-card"><h3>Train</h3><p>The same tests run in the <a href="/environment/">agent environment</a>: as many attempts as you like, each marked by the database, exported as trajectories a training loop can use.</p><code class="demo-cmd">deeporg eval export &lt;run-id&gt;</code></article>
     <article class="home-card"><h3>Trust</h3><p>Changes are checked too. A change the agent proposes is held for approval unless you let it act alone within limits, a routine's change must say what it should achieve, and DeepORG checks later whether it did.</p><code class="demo-cmd">GET /api/v1/agent/reliability</code></article>
   </div>
 </section>
@@ -88,8 +88,8 @@
     <p>Ask the agent a handful of questions in the console, mark one or two answers right, then turn them into tests and run them. The <a href="/environment/your-own-work/">guide</a> walks through it, including dates, ratings and what each skip reason means.</p>
   </div>
   <div class="home-card-grid">
-    <article class="home-card"><h3>Mine</h3><p>Reads the questions already asked on a running server. Admin only.</p><code class="demo-cmd">graphjin eval mine --demo --url http://localhost:8083 --token $ADMIN_TOKEN</code></article>
-    <article class="home-card"><h3>Run</h3><p>Runs the mined tests on the model the server is configured with.</p><code class="demo-cmd">graphjin eval run --demo --suite eval/mined.yml --yes</code></article>
+    <article class="home-card"><h3>Mine</h3><p>Reads the questions already asked on a running server. Admin only.</p><code class="demo-cmd">deeporg eval mine --demo --url http://localhost:8083 --token $ADMIN_TOKEN</code></article>
+    <article class="home-card"><h3>Run</h3><p>Runs the mined tests on the model the server is configured with.</p><code class="demo-cmd">deeporg eval run --demo --suite eval/mined.yml --yes</code></article>
   </div>
   <div class="home-actions"><a class="button-primary" href="/environment/your-own-work/">Read the guide</a><a class="button-secondary" href="/start/demos/">Run the demo</a><a class="button-secondary" href="/environment/">The agent environment</a></div>
 </section>

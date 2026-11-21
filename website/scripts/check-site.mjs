@@ -259,8 +259,8 @@ const requiredRenderedContent = [
   ['agentic/index.html', 'Use durable verified tasks'],
   ['agentic/index.html', 'Evaluate the agent'],
   ['agentic/mcp/index.html', 'Configure GraphJin from your AI IDE'],
-  ['agentic/mcp/index.html', 'graphjin mcp --demo'],
-  ['start/install/index.html', 'graphjin mcp --demo'],
+  ['agentic/mcp/index.html', 'deeporg mcp --demo'],
+  ['start/install/index.html', 'deeporg mcp --demo'],
   ['agentic/watch-automation/index.html', 'Approval is per exact version, not per event.'],
   ['agentic/watch-automation/index.html', 'What makes GraphJin highly reactive'],
   ['agentic/watch-automation/index.html', 'Absence watch'],
@@ -289,7 +289,7 @@ const requiredRenderedContent = [
   ['benchmark/index.html', "Most AI agents guess. Ours can't."],
   ['benchmark/index.html', 'Watch it answer a real question.'],
   ['benchmark/index.html', 'The agent never holds the keys.'],
-  ['benchmark/index.html', 'graphjin serve --demo'],
+  ['benchmark/index.html', 'deeporg serve --demo'],
   ['benchmark/index.html', 'not a published test item'],
   // What a pass requires; the homepage no longer spells out the four parts.
   ['benchmark/index.html', 'Correct answer'],
@@ -307,7 +307,7 @@ const requiredRenderedContent = [
   ['why/complete-agent/index.html', 'Use DeepORG as the agent.'],
   ['why/complete-agent/index.html', 'needs_approval'],
   ['why/complete-agent/index.html', 'Set it up by talking to it.'],
-  ['why/complete-agent/index.html', 'graphjin mcp --demo'],
+  ['why/complete-agent/index.html', 'deeporg mcp --demo'],
   ['why/complete-agent/index.html', 'no Docker, no config file'],
   ['why/complete-agent/index.html', 'It tries the change before making it'],
   ['why/complete-agent/index.html', 'It cannot touch your secrets'],
@@ -498,7 +498,7 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   }
   // The full MCP setup story moved to /why/complete-agent/ (asserted above);
   // the homepage keeps the one-line way in.
-  for (const required of ['graphjin mcp --demo', 'graphjin mcp add claude']) {
+  for (const required of ['deeporg mcp --demo', 'deeporg mcp add claude']) {
     if (!home.includes(required)) {
       failures.push(`Homepage missing MCP setup copy: ${required}`);
     }
@@ -668,7 +668,7 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
 }
 
 // The homepage's agent window answers a question about the default demo, so a
-// visitor who runs `graphjin serve --demo` can ask it and get the same figures.
+// visitor who runs `deeporg serve --demo` can ask it and get the same figures.
 // Check the rows and the share it quotes against the demo's seed.
 {
   const seed = await readFile(path.join(repoRoot, 'examples', 'saas-ops', 'seed', 'app.js'), 'utf8');
@@ -1582,6 +1582,14 @@ for (const file of htmlFiles) {
   if (/graphjin\.com/i.test(html)) {
     failures.push(`${rel} names graphjin.com, which no longer serves the site; use deeporg.io`);
   }
+  // The command has been `deeporg` since v3.21.22; `graphjin` is an alias kept
+  // for people who already have it. A page that shows `graphjin serve` teaches
+  // the old name. `claude mcp add graphjin -- deeporg mcp` passes: there
+  // `graphjin` is the label of the MCP server, not the command.
+  const oldCommand = html.match(/(?<![\w./-])graphjin (?:serve|mcp|eval|env|config|cli|version)\b/);
+  if (oldCommand) {
+    failures.push(`${rel} shows the old command \`${oldCommand[0]}\`; the command is deeporg`);
+  }
   for (const match of html.matchAll(/\sdata-ascii=(?:"([^"]+)"|'([^']+)'|([^"' >]+))/g)) {
     const scene = match[1] || match[2] || match[3];
     if (!globalThis.DeepOrgAscii?.scenes[scene]) {
@@ -1704,7 +1712,7 @@ for (const file of htmlFiles) {
       for (const match of source.matchAll(pattern)) {
         const name = match[1].replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
         if (!html.includes(`env ${name}`)) {
-          failures.push(`environment/cli-reference does not document \`graphjin env ${name}\``);
+          failures.push(`environment/cli-reference does not document \`deeporg env ${name}\``);
         }
       }
     }

@@ -43,16 +43,16 @@ Two more checks happen before a question is kept:
 ## Mine the questions
 
 Mining reads every person's questions, so it needs an admin. Against a server
-set up with `graphjin cli setup`:
+set up with `deeporg cli setup`:
 
 ```bash
-graphjin eval mine --remote
+deeporg eval mine --remote
 ```
 
 Against a server you name, with an admin's token:
 
 ```bash
-graphjin eval mine --url https://graphjin.internal --token "$ADMIN_TOKEN"
+deeporg eval mine --url https://graphjin.internal --token "$ADMIN_TOKEN"
 ```
 
 The command reads `GET /api/v1/agent/experience` page by page, verifies every
@@ -64,7 +64,7 @@ Read 14 questions to the data agent from http://127.0.0.1:8191.
   4 became tests on the server (3 incumbent, 1 confirmed).
   not tests yet: 2 list, 2 not_answered, 2 rated_wrong, 2 several_figures, 1 no_query, 1 shape
 Wrote 4 tests to eval/mined.yml (3 incumbent, 1 confirmed).
-Run them with: graphjin eval run --suite eval/mined.yml
+Run them with: deeporg eval run --suite eval/mined.yml
 ```
 
 That is a real run on the saas-ops demo: ten console turns, fourteen questions
@@ -78,7 +78,7 @@ database the questions were asked against.
 ## Run them
 
 ```bash
-graphjin eval run --suite eval/mined.yml --yes
+deeporg eval run --suite eval/mined.yml --yes
 ```
 
 Mined tests are a suite of their own, apart from `eval/suite.yml`: a generated
@@ -92,7 +92,7 @@ support tickets", and the test passed.
 
 To compare models, run the same suite with each and read the reports side by
 side. To train on the tests, run them in the [environment](/environment/training/)
-and export the attempts with `graphjin eval export`.
+and export the attempts with `deeporg eval export`.
 
 ## Confirmed and incumbent
 

@@ -98,7 +98,7 @@ interactive terminal.
 ### 2. Create a verified demo suite
 
 ```bash
-graphjin eval create --demo
+deeporg eval create --demo
 ```
 
 GraphJin extracts or reuses the bundled SaaS Ops demo, starts an embedded
@@ -116,7 +116,7 @@ CLI protects the oracle and schema invariants that make comparisons meaningful.
 ### 3. Inspect what exists
 
 ```bash
-graphjin eval --demo
+deeporg eval --demo
 ```
 
 The status shows the suite path, task count, catalog fingerprint, and whether a
@@ -125,7 +125,7 @@ baseline exists. Immediately after `create`, seeing `Baseline: none` is normal.
 ### 4. Run the agent
 
 ```bash
-graphjin eval run --demo
+deeporg eval run --demo
 ```
 
 The traffic preview separates work already paid for from work still authorized:
@@ -162,11 +162,11 @@ slots; failed provider attempts do not.
 Use a particular checkpoint or deliberately start over like this:
 
 ```bash
-graphjin eval run --demo --resume <run-id>
-graphjin eval run --demo --restart
+deeporg eval run --demo --resume <run-id>
+deeporg eval run --demo --restart
 ```
 
-`--resume` and `--restart` cannot be combined. `graphjin eval --demo` lists
+`--resume` and `--restart` cannot be combined. `deeporg eval --demo` lists
 incomplete runs, progress, model, last update, and exact resume/restart commands.
 Compatibility is intentionally strict, so a changed suite, oracle values,
 dataset, binary/server fingerprint, provider/model, target, baseline, seed, or
@@ -191,7 +191,7 @@ result.
 Use `--json` when another program needs the complete shareable report:
 
 ```bash
-graphjin eval run --demo --yes --json > graphjin-eval-report.json
+deeporg eval run --demo --yes --json > graphjin-eval-report.json
 ```
 
 The report contains verdicts, metrics, failure categories, fingerprints, model
@@ -256,7 +256,7 @@ Generated coverage is a starting point. The most valuable suite also contains
 the questions that would hurt if the agent answered them incorrectly.
 
 ```bash
-graphjin eval add "Which customers are at churn risk?" --demo
+deeporg eval add "Which customers are at churn risk?" --demo
 ```
 
 GraphJin asks the configured model to interpret the question using the public
@@ -275,7 +275,7 @@ oracle queries. In non-interactive use, add `--yes` only after reviewing that
 traffic boundary:
 
 ```bash
-graphjin eval add "Which customers are at churn risk?" --demo --yes --json
+deeporg eval add "Which customers are at churn risk?" --demo --yes --json
 ```
 
 New task IDs are not in the old baseline, so they are advisory during ordinary
@@ -286,7 +286,7 @@ If an executable task is wrong for your business, remove it through the CLI
 instead of hand-editing the suite:
 
 ```bash
-graphjin eval rm <task-id> --demo
+deeporg eval rm <task-id> --demo
 ```
 
 GraphJin shows the task and asks for confirmation. Non-interactive use requires
@@ -299,8 +299,8 @@ task cannot be removed because a valid suite must contain at least one task.
 every question people asked the agent, with the query that answered it.
 
 ```bash
-graphjin eval mine --remote
-graphjin eval run --suite eval/mined.yml --yes
+deeporg eval mine --remote
+deeporg eval run --suite eval/mined.yml --yes
 ```
 
 Each question whose answer was one figure the database computed becomes a
@@ -337,7 +337,7 @@ repeatable problem.
 After an intentional accepted change, promote deliberately:
 
 ```bash
-graphjin eval baseline --demo
+deeporg eval baseline --demo
 ```
 
 Baseline promotion requires a hard pass: the suite must be valid, safety must be
@@ -374,7 +374,7 @@ category.
 For deeper diagnosis, rerun with `--debug`. It prints the local episode paths:
 
 ```bash
-graphjin eval run --demo --debug
+deeporg eval run --demo --debug
 ```
 
 Episodes contain the full prompt, answer, action trail, executed queries,
@@ -402,9 +402,9 @@ trace shows distinct productive progress on every turn.
 
 | Target | Command shape | Best for | Important behavior |
 | --- | --- | --- | --- |
-| Local project | `graphjin eval ...` | Testing the config and schema in the current project. | Starts an embedded loopback service, forces the agent read-only, and disables background workers. |
-| Bundled or selected demo | `graphjin eval ... --demo` | Learning the workflow with realistic data and no Docker. | Uses the built-in SaaS Ops demo unless `--path` selects another demo. |
-| Remote server | `graphjin eval ... --remote` | Testing the deployed GraphJin behavior visible to a configured identity. | Uses the server set up by `graphjin cli setup`; CI may override its token with `GRAPHJIN_EVAL_TOKEN`. |
+| Local project | `deeporg eval ...` | Testing the config and schema in the current project. | Starts an embedded loopback service, forces the agent read-only, and disables background workers. |
+| Bundled or selected demo | `deeporg eval ... --demo` | Learning the workflow with realistic data and no Docker. | Uses the built-in SaaS Ops demo unless `--path` selects another demo. |
+| Remote server | `deeporg eval ... --remote` | Testing the deployed GraphJin behavior visible to a configured identity. | Uses the server set up by `deeporg cli setup`; CI may override its token with `GRAPHJIN_EVAL_TOKEN`. |
 
 GraphJin records a dataset fingerprint with each run. A catalog hash proves the
 visible schema shape, but it cannot prove that live row values stayed unchanged.
@@ -462,7 +462,7 @@ as a routine CI artifact.
 Establish the baseline deliberately outside the candidate run:
 
 ```bash
-graphjin eval baseline --yes
+deeporg eval baseline --yes
 
 # The baseline is a sanitized report. Copy it; never edit it.
 cp .graphjin-evals/baseline.json eval/baseline.json
@@ -479,7 +479,7 @@ test -f eval/baseline.json
 mkdir -p .graphjin-evals
 cp eval/baseline.json .graphjin-evals/baseline.json
 
-graphjin eval run --restart --yes --json > graphjin-eval-report.json
+deeporg eval run --restart --yes --json > graphjin-eval-report.json
 ```
 
 CI uses `--restart` because each candidate gate is intentionally fresh; local
@@ -501,7 +501,7 @@ seeded distribution across discovery, aggregation, ranking, time windows,
 relationships, saved queries, annotations, permissions, and refusals:
 
 ```bash
-graphjin eval bench --demo --scale 100 --seed 23
+deeporg eval bench --demo --scale 100 --seed 23
 ```
 
 The benchmark still verifies every generated oracle before evaluated-agent

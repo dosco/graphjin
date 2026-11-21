@@ -16,7 +16,7 @@
   {{ if eq (len $bestRuns) 0 }}
     <div class="benchmark-empty" data-benchmark-empty>
       <strong>No published runs yet.</strong>
-      <span>The first scored run of <code>graphjin eval bench --public</code> will appear here.</span>
+      <span>The first scored run of <code>deeporg eval bench --public</code> will appear here.</span>
     </div>
   {{ else if eq $view "chart" }}
     {{- $height := add 34 (mul (len $bestRuns) 64) -}}

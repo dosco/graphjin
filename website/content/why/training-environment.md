@@ -50,7 +50,7 @@ Nothing is mounted and nothing is generated: a demo organization and its verifie
 ### Your schema, without your data
 
 ```bash
-graphjin env clone --url https://graphjin.internal --out ./clone-acme --seed 7
+deeporg env clone --url https://graphjin.internal --out ./clone-acme --seed 7
 ```
 
 DeepORG learns a running server's shape from its catalog: table and column structure, relationships, saved query names, and the closed value sets the catalog publishes. No rows are read. Synthetic records are generated locally, and every task is verified against a booted copy of the clone before it ships.
@@ -58,8 +58,8 @@ DeepORG learns a running server's shape from its catalog: table and column struc
 ### Your people's questions, as the tests
 
 ```bash
-graphjin eval mine --remote
-graphjin eval run --suite eval/mined.yml --yes
+deeporg eval mine --remote
+deeporg eval run --suite eval/mined.yml --yes
 ```
 
 Every question your people ask is answered by a database query. When that answer is one figure the database computed, the question becomes a test whose answer key is the query, re-run whenever the test runs. Mining spends no model tokens. [Your company is the environment](/experience/) tells that story in full.
@@ -93,7 +93,7 @@ Each worker in the pool provisions its own copy of the project, with its own dat
 The loop, the optimizer and the GPUs stay on your side. The environment gives you tasks, isolated worlds, a reward, and trajectories you can train on:
 
 ```bash
-graphjin eval export <run-id> --split eval/suite.split.json --side train \
+deeporg eval export <run-id> --split eval/suite.split.json --side train \
   --stage executor --out teacher.jsonl
 ```
 

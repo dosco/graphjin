@@ -14,7 +14,7 @@ interface you can use to change it without memorizing the field list.
 ## The 60-second start
 
 ```bash
-graphjin serve new blog     # scaffolds ./blog
+deeporg serve new blog     # scaffolds ./blog
 ```
 
 That writes three config files and a schema:
@@ -68,7 +68,7 @@ limited to dev; prod defaults stay off. When you are unsure why a key has the
 value it does, ask:
 
 ```bash
-graphjin config explain log_level
+deeporg config explain log_level
 ```
 
 ```
@@ -99,21 +99,21 @@ you completion, hover docs, and inline validation for every key. Regenerate the
 schema anytime:
 
 ```bash
-graphjin config schema > config/config.schema.json
+deeporg config schema > config/config.schema.json
 ```
 
-### The `graphjin config` CLI (offline)
+### The `deeporg config` CLI (offline)
 
 git-config-style commands that read and edit the files on disk — no running
 server, comments preserved:
 
 ```bash
-graphjin config get rate_limiter.rate
-graphjin config set log_level debug        # edits the file, keeps comments
-graphjin config unset rate_limiter.bucket
-graphjin config explain auth               # value + provenance + scope + docs
-graphjin config validate                   # structural check, no DB needed
-graphjin config docs prod                  # annotated example template
+deeporg config get rate_limiter.rate
+deeporg config set log_level debug        # edits the file, keeps comments
+deeporg config unset rate_limiter.bucket
+deeporg config explain auth               # value + provenance + scope + docs
+deeporg config validate                   # structural check, no DB needed
+deeporg config docs prod                  # annotated example template
 ```
 
 `set` parses the value as YAML (so `42` is a number, `[a, b]` a list) and reloads
@@ -129,7 +129,7 @@ With the agent enabled, describe the change in natural language:
 The agent finds the matching **config recipe** in its catalog, which walks it
 through preflight → apply → verify. Writable server settings (rate limiting, agent
 tuning) are applied through the same machinery as engine settings; secret-bearing
-ones (auth, redis, uploads) route you to the exact `graphjin config set` command
+ones (auth, redis, uploads) route you to the exact `deeporg config set` command
 instead of guessing. See [Server-Side Agent](/agentic/server-agent/).
 
 ### Config tools from an AI IDE (dev, over MCP)
@@ -205,15 +205,15 @@ it is **hot** (live) or needs a **restart**.
 
 | I want to… | Ask the agent | Or run |
 | --- | --- | --- |
-| Enable rate limiting | "enable rate limiting" | `graphjin config set rate_limiter.rate 100` |
-| Tune the agent | "use gpt-4o with 12 steps" | `graphjin config set agent.model gpt-4o` |
+| Enable rate limiting | "enable rate limiting" | `deeporg config set rate_limiter.rate 100` |
+| Tune the agent | "use gpt-4o with 12 steps" | `deeporg config set agent.model gpt-4o` |
 | Enable JWT auth | "set up JWT auth" | edit `auth.jwt.*`, keep the secret in `GJ_AUTH_JWT_SECRET` |
-| Add Redis | "use redis for caching" | `graphjin config set redis.url '${REDIS_URL}'` |
-| Harden for prod | "production checklist" | `graphjin config --file prod.yml validate` |
+| Add Redis | "use redis for caching" | `deeporg config set redis.url '${REDIS_URL}'` |
+| Harden for prod | "production checklist" | `deeporg config --file prod.yml validate` |
 
 ## Where to go next
 
-- Field-by-field reference: `CONFIG.md` in the repo, or `graphjin config docs`.
+- Field-by-field reference: `CONFIG.md` in the repo, or `deeporg config docs`.
 - Deep dives: [Sources Mode](/configure/sources-mode/),
   [Auth And RBAC](/configure/auth-rbac/),
   [Environment And Production](/configure/environment-production/).

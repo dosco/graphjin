@@ -7,7 +7,7 @@ doc_kind: "reference"
 weight: 80
 ---
 
-All routes are served by `graphjin env serve`. The step and external routes
+All routes are served by `deeporg env serve`. The step and external routes
 exist only when their flag is given — a trainer that did not ask for them should
 not find endpoints it can drive into a state the ordinary path never reaches.
 

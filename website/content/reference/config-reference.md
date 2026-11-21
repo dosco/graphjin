@@ -10,7 +10,7 @@ weight: 20
 
 New to GraphJin configuration? [How Configuration Works](/configure/how-it-works/)
 explains the mental model (one file, engine vs server settings, layered overrides)
-and every interface for changing config — editor autocomplete, the `graphjin config`
+and every interface for changing config — editor autocomplete, the `deeporg config`
 CLI, the agent, MCP tools, and the `gj_config` control plane.
 
 ## Major sections

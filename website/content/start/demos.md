@@ -6,19 +6,19 @@ doc_kind: "guide"
 weight: 25
 ---
 
-The fastest start needs nothing but the binary: `graphjin serve --demo` with no `--path` extracts the built-in SaaS ops demo to `./graphjin-demo` and boots it on SQLite - no clone, no Docker, ready in seconds.
+The fastest start needs nothing but the binary: `deeporg serve --demo` with no `--path` extracts the built-in SaaS ops demo to `./graphjin-demo` and boots it on SQLite - no clone, no Docker, ready in seconds.
 
 How well the agent handles real organizational work is measured on this same SaaS Ops environment in [DeepORG](/benchmarks/deeporg/).
 
 ```bash
-graphjin serve --demo
+deeporg serve --demo
 ```
 
 The other verticals live in the repo. Clone it and point `--demo` at one with `--path`:
 
 ```bash
 git clone https://github.com/dosco/deeporg && cd deeporg
-graphjin serve --demo --path examples/<name>
+deeporg serve --demo --path examples/<name>
 ```
 
 Each demo is a self-contained vertical: one command boots its databases (Docker containers and in-process emulators), applies the schema, seeds realistic data, and starts the server. First boot creates state under the project's `demo/` folder - `./graphjin-demo/demo/` for the built-in demo, `examples/<name>/demo/` for the rest. Delete that folder to reset from scratch. Seed dates anchor to today and shift forward on reuse, so questions like "what's scheduled today?" keep working no matter when you run them.
@@ -45,7 +45,7 @@ No Docker on your machine? Start with the SaaS ops demo - it runs entirely in-pr
 The flagship agentic demo: a specialty coffee roasting business where agents work across operational data, warehouse telemetry, internal business code, and executable workflows.
 
 ```bash
-graphjin serve --demo --path examples/coffee-roastery
+deeporg serve --demo --path examples/coffee-roastery
 ```
 
 - **Sources:** `ops` (writable Postgres - customers, green lots, roast schedule, production orders, subscriptions, tickets), `roast_warehouse` (read-only BigQuery simulator - roast batches, sensor samples, cupping scores), `business_code` (TypeScript CodeSQL index), workflows, and the GraphJin control plane.
@@ -84,11 +84,11 @@ More prompts: [coffee-roastery/PROMPTS.md](https://github.com/dosco/deeporg/blob
 
 ## SaaS ops {#saas-ops}
 
-The fastest start, and the demo built into the binary: a SaaS company ops app - accounts, users, subscriptions, invoices, support tickets, usage events - on SQLite, entirely in-process. No Docker, no containers, boots in seconds. Bare `graphjin serve --demo` (no `--path`) runs exactly this demo, extracted to `./graphjin-demo`; from a repo clone you can also run it explicitly:
+The fastest start, and the demo built into the binary: a SaaS company ops app - accounts, users, subscriptions, invoices, support tickets, usage events - on SQLite, entirely in-process. No Docker, no containers, boots in seconds. Bare `deeporg serve --demo` (no `--path`) runs exactly this demo, extracted to `./graphjin-demo`; from a repo clone you can also run it explicitly:
 
 ```bash
-graphjin serve --demo                             # built-in, no clone needed
-graphjin serve --demo --path examples/saas-ops    # from a repo clone
+deeporg serve --demo                             # built-in, no clone needed
+deeporg serve --demo --path examples/saas-ops    # from a repo clone
 ```
 
 - **Sources:** `app` (SQLite), workflows, control plane. Port 8083.
@@ -101,9 +101,9 @@ graphjin serve --demo --path examples/saas-ops    # from a repo clone
 - "Which open support tickets are past or nearest their SLA - and who owns them?"
 
 The SaaS Ops demo is also the no-Docker starting point for
-[evaluating the agent](/agentic/evaluation/). `graphjin eval create --demo`
+[evaluating the agent](/agentic/evaluation/). `deeporg eval create --demo`
 builds a verified suite from this catalog before any evaluated-agent traffic,
-then `graphjin eval run --demo` checks answers, methods, behavior, and safety
+then `deeporg eval run --demo` checks answers, methods, behavior, and safety
 across repeated runs.
 
 More prompts: [saas-ops/PROMPTS.md](https://github.com/dosco/deeporg/blob/master/examples/saas-ops/PROMPTS.md)
@@ -113,7 +113,7 @@ More prompts: [saas-ops/PROMPTS.md](https://github.com/dosco/deeporg/blob/master
 A corrugated-box packaging plant: ERP work orders, corrugator runs, paper-roll inventory, downtime, and quality holds - behind real authentication.
 
 ```bash
-graphjin serve --demo --path examples/corrugated-plant
+deeporg serve --demo --path examples/corrugated-plant
 ```
 
 - **Sources:** `erp` (writable MySQL), `demand_warehouse` (BigQuery simulator - demand history, OEE, scrap rates), `plant_code` (Python CodeSQL), workflows, control plane. Port 8081.
@@ -132,7 +132,7 @@ More prompts: [corrugated-plant/PROMPTS.md](https://github.com/dosco/deeporg/blo
 A compact PCB design-and-fabrication stack that exercises every GraphJin source kind in one graph - the widest fan-out of any demo.
 
 ```bash
-graphjin serve --demo --path examples/pcb-fab
+deeporg serve --demo --path examples/pcb-fab
 ```
 
 - **Sources (8):** `mes` (writable Postgres - designs, fab orders, panels, BOM, NCRs), `yield_warehouse` (Snowflake simulator), `test_measurements` (MongoDB), `design_files` (local Gerber/drill/stackup files), `supplier_api` (OpenAPI supplier lookup joined onto `bom_items.sku`), `dfm_code` (TypeScript CodeSQL), workflows, control plane. Port 8082 (the smoke suite also starts a supplier mock on 8093).
@@ -151,7 +151,7 @@ More prompts: [pcb-fab/PROMPTS.md](https://github.com/dosco/deeporg/blob/master/
 The classic GraphQL starter: a single-Postgres e-commerce shop - users, products, categories, purchases. No agent surface; this one is about the query engine itself.
 
 ```bash
-graphjin serve --demo --path examples/webshop
+deeporg serve --demo --path examples/webshop
 ```
 
 - **Shows off:** RBAC roles, insert/update presets, a Stripe-style remote API join, a polymorphic relationship, and recursive self-joins (threaded comments). Port 8080.
