@@ -282,7 +282,7 @@ func (a *authLoginService) handleDeviceSubmit(w http.ResponseWriter, r *http.Req
 	if !ok {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusBadRequest)
-		_ = deviceFormTmpl.Execute(w, map[string]string{"Prefilled": uc, "Error": "Unknown or expired code. Please run `graphjin cli setup` again."})
+		_ = deviceFormTmpl.Execute(w, map[string]string{"Prefilled": uc, "Error": "Unknown or expired code. Please run `deeporg cli setup` again."})
 		return
 	}
 	a.redirectToOIDC(w, r, dc)

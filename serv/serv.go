@@ -246,7 +246,7 @@ func isConditionalTool(name string) bool {
 func printClaudeConfig(conf *Config, displayHost string) {
 	execPath, _ := os.Executable()
 	if execPath == "" {
-		execPath = "graphjin"
+		execPath = "deeporg"
 	}
 
 	serverURL := fmt.Sprintf("http://%s", displayHost)

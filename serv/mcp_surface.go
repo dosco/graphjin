@@ -56,7 +56,7 @@ func MCPAllToolNames() []string {
 	out := mcpToolList(conf)
 	// graphql_help and query_catalog are the catalog-first discovery tools the
 	// server exposes in sources mode; make sure the CLI always publishes them so
-	// `graphjin cli query_catalog` works against a sources-mode server.
+	// `deeporg cli query_catalog` works against a sources-mode server.
 	for _, required := range []string{"graphql_help", "query_catalog"} {
 		present := false
 		for _, name := range out {

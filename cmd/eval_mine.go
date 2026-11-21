@@ -56,7 +56,7 @@ drops any whose answer no longer passes it. This command fetches those cases
 (or reads them from --from), verifies every answer key against the evaluation
 target like any other task, and writes them to eval/mined.yml.
 
-Run them with: graphjin eval run --suite eval/mined.yml`,
+Run them with: deeporg eval run --suite eval/mined.yml`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectPath, target, err := resolveEvalTarget(cmd, opts)
@@ -159,7 +159,7 @@ Run them with: graphjin eval run --suite eval/mined.yml`,
 				return nil
 			}
 			fmt.Fprintf(w, "Wrote %d tests to %s (%s).\n", len(verified), path, formatCounts(tiers))
-			fmt.Fprintf(w, "Run them with: graphjin eval run --suite %s\n", evalMinedRunPath(projectPath, path))
+			fmt.Fprintf(w, "Run them with: deeporg eval run --suite %s\n", evalMinedRunPath(projectPath, path))
 			return nil
 		},
 	}

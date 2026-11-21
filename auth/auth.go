@@ -1,5 +1,5 @@
 // Package auth provides an API to use GraphJin serv auth handles with your own application. Works with routers like chi and http mux.
-// For detailed documentation visit https://graphjin.com
+// For detailed documentation visit https://deeporg.io
 //
 // Example usage:
 /*

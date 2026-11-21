@@ -11,17 +11,17 @@ func cliCmd() *cobra.Command {
 		Long: `Send commands to a running GraphJin server via the MCP HTTP/JSON-RPC API.
 
 Configuration is read from ~/.config/graphjin/client.json — run
-` + "`graphjin cli setup <server-url>`" + ` once to point this CLI at a server and
+` + "`deeporg cli setup <server-url>`" + ` once to point this CLI at a server and
 sign in. After that, every subcommand below uses the saved server + token.
 
 Examples:
-  graphjin cli setup http://localhost:8080
-  graphjin cli query list
-  graphjin cli fragment list
-  graphjin cli workflow list
-  graphjin cli schema tables
-  graphjin cli health
-  graphjin cli config show`,
+  deeporg cli setup http://localhost:8080
+  deeporg cli query list
+  deeporg cli fragment list
+  deeporg cli workflow list
+  deeporg cli schema tables
+  deeporg cli health
+  deeporg cli config show`,
 	}
 
 	// Shared client flags: --header, --timeout, --format. There is intentionally

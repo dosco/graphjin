@@ -15,7 +15,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/dosco/graphjin.git"
+    "url": "https://github.com/dosco/deeporg.git"
   },
   "keywords": [
     "graphql",
@@ -30,9 +30,9 @@
   "author": "Vikram <https://twitter.com/dosco>",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/dosco/graphjin/issues"
+    "url": "https://github.com/dosco/deeporg/issues"
   },
-  "homepage": "https://graphjin.com",
+  "homepage": "https://deeporg.io",
   "dependencies": {
     "fs-extra": "^11.1.0"
   }

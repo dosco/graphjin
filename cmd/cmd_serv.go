@@ -73,9 +73,9 @@ func servCmd() *cobra.Command {
 		Long: `Run the GraphJin HTTP service.
 
 Demo mode (--demo):
-  graphjin serve --demo                            # built-in demo (SQLite, no containers)
-  graphjin serve --demo --path examples/webshop
-  graphjin serve --demo --path examples/coffee-roastery
+  deeporg serve --demo                            # built-in demo (SQLite, no containers)
+  deeporg serve --demo --path examples/webshop
+  deeporg serve --demo --path examples/coffee-roastery
 
 Without --path the built-in saas-ops demo is extracted to
 ./graphjin-demo and served from there; delete that directory for a

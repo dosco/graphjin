@@ -144,7 +144,7 @@ mcp:
 # SOURCES CONFIGURATION
 # ============================================================================
 # Production mode REQUIRES a database to be configured. These values come
-# from `graphjin serve new --db-url`; move secrets to your deployment's
+# from `deeporg serve new --db-url`; move secrets to your deployment's
 # configuration system before shipping.
 #
 # See dev.yml for database configuration examples for:

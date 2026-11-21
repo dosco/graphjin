@@ -26,12 +26,12 @@ func cmdVersion(cmd *cobra.Command, args []string) {
 func BuildDetails() string {
 	if version == "" {
 		return `
-GraphJin (unknown version)
-For documentation, visit https://graphjin.com
+DeepORG (unknown version)
+For documentation, visit https://deeporg.io
 
 To build with version information please use the Makefile
-> git clone https://github.com/dosco/graphjin
-> cd graphjin && make install
+> git clone https://github.com/dosco/deeporg
+> cd deeporg && make install
 
 Licensed under the Apache Public License 2.0
 Copyright 2019-2025 Vikram Rangnekar
@@ -39,8 +39,8 @@ Copyright 2019-2025 Vikram Rangnekar
 	}
 
 	return fmt.Sprintf(`
-GraphJin %v 
-For documentation, visit https://graphjin.com
+DeepORG %v 
+For documentation, visit https://deeporg.io
 
 Commit SHA-1          : %v
 Commit timestamp      : %v

@@ -3,7 +3,8 @@
   "version": "3.21.21",
   "description": "GraphJin — one governed graph for AI agents: GraphQL + MCP over your databases, files, APIs, and code",
   "bin": {
-    "graphjin": "bin/graphjin.js"
+    "deeporg": "bin/deeporg.js",
+    "graphjin": "bin/deeporg.js"
   },
   "files": [
     "./bin"
@@ -16,7 +17,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dosco/graphjin.git"
+    "url": "git+https://github.com/dosco/deeporg.git"
   },
   "keywords": [
     "graphql",
@@ -31,9 +32,9 @@
   "author": "Vikram <https://twitter.com/dosco>",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/dosco/graphjin/issues"
+    "url": "https://github.com/dosco/deeporg/issues"
   },
-  "homepage": "https://graphjin.com",
+  "homepage": "https://deeporg.io",
   "dependencies": {
     "tar": "^7.0.0"
   }

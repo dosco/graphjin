@@ -401,7 +401,7 @@ function WatchStarterHint() {
       </pre>
       <a
         className="text-sm font-medium underline underline-offset-4"
-        href="https://graphjin.com/watch/"
+        href="https://deeporg.io/watch/"
         target="_blank"
         rel="noreferrer"
       >

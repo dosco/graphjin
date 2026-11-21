@@ -201,7 +201,7 @@ func TestRunnerRefusesConversationsTheInstanceWouldReject(t *testing.T) {
 	if err == nil {
 		t.Fatalf("a suite the instance would reject ran anyway: %+v", report)
 	}
-	for _, want := range []string{"1 task(s) send earlier turns", suite.Tasks[0].Slug, "agent.lead.enabled", "graphjin eval rm"} {
+	for _, want := range []string{"1 task(s) send earlier turns", suite.Tasks[0].Slug, "agent.lead.enabled", "deeporg eval rm"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal does not say %q: %v", want, err)
 		}

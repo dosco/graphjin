@@ -257,7 +257,7 @@ package serv
 // 	case ap.version < adminVersion:
 // 		return ap, fmt.Errorf("please upgrade graphjin admin to latest version")
 // 	case ap.version > adminVersion:
-// 		return ap, fmt.Errorf("please upgrade graphjin cli to the latest")
+// 		return ap, fmt.Errorf("please upgrade deeporg cli to the latest")
 // 	}
 //
 // 	return ap, nil

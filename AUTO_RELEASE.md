@@ -49,7 +49,7 @@ When a version tag is created, the existing `.github/workflows/build.yml` workfl
 
 - Builds binaries for all platforms (Linux, Windows, macOS)
 - Creates signed releases with GPG
-- Publishes to package managers (Homebrew, Scoop)
+- Publishes to Homebrew
 - Publishes to npm registry
 - Creates Debian/RPM packages
 

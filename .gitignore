@@ -26,7 +26,7 @@
 .graphjin/
 .gemini/
 # Default extraction path for the built-in demo (cmd/cmd_demo_default.go);
-# running `graphjin demo` or `graphjin serv` from a clone creates it.
+# running `deeporg demo` or `deeporg serv` from a clone creates it.
 /graphjin-demo/
 examples/*/demo/
 examples/*/codesql/
@@ -50,9 +50,14 @@ release
 /dist
 .idea
 node_modules
-# Ignore Go binary but not npm bin directory
+# Ignore Go binary but not npm bin directory. Anchored on purpose: a bare
+# `deeporg` would also ignore website/content/benchmarks/deeporg/.
 /graphjin
+/deeporg
+/cmd/deeporg
 !/bin/
+/bin/deeporg
+/bin/deeporg.exe
 ./package-lock.json
 slim.report.json
 examples/nodejs/config/**/*.gql

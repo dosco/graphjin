@@ -319,7 +319,7 @@ func renderWorldDDL(world worldSpec) string {
 	if len(world.Applied) != 0 {
 		fmt.Fprintf(&out, "# Deliberate schema pathologies: %s\n", strings.Join(world.Applied, ", "))
 	}
-	out.WriteString("# Regenerate with: graphjin env new-world " + worldRegenerateFlags(world) + "\n\n")
+	out.WriteString("# Regenerate with: deeporg env new-world " + worldRegenerateFlags(world) + "\n\n")
 	for _, table := range world.Tables {
 		fmt.Fprintf(&out, "type %s {\n", table.Name)
 		for _, column := range table.Columns {

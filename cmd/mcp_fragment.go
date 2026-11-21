@@ -2,7 +2,7 @@ package main
 
 import "github.com/spf13/cobra"
 
-// mcpFragmentCmd wires `graphjin cli fragment ...` subcommands that call the
+// mcpFragmentCmd wires `deeporg cli fragment ...` subcommands that call the
 // list_fragments / search_fragments / get_fragment MCP tools.
 func mcpFragmentCmd() *cobra.Command {
 	c := &cobra.Command{

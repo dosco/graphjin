@@ -24,7 +24,7 @@ var (
 )
 
 // setupCmd returns a fresh `setup` cobra.Command tree. Called once for
-// `graphjin cli setup` and once for `graphjin mcp setup` so each subcommand
+// `deeporg cli setup` and once for `deeporg mcp setup` so each subcommand
 // has an independent parent — cobra requires a Command instance to have a
 // single parent.
 func setupCmd() *cobra.Command {
@@ -33,8 +33,8 @@ func setupCmd() *cobra.Command {
 		Short: "Sign in and save server + token to ~/.config/graphjin/client.json",
 		Long: `Point this CLI at a GraphJin server and (if the server has built-in login
 enabled) sign in via OIDC. The resulting JWT and the server URL are persisted
-to ~/.config/graphjin/client.json. Every subsequent ` + "`graphjin cli ...`" + ` and
-` + "`graphjin mcp ...`" + ` invocation reads from this file — there is no --server
+to ~/.config/graphjin/client.json. Every subsequent ` + "`deeporg cli ...`" + ` and
+` + "`deeporg mcp ...`" + ` invocation reads from this file — there is no --server
 or --token flag anywhere else.
 
 If the server has no built-in login (auth_login disabled), only the URL is
@@ -46,10 +46,10 @@ runs (refresh / re-sign-in) it can be omitted and the previously-saved URL
 is reused.
 
 Examples:
-  graphjin cli setup http://localhost:8080
-  graphjin cli setup https://graphjin.example.com
-  graphjin cli setup                                 # refresh token, same server
-  graphjin mcp setup https://graphjin.example.com    # alias for cli setup`,
+  deeporg cli setup http://localhost:8080
+  deeporg cli setup https://graphjin.example.com
+  deeporg cli setup                                 # refresh token, same server
+  deeporg mcp setup https://graphjin.example.com    # alias for cli setup`,
 		Args: cobra.MaximumNArgs(1),
 		Run:  runSetup,
 	}
@@ -84,7 +84,7 @@ func resolveSetupServer(args []string) (string, error) {
 	if cc, _ := LoadClientConfig(); cc != nil && cc.Server != "" {
 		return strings.TrimRight(cc.Server, "/"), nil
 	}
-	return "", errors.New("no server URL: pass it as the first argument, e.g. `graphjin cli setup http://localhost:8080`")
+	return "", errors.New("no server URL: pass it as the first argument, e.g. `deeporg cli setup http://localhost:8080`")
 }
 
 func runSetup(cmd *cobra.Command, args []string) {
@@ -184,7 +184,7 @@ func runSetupShow(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 	if cc == nil {
-		fmt.Println("(no client.json — run `graphjin cli setup <server-url>`)")
+		fmt.Println("(no client.json — run `deeporg cli setup <server-url>`)")
 		return
 	}
 	redacted := *cc

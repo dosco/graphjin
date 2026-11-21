@@ -17,7 +17,7 @@ import (
 func callMCPMethod(ctx context.Context, cmd *cobra.Command, method string, params map[string]any) (json.RawMessage, error) {
 	serverURL := resolveMCPServerURL(cmd)
 	if serverURL == "" {
-		return nil, errors.New("no GraphJin server configured — run `graphjin cli setup <server-url>` first")
+		return nil, errors.New("no GraphJin server configured — run `deeporg cli setup <server-url>` first")
 	}
 
 	reqID := mcpClientReqID.Add(1)
@@ -68,7 +68,7 @@ func callMCPMethod(ctx context.Context, cmd *cobra.Command, method string, param
 	if resp.StatusCode >= 400 {
 		hint := ""
 		if resp.StatusCode == 401 || resp.StatusCode == 403 {
-			hint = " (token expired or invalid — re-run `graphjin cli setup`)"
+			hint = " (token expired or invalid — re-run `deeporg cli setup`)"
 		}
 		return nil, fmt.Errorf("server returned HTTP %d%s: %s", resp.StatusCode, hint, strings.TrimSpace(string(respBody)))
 	}

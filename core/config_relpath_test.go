@@ -55,7 +55,7 @@ func TestConfigRelPath(t *testing.T) {
 }
 
 // TestLocalFilesystemRootResolvesAgainstConfigDir is the regression this
-// package's `root:` handling exists for: `graphjin serve --path
+// package's `root:` handling exists for: `deeporg serve --path
 // /some/where` used to fail core init because a relative root resolved
 // against the process working directory instead of the config directory.
 func TestLocalFilesystemRootResolvesAgainstConfigDir(t *testing.T) {

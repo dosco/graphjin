@@ -9,7 +9,7 @@ import (
 )
 
 // A `kind: file` source with a relative `root:` names a directory beside
-// the config file. Before this resolved against config_path, `graphjin
+// the config file. Before this resolved against config_path, `deeporg
 // serve --path /some/where` from any other working directory failed core
 // init ("stat root <cwd>/files") and the service came up with no query
 // engine — a warning, easy to miss, with the semantic catalog index and

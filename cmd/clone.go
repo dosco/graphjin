@@ -343,8 +343,8 @@ func renderCloneReadme(manifest cloneManifest, schema gjeval.ImportedSchema) str
 		}
 	}
 	out.WriteString("\n## Use\n\n```bash\n" +
-		"graphjin eval create --demo --path . --writable --scale 300 --composition coverage\n" +
-		"graphjin env serve --path . --suite eval/suite.yml --pool 4\n```\n\n" +
+		"deeporg eval create --demo --path . --writable --scale 300 --composition coverage\n" +
+		"deeporg env serve --path . --suite eval/suite.yml --pool 4\n```\n\n" +
 		"The `--demo` flag is what provisions the schema and seeds it; `--path` alone " +
 		"attaches to an existing database and cannot reset between episodes.\n")
 	return out.String()
@@ -360,7 +360,7 @@ func runClone(ctx context.Context, opts cloneOptions, status io.Writer) (string,
 			return "", err
 		}
 		if clientConfig == nil || strings.TrimSpace(clientConfig.Server) == "" {
-			return "", fmt.Errorf("no server configured; pass --url or run `graphjin cli setup`")
+			return "", fmt.Errorf("no server configured; pass --url or run `deeporg cli setup`")
 		}
 		baseURL = clientConfig.Server
 		if token := strings.TrimSpace(clientConfig.Token); token != "" {

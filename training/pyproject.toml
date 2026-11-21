@@ -29,9 +29,9 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://graphjin.com"
-Documentation = "https://graphjin.com/environment/"
-Source = "https://github.com/dosco/graphjin"
+Homepage = "https://deeporg.io"
+Documentation = "https://deeporg.io/environment/"
+Source = "https://github.com/dosco/deeporg"
 
 [tool.setuptools]
 packages = ["graphjin_env"]

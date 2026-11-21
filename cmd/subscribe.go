@@ -22,7 +22,7 @@ import (
 // hang off the same `serv` HTTP service.
 func resolveGraphQLURL(mcpURL string) (string, error) {
 	if mcpURL == "" {
-		return "", errors.New("no GraphJin server configured — run `graphjin cli setup <server-url>` first")
+		return "", errors.New("no GraphJin server configured — run `deeporg cli setup <server-url>` first")
 	}
 	u, err := url.Parse(mcpURL)
 	if err != nil {
@@ -116,7 +116,7 @@ func runSubscribeStream(
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		hint := ""
 		if resp.StatusCode == 401 || resp.StatusCode == 403 {
-			hint = " (token expired or invalid — re-run `graphjin cli setup`)"
+			hint = " (token expired or invalid — re-run `deeporg cli setup`)"
 		}
 		return fmt.Errorf("server returned HTTP %d%s: %s", resp.StatusCode, hint, strings.TrimSpace(string(respBody)))
 	}
@@ -187,7 +187,7 @@ func runSubscribeStream(
 }
 
 // runSubscribe is the production entry point invoked by the cobra Run handler
-// for `graphjin cli query subscribe`. It wires signal handling, the saved
+// for `deeporg cli query subscribe`. It wires signal handling, the saved
 // client config, and the production emitResult writer.
 func runSubscribe(parent context.Context, query string, vars map[string]any, namespace string) {
 	mcpClientRedirectLog()

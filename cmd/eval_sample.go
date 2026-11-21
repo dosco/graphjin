@@ -260,7 +260,7 @@ func printEvalSampleSummary(cmd *cobra.Command, report *gjeval.Report, store *gj
 	if store != nil {
 		fmt.Fprintf(out, "Episodes: %s\n", filepath.Join(store.Root, "episodes", report.RunID))
 	}
-	fmt.Fprintf(out, "Next: graphjin eval export %s", report.RunID)
+	fmt.Fprintf(out, "Next: deeporg eval export %s", report.RunID)
 	if side != "" {
 		fmt.Fprintf(out, " --side %s", side)
 	}

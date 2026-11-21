@@ -150,7 +150,7 @@ function EvalReportsEmpty({ stateDir, available }) {
   return (
     <div className="grid gap-3">
       <EmptyState title="No reports yet" message="Run a benchmark to create one:" />
-      <pre className="overflow-x-auto rounded-md bg-accent p-3 font-mono text-xs">graphjin eval bench --public --yes</pre>
+      <pre className="overflow-x-auto rounded-md bg-accent p-3 font-mono text-xs">deeporg eval bench --public --yes</pre>
       <p className="break-all font-mono text-[0.6875rem] text-muted-foreground">{available ? "Store" : "Looked in"} {location}</p>
     </div>
   );

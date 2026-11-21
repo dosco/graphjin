@@ -596,7 +596,7 @@ func normalizeMCPServerURL(input string) string {
 }
 
 // printMCPProxyConfig outputs the Claude Desktop configuration JSON for proxy
-// mode. The generated config no longer embeds --server: `graphjin mcp` reads
+// mode. The generated config no longer embeds --server: `deeporg mcp` reads
 // the server URL + token from ~/.config/graphjin/client.json on its own, so
 // the MCP client config stays credential-free.
 func printMCPProxyConfig(serverURL string) {
@@ -622,6 +622,6 @@ func printMCPProxyConfig(serverURL string) {
 	fmt.Println(string(output))
 	fmt.Fprintf(os.Stderr,
 		"\n# Server resolved from ~/.config/graphjin/client.json (currently: %s)\n"+
-			"# Re-run `graphjin mcp setup <server-url>` to point at a different server.\n",
+			"# Re-run `deeporg mcp setup <server-url>` to point at a different server.\n",
 		serverURL)
 }

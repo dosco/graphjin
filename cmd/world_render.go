@@ -257,7 +257,7 @@ func renderWorldReadme(world worldSpec) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "# %s\n\nA generated GraphJin world: domain %s, seed %d.\n\n",
 		world.Name, world.Domain, world.Seed)
-	out.WriteString("Regenerate exactly:\n\n```bash\ngraphjin env new-world " +
+	out.WriteString("Regenerate exactly:\n\n```bash\ndeeporg env new-world " +
 		worldRegenerateFlags(world) + fmt.Sprintf(" --tables %d", len(world.Tables)))
 	if len(world.Applied) != 0 {
 		out.WriteString(" --pathologies " + strings.Join(world.Applied, ","))
@@ -278,7 +278,7 @@ func renderWorldReadme(world worldSpec) string {
 			fmt.Fprintf(&out, "- **%s** — %s\n", name, pathologyDescription(name))
 		}
 	}
-	out.WriteString("\n## Use\n\n```bash\ngraphjin eval create --path . --writable --scale 300 --composition coverage\ngraphjin env serve --path . --suite eval/suite.yml --pool 4\n```\n")
+	out.WriteString("\n## Use\n\n```bash\ndeeporg eval create --path . --writable --scale 300 --composition coverage\ndeeporg env serve --path . --suite eval/suite.yml --pool 4\n```\n")
 	return out.String()
 }
 

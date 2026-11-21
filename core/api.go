@@ -1,5 +1,5 @@
 // Package core provides an API to include and use the GraphJin compiler with your own code.
-// For detailed documentation visit https://graphjin.com
+// For detailed documentation visit https://deeporg.io
 package core
 
 import (

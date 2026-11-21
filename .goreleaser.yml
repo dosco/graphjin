@@ -7,13 +7,24 @@
 # gpg --armor --export-secret-key <email> | pbcopy
 version: 2
 
+# Set on purpose. Left unset, GoReleaser takes this from the name of the GitHub
+# repository, so renaming the repository renames every archive, package and
+# formula in the next release without a line of this file changing. It is the
+# command's name, not the repository's.
+project_name: deeporg
+
 before:
   hooks:
     - go mod download
     - make gen
+# One build. The command is `deeporg`; `graphjin`, its old name, is never built
+# a second time. Each channel below puts it on the PATH as a link to this same
+# file, so scripts, CI jobs and MCP client configs written before the rename
+# keep working.
 builds:
-  - id: graphjin
+  - id: deeporg
     main: ./cmd
+    binary: deeporg
     ldflags:
       - -s -w
       - -X main.version={{ .Version }}
@@ -34,7 +45,7 @@ builds:
 
 kos:
   - id: graphjin-docker
-    build: graphjin
+    build: deeporg
     main: ./cmd
     repositories:
       - dosco/graphjin
@@ -65,7 +76,7 @@ kos:
   # version tag keep meaning the database server and nothing about this entry
   # can change what an existing `docker pull dosco/graphjin` gets.
   - id: graphjin-env-docker
-    build: graphjin
+    build: deeporg
     main: ./cmd
     repositories:
       - dosco/graphjin
@@ -79,7 +90,7 @@ kos:
     labels:
       org.opencontainers.image.title: graphjin-env
       org.opencontainers.image.description: GraphJin as a graded agent environment for training and evaluation
-      org.opencontainers.image.source: https://github.com/dosco/graphjin
+      org.opencontainers.image.source: https://github.com/dosco/deeporg
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.revision: "{{ .Commit }}"
     ldflags:
@@ -105,13 +116,27 @@ signs:
         "${artifact}",
       ]
 
+# install.sh and bin/install.js download archives by this name, so it is
+# spelled out rather than left to the default. Releases up to v3.21.21 were
+# graphjin_<version>_<os>_<arch>.tar.gz with a `graphjin` binary inside; both
+# installers still fall back to that name for an older version.
+#
+# The archive holds the one binary. A `graphjin` link is not packed beside it:
+# a tar symlink does not survive extraction on Windows, and each installer
+# makes the link itself.
 archives:
+  - id: deeporg
+    ids:
+      - deeporg
+    name_template: "deeporg_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
 
 checksum:
   name_template: "checksums.txt"
 
 snapshot:
-  name_template: "{{ .Tag }}-snapshot"
+  version_template: "{{ .Tag }}-snapshot"
 
 changelog:
   sort: asc
@@ -124,32 +149,81 @@ changelog:
       - go mod tidy
 
 nfpms:
-  - homepage: https://graphjin.com
-    description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
+  - id: deeporg
+    ids:
+      - deeporg
+    package_name: deeporg
+    file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    homepage: https://deeporg.io
+    description: "One AI agent for your whole organization."
     license: Apache-2.0
     maintainer: Vikram Rangnekar (https://twitter.com/dosco)
     formats:
       - deb
       - rpm
+    bindir: /usr/bin
+    # /usr/bin/graphjin -> deeporg, the old command name.
+    contents:
+      - src: deeporg
+        dst: /usr/bin/graphjin
+        type: symlink
+    # The package used to be called graphjin and owned /usr/bin/graphjin as a
+    # file. These let the new package take over from an installed old one
+    # instead of failing on the path they both ship.
+    provides:
+      - graphjin
+    replaces:
+      - graphjin
+    overrides:
+      deb:
+        conflicts:
+          - graphjin
 
+# Two formulas from the same archives, in the tap that exists today
+# (dosco/homebrew-graphjin). `deeporg` is the one to install from now on.
+# `graphjin` is still written so that `brew upgrade` on a machine that
+# installed it under the old name keeps getting releases; it can go once the
+# tap carries a formula_renames.json pointing graphjin at deeporg. Both install
+# the same two commands, so they are declared as conflicting.
 brews:
-  - repository:
+  - name: deeporg
+    ids:
+      - deeporg
+    repository:
       owner: dosco
       name: homebrew-graphjin
     directory: Formula
-    homepage: https://graphjin.com
-    description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
+    homepage: https://deeporg.io
+    description: "One AI agent for your whole organization"
     license: Apache-2.0
     skip_upload: false
+    conflicts:
+      - graphjin
+    extra_install: |
+      bin.install_symlink bin/"deeporg" => "graphjin"
+    test: |
+      system "#{bin}/deeporg", "version"
+      system "#{bin}/graphjin", "version"
 
-scoops:
-  - repository:
+  - name: graphjin
+    ids:
+      - deeporg
+    repository:
       owner: dosco
-      name: graphjin-scoop
-    commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
-    homepage: https://graphjin.com
-    description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
+      name: homebrew-graphjin
+    directory: Formula
+    homepage: https://deeporg.io
+    description: "One AI agent for your whole organization (old name of deeporg)"
     license: Apache-2.0
+    skip_upload: false
+    conflicts:
+      - deeporg
+    extra_install: |
+      bin.install_symlink bin/"deeporg" => "graphjin"
+    test: |
+      system "#{bin}/deeporg", "version"
+      system "#{bin}/graphjin", "version"
+
 # snapcrafts:
 #   - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 #     summary: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler"

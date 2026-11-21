@@ -10,7 +10,7 @@ import (
 )
 
 // StoreStatus describes the control-plane store: where it lives and which of
-// its tables exist. `graphjin db store status` prints it.
+// its tables exist. `deeporg db store status` prints it.
 type StoreStatus struct {
 	Source  string       `json:"source"`
 	Type    string       `json:"type"`

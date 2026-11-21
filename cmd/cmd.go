@@ -60,7 +60,7 @@ func Cmd() {
 func newRootCmd() *cobra.Command {
 	cobra.EnableCommandSorting = false
 	rootCmd := &cobra.Command{
-		Use:   "graphjin",
+		Use:   "deeporg",
 		Short: BuildDetails(),
 	}
 

@@ -396,7 +396,7 @@
 			},
 			"additionalProperties": false,
 			"type": "object",
-			"description": "AuthLogin configures the built-in OIDC sign-in flow that issues local JWTs for `graphjin cli` / `graphjin mcp` clients."
+			"description": "AuthLogin configures the built-in OIDC sign-in flow that issues local JWTs for `deeporg cli` / `deeporg mcp` clients."
 		},
 		"AuthLoginOIDC": {
 			"properties": {

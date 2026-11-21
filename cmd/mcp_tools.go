@@ -22,8 +22,8 @@ func mcpExactToolCmd(toolName string) *cobra.Command {
 
 Pass arguments as a JSON object with --args or --args-file:
 
-  graphjin cli %s
-  graphjin cli %s --args '{"example":"value"}'
+  deeporg cli %s
+  deeporg cli %s --args '{"example":"value"}'
 
 This command is the exact tool name exposed by the server.`, toolName, toolName, toolName)
 

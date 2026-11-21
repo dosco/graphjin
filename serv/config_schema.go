@@ -16,7 +16,7 @@ var configSchemaJSON []byte
 // ConfigJSONSchema returns the JSON Schema describing the full GraphJin
 // configuration file (serv.Config, core sections included). It powers editor
 // autocomplete via yaml-language-server modelines, the dev-mode
-// /api/v1/config/schema.json endpoint, and `graphjin config schema`.
+// /api/v1/config/schema.json endpoint, and `deeporg config schema`.
 func ConfigJSONSchema() []byte {
 	out := make([]byte, len(configSchemaJSON))
 	copy(out, configSchemaJSON)

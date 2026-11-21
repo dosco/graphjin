@@ -22,7 +22,7 @@ type PublicBenchmarkSpec struct {
 func PublicBenchmark() PublicBenchmarkSpec {
 	return PublicBenchmarkSpec{
 		Generation:       PublicBenchmarkGeneration,
-		Command:          "graphjin eval bench --public --demo --yes",
+		Command:          "deeporg eval bench --public --demo --yes",
 		Target:           TargetDemo,
 		Mode:             RunModeBenchmark,
 		Scale:            100,
@@ -79,7 +79,7 @@ func PublicBenchmark() PublicBenchmarkSpec {
 // one each to ranking, discovery and refusal — filled with the first tasks of a
 // generator v20 draw at seed 23 that the suite did not already ask. The other
 // 106 tasks are byte-identical to 2028.5 and the catalog is unchanged.
-// `graphjin eval freeze-suite --retire multi-turn` reproduces the file.
+// `deeporg eval freeze-suite --retire multi-turn` reproduces the file.
 // Follow-ups are scored where they can be answered, on the lead
 // (agent/testdata/lead_eval_cases.json).
 const publicBenchmarkSuiteFingerprint = "f08ae0e75dcaeea4804672bb2331432e"

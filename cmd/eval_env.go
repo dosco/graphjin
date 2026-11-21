@@ -51,7 +51,7 @@ func (e evalEnvironment) startRemote(ctx context.Context) (gjeval.Instance, erro
 		return nil, err
 	}
 	if clientConfig == nil || strings.TrimSpace(clientConfig.Server) == "" {
-		return nil, fmt.Errorf("remote target is not configured; run `graphjin cli setup`")
+		return nil, fmt.Errorf("remote target is not configured; run `deeporg cli setup`")
 	}
 	token := strings.TrimSpace(os.Getenv("GRAPHJIN_EVAL_TOKEN"))
 	if token == "" {

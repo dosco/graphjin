@@ -9,7 +9,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// The defining property of `graphjin config set/unset` is that it edits values
+// The defining property of `deeporg config set/unset` is that it edits values
 // while preserving the surrounding comments and structure — a plain
 // marshal/unmarshal would destroy them.
 

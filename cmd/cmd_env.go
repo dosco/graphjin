@@ -629,7 +629,7 @@ func envNewWorldCmd() *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(), "Deliberate pathologies: %s\n", strings.Join(applied, ", "))
 			}
 			fmt.Fprintf(cmd.OutOrStdout(),
-				"Next: graphjin eval create --path %s --writable --scale 300 --composition coverage\n", out)
+				"Next: deeporg eval create --path %s --writable --scale 300 --composition coverage\n", out)
 			return nil
 		},
 	}
@@ -747,11 +747,11 @@ func envCloneCmd() *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(),
 				"Wrote %s. Every row in it is synthetic; no data was read from the source.\n", out)
 			fmt.Fprintf(cmd.OutOrStdout(),
-				"Next: graphjin eval create --demo --path %s --writable --composition coverage\n", out)
+				"Next: deeporg eval create --demo --path %s --writable --composition coverage\n", out)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&opts.URL, "url", "", "server to learn from (default: the one from `graphjin cli setup`)")
+	cmd.Flags().StringVar(&opts.URL, "url", "", "server to learn from (default: the one from `deeporg cli setup`)")
 	cmd.Flags().StringVar(&opts.Out, "out", "./clone", "directory to write the environment to")
 	cmd.Flags().IntVar(&opts.Rows, "rows", 12, "synthetic rows to generate per table")
 	cmd.Flags().Int64Var(&opts.Seed, "seed", 1, "seed; the same seed produces the same synthetic data")

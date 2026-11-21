@@ -13,7 +13,7 @@
       "description": "Connect Claude to your SQL or MongoDB databases using GraphJin's schema-aware MCP server.",
       "category": "development",
       "source": "./claude-plugins/graphjin-mcp",
-      "homepage": "https://github.com/dosco/graphjin/tree/master/claude-plugins/graphjin-mcp"
+      "homepage": "https://github.com/dosco/deeporg/tree/master/claude-plugins/graphjin-mcp"
     }
   ]
 }

@@ -2,7 +2,7 @@ package main
 
 import "github.com/spf13/cobra"
 
-// mcpAuditCmd wires `graphjin cli audit [role]` which calls the
+// mcpAuditCmd wires `deeporg cli audit [role]` which calls the
 // audit_role_permissions MCP tool (server-gated: AllowDevTools).
 func mcpAuditCmd() *cobra.Command {
 	return &cobra.Command{

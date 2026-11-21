@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// TestServeOpensLiveBigQuery proves the path `graphjin serve` takes for a
+// TestServeOpensLiveBigQuery proves the path `deeporg serve` takes for a
 // `type: bigquery` source against the real service: the server's own driver
 // init, schema discovery, and a compiled GraphQL query with a parameter.
 //

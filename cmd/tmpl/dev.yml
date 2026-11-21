@@ -37,7 +37,7 @@ enable_tracing: true
 reload_on_config_change: true
 
 # Enable GraphJin DDL schema management with db.ddl
-# Use 'graphjin db diff' to preview and 'graphjin db sync' to apply changes
+# Use 'deeporg db diff' to preview and 'deeporg db sync' to apply changes
 enable_schema: false
 
 # File that points to the database seeding script
@@ -191,7 +191,7 @@ mcp:
 
   # Standards-compatible OAuth for hosted MCP clients.
   # Local development can keep this disabled and use:
-  #   graphjin mcp add codex http://localhost:8080
+  #   deeporg mcp add codex http://localhost:8080
   oauth:
     enabled: false
     mode: builtin # builtin reuses auth_login; external advertises auth servers

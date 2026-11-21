@@ -730,7 +730,7 @@ func configRecipes() []configRecipe {
 				`query { gj_config(id: "current") { serv } }`,
 				`serv: { rate_limiter: { rate: 100, bucket: 20, ip_header: "X-Forwarded-For" } }`,
 				`reload_mode is "restart"; the new limit applies after the process restarts (automatic when reload_on_config_change is enabled)`,
-				`offline alternative: graphjin config set rate_limiter.rate 100`,
+				`offline alternative: deeporg config set rate_limiter.rate 100`,
 			},
 		},
 		{
@@ -768,7 +768,7 @@ func configRecipes() []configRecipe {
 				`agent.service_tier accepts auto, standard, flex, or priority; Ax rejects unsupported explicit tiers before transport`,
 				`agent.rate_limit is outbound and process-local; top-level rate_limiter protects inbound HTTP traffic`,
 				`reload_mode is "hot"; agent settings are read per request and take effect immediately`,
-				`offline alternative: graphjin config set agent.model gpt-4o`,
+				`offline alternative: deeporg config set agent.model gpt-4o`,
 			},
 		},
 		{
@@ -782,7 +782,7 @@ func configRecipes() []configRecipe {
 				"add a jwt secret",
 			},
 			Preflight:        commonPreflight,
-			UnsupportedApply: "auth is a secret-bearing server setting and is read-only on gj_config; it cannot be patched through gj_config.update. Edit the config file (auth.jwt.*) and restart, or use `graphjin config set`. Store secrets in environment variables, not the file.",
+			UnsupportedApply: "auth is a secret-bearing server setting and is read-only on gj_config; it cannot be patched through gj_config.update. Edit the config file (auth.jwt.*) and restart, or use `deeporg config set`. Store secrets in environment variables, not the file.",
 			Verify:           commonVerify,
 			StopConditions:   commonStops,
 			ForbiddenPatterns: append([]string{
@@ -791,8 +791,8 @@ func configRecipes() []configRecipe {
 			Examples: []string{
 				`query { gj_config(id: "current") { serv } }`,
 				`auth: { type: "jwt", jwt: { provider: "auth0", secret: "${JWT_SECRET}", audience: "my-api" } }`,
-				`graphjin config set auth.type jwt`,
-				`graphjin config explain auth  # shows scope: serv`,
+				`deeporg config set auth.type jwt`,
+				`deeporg config explain auth  # shows scope: serv`,
 			},
 		},
 		{
@@ -806,7 +806,7 @@ func configRecipes() []configRecipe {
 				"configure redis url",
 			},
 			Preflight:        commonPreflight,
-			UnsupportedApply: "redis is a secret-bearing server setting (redis.url includes credentials) and is read-only on gj_config. Edit the config file (redis.url) with a ${REDIS_URL} reference and restart, or use `graphjin config set redis.url`.",
+			UnsupportedApply: "redis is a secret-bearing server setting (redis.url includes credentials) and is read-only on gj_config. Edit the config file (redis.url) with a ${REDIS_URL} reference and restart, or use `deeporg config set redis.url`.",
 			Verify:           commonVerify,
 			StopConditions:   commonStops,
 			ForbiddenPatterns: append([]string{
@@ -815,7 +815,7 @@ func configRecipes() []configRecipe {
 			Examples: []string{
 				`query { gj_config(id: "current") { serv } }`,
 				`redis: { url: "${REDIS_URL}" }`,
-				`graphjin config set redis.url '${REDIS_URL}'`,
+				`deeporg config set redis.url '${REDIS_URL}'`,
 			},
 		},
 		{
@@ -829,7 +829,7 @@ func configRecipes() []configRecipe {
 				"allow multipart uploads",
 			},
 			Preflight:        commonPreflight,
-			UnsupportedApply: "uploads and their filesystem backends can carry storage credentials and are read-only on gj_config. Configure uploads/filesystems in the config file and restart, or use `graphjin config set`. See the Uploads And Filesystems guide.",
+			UnsupportedApply: "uploads and their filesystem backends can carry storage credentials and are read-only on gj_config. Configure uploads/filesystems in the config file and restart, or use `deeporg config set`. See the Uploads And Filesystems guide.",
 			Verify:           commonVerify,
 			StopConditions:   commonStops,
 			ForbiddenPatterns: append([]string{
@@ -838,7 +838,7 @@ func configRecipes() []configRecipe {
 			Examples: []string{
 				`query { gj_config(id: "current") { serv } }`,
 				`uploads: { enabled: true }`,
-				`graphjin config docs dev  # see the uploads/filesystems section`,
+				`deeporg config docs dev  # see the uploads/filesystems section`,
 			},
 		},
 		{
@@ -852,7 +852,7 @@ func configRecipes() []configRecipe {
 				"production checklist",
 			},
 			Preflight:        commonPreflight,
-			UnsupportedApply: "Production hardening spans core and server settings and is not a single gj_config patch; agentic/prod deployments also disable dev-mode config writes. Work through the checklist by editing prod.yml (or `graphjin config --file prod.yml set ...`) and validating with `graphjin config validate`.",
+			UnsupportedApply: "Production hardening spans core and server settings and is not a single gj_config patch; agentic/prod deployments also disable dev-mode config writes. Work through the checklist by editing prod.yml (or `deeporg config --file prod.yml set ...`) and validating with `deeporg config validate`.",
 			Verify:           commonVerify,
 			StopConditions:   commonStops,
 			ForbiddenPatterns: append([]string{
@@ -862,8 +862,8 @@ func configRecipes() []configRecipe {
 			Examples: []string{
 				`mode: prod  # disables dev auto-enables, mounts nothing agentic, fails closed`,
 				`sources[].access: { read: "account", write: "blocked", delete: "blocked" }`,
-				`graphjin config --file prod.yml explain mcp.allow_raw_queries`,
-				`graphjin config --file prod.yml validate`,
+				`deeporg config --file prod.yml explain mcp.allow_raw_queries`,
+				`deeporg config --file prod.yml validate`,
 			},
 		},
 	}

@@ -1,7 +1,7 @@
-// Main package for the GraphJin service and command line tooling
+// Main package for the DeepORG service and command line tooling
 /*
-GraphJin
-For documentation, visit https://graphjin.com
+DeepORG
+For documentation, visit https://deeporg.io
 
 Commit SHA-1          : 00c26ba
 Commit timestamp      : 2021-10-01 20:30:47 -0700
@@ -11,7 +11,7 @@ Licensed under the Apache Public License 2.0
 Copyright 2019 Vikram Rangnekar
 
 Usage:
-  graphjin [command]
+  deeporg [command]
 
 Available Commands:
   completion  generate the autocompletion script for the specified shell
@@ -26,10 +26,10 @@ Available Commands:
   version     Version information
 
 Flags:
-  -h, --help          help for graphjin
+  -h, --help          help for deeporg
       --path string   path to config files (default "./config")
 
-Use "graphjin [command] --help" for more information about a command.
+Use "deeporg [command] --help" for more information about a command.
 */
 
 package main

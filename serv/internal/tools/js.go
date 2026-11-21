@@ -1,7 +1,7 @@
 // Generates the JSON Schema for the GraphJin service configuration
 // (serv.Config). The schema powers editor autocomplete/validation via
 // yaml-language-server modelines, the dev-mode /api/v1/config/schema.json
-// endpoint, and `graphjin config schema`.
+// endpoint, and `deeporg config schema`.
 //
 // Run via `make config-schema` or `go generate` from the serv module root;
 // the emitted serv/config.schema.json is checked into the repo.

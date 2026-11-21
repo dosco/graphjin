@@ -102,7 +102,7 @@ func evalCmd() *cobra.Command {
 		},
 	}
 	cmd.PersistentFlags().BoolVar(&opts.Demo, "demo", false, "use the built-in or selected local demo")
-	cmd.PersistentFlags().BoolVar(&opts.Remote, "remote", false, "use the server configured by graphjin cli setup")
+	cmd.PersistentFlags().BoolVar(&opts.Remote, "remote", false, "use the server configured by deeporg cli setup")
 	cmd.PersistentFlags().BoolVar(&opts.Yes, "yes", false, "approve provider-backed model traffic and saves")
 	cmd.PersistentFlags().BoolVar(&opts.JSON, "json", false, "emit machine-readable JSON")
 	cmd.PersistentFlags().BoolVar(&opts.Debug, "debug", false, "print local episode paths and verbose diagnoses")
@@ -600,7 +600,7 @@ func evalAddCmd(opts *evalCLIOptions) *cobra.Command {
 			suitePath := evalSuitePath(projectPath)
 			suite, err := gjeval.LoadSuite(suitePath)
 			if err != nil {
-				return &evalExitError{Code: 2, Err: fmt.Errorf("load suite (run `graphjin eval create` first): %w", err)}
+				return &evalExitError{Code: 2, Err: fmt.Errorf("load suite (run `deeporg eval create` first): %w", err)}
 			}
 			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(cmd.Context(), gjeval.EnvSpec{Target: target, ConfigPath: projectPath})
 			if err != nil {
@@ -1194,7 +1194,7 @@ func evalStatus(cmd *cobra.Command, opts *evalCLIOptions) error {
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Suite: %s\n", suitePath)
 	if suite == nil {
-		fmt.Fprintln(cmd.OutOrStdout(), "Status: not created (run `graphjin eval create`)")
+		fmt.Fprintln(cmd.OutOrStdout(), "Status: not created (run `deeporg eval create`)")
 	} else {
 		fmt.Fprintf(cmd.OutOrStdout(), "Status: %d tasks, catalog %s\n", len(suite.Tasks), suite.CatalogFingerprint)
 	}
@@ -1384,7 +1384,7 @@ func printEvalReportLocations(cmd *cobra.Command, opts *evalCLIOptions, report *
 	fmt.Fprintf(out, "\nFriendly report:  %s\n", store.ReportMarkdownPath(report.RunID))
 	fmt.Fprintf(out, "Technical report: %s\n", store.ReportTechnicalMarkdownPath(report.RunID))
 	fmt.Fprintf(out, "JSON report:      %s\n", store.ReportPath(report.RunID))
-	serveCommand := fmt.Sprintf("graphjin --path %s serve", strconv.Quote(projectPath))
+	serveCommand := fmt.Sprintf("deeporg --path %s serve", strconv.Quote(projectPath))
 	if opts.Demo {
 		serveCommand += " --demo"
 	}
@@ -1401,7 +1401,7 @@ func printEvalReportLocations(cmd *cobra.Command, opts *evalCLIOptions, report *
 	}
 	public := gjeval.PublicBenchmark()
 	if report.SuiteFingerprint == public.SuiteFingerprint {
-		fmt.Fprintf(out, "Publish:         graphjin --path %s eval publish %s --benchmark %s --yes\n", strconv.Quote(projectPath), report.RunID, defaultBenchmarkSlug)
+		fmt.Fprintf(out, "Publish:         deeporg --path %s eval publish %s --benchmark %s --yes\n", strconv.Quote(projectPath), report.RunID, defaultBenchmarkSlug)
 	} else {
 		fmt.Fprintln(out, "Publish:         not a ranked public-suite run")
 	}

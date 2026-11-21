@@ -36,15 +36,15 @@ Two modes, auto-selected:
 
   Proxy mode  — when ~/.config/graphjin/client.json exists, this command
                 forwards stdio MCP traffic to the remote GraphJin server
-                saved there. Sign in with: graphjin mcp setup <server-url>
+                saved there. Sign in with: deeporg mcp setup <server-url>
 
   Local mode  — when no client.json is present, runs an embedded MCP server
                 using --path config + the local database.
 
 Demo mode (--demo, local mode only):
-  graphjin mcp --demo                            # built-in demo (SQLite, no containers)
-  graphjin mcp --demo --path examples/webshop
-  graphjin mcp --demo --path examples/coffee-roastery
+  deeporg mcp --demo                            # built-in demo (SQLite, no containers)
+  deeporg mcp --demo --path examples/webshop
+  deeporg mcp --demo --path examples/coffee-roastery
 
 Without --path the built-in saas-ops demo is extracted to
 ./graphjin-demo and served from there. Demo state is stored under
@@ -77,7 +77,7 @@ func cmdMCP(cmd *cobra.Command, args []string) {
 	log = newLoggerWithOutput(false, os.Stderr).Sugar()
 
 	// Auto-select proxy vs local mode based on whether the user has run
-	// `graphjin mcp setup`.
+	// `deeporg mcp setup`.
 	if cc, _ := LoadClientConfig(); cc != nil && cc.Server != "" {
 		mcpServerURL = cc.Server
 		runMCPProxy(cmd, args)
@@ -186,7 +186,7 @@ Use --demo to include the --demo flag in the generated config.`,
 
 func cmdMCPInfo(cmd *cobra.Command, args []string) {
 	// Proxy-mode info: derived from client.json. The generated MCP-client
-	// config no longer embeds --server; `graphjin mcp` reads client.json on
+	// config no longer embeds --server; `deeporg mcp` reads client.json on
 	// its own.
 	if cc, _ := LoadClientConfig(); cc != nil && cc.Server != "" {
 		printMCPProxyConfig(cc.Server)

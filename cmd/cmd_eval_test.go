@@ -413,8 +413,8 @@ func TestPrintEvalReportShowsArtifactsConsoleAndPublishCommand(t *testing.T) {
 		"Technical report: " + store.ReportTechnicalMarkdownPath(report.RunID),
 		"JSON report:      " + store.ReportPath(report.RunID),
 		"Console:         http://127.0.0.1:8083/trainer/reports?run=public-run",
-		"graphjin --path " + strconv.Quote(projectPath) + " serve --demo",
-		"Publish:         graphjin --path " + strconv.Quote(projectPath) + " eval publish public-run --benchmark deeporg --yes",
+		"deeporg --path " + strconv.Quote(projectPath) + " serve --demo",
+		"Publish:         deeporg --path " + strconv.Quote(projectPath) + " eval publish public-run --benchmark deeporg --yes",
 	} {
 		if !strings.Contains(output.String(), phrase) {
 			t.Fatalf("output missing %q: %s", phrase, output.String())
@@ -448,7 +448,7 @@ func TestPrintEvalReportShowsResumeForPartialRun(t *testing.T) {
 	if !strings.Contains(output.String(), "GraphJin completed 36 of 72 test attempts before Google stopped accepting requests because of quota limits") {
 		t.Fatalf("friendly quota explanation missing: %s", output.String())
 	}
-	if !strings.Contains(output.String(), "Resume:          graphjin eval bench --demo --scale 5 --seed 23 --resume partial-run --yes") {
+	if !strings.Contains(output.String(), "Resume:          deeporg eval bench --demo --scale 5 --seed 23 --resume partial-run --yes") {
 		t.Fatalf("resume command missing: %s", output.String())
 	}
 	if strings.Contains(output.String(), "Publish:") {
@@ -586,7 +586,7 @@ func TestInstallGraphJinEvalSkillsIdempotent(t *testing.T) {
 	// Each installed skill must land for each client, and must actually be the
 	// skill it claims to be — a copy of the wrong file installs silently.
 	marker := map[string]string{
-		"graphjin-eval": "graphjin eval bench",
+		"graphjin-eval": "deeporg eval bench",
 		"graphjin-env":  "catalog_match",
 	}
 	for _, client := range []string{"claude", "codex"} {

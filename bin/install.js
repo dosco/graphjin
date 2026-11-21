@@ -62,13 +62,22 @@ async function downloadWithFallback(candidates, binDir) {
   throw lastErr || new Error('No download candidates available');
 }
 
-async function extract(tarPath, destDir) {
+// The command is `deeporg`. A release from before the rename holds a
+// `graphjin` binary instead; bin/deeporg.js runs whichever one is here.
+const BINARY_NAMES = ['deeporg', 'graphjin'];
+
+function binaryFiles(platform) {
+  const ext = platform === 'windows' ? '.exe' : '';
+  return BINARY_NAMES.map((name) => name + ext);
+}
+
+async function extract(tarPath, destDir, wanted) {
   // Use tar module for extraction
   const tar = require('tar');
   await tar.x({
     file: tarPath,
     cwd: destDir,
-    filter: (path) => path === 'graphjin' || path === 'graphjin.exe',
+    filter: (path) => wanted.includes(path),
   });
 }
 
@@ -81,25 +90,30 @@ async function install() {
 
   if (!platform || !arch) {
     console.error(`Unsupported platform: ${process.platform} ${process.arch}`);
-    console.error('Please download manually from: https://github.com/dosco/graphjin/releases');
+    console.error('Please download manually from: https://github.com/dosco/deeporg/releases');
     process.exit(1);
   }
 
   const binDir = __dirname;
-  const binaryName = platform === 'windows' ? 'graphjin.exe' : 'graphjin';
-  const binaryPath = path.join(binDir, binaryName);
-  const releaseBase = `https://github.com/dosco/graphjin/releases/download/v${version}`;
+  const wanted = binaryFiles(platform);
+  const installed = () => wanted.map((name) => path.join(binDir, name)).find((file) => fs.existsSync(file));
+  const releaseBase = `https://github.com/dosco/deeporg/releases/download/v${version}`;
 
-  // New releases include version in the archive name. Keep legacy fallback
-  // names to remain backward compatible with older tags.
+  // Newest naming first. Since the command was renamed the archive is
+  // deeporg_<version>_<os>_<arch>; releases up to v3.21.21 were
+  // graphjin_<version>_<os>_<arch>, and much older ones had no version in the
+  // name. Keep every form so this script still installs an older tag.
   const filenames = platform === 'windows'
     ? [
+        `deeporg_${version}_${platform}_${arch}.tar.gz`,
+        `deeporg_${version}_${platform}_${arch}.zip`,
         `graphjin_${version}_${platform}_${arch}.tar.gz`,
         `graphjin_${version}_${platform}_${arch}.zip`,
         `graphjin_${platform}_${arch}.tar.gz`,
         `graphjin_${platform}_${arch}.zip`,
       ]
     : [
+        `deeporg_${version}_${platform}_${arch}.tar.gz`,
         `graphjin_${version}_${platform}_${arch}.tar.gz`,
         `graphjin_${platform}_${arch}.tar.gz`,
       ];
@@ -109,12 +123,12 @@ async function install() {
   }));
 
   // Skip if binary already exists
-  if (fs.existsSync(binaryPath)) {
-    console.log('GraphJin binary already installed');
+  if (installed()) {
+    console.log('DeepORG binary already installed');
     return;
   }
 
-  console.log(`Downloading GraphJin v${version} for ${platform}/${arch}...`);
+  console.log(`Downloading DeepORG v${version} for ${platform}/${arch}...`);
 
   let archivePath = '';
   let selectedFilename = '';
@@ -132,7 +146,12 @@ async function install() {
         stdio: 'inherit',
       });
     } else {
-      await extract(archivePath, binDir);
+      await extract(archivePath, binDir, wanted);
+    }
+
+    const binaryPath = installed();
+    if (!binaryPath) {
+      throw new Error(`no ${wanted.join(' or ')} in ${selectedFilename}`);
     }
 
     // Set executable permission on Unix
@@ -143,10 +162,10 @@ async function install() {
     // Clean up archive
     fs.unlinkSync(archivePath);
 
-    console.log('GraphJin installed successfully!');
+    console.log('DeepORG installed successfully! Run it as `deeporg` (or `graphjin`, its old name).');
   } catch (err) {
-    console.error(`Failed to install GraphJin: ${err.message}`);
-    console.error('Please download manually from: https://github.com/dosco/graphjin/releases');
+    console.error(`Failed to install DeepORG: ${err.message}`);
+    console.error('Please download manually from: https://github.com/dosco/deeporg/releases');
     // Clean up on failure
     try {
       fs.unlinkSync(archivePath);

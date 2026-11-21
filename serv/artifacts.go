@@ -595,7 +595,7 @@ func (s *graphjinService) initArtifactsBeforeCore() error {
 
 // ensureStoreTables creates and migrates every control-plane store table,
 // regardless of auto_init. Serve startup reaches it through
-// initArtifactsBeforeCore; `graphjin db store init` calls it directly.
+// initArtifactsBeforeCore; `deeporg db store init` calls it directly.
 func (s *graphjinService) ensureStoreTables() error {
 	if s == nil || s.conf == nil || !s.conf.Core.Artifacts.Enabled {
 		return nil

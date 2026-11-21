@@ -15,7 +15,7 @@ target.
 
 **This skill deliberately states no task counts, no flag defaults and no
 measured figures.** Those live in `/health` and at
-<https://graphjin.com/environment/>. Read them from the running server rather
+<https://deeporg.io/environment/>. Read them from the running server rather
 than from here — a skill that carries no facts cannot carry stale ones.
 
 ## Rules
@@ -73,7 +73,7 @@ than from here — a skill that carries no facts cannot carry stale ones.
    given.
 
 3. **Keep held-out work held out.** Serve `--split auto:0.8 --side train` for
-   collection and `--side eval` for measurement. `graphjin eval export` refuses
+   collection and `--side eval` for measurement. `deeporg eval export` refuses
    to build a training corpus from eval-side episodes and says how many it
    found; `--allow-eval-side` overrides it, and using that override silently is
    how a number stops meaning generalization.
@@ -81,8 +81,8 @@ than from here — a skill that carries no facts cannot carry stale ones.
 4. **Collect, then convert.**
 
    ```sh
-   graphjin eval sample --repeats 8 --temperature 0.8 --split <split> --side train --yes
-   graphjin eval export <run-id> --split <split> --side train --stage executor --out run.jsonl
+   deeporg eval sample --repeats 8 --temperature 0.8 --split <split> --side train --yes
+   deeporg eval export <run-id> --split <split> --side train --stage executor --out run.jsonl
    ```
 
    `--stage executor` matters: an agent run is three model calls with different
@@ -108,5 +108,5 @@ than from here — a skill that carries no facts cannot carry stale ones.
 
 ## Reference
 
-<https://graphjin.com/environment/> — quickstart, drive modes, training
+<https://deeporg.io/environment/> — quickstart, drive modes, training
 workflows, reward and comparability, CLI, HTTP API, and file formats.

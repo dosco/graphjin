@@ -118,10 +118,10 @@ Defaults:
   scope:  project
 
 Examples:
-  graphjin mcp add
-  graphjin mcp add claude
-  graphjin mcp add all https://graphjin.example.com
-  graphjin mcp add codex http://localhost:8080 --global
+  deeporg mcp add
+  deeporg mcp add claude
+  deeporg mcp add all https://graphjin.example.com
+  deeporg mcp add codex http://localhost:8080 --global
 
 The server URL is normalized to /api/v1/mcp. If the server exposes standards
 OAuth, the native MCP client handles login. If the server uses GraphJin's
@@ -133,12 +133,12 @@ local proxy config.`,
 func mcpInstallCmd() *cobra.Command {
 	return newMCPInstallCommand(mcpInstallCommandConfig{
 		Use:        "install [client] [server-url]",
-		Short:      "Alias for `graphjin mcp add`",
-		Deprecated: "use `graphjin mcp add` instead",
+		Short:      "Alias for `deeporg mcp add`",
+		Deprecated: "use `deeporg mcp add` instead",
 		Long: `Backward-compatible alias for adding GraphJin to Claude Code, OpenAI Codex, or all supported clients.
 
 Equivalent to:
-  graphjin mcp add [client] [server-url]`,
+  deeporg mcp add [client] [server-url]`,
 	})
 }
 
@@ -437,7 +437,7 @@ func probeMCPServer(ctx context.Context, mcpURL, baseServer string) (mcpProbeRes
 
 	resp, err := mcpProbeHTTPClient.Do(req)
 	if err != nil {
-		return mcpProbeResult{}, fmt.Errorf("could not reach %s: %w\nstart GraphJin and re-run `graphjin mcp add`, or pass the hosted server URL", mcpURL, err)
+		return mcpProbeResult{}, fmt.Errorf("could not reach %s: %w\nstart GraphJin and re-run `deeporg mcp add`, or pass the hosted server URL", mcpURL, err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
@@ -534,7 +534,7 @@ func completeMCPDeviceLogin(ctx context.Context, cmd *cobra.Command, opts *mcpIn
 
 	for {
 		if time.Now().After(expiresAt) {
-			return errors.New("device code expired; re-run `graphjin mcp add`")
+			return errors.New("device code expired; re-run `deeporg mcp add`")
 		}
 		time.Sleep(interval)
 		tr, done, err := pollDeviceTokenFn(ctx, opts.BaseServer, ds.DeviceCode)
@@ -716,23 +716,34 @@ func runClaudeMCPAddProxyInstall(cmd *cobra.Command, opts mcpInstallOptions) err
 	return runExternalCommand(cmd, "claude", addArgs...)
 }
 
+// cliCommandNames are the names this binary is installed under, newest first.
+// `deeporg` is the command; `graphjin` is the alias every install channel still
+// puts on the PATH, and the only name an install older than the rename has.
+var cliCommandNames = []string{"deeporg", "graphjin"}
+
+// resolveGraphJinBinaryPath finds the command an MCP client should spawn. It
+// prefers the new name so freshly written client configs point at `deeporg`;
+// configs written before the rename keep pointing at `graphjin`, which still
+// resolves to the same binary.
 func resolveGraphJinBinaryPath() (string, error) {
-	if p, err := lookPathFn("graphjin"); err == nil {
-		return p, nil
+	for _, name := range cliCommandNames {
+		if p, err := lookPathFn(name); err == nil {
+			return p, nil
+		}
 	}
 
 	p, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("failed to locate graphjin executable: %w", err)
+		return "", fmt.Errorf("failed to locate %s executable: %w", cliCommandNames[0], err)
 	}
 	return p, nil
 }
 
 // buildClaudeMCPServerArgs returns the args Claude should use to spawn
-// `graphjin mcp`. The server URL is intentionally NOT included — `graphjin
+// `deeporg mcp`. The server URL is intentionally NOT included — `deeporg
 // mcp` reads it from ~/.config/graphjin/client.json, so the MCP client
 // config we write here stays credential-free and survives token rotation
-// (re-running `graphjin mcp setup` is enough; no MCP-client edits needed).
+// (re-running `deeporg mcp setup` is enough; no MCP-client edits needed).
 func buildClaudeMCPServerArgs(opts mcpInstallOptions) []string {
 	_ = opts
 	return []string{"mcp"}
@@ -768,7 +779,7 @@ func codexServerConfigFromOptions(opts mcpInstallOptions) codexServerConfig {
 func graphjinCommandForMCP() string {
 	p, err := resolveGraphJinPathForMCP()
 	if err != nil || p == "" {
-		return "graphjin"
+		return cliCommandNames[0]
 	}
 	return p
 }
@@ -879,7 +890,7 @@ type evalSkillInstallResult struct {
 	Err       error
 }
 
-// installedSkills are the skills `graphjin mcp install` writes onto a machine.
+// installedSkills are the skills `deeporg mcp install` writes onto a machine.
 //
 // Names are stable on purpose: writeEvalSkill writes by path and never prunes,
 // so renaming one would strand the old copy on every machine that has ever run

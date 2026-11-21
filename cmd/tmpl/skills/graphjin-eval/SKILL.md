@@ -1,6 +1,6 @@
 ---
 name: graphjin-eval
-description: Create, extend, run, baseline, and diagnose GraphJin agent evaluations through the graphjin eval CLI.
+description: Create, extend, run, baseline, and diagnose GraphJin agent evaluations through the deeporg eval CLI.
 ---
 
 # GraphJin Eval
@@ -11,15 +11,15 @@ candidate, or understand an evaluation failure.
 
 ## Rules
 
-- Always use `graphjin eval` commands with `--json` for machine-readable state.
+- Always use `deeporg eval` commands with `--json` for machine-readable state.
 - Never edit `eval/suite.yml`, hidden oracle definitions, tolerances, reward
   weights, reports, or baseline files by hand.
 - Never hand-edit `website/data/benchmarks/<benchmark>.yaml` or
-  `website/content/benchmarks/<benchmark>/runs/`. `graphjin eval publish` is the
+  `website/content/benchmarks/<benchmark>/runs/`. `deeporg eval publish` is the
   only supported writer; it writes one row and one run page and never runs Git.
 - Treat `eval publish --label` as presentation only. Supersession uses the
   normalized provider and model identity, not the display label.
-- Use `graphjin eval rm <task-id>` as the supported task-removal path; never
+- Use `deeporg eval rm <task-id>` as the supported task-removal path; never
   delete a task from the suite file manually.
 - Never invent an oracle, field, threshold, or business interpretation.
 - Treat exit code 2 as a broken suite, not a model regression.
@@ -67,22 +67,22 @@ candidate, or understand an evaluation failure.
 1. Inspect current state:
 
    ```sh
-   graphjin eval --json
+   deeporg eval --json
    ```
 
 2. If no suite exists, create the deterministic 24-task suite:
 
    ```sh
-   graphjin eval create --json
+   deeporg eval create --json
    ```
 
    Add `--demo` for the bundled demo or `--remote` for the server configured by
-   `graphjin cli setup`.
+   `deeporg cli setup`.
 
 3. Add an important business question through the model-assisted path:
 
    ```sh
-   graphjin eval add "Which customers are at churn risk?" --json
+   deeporg eval add "Which customers are at churn risk?" --json
    ```
 
    Report the CLI's plain-language interpretation and executed oracle result.
@@ -92,7 +92,7 @@ candidate, or understand an evaluation failure.
 4. Run the suite after approval:
 
    ```sh
-   graphjin eval run --yes --json
+   deeporg eval run --yes --json
    ```
 
    The first safe, valid run is promoted automatically at its observed recall.
@@ -109,28 +109,28 @@ candidate, or understand an evaluation failure.
 5. Remove a bad-but-executable task only through the validated CLI path:
 
    ```sh
-   graphjin eval rm <task-id> --yes --json
+   deeporg eval rm <task-id> --yes --json
    ```
 
 6. Deliberately replace the baseline only when the user requests it and the run
    has no confirmed regression or safety failure:
 
    ```sh
-   graphjin eval baseline --yes --json
+   deeporg eval baseline --yes --json
    ```
 
 7. Run the extended benchmark when the user wants frontier distribution
    coverage:
 
    ```sh
-   graphjin eval bench --scale 100 --seed 23 --yes --json
+   deeporg eval bench --scale 100 --seed 23 --yes --json
    ```
 
 8. Collect several attempts per task, for a training corpus rather than a
    verdict:
 
    ```sh
-   graphjin eval sample --repeats 8 --temperature 0.8 --split <split> --side train --yes --json
+   deeporg eval sample --repeats 8 --temperature 0.8 --split <split> --side train --yes --json
    ```
 
    Sampling reaches no verdict and promotes nothing. Without a temperature the
@@ -139,7 +139,7 @@ candidate, or understand an evaluation failure.
 9. Export a completed run as trajectories:
 
    ```sh
-   graphjin eval export <run-id> --stage executor --out run.jsonl
+   deeporg eval export <run-id> --stage executor --out run.jsonl
    ```
 
    It refuses eval-side episodes unless `--allow-eval-side` is given.
@@ -148,22 +148,22 @@ candidate, or understand an evaluation failure.
     or to compare profiles:
 
     ```sh
-    graphjin eval rescore <run-id> --json
+    deeporg eval rescore <run-id> --json
     ```
 
 11. Have a capable model author the richer task families. This spends generator
     tokens, so preview and approve first:
 
     ```sh
-    graphjin eval author --kinds watch,confirmation,file --yes --json
+    deeporg eval author --kinds watch,confirmation,file --yes --json
     ```
 
 12. Turn the questions people already asked the agent into tests. This reads a
     running server's stored turns (admin only) and spends no model tokens:
 
     ```sh
-    graphjin eval mine --remote --json
-    graphjin eval run --suite eval/mined.yml --yes --json
+    deeporg eval mine --remote --json
+    deeporg eval run --suite eval/mined.yml --yes --json
     ```
 
     Report confirmed and incumbent results apart, never summed: read
@@ -176,20 +176,20 @@ candidate, or understand an evaluation failure.
 13. Run the frozen public cohort only after the user approves provider traffic:
 
    ```sh
-   graphjin eval bench --public --yes --json
+   deeporg eval bench --public --yes --json
    ```
 
    Publish the resulting run only when the user explicitly asks. Review both
    generated files before committing them:
 
    ```sh
-   graphjin eval publish <run-id> --benchmark deeporg --yes
+   deeporg eval publish <run-id> --benchmark deeporg --yes
    ```
 
    Do not add `--allow-off-suite` without a separate explicit ask.
 
 14. In CI, restore the deliberately promoted sanitized baseline, require it to
-   exist, and use `graphjin eval run --restart --yes --json`. Upload reports
+   exist, and use `deeporg eval run --restart --yes --json`. Upload reports
    (`.json`, friendly `.md`, and `.technical.md`) only; never upload episodes
    or attempts.
 
@@ -198,7 +198,7 @@ candidate, or understand an evaluation failure.
 Use the report's failure category as the first routing signal:
 
 - `suite invalid` / exit 2: one or more hidden oracles no longer compile,
-  execute, or extract. Repair the suite through `graphjin eval add` or recreate
+  execute, or extract. Repair the suite through `deeporg eval add` or recreate
   it; do not count this as a model regression.
 - `provider_timeout`, `provider_rate_limit`, `provider_transport`, or
   `provider_5xx`: retryable environment failure exhausted its one retry; resume
@@ -243,4 +243,4 @@ changing live values as a model regression.
 This skill covers measurement: suites, baselines, candidate comparison,
 publishing. Driving a training loop against a served environment — the
 container, the step bridge, external agents over MCP, GRPO groups — is the
-`graphjin-env` skill. Full documentation at <https://graphjin.com/environment/>.
+`graphjin-env` skill. Full documentation at <https://deeporg.io/environment/>.

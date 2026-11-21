@@ -376,7 +376,7 @@ func agentOpenAPIPaths() map[string]any {
 				"operationId": "listAgentExperience",
 				"tags":        agentTag,
 				"summary":     "Past questions as tests",
-				"description": "Admin only. Reads finished thread turns, newest first, and turns each question the lead asked the data agent into a test when the query that answered it computes one figure in the database. The query is re-run as the person who asked, and the answer they were given must pass it. confirmed tests had a thumbs-up on a one-question turn; incumbent tests were never rated and measure agreement, not correctness. Nothing is stored. Save the cases and run graphjin eval mine to turn them into a suite.",
+				"description": "Admin only. Reads finished thread turns, newest first, and turns each question the lead asked the data agent into a test when the query that answered it computes one figure in the database. The query is re-run as the person who asked, and the answer they were given must pass it. confirmed tests had a thumbs-up on a one-question turn; incumbent tests were never rated and measure agreement, not correctness. Nothing is stored. Save the cases and run deeporg eval mine to turn them into a suite.",
 				"parameters": []any{
 					map[string]any{"name": "since", "in": "query", "description": "Only runs created at or after this RFC 3339 time.", "schema": map[string]any{"type": "string"}},
 					map[string]any{"name": "until", "in": "query", "description": "Only runs created at or before this RFC 3339 time.", "schema": map[string]any{"type": "string"}},

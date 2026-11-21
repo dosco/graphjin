@@ -94,7 +94,11 @@ $(WEB_BUILD_DIR):
 lint: download-tools
 	@golangci-lint run ./tests $(PACKAGES) 
 
-BINARY := graphjin
+# The command is `deeporg`. `graphjin` is its old name and stays on the PATH
+# as a link to the same file, so scripts and MCP client configs written
+# before the rename keep working.
+BINARY := deeporg
+ALIAS := graphjin
 WASM := ./wasm/graphjin.wasm
 LDFLAGS := -s -w
 PLATFORMS := linux/amd64 windows/amd64 darwin/amd64
@@ -146,7 +150,7 @@ $(WASM):
 	@GOOS=js GOARCH=wasm GOTOOLCHAIN=auto go build -o ./wasm/graphjin.wasm ./wasm/*.go
 
 clean:
-	@rm -f $(BINARY)
+	@rm -f $(BINARY) $(ALIAS)
 	@rm -f $(WASM)
 
 run: clean
@@ -188,7 +192,7 @@ agent-data-eval:
 agent-data-eval-trend:
 	@cd agent && go run ./cmd/skill-eval -trend ../.graphjin-evals
 
-# Smoke the bare `graphjin serve --demo` flow (CGO-free binary, built-in demo)
+# Smoke the bare `deeporg serve --demo` flow (CGO-free binary, built-in demo)
 smoke-default:
 	@scripts/demo-smoke-all.sh --only default
 
@@ -199,13 +203,14 @@ install: clean build
 	@echo "Commit Hash: `git rev-parse HEAD`"
 	@echo "Old Hash: `shasum $(GOPATH)/bin/$(BINARY) 2>/dev/null | cut -c -32`"
 	@mv $(BINARY) $(GOPATH)/bin/$(BINARY)
+	@ln -sf $(BINARY) $(GOPATH)/bin/$(ALIAS)
 	@echo "New Hash:" `shasum $(GOPATH)/bin/$(BINARY) 2>/dev/null | cut -c -32`
 
 uninstall: clean
 	@go clean -i -x
 
 version:
-	@echo GraphJin ${BUILD_VERSION}
+	@echo DeepORG ${BUILD_VERSION}
 	@echo Build: ${BUILD}
 	@echo Build date: ${BUILD_DATE}
 	@echo Branch: ${BUILD_BRANCH}
@@ -214,12 +219,12 @@ version:
 help:
 	@echo
 	@echo Build commands:
-	@echo " make build         		- Build graphjin binary"
-	@echo " make install       		- Install graphjin binary"
-	@echo " make uninstall     		- Uninstall graphjin binary"
+	@echo " make build         		- Build deeporg binary"
+	@echo " make install       		- Install deeporg binary (and the graphjin alias)"
+	@echo " make uninstall     		- Uninstall deeporg binary"
 	@echo " make [platform]    		- Build for platform [linux|darwin|windows]"
 	@echo " make release       		- Build all platforms"
-	@echo " make run           		- Run graphjin (eg. make run ARGS=\"help\")"
+	@echo " make run           		- Run deeporg (eg. make run ARGS=\"help\")"
 	@echo " make demo          		- Run the demo app (DEMO_PATH defaults to examples/coffee-roastery)"
 	@echo " make demo-agent    		- Run the demo app with GO_ENV=agentic"
 	@echo " make demo-smoke    		- Run the coffee roastery smoke suite"

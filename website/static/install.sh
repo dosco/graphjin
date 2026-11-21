@@ -1,6 +1,9 @@
 #!/bin/bash
-# GraphJin Installer
-# Usage: curl -fsSL https://graphjin.com/install.sh | bash
+# DeepORG Installer
+# Usage: curl -fsSL https://deeporg.io/install.sh | bash
+#
+# Installs the `deeporg` command, and `graphjin` (its old name) as a link to
+# the same file, so anything that still calls `graphjin` keeps working.
 #
 # Environment variables:
 #   GRAPHJIN_VERSION  - Specific version to install (default: latest)
@@ -16,14 +19,8 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 print_banner() {
-    echo -e "${BLUE}"
-    echo '   ____                 _       _ _       '
-    echo '  / ___|_ __ __ _ _ __ | |__   | (_)_ __  '
-    echo ' | |  _| '\''__/ _` | '\''_ \| '\''_ \  | | | '\''_ \ '
-    echo ' | |_| | | | (_| | |_) | | | |_| | | | | |'
-    echo '  \____|_|  \__,_| .__/|_| |_(_)_|_|_| |_|'
-    echo '                 |_|                      '
-    echo -e "${NC}"
+    echo ""
+    echo -e "${BLUE}DeepORG${NC}"
     echo "One AI agent for your whole organization"
     echo ""
 }
@@ -73,9 +70,9 @@ detect_arch() {
 get_latest_version() {
     local latest
     if command -v curl &> /dev/null; then
-        latest=$(curl -fsSL "https://api.github.com/repos/dosco/graphjin/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
+        latest=$(curl -fsSL "https://api.github.com/repos/dosco/deeporg/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
     elif command -v wget &> /dev/null; then
-        latest=$(wget -qO- "https://api.github.com/repos/dosco/graphjin/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
+        latest=$(wget -qO- "https://api.github.com/repos/dosco/deeporg/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
     else
         error "Neither curl nor wget found. Please install one of them."
     fi
@@ -153,12 +150,16 @@ main() {
     info "Install directory: $install_dir"
     echo ""
 
-    # Build download URL candidates. New releases include version in the
-    # archive filename; keep legacy fallback names for older tags.
-    local release_base="https://github.com/dosco/graphjin/releases/download/v${version}"
+    # Build download URL candidates, newest naming first. Since the command
+    # was renamed the archive is deeporg_<version>_<os>_<arch>; releases up to
+    # v3.21.21 were graphjin_<version>_<os>_<arch>, and much older ones had no
+    # version in the name. Keep every form so any version still installs.
+    local release_base="https://github.com/dosco/deeporg/releases/download/v${version}"
     local filenames=()
     if [ "$os" = "windows" ]; then
         filenames=(
+            "deeporg_${version}_${os}_${arch}.tar.gz"
+            "deeporg_${version}_${os}_${arch}.zip"
             "graphjin_${version}_${os}_${arch}.tar.gz"
             "graphjin_${version}_${os}_${arch}.zip"
             "graphjin_${os}_${arch}.tar.gz"
@@ -166,6 +167,7 @@ main() {
         )
     else
         filenames=(
+            "deeporg_${version}_${os}_${arch}.tar.gz"
             "graphjin_${version}_${os}_${arch}.tar.gz"
             "graphjin_${os}_${arch}.tar.gz"
         )
@@ -178,11 +180,18 @@ main() {
     local archive_path=""
     local selected_filename=""
 
-    info "Downloading GraphJin v${version}..."
+    # Misses on the newer names are expected for an older version, so the
+    # downloader's own errors are hidden below; rule out the one failure that
+    # would then be silent.
+    if ! command -v curl &> /dev/null && ! command -v wget &> /dev/null; then
+        error "Neither curl nor wget found. Please install one of them."
+    fi
+
+    info "Downloading DeepORG v${version}..."
     for filename in "${filenames[@]}"; do
         local url="${release_base}/${filename}"
         archive_path="$tmp_dir/$filename"
-        if download "$url" "$archive_path"; then
+        if download "$url" "$archive_path" 2>/dev/null; then
             selected_filename="$filename"
             break
         fi
@@ -190,7 +199,7 @@ main() {
     done
 
     if [ -z "$selected_filename" ]; then
-        error "Failed to download GraphJin v${version}. Tried: ${filenames[*]}"
+        error "Failed to download DeepORG v${version}. Tried: ${filenames[*]}"
     fi
 
     info "Extracting..."
@@ -200,47 +209,75 @@ main() {
         tar -xzf "$archive_path" -C "$tmp_dir"
     fi
 
-    # Find the binary
-    local binary_name="graphjin"
+    # Find the binary. A release from before the rename holds `graphjin`; it
+    # is installed under that name and `deeporg` becomes the link, so both
+    # commands exist whichever version was asked for.
+    local ext=""
     if [ "$os" = "windows" ]; then
-        binary_name="graphjin.exe"
+        ext=".exe"
+    fi
+
+    local binary_name=""
+    local alias_name=""
+    if [ -f "$tmp_dir/deeporg$ext" ]; then
+        binary_name="deeporg$ext"
+        alias_name="graphjin$ext"
+    elif [ -f "$tmp_dir/graphjin$ext" ]; then
+        binary_name="graphjin$ext"
+        alias_name="deeporg$ext"
+    else
+        error "Binary not found in archive"
     fi
 
     local binary_path="$tmp_dir/$binary_name"
-    if [ ! -f "$binary_path" ]; then
-        error "Binary not found in archive"
-    fi
 
     # Install
     info "Installing to $install_dir..."
 
     local dest="$install_dir/$binary_name"
-    if [ -w "$install_dir" ]; then
-        mv "$binary_path" "$dest"
-        chmod +x "$dest"
+    local alias_dest="$install_dir/$alias_name"
+    local as_root=""
+    if [ ! -w "$install_dir" ]; then
+        as_root="sudo"
+    fi
+
+    # mv replaces whatever is at $dest, including a link left by an install
+    # of the other naming; it never writes through that link.
+    $as_root mv "$binary_path" "$dest"
+    $as_root chmod +x "$dest"
+
+    # The second name. A relative link, so the pair can be moved together.
+    # Windows shells cannot be relied on for symlinks: use a hard link there,
+    # or a copy if the filesystem refuses one.
+    if [ "$os" = "windows" ]; then
+        $as_root rm -f "$alias_dest"
+        $as_root ln "$dest" "$alias_dest" 2>/dev/null || $as_root cp "$dest" "$alias_dest"
     else
-        sudo mv "$binary_path" "$dest"
-        sudo chmod +x "$dest"
+        $as_root ln -sfn "$binary_name" "$alias_dest"
     fi
 
     echo ""
-    success "GraphJin v${version} installed successfully!"
+    success "DeepORG v${version} installed successfully!"
+    echo "  $dest"
+    echo "  $alias_dest -> $binary_name"
     echo ""
 
     # Verify installation
-    if command -v graphjin &> /dev/null; then
+    if command -v deeporg &> /dev/null; then
         echo "Installed version:"
-        graphjin version 2>/dev/null || graphjin --version 2>/dev/null || true
+        deeporg version 2>/dev/null || deeporg --version 2>/dev/null || true
     else
         check_path "$install_dir"
     fi
 
     echo ""
     echo "Get started:"
-    echo "  graphjin serve new myapp    # Create a new project"
-    echo "  graphjin serve        # Start the server"
+    echo "  deeporg serve new myapp    # Create a new project"
+    echo "  deeporg serve              # Start the server"
     echo ""
-    echo "Documentation: https://graphjin.com"
+    echo "\`graphjin\` is the old name of the same command and still works."
+    echo ""
+    echo "Documentation: https://deeporg.io"
     echo ""
 }
 

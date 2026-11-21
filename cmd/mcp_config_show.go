@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// mcpConfigCmd wires `graphjin cli config show [section]` which calls the
+// mcpConfigCmd wires `deeporg cli config show [section]` which calls the
 // get_current_config MCP tool. Server-gated: the server only exposes this
 // when not running in Production mode.
 func mcpConfigCmd() *cobra.Command {
@@ -43,13 +43,13 @@ production mode (conf.Serv.Production).`,
 
 Optional variant: dev (default), prod, or agentic.
 
-These are annotated counterparts to the configs that 'graphjin serve new'
+These are annotated counterparts to the configs that 'deeporg serve new'
 writes when scaffolding a new app. The scaffold command also renders app and
 database values. Useful as a reference when authoring a config by hand or
 when prompting an LLM to generate one.
 
 Served locally from the binary (no running server required); this is an alias
-for 'graphjin config docs'.`,
+for 'deeporg config docs'.`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			variant := "dev"

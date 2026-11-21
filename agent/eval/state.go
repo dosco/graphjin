@@ -77,14 +77,14 @@ type RunManifest struct {
 func (m RunManifest) Complete() bool { return m.Status == RunStatusComplete }
 
 func (m RunManifest) ResumeCommand() string {
-	args := []string{"graphjin", "eval", string(m.Intent)}
+	args := []string{"deeporg", "eval", string(m.Intent)}
 	args = append(args, m.InvocationArgs...)
 	args = append(args, "--resume", m.RunID, "--yes")
 	return strings.Join(args, " ")
 }
 
 func (m RunManifest) RestartCommand() string {
-	args := []string{"graphjin", "eval", string(m.Intent)}
+	args := []string{"deeporg", "eval", string(m.Intent)}
 	args = append(args, m.InvocationArgs...)
 	args = append(args, "--restart", "--yes")
 	return strings.Join(args, " ")

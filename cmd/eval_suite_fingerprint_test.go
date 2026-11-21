@@ -15,7 +15,7 @@ import (
 // does and fails the build if the served catalog no longer matches the file.
 //
 // When it fails after a deliberate catalog change: re-run
-// `graphjin eval freeze-suite` against the demo, but keep the committed tasks
+// `deeporg eval freeze-suite` against the demo, but keep the committed tasks
 // and copy only the new target_catalog_fingerprint into the suite file — a
 // same-day regeneration was measured to swap a third of the questions purely
 // because the demo's date-anchored data moves what the generator picks. Then

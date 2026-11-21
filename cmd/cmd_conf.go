@@ -13,8 +13,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// `graphjin config` is the offline, local-file counterpart to the server-backed
-// `graphjin cli config` group. It reads and edits the config files on disk
+// `deeporg config` is the offline, local-file counterpart to the server-backed
+// `deeporg cli config` group. It reads and edits the config files on disk
 // without contacting a running server, so it works before the server can even
 // start. Edits preserve comments and formatting (yaml.v3 node AST) and are
 // validated through the real loader before anything is written.
@@ -35,13 +35,13 @@ The target file defaults to <path>/<env>.yml where <env> comes from GO_ENV
 Use --file to point at a specific config file.
 
 Examples:
-  graphjin config get rate_limiter.rate
-  graphjin config set log_level debug
-  graphjin config unset rate_limiter.bucket
-  graphjin config explain rate_limiter.rate
-  graphjin config validate
-  graphjin config schema > config/config.schema.json
-  graphjin config docs prod`,
+  deeporg config get rate_limiter.rate
+  deeporg config set log_level debug
+  deeporg config unset rate_limiter.bucket
+  deeporg config explain rate_limiter.rate
+  deeporg config validate
+  deeporg config schema > config/config.schema.json
+  deeporg config docs prod`,
 	}
 	c.PersistentFlags().StringVar(&confFile, "file", "", "config file to operate on (default: <path>/<env>.yml)")
 
@@ -182,7 +182,7 @@ func configValidateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "validate",
 		Short: "Validate the local config files (offline, no connectivity)",
-		Long:  "Load and structurally validate the config files without connecting to any database. Complements `graphjin serve test`, which also checks connectivity.",
+		Long:  "Load and structurally validate the config files without connecting to any database. Complements `deeporg serve test`, which also checks connectivity.",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			target := configTargetFile()
@@ -214,7 +214,7 @@ func configDocsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "docs [variant]",
 		Short: "Print an annotated example config (dev, prod, or agentic)",
-		Long:  "Print an inline-documented counterpart to the configs `graphjin serve new` scaffolds. Variant is dev (default), prod, or agentic.",
+		Long:  "Print an inline-documented counterpart to the configs `deeporg serve new` scaffolds. Variant is dev (default), prod, or agentic.",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			variant := "dev"

@@ -61,6 +61,6 @@ func conversationRefusal(conversations []Task) error {
 	return fmt.Errorf(
 		"%d task(s) send earlier turns (%s), but this instance answers with the data agent alone, which holds no "+
 			"conversation: every one would be refused before the agent ran and scored as a failure. Remove them with "+
-			"`graphjin eval rm <task-id>`, or run against a server with agent.lead.enabled",
+			"`deeporg eval rm <task-id>`, or run against a server with agent.lead.enabled",
 		len(conversations), listed)
 }

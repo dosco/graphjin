@@ -171,7 +171,7 @@ func TestRunSubscribeStream_HTTPError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 401, got nil")
 	}
-	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "graphjin cli setup") {
+	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "deeporg cli setup") {
 		t.Errorf("unexpected error: %v", err)
 	}
 }

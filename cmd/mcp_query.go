@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// mcpQueryCmd wires `graphjin cli query ...` subcommands that call the
+// mcpQueryCmd wires `deeporg cli query ...` subcommands that call the
 // list_saved_queries / search_saved_queries / get_saved_query /
 // execute_saved_query / execute_graphql MCP tools on a running GraphJin
 // server. Output is JSON on stdout by default; server-side gates (e.g.
@@ -19,7 +19,7 @@ func mcpQueryCmd() *cobra.Command {
 		Long: `MCP-client commands for saved queries and raw GraphQL execution.
 
 Uses the server saved in ~/.config/graphjin/client.json (set with
-` + "`graphjin cli setup <server-url>`" + `) and calls the corresponding MCP
+` + "`deeporg cli setup <server-url>`" + `) and calls the corresponding MCP
 tool over HTTP.
 
 Output is JSON on stdout so that results compose with | jq, | grep, > file.
@@ -119,8 +119,8 @@ require mcp.allow_mutations.
 
 Pass the GraphQL body as a positional argument, or "-" to read from stdin:
 
-  graphjin cli query exec 'query { users { id email } }'
-  cat query.graphql | graphjin cli query exec -`,
+  deeporg cli query exec 'query { users { id email } }'
+  cat query.graphql | deeporg cli query exec -`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			query, err := readGraphQLArg(args[0])
@@ -169,8 +169,8 @@ Accept: text/event-stream. The same exchange can be reproduced with curl:
 
 Pass the GraphQL body as a positional argument, or "-" to read from stdin:
 
-  graphjin cli query subscribe 'subscription { users { id email } }'
-  cat sub.graphql | graphjin cli query subscribe -
+  deeporg cli query subscribe 'subscription { users { id email } }'
+  cat sub.graphql | deeporg cli query subscribe -
 
 Note: the default /api/v1/graphql route resolves namespace from the route, not
 from the request body — --namespace is forwarded but a non-default value only

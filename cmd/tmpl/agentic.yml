@@ -85,7 +85,7 @@ catalog_search:
 
 # Agentic sources are explicit because GraphJin supports only one inheritance
 # level, and prod.yml already inherits dev.yml. Database values come from
-# `graphjin serve new --db-url`.
+# `deeporg serve new --db-url`.
 sources:
   - name: default
     kind: database

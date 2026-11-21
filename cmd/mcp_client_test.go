@@ -307,7 +307,7 @@ func TestCallTool_SurfacesHTTP401WithHint(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 401")
 	}
-	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "graphjin cli setup") {
+	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "deeporg cli setup") {
 		t.Fatalf("expected 401 + setup hint, got %v", err)
 	}
 }
@@ -415,7 +415,7 @@ func TestResolveMCPAuth_FromClientJSON(t *testing.T) {
 func TestCallTool_NoServerConfigured(t *testing.T) {
 	resetMCPClientFlags("")
 	_, err := callTool(context.Background(), newEmptyCobraCmd(), "list_tables", nil)
-	if err == nil || !strings.Contains(err.Error(), "graphjin cli setup") {
+	if err == nil || !strings.Contains(err.Error(), "deeporg cli setup") {
 		t.Fatalf("expected setup hint, got %v", err)
 	}
 }

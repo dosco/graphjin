@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -286,17 +288,87 @@ func TestGraphjinCommandForMCP(t *testing.T) {
 	defer func() { resolveGraphJinPathForMCP = orig }()
 
 	resolveGraphJinPathForMCP = func() (string, error) {
-		return "/opt/bin/graphjin", nil
+		return "/opt/bin/deeporg", nil
 	}
-	if got := graphjinCommandForMCP(); got != "/opt/bin/graphjin" {
-		t.Fatalf("graphjinCommandForMCP() = %q, want /opt/bin/graphjin", got)
+	if got := graphjinCommandForMCP(); got != "/opt/bin/deeporg" {
+		t.Fatalf("graphjinCommandForMCP() = %q, want /opt/bin/deeporg", got)
 	}
 
 	resolveGraphJinPathForMCP = func() (string, error) {
 		return "", errors.New("missing")
 	}
-	if got := graphjinCommandForMCP(); got != "graphjin" {
-		t.Fatalf("graphjinCommandForMCP() fallback = %q, want graphjin", got)
+	if got := graphjinCommandForMCP(); got != "deeporg" {
+		t.Fatalf("graphjinCommandForMCP() fallback = %q, want deeporg", got)
+	}
+}
+
+// The command written into an MCP client config is the new name when it is
+// installed, and the old name only on a machine that has nothing else: an
+// install from before the rename must still produce a config that starts.
+func TestResolveBinaryPathPrefersDeeporgThenGraphjin(t *testing.T) {
+	orig := lookPathFn
+	defer func() { lookPathFn = orig }()
+
+	onPath := func(found map[string]string) func(string) (string, error) {
+		return func(name string) (string, error) {
+			if p, ok := found[name]; ok {
+				return p, nil
+			}
+			return "", exec.ErrNotFound
+		}
+	}
+
+	lookPathFn = onPath(map[string]string{"deeporg": "/opt/bin/deeporg", "graphjin": "/opt/bin/graphjin"})
+	if got, err := resolveGraphJinBinaryPath(); err != nil || got != "/opt/bin/deeporg" {
+		t.Fatalf("both installed: got %q, %v; want /opt/bin/deeporg", got, err)
+	}
+
+	lookPathFn = onPath(map[string]string{"graphjin": "/opt/bin/graphjin"})
+	if got, err := resolveGraphJinBinaryPath(); err != nil || got != "/opt/bin/graphjin" {
+		t.Fatalf("old install only: got %q, %v; want /opt/bin/graphjin", got, err)
+	}
+
+	lookPathFn = onPath(nil)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := resolveGraphJinBinaryPath(); err != nil || got != self {
+		t.Fatalf("neither on PATH: got %q, %v; want the running binary %q", got, err, self)
+	}
+}
+
+// The root command is `deeporg`. `graphjin` survives only as a second name on
+// the PATH for the same file, so the name the binary was started under must
+// not change what it parses or prints.
+func TestRootCommandIsDeeporgUnderEitherName(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	var help [2]string
+	for i, argv0 := range []string{"/usr/local/bin/deeporg", "/usr/local/bin/graphjin"} {
+		os.Args = []string{argv0, "--help"}
+		root := newRootCmd()
+		if root.Name() != "deeporg" {
+			t.Fatalf("started as %s: root command is %q, want deeporg", argv0, root.Name())
+		}
+		var out bytes.Buffer
+		root.SetOut(&out)
+		root.SetErr(&out)
+		root.SetArgs([]string{"--help"})
+		if err := root.Execute(); err != nil {
+			t.Fatalf("started as %s: %v", argv0, err)
+		}
+		help[i] = out.String()
+	}
+	if help[0] != help[1] {
+		t.Fatalf("help differs by the name the binary was started under:\n--- deeporg\n%s\n--- graphjin\n%s", help[0], help[1])
+	}
+	if !strings.Contains(help[0], "deeporg [command]") {
+		t.Fatalf("help does not name the deeporg command:\n%s", help[0])
+	}
+	if strings.Contains(help[0], "graphjin [command]") {
+		t.Fatalf("help still names the graphjin command:\n%s", help[0])
 	}
 }
 
@@ -345,10 +417,10 @@ approval_policy = "on-request"
 }
 
 func TestBuildClaudeMCPServerArgs(t *testing.T) {
-	// The generated MCP-client config no longer embeds --server: `graphjin
+	// The generated MCP-client config no longer embeds --server: `deeporg
 	// mcp` reads the server URL from ~/.config/graphjin/client.json, so the
 	// args list is simply ["mcp"]. This keeps the MCP client config
-	// credential-free and lets `graphjin mcp setup` rotate tokens without
+	// credential-free and lets `deeporg mcp setup` rotate tokens without
 	// any MCP-client edits.
 	got := buildClaudeMCPServerArgs(mcpInstallOptions{Server: "http://localhost:8080/"})
 	want := []string{"mcp"}

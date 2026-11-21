@@ -35,7 +35,7 @@ const (
 	consoleSessionMaxToken = 3800
 )
 
-// DemoSignIn is the identity `graphjin serve --demo` lets the console sign in
+// DemoSignIn is the identity `deeporg serve --demo` lets the console sign in
 // as without credentials.
 type DemoSignIn struct {
 	UserID    string

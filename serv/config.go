@@ -197,7 +197,7 @@ type KeystoreConfig struct {
 }
 
 // AuthLogin configures the built-in OIDC sign-in flow that issues local JWTs
-// for `graphjin cli` / `graphjin mcp` clients. When Enabled, the service
+// for `deeporg cli` / `deeporg mcp` clients. When Enabled, the service
 // registers /api/v1/auth/* endpoints implementing RFC 8628 device-code flow
 // against a generic OIDC identity provider.
 type AuthLogin struct {
@@ -320,7 +320,7 @@ type RateLimiter struct {
 // MCP enables AI assistants to interact with GraphJin via function calling
 //
 // Transport is implicit based on context:
-// - CLI (`graphjin mcp`) uses stdio transport for Claude Desktop and CLI clients
+// - CLI (`deeporg mcp`) uses stdio transport for Claude Desktop and CLI clients
 // - HTTP service uses SSE/HTTP transport at /api/v1/mcp endpoint
 //
 // Authentication:
@@ -1442,7 +1442,7 @@ func (c *Config) AbsolutePath(p string) string {
 // EffectiveSettings returns all config settings after defaults, one-level
 // inheritance, and GJ_/SJ_ environment overrides have been applied. Keys are
 // viper's canonical lower-cased dotted keys. Intended for tooling such as
-// `graphjin config get` and `graphjin config explain`.
+// `deeporg config get` and `deeporg config explain`.
 func (c *Config) EffectiveSettings() map[string]any {
 	if c == nil || c.viper == nil {
 		return map[string]any{}
