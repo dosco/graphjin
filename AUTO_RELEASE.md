@@ -53,6 +53,16 @@ When a version tag is created, the existing `.github/workflows/build.yml` workfl
 - Publishes to npm registry
 - Creates Debian/RPM packages
 
+## Retrying a Failed npm Publish
+
+npm is the last step of a release. If it alone fails, the GitHub release, the Homebrew formulas and the Docker images are already out. Do not re-run the failed run: that deletes and rebuilds the whole release. Publish only the npm package instead:
+
+```bash
+gh workflow run auto-release.yml -f npm_publish_version=3.21.22
+```
+
+The run prints what npm is asked to trust (repository, workflow file, environment) and npm's own reason if it refuses. It does nothing if that version is already on npm, and it refuses a version older than the one npm calls `latest`.
+
 ## Manual Override
 
 If you need to manually control the version, you can still:

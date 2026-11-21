@@ -7,7 +7,15 @@ on:
   # Manual escape hatch. Build skips workflow-only commits (paths-ignore), so a
   # release-pipeline fix cannot trigger itself, and a failed publish otherwise
   # needs an unrelated commit to retry.
+  #
+  # With no input it cuts a release from master. With npm_publish_version it runs
+  # only the npm-publish job at the bottom of this file.
   workflow_dispatch:
+    inputs:
+      npm_publish_version:
+        description: "Publish only the npm package of a release that is already out, e.g. 3.21.22. Empty: a normal release."
+        required: false
+        default: ""
 
 concurrency:
   group: auto-release-master
@@ -22,7 +30,7 @@ jobs:
       contents: write
       id-token: write
     if: |
-      github.event_name == 'workflow_dispatch' || (
+      (github.event_name == 'workflow_dispatch' && !inputs.npm_publish_version) || (
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'master' &&
@@ -274,5 +282,113 @@ jobs:
           # Trusted publishing (OIDC): the CLI mints a short-lived, workflow-scoped
           # credential, so there is no NPM_TOKEN to leak or rotate. Requires npm >= 11.5
           # and the trusted publisher configured for this repo + workflow on npmjs.com.
+          # If only this step fails, do not re-run the job: that deletes and rebuilds
+          # the release. Use the npm-publish job below.
           npm --version
           npm publish --access public
+
+  # Publish-only retry:
+  #   gh workflow run auto-release.yml -f npm_publish_version=3.21.22
+  #
+  # npm is the last step of a release, so when it alone fails (the trusted publisher
+  # on npmjs.com not matching, a registry outage) everything else is already out.
+  # This job publishes the package from the release tag and touches nothing else.
+  # It has to live in this file: npm ties the trusted publisher to the workflow
+  # filename. The provenance npm records names the commit the workflow was started
+  # from (master at that moment), not the tag the package is built from.
+  npm-publish:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.npm_publish_version != ''
+    permissions:
+      # contents: read the release. id-token: npm trusted publishing (OIDC).
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ inputs.npm_publish_version }}
+    steps:
+      - name: Check the version asked for
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error ::npm_publish_version must look like 3.21.22, got '$VERSION'"
+            exit 1
+          fi
+
+      - name: Checkout the release tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/v${{ inputs.npm_publish_version }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          # No registry-url, for the reason given in the release job above.
+          node-version: '24'
+
+      - name: Check the release and the registry
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          NAME=$(node -p "require('./package.json').name")
+          TAGGED=$(node -p "require('./package.json').version")
+          if [ "$TAGGED" != "$VERSION" ]; then
+            echo "::error ::Tag v$VERSION holds package.json version $TAGGED"
+            exit 1
+          fi
+
+          # The package's installer downloads the binary from the GitHub release.
+          if [ "$(gh release view "v$VERSION" --json isDraft --jq .isDraft)" != "false" ]; then
+            echo "::error ::Release v$VERSION is missing or still a draft"
+            exit 1
+          fi
+
+          if [ "$(npm view "$NAME@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
+            echo "::notice ::$NAME@$VERSION is already on npm; nothing to publish"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # A publish moves the 'latest' tag to the version published.
+          LATEST=$(npm view "$NAME" version)
+          if [ "$(printf '%s\n%s\n' "$LATEST" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]; then
+            echo "::error ::npm's latest is $LATEST; publishing $VERSION now would move 'latest' backwards"
+            exit 1
+          fi
+
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+
+      - name: Show what npm is asked to trust
+        if: steps.check.outputs.publish == 'true'
+        # Diagnostic only; it must never stop the publish.
+        continue-on-error: true
+        run: |
+          # The trusted publisher on npmjs.com has to match these claims of this run's
+          # OIDC token: owner and repository, workflow filename, environment. They are
+          # public facts about the run; the token itself is never printed.
+          node -e '
+            const url = process.env.ACTIONS_ID_TOKEN_REQUEST_URL + "&audience=npm:registry.npmjs.org";
+            const auth = "bearer " + process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+            fetch(url, { headers: { Authorization: auth } })
+              .then((res) => res.json())
+              .then(({ value }) => {
+                const claims = JSON.parse(Buffer.from(value.split(".")[1], "base64url").toString());
+                for (const key of ["repository", "workflow_ref", "environment", "event_name"]) {
+                  console.log(key + ": " + (claims[key] ?? "(none)"));
+                }
+              })
+              .catch((err) => {
+                console.error("could not read the OIDC token claims: " + err.message);
+                process.exit(1);
+              });
+          '
+
+      - name: Publish to npm
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          # verbose: when the registry refuses the trusted publisher, npm reports the
+          # reason only at this level and then fails with a bare ENEEDAUTH.
+          npm --version
+          npm publish --access public --loglevel verbose
