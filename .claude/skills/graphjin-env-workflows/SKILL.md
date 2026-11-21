@@ -7,7 +7,7 @@ description: Use when running GraphJin's own environment and evaluation workflow
 
 For working **on** GraphJin. Someone using a published environment wants the
 `graphjin-env` skill instead, and the public documentation is at
-<https://graphjin.com/environment/>.
+<https://deeporg.io/environment/>.
 
 ## Which loop are you in
 

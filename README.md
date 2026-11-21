@@ -26,7 +26,7 @@ database query. Connecting a new database or API is a few lines of config, not
 a new set of tools.
 
 **Proven on a public benchmark.** [DeepORG, the Organizational Agent
-Benchmark](https://graphjin.com/benchmarks/deeporg/) scores AI models on real
+Benchmark](https://deeporg.io/benchmarks/deeporg/) scores AI models on real
 organizational work against a live system: answers, changes, alerts, follow-ups
 and questions that span several sources. The best published run scores 97 of
 100 with zero unsafe actions, and every score links to the exact test and build
@@ -36,7 +36,7 @@ that produced it.
 generates checked tasks from your own systems and serves them as graded
 episodes, so you can measure an agent, or train one with reinforcement
 learning, on your organization instead of a toy.
-[Agent environment](https://graphjin.com/environment/)
+[Agent environment](https://deeporg.io/environment/)
 
 Underneath is GraphJin, the open-source engine that compiles each query into a
 single database query. It is also a GraphQL API server and a Go library in its
@@ -45,15 +45,14 @@ own right.
 ## Install
 
 ```bash
-curl -fsSL https://graphjin.com/install.sh | bash   # macOS and Linux
+curl -fsSL https://deeporg.io/install.sh | bash   # macOS and Linux
 npm install -g graphjin                              # any platform
 brew install dosco/graphjin/graphjin                 # macOS
 ```
 
-Windows: `scoop bucket add graphjin https://github.com/dosco/graphjin-scoop`
-then `scoop install graphjin`. Linux packages are on the
-[releases page](https://github.com/dosco/graphjin/releases), and Docker is
-`docker pull dosco/graphjin`.
+Windows: use `npm install -g graphjin`, or download the Windows archive from
+the [releases page](https://github.com/dosco/graphjin/releases). Linux packages
+are on the same page, and Docker is `docker pull dosco/graphjin`.
 
 ## Try it
 
@@ -72,7 +71,7 @@ curl -sS localhost:8083/api/v1/agent \
 ```
 
 Or chat with it at <http://localhost:8083/agent>. More demos:
-[Demos](https://graphjin.com/start/demos/).
+[Demos](https://deeporg.io/start/demos/).
 
 ## Use it from Claude, Codex or any MCP client
 
@@ -80,19 +79,19 @@ Or chat with it at <http://localhost:8083/agent>. More demos:
 graphjin mcp add claude http://localhost:8083
 ```
 
-Other clients: [MCP](https://graphjin.com/agentic/mcp/). Hosted servers with sign-in:
-[MCP OAuth](https://graphjin.com/agentic/oauth/).
+Other clients: [MCP](https://deeporg.io/agentic/mcp/). Hosted servers with sign-in:
+[MCP OAuth](https://deeporg.io/agentic/oauth/).
 
 ## Learn more
 
 | | |
 |---|---|
-| Get started | [Quick start](https://graphjin.com/start/quick-start/) · [Your first query](https://graphjin.com/start/first-query/) |
-| The agent | [How it works](https://graphjin.com/agentic/server-agent/) · [Conversations](https://graphjin.com/agentic/lead-agent/) · [Watches](https://graphjin.com/agentic/watches/) · [Workflows](https://graphjin.com/agentic/workflows/) |
-| Connect your systems | [Databases](https://graphjin.com/reference/database-support/) · [APIs](https://graphjin.com/integrations/openapi/) · [Files](https://graphjin.com/integrations/filesystem-uploads/) · [Source code](https://graphjin.com/integrations/codesql/) |
-| Run it in production | [Production](https://graphjin.com/configure/environment-production/) · [Access rules](https://graphjin.com/configure/auth-rbac/) · [Config reference](CONFIG.md) |
-| GraphQL and Go | [Query language](https://graphjin.com/core/) · [Go examples](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples) |
-| Measure agents | [Benchmark](https://graphjin.com/benchmarks/deeporg/) · [Agent environment](https://graphjin.com/environment/) |
+| Get started | [Quick start](https://deeporg.io/start/quick-start/) · [Your first query](https://deeporg.io/start/first-query/) |
+| The agent | [How it works](https://deeporg.io/agentic/server-agent/) · [Conversations](https://deeporg.io/agentic/lead-agent/) · [Watches](https://deeporg.io/agentic/watches/) · [Workflows](https://deeporg.io/agentic/workflows/) |
+| Connect your systems | [Databases](https://deeporg.io/reference/database-support/) · [APIs](https://deeporg.io/integrations/openapi/) · [Files](https://deeporg.io/integrations/filesystem-uploads/) · [Source code](https://deeporg.io/integrations/codesql/) |
+| Run it in production | [Production](https://deeporg.io/configure/environment-production/) · [Access rules](https://deeporg.io/configure/auth-rbac/) · [Config reference](CONFIG.md) |
+| GraphQL and Go | [Query language](https://deeporg.io/core/) · [Go examples](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples) |
+| Measure agents | [Benchmark](https://deeporg.io/benchmarks/deeporg/) · [Agent environment](https://deeporg.io/environment/) |
 
 Works with PostgreSQL, MySQL, SQLite, MongoDB, Oracle, SQL Server, Snowflake,
 BigQuery, Cassandra, S3, GCS and local files.

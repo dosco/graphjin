@@ -4,7 +4,7 @@ This document provides a comprehensive reference for all GraphJin configuration 
 
 ## How configuration works
 
-This file is the exhaustive field reference. If you want the mental model first — what the config file is, how values are resolved across layers, and every way to change it without memorizing keys — read [How Configuration Works](https://graphjin.com/configure/how-it-works/). In short:
+This file is the exhaustive field reference. If you want the mental model first — what the config file is, how values are resolved across layers, and every way to change it without memorizing keys — read [How Configuration Works](https://deeporg.io/configure/how-it-works/). In short:
 
 - **One file, two halves.** The file configures both the query **engine** (`sources`, `tables`, `roles`, …) and the **server** around it (`auth`, `rate_limiter`, `redis`, `caching`, `agent`, …). Engine changes reload in place; most server changes need a restart.
 - **Layered overrides** (later wins): built-in defaults → inherited parent (`inherits:`) → your file → `GJ_*`/`SJ_*` environment variables → dev-mode auto-enables.
@@ -1250,7 +1250,7 @@ server-side, some clamp low values upward, and some drop it when a thinking
 effort is set. Run provenance records what the server resolved rather than what
 reached the wire, which is what identity needs. The per-provider specifics are
 kept in one place, at
-[Training a policy](https://graphjin.com/environment/training/).
+[Training a policy](https://deeporg.io/environment/training/).
 
 `GJ_AGENT_SERVICE_TIER` overrides `agent.service_tier` for environment-only
 deployments. `SG_AGENT_SERVICE_TIER` and `SJ_AGENT_SERVICE_TIER` remain accepted
@@ -1392,7 +1392,7 @@ would serve the support stages with the very model being evaluated, which is
 what the separation exists to prevent.
 
 Full reference:
-[CLI and variables](https://graphjin.com/environment/cli-reference/).
+[CLI and variables](https://deeporg.io/environment/cli-reference/).
 
 ## Task Configuration
 

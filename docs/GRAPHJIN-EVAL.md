@@ -1,8 +1,8 @@
 # GraphJin Eval And Env — Engine Contract
 
 > **Using** GraphJin's evaluation or training environment? The documentation is
-> at <https://graphjin.com/environment/> for training and measurement, and
-> <https://graphjin.com/agentic/evaluation/> for gating a release. This file is
+> at <https://deeporg.io/environment/> for training and measurement, and
+> <https://deeporg.io/agentic/evaluation/> for gating a release. This file is
 > not that. It is the contract a contributor must not break.
 
 `agent/eval` generates verified tasks, runs graded episodes, and scores them.

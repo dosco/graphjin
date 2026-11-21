@@ -6,7 +6,7 @@ GraphJin ships the environment; this package is the thin client a training or
 evaluation loop drives it with. There is deliberately no trainer here — the
 loop, the optimizer and the GPUs stay on your side.
 
-**Documentation is at <https://graphjin.com/environment/>.** This file covers
+**Documentation is at <https://deeporg.io/environment/>.** This file covers
 only what is in this directory.
 
 ```bash
@@ -63,8 +63,8 @@ at a time, so the server blocks rather than interleaving.
 
 ## Where the rest is
 
-- [Run the environment](https://graphjin.com/environment/quickstart/)
-- [Driving episodes](https://graphjin.com/environment/drive-modes/) — hosted, step, external
-- [Training a policy](https://graphjin.com/environment/training/) — and why the workflows have an order
-- [Reward and comparability](https://graphjin.com/environment/reward/) — what to record with a number
-- [HTTP API](https://graphjin.com/environment/http-api/)
+- [Run the environment](https://deeporg.io/environment/quickstart/)
+- [Driving episodes](https://deeporg.io/environment/drive-modes/) — hosted, step, external
+- [Training a policy](https://deeporg.io/environment/training/) — and why the workflows have an order
+- [Reward and comparability](https://deeporg.io/environment/reward/) — what to record with a number
+- [HTTP API](https://deeporg.io/environment/http-api/)
